@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -17,18 +19,26 @@ import (
 
 var (
 	defaultUdpListenAddr = &net.UDPAddr{Port: 53}
+	defaultTcpListenAddr = &net.TCPAddr{Port: 53}
+)
+
+const (
+	defaultTimeout   = 10 * time.Second
+	minDNSPacketSize = 12 + 5
 )
 
 // Server combines the proxy server state and configuration
 type Proxy struct {
 	UDPListenAddr *net.UDPAddr        // if nil, then default is is used (port 53 on *)
+	TCPListenAddr *net.TCPAddr        // if nil, then default is is used (port 53 on *)
 	Upstreams     []upstream.Upstream // list of upstreams
 
 	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
 	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
 	rttLock           sync.Mutex        // Synchronizes access to the upstreamsRtt/upstreamsWeighted arrays
 
-	udpListen *net.UDPConn // UDP listen connection
+	udpListen *net.UDPConn     // UDP listen connection
+	tcpListen *net.TCPListener // TCP listener
 	sync.RWMutex
 }
 
@@ -39,30 +49,43 @@ func (p *Proxy) Start() error {
 
 	log.Println("Starting the DNS proxy server")
 
-	if p.udpListen == nil {
-		log.Printf("Creating the UDP socket")
-		var err error
-		addr := p.UDPListenAddr
-		if addr == nil {
-			addr = defaultUdpListenAddr
-		}
-		p.udpListen, err = net.ListenUDP("udp", addr)
-		if err != nil {
-			p.udpListen = nil
-			return errorx.Decorate(err, "Couldn't listen to UDP socket")
-		}
-
-		p.upstreamsRtt = make([]int, len(p.Upstreams))
-		p.upstreamsWeighted = make([]randutil.Choice, len(p.Upstreams))
-		for idx := range p.Upstreams {
-			p.upstreamsWeighted[idx] = randutil.Choice{Weight: 1, Item: idx}
-		}
-
-		log.Printf("Listening on %s %s", p.udpListen.LocalAddr(), p.UDPListenAddr)
+	if p.udpListen != nil {
+		return fmt.Errorf("server has been already started")
 	}
 
-	go p.packetLoop()
+	log.Printf("Creating the UDP server socket")
+	var err error
+	udpAddr := p.UDPListenAddr
+	if udpAddr == nil {
+		udpAddr = defaultUdpListenAddr
+	}
+	p.udpListen, err = net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		p.udpListen = nil
+		return errorx.Decorate(err, "couldn't listen to UDP socket")
+	}
+	log.Printf("Listening on udp://%s", p.udpListen.LocalAddr())
 
+	log.Printf("Creating the TCP server socket")
+	tcpAddr := p.TCPListenAddr
+	if tcpAddr == nil {
+		tcpAddr = defaultTcpListenAddr
+	}
+	p.tcpListen, err = net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		p.tcpListen = nil
+		return errorx.Decorate(err, "couldn't listen to TCP socket")
+	}
+	log.Printf("Listening on tcp://%s", p.tcpListen.Addr())
+
+	p.upstreamsRtt = make([]int, len(p.Upstreams))
+	p.upstreamsWeighted = make([]randutil.Choice, len(p.Upstreams))
+	for idx := range p.Upstreams {
+		p.upstreamsWeighted[idx] = randutil.Choice{Weight: 1, Item: idx}
+	}
+
+	go p.udpPacketLoop()
+	go p.tcpPacketLoop()
 	return nil
 }
 
@@ -72,31 +95,43 @@ func (p *Proxy) Stop() error {
 
 	p.Lock()
 	defer p.Unlock()
+	if p.udpListen == nil && p.tcpListen == nil {
+		log.Println("The DNS proxy server is not started")
+		return nil
+	}
+
+	var err error
+
+	if p.tcpListen != nil {
+		err = p.tcpListen.Close()
+		p.tcpListen = nil
+		if err != nil {
+			return errorx.Decorate(err, "couldn't close TCP listening socket")
+		}
+	}
+
 	if p.udpListen != nil {
-		err := p.udpListen.Close()
+		err = p.udpListen.Close()
 		p.udpListen = nil
 		if err != nil {
 			return errorx.Decorate(err, "couldn't close UDP listening socket")
 		}
-
-		log.Println("Stopped the DNS proxy server")
-	} else {
-		log.Println("The DNS proxy server is not started")
 	}
 
+	log.Println("Stopped the DNS proxy server")
 	return nil
 }
 
-// The main function: packet loop
-func (p *Proxy) packetLoop() {
-	log.Printf("Entering the packet handle loop")
+// udpPacketLoop listens for incoming UDP packets
+func (p *Proxy) udpPacketLoop() {
+	log.Printf("Entering the UDP listener loop")
 	b := make([]byte, dns.MaxMsgSize)
 	for {
 		p.RLock()
 		conn := p.udpListen
 		p.RUnlock()
 		if conn == nil {
-			log.Printf("udp socket has disappeared, exiting loop")
+			log.Printf("UDP socket has disappeared, exiting loop")
 			break
 		}
 		n, addr, err := conn.ReadFrom(b)
@@ -106,7 +141,7 @@ func (p *Proxy) packetLoop() {
 			// we need the contents to survive the call because we're handling them in goroutine
 			packet := make([]byte, n)
 			copy(packet, b)
-			go p.handlePacket(packet, addr, conn) // ignore errors
+			go p.handleUdpPacket(packet, addr, conn) // ignore errors
 		}
 		if err != nil {
 			if isConnClosed(err) {
@@ -114,54 +149,148 @@ func (p *Proxy) packetLoop() {
 				// don't try to nullify p.udpListen here, because p.udpListen could be already re-bound to listen
 				break
 			}
-			log.Printf("Got error when reading from udp listen: %s", err)
+			log.Warn("got error when reading from UDP listen: %s", err)
 		}
 	}
 }
 
-func (p *Proxy) handlePacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
+// handleUdpPacket processes the incoming UDP packet and sends a DNS response
+func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
+	reply, err := p.handlePacket(packet)
+
+	if err != nil {
+		log.Warn(err)
+	}
+
+	if reply != nil {
+		// we're good to respond
+		err = p.respondUdp(reply, addr, conn)
+		if err != nil {
+			log.Warn("Couldn't respond to UDP packet: %s", err)
+		}
+	}
+}
+
+// Writes a response to the client
+func (p *Proxy) respondUdp(resp *dns.Msg, addr net.Addr, conn *net.UDPConn) error {
+	bytes, err := resp.Pack()
+	if err != nil {
+		return errorx.Decorate(err, "couldn't convert message into wire format")
+	}
+	n, err := conn.WriteTo(bytes, addr)
+	if n == 0 && isConnClosed(err) {
+		return err
+	}
+	if err != nil {
+		return errorx.Decorate(err, "conn.WriteTo() returned error")
+	}
+	if n != len(bytes) {
+		return fmt.Errorf("conn.WriteTo() returned with %d != %d", n, len(bytes))
+	}
+	return nil
+}
+
+// tcpPacketLoop listens for incoming TCP packets
+func (p *Proxy) tcpPacketLoop() {
+	log.Printf("Entering the TCP listener loop")
+	for {
+		p.RLock()
+		l := p.tcpListen
+		p.RUnlock()
+
+		if l == nil {
+			log.Printf("TCP socket has disappeared, exiting loop")
+			break
+		}
+
+		clientConn, err := l.Accept()
+
+		if err != nil {
+			if isConnClosed(err) {
+				log.Printf("ReadFrom() returned because we're reading from a closed connection, exiting loop")
+				// don't try to nullify p.udpListen here, because p.udpListen could be already re-bound to listen
+				break
+			}
+			log.Warn("got error when reading from TCP listen: %s", err)
+		} else {
+			go p.handleTcpPacket(clientConn)
+		}
+	}
+}
+
+// handleTcpPacket processes the incoming UDP packet and sends a DNS response
+func (p *Proxy) handleTcpPacket(conn net.Conn) {
+	//noinspection GoUnhandledErrorResult
+	defer conn.Close()
+	//noinspection GoUnhandledErrorResult
+	conn.SetDeadline(time.Now().Add(defaultTimeout))
+	packet, err := readPrefixed(&conn)
+	if err != nil {
+		return
+	}
+	reply, err := p.handlePacket(packet)
+
+	if err != nil {
+		log.Warn(err)
+	}
+
+	if reply != nil {
+		// we're good to respond
+		//noinspection GoUnhandledErrorResult
+		conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
+		err = p.respondTcp(reply, conn)
+
+		if err != nil {
+			log.Warn("Couldn't respond to TCP packet: %s", err)
+		}
+	}
+}
+
+// Writes a response to the client
+func (p *Proxy) respondTcp(resp *dns.Msg, conn net.Conn) error {
+	bytes, err := resp.Pack()
+	if err != nil {
+		return errorx.Decorate(err, "couldn't convert message into wire format")
+	}
+
+	bytes, err = prefixWithSize(bytes)
+	if err != nil {
+		return errorx.Decorate(err, "couldn't add prefix with size")
+	}
+
+	n, err := conn.Write(bytes)
+	if n == 0 && isConnClosed(err) {
+		return err
+	}
+	if err != nil {
+		return errorx.Decorate(err, "conn.Write() returned error")
+	}
+	if n != len(bytes) {
+		return fmt.Errorf("conn.Write() returned with %d != %d", n, len(bytes))
+	}
+	return nil
+}
+
+// handlePacket processes the incoming packet bytes and returns with an optional response packet.
+func (p *Proxy) handlePacket(packet []byte) (*dns.Msg, error) {
 
 	msg := &dns.Msg{}
 	err := msg.Unpack(packet)
 	if err != nil {
-		log.Printf("got invalid DNS packet: %s", err)
-		return // do nothing
+		return nil, errorx.Decorate(err, "got invalid DNS packet")
 	}
 
 	if log.IsLevelEnabled(log.DebugLevel) {
 		// Avoid calling String() if debug level is not enabled
 		log.Debugf("IN: %s", msg.String())
 	}
-	reply, err := p.handlePacketInternal(msg, addr, conn)
 
-	if reply == nil {
-		panic("SHOULD NOT HAPPEN: empty reply from the handlePacketInternal")
-	}
-
-	if log.IsLevelEnabled(log.DebugLevel) {
-		// Avoid calling String() if debug level is not enabled
-		log.Debugf("OUT: %s", reply.String())
-	}
-
-	// we're good to respond
-	err = p.respond(reply, addr, conn)
-	if err != nil {
-		log.Printf("Couldn't respond to UDP packet: %s", err)
-	}
-}
-
-// handlePacketInternal processes the incoming packet bytes and returns with an optional response packet.
-//
-// If an empty dns.Msg is returned, do not try to send anything back to client, otherwise send contents of dns.Msg.
-//
-// If an error is returned, log it, don't try to generate data based on that error.
-func (p *Proxy) handlePacketInternal(msg *dns.Msg, addr net.Addr, conn *net.UDPConn) (*dns.Msg, error) {
 	//
 	// DNS packet byte format is valid
 	//
 	// any errors below here require a response to client
 	if len(msg.Question) != 1 {
-		log.Printf("Got invalid number of questions: %v", len(msg.Question))
+		log.Warn("Got invalid number of questions: %v", len(msg.Question))
 		return p.genServerFailure(msg), nil
 	}
 
@@ -178,12 +307,18 @@ func (p *Proxy) handlePacketInternal(msg *dns.Msg, addr net.Addr, conn *net.UDPC
 	p.calculateUpstreamWeights(upstreamIdx, rtt)
 
 	if err != nil {
-		log.Printf("talking to dnsUpstream failed for request %s: %s", msg.String(), err)
+		log.Warn("talking to dnsUpstream failed for request %s: %s", msg.String(), err)
 		return p.genServerFailure(msg), err
 	}
+
 	if reply == nil {
-		log.Printf("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", msg.String())
+		log.Warn("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", msg.String())
 		return p.genServerFailure(msg), nil
+	}
+
+	if log.IsLevelEnabled(log.DebugLevel) {
+		// Avoid calling String() if debug level is not enabled
+		log.Debugf("OUT: %s", reply.String())
 	}
 
 	return reply, nil
@@ -242,24 +377,39 @@ func (p *Proxy) chooseUpstream() (upstream.Upstream, int) {
 	return upstreams[idx], idx
 }
 
-// Writes a response to the client
-func (p *Proxy) respond(resp *dns.Msg, addr net.Addr, conn *net.UDPConn) error {
-	resp.Compress = true
-	bytes, err := resp.Pack()
-	if err != nil {
-		return errorx.Decorate(err, "Couldn't convert message into wire format")
+func readPrefixed(conn *net.Conn) ([]byte, error) {
+	buf := make([]byte, 2+dns.MaxMsgSize)
+	packetLength, pos := -1, 0
+	for {
+		readnb, err := (*conn).Read(buf[pos:])
+		if err != nil {
+			return buf, err
+		}
+		pos += readnb
+		if pos >= 2 && packetLength < 0 {
+			packetLength = int(binary.BigEndian.Uint16(buf[0:2]))
+			if packetLength >= dns.MaxMsgSize {
+				return buf, errors.New("packet too large")
+			}
+			if packetLength < minDNSPacketSize {
+				return buf, errors.New("packet too short")
+			}
+		}
+		if packetLength >= 0 && pos >= 2+packetLength {
+			return buf[2 : 2+packetLength], nil
+		}
 	}
-	n, err := conn.WriteTo(bytes, addr)
-	if n == 0 && isConnClosed(err) {
-		return err
+}
+
+func prefixWithSize(packet []byte) ([]byte, error) {
+	packetLen := len(packet)
+	if packetLen > 0xffff {
+		return packet, errors.New("packet too large")
 	}
-	if n != len(bytes) {
-		return fmt.Errorf("WriteTo() returned with %d != %d", n, len(bytes))
-	}
-	if err != nil {
-		return errorx.Decorate(err, "WriteTo() returned error")
-	}
-	return nil
+	packet = append(append(packet, 0), 0)
+	copy(packet[2:], packet[:len(packet)-2])
+	binary.BigEndian.PutUint16(packet[0:2], uint16(len(packet)-2))
+	return packet, nil
 }
 
 func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {

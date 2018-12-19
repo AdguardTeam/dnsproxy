@@ -196,7 +196,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 // handleUdpPacket processes the incoming UDP packet and sends a DNS response
 func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
 
-	log.Debug("Start handling new UDP packet from %s", addr)
+	log.Debugf("Start handling new UDP packet from %s", addr)
 	reply, err := p.handlePacket(packet)
 
 	if err != nil {
@@ -251,7 +251,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener) {
 
 // handleTcpConnection starts a loop that handles an incoming TCP connection
 func (p *Proxy) handleTcpConnection(conn net.Conn) {
-	log.Debug("Start handling the new TCP connection %s", conn.RemoteAddr())
+	log.Debugf("Start handling the new TCP connection %s", conn.RemoteAddr())
 	defer conn.Close()
 
 	for {

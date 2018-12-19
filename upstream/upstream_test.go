@@ -38,6 +38,10 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: "",
 		},
 		{
+			address:   "tls://dns.adguard.com",
+			bootstrap: "8.8.8.8:53",
+		},
+		{
 			address:   "tls://security-filter-dns.cleanbrowsing.org",
 			bootstrap: "8.8.8.8:53",
 		},

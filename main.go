@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	goFlags "github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
@@ -38,12 +39,12 @@ func main() {
 	log.Println("Starting the DNS proxy")
 
 	var options Options
-	var parser = flags.NewParser(&options, flags.Default)
+	var parser = goFlags.NewParser(&options, goFlags.Default)
 
 	_, err := parser.Parse()
 
 	if err != nil {
-		if flagsErr, ok := err.(*flags.Error); ok && flagsErr.Type == flags.ErrHelp {
+		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
 			os.Exit(0)
 		} else {
 			os.Exit(1)

@@ -5,6 +5,8 @@ import (
 	"net"
 	"sync"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/joomcode/errorx"
 )
 
@@ -51,12 +53,12 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 	// if we got connection from the slice, return it
 	if c != nil {
-		// log.Printf("Returning existing connection to %s", host)
+		log.Debugf("Returning existing connection to %s", address)
 		return c, nil
 	}
 
 	// we'll need a new connection, dial now
-	// log.Printf("Dialing to %s", address)
+	log.Debugf("Dialing to %s", address)
 	conn, err := tls.Dial("tcp", address, tlsConfig)
 	if err != nil {
 		return nil, errorx.Decorate(err, "Failed to connect to %s", address)

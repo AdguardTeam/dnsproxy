@@ -65,6 +65,7 @@ DNS-over-HTTPS upstream ([DNS Stamp](https://dnscrypt.info/stamps) of Cloudflare
 
 ### TODO:
 
+* [ ] Configure fallback resolver
 * [ ] Listen on TCP as well
 * [ ] Mobile builds
 * [ ] Gobind interfaces

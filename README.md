@@ -19,6 +19,9 @@ Application Options:
   -o, --output=    Path to the log file. If not set, write to stdout.
   -l, --listen=    Listen address (default: 0.0.0.0)
   -p, --port=      Listen port (default: 53)
+  -t, --tls-port=  Listen port for DNS-over-TLS (default: 853)
+  -c, --tls-crt=   Path to a file with the certificate chain
+  -k, --tls-key=   Path to a file with the private key
   -b, --bootstrap= Bootstrap DNS for DoH and DoT (default: 8.8.8.8:53)
   -u, --upstream=  An upstream to be used (can be specified multiple times)
 
@@ -36,6 +39,11 @@ Runs a DNS proxy on `0.0.0.0:53` with a single upstream - Google DNS.
 Runs a DNS proxy on `127.0.0.1:5353` with multiple upstreams.
 ```
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53
+```
+
+Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
+```
+./dnsproxy -l 127.0.0.1 --tls-port=853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 
 ```
 
 The same proxy with verbose logging enabled writing it to the file `log.txt`. 
@@ -66,6 +74,6 @@ DNS-over-HTTPS upstream ([DNS Stamp](https://dnscrypt.info/stamps) of Cloudflare
 ### TODO:
 
 * [ ] Configure fallback resolver
-* [ ] Listen on TCP as well
+* [x] Listen on TCP as well
 * [ ] Mobile builds
 * [ ] Gobind interfaces

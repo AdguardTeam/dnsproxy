@@ -1,3 +1,5 @@
 .idea
 .vscode
 dnsproxy
+example.crt
+example.key

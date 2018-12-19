@@ -2,13 +2,14 @@ package proxy
 
 import (
 	"fmt"
-	"github.com/joomcode/errorx"
-	"github.com/miekg/dns"
-	log "github.com/sirupsen/logrus"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/joomcode/errorx"
+	"github.com/miekg/dns"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/jmcvetta/randutil"

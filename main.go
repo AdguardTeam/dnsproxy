@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/jessevdk/go-flags"
 	"net"
 	"os"
 	"os/signal"

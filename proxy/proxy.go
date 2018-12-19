@@ -148,7 +148,7 @@ func (p *Proxy) udpPacketLoop() {
 				log.Printf("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
-			log.Warn("got error when reading from UDP listen: %s", err)
+			log.Warnf("got error when reading from UDP listen: %s", err)
 		}
 	}
 }
@@ -158,14 +158,14 @@ func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 	reply, err := p.handlePacket(packet)
 
 	if err != nil {
-		log.Warn(err)
+		log.Warnf("error handling UDP packet: %s", err)
 	}
 
 	if reply != nil {
 		// we're good to respond
 		err = p.respondUdp(reply, addr, conn)
 		if err != nil {
-			log.Warn("Couldn't respond to UDP packet: %s", err)
+			log.Warnf("Couldn't respond to UDP packet: %s", err)
 		}
 	}
 }
@@ -209,7 +209,7 @@ func (p *Proxy) tcpPacketLoop() {
 				log.Printf("tcpListen.Accept() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
-			log.Warn("got error when reading from TCP listen: %s", err)
+			log.Warnf("got error when reading from TCP listen: %s", err)
 		} else {
 			go p.handleTcpPacket(clientConn)
 		}
@@ -229,7 +229,7 @@ func (p *Proxy) handleTcpPacket(conn net.Conn) {
 	reply, err := p.handlePacket(packet)
 
 	if err != nil {
-		log.Warn(err)
+		log.Warnf("error handling TCP packet: %s", err)
 	}
 
 	if reply != nil {
@@ -239,7 +239,7 @@ func (p *Proxy) handleTcpPacket(conn net.Conn) {
 		err = p.respondTcp(reply, conn)
 
 		if err != nil {
-			log.Warn("Couldn't respond to TCP packet: %s", err)
+			log.Warnf("Couldn't respond to TCP packet: %s", err)
 		}
 	}
 }
@@ -288,7 +288,7 @@ func (p *Proxy) handlePacket(packet []byte) (*dns.Msg, error) {
 	//
 	// any errors below here require a response to client
 	if len(msg.Question) != 1 {
-		log.Warn("Got invalid number of questions: %v", len(msg.Question))
+		log.Warnf("Got invalid number of questions: %v", len(msg.Question))
 		return p.genServerFailure(msg), nil
 	}
 
@@ -305,12 +305,12 @@ func (p *Proxy) handlePacket(packet []byte) (*dns.Msg, error) {
 	p.calculateUpstreamWeights(upstreamIdx, rtt)
 
 	if err != nil {
-		log.Warn("talking to dnsUpstream failed for request %s: %s", msg.String(), err)
+		log.Warnf("talking to dnsUpstream failed for request %s: %s", msg.String(), err)
 		return p.genServerFailure(msg), err
 	}
 
 	if reply == nil {
-		log.Warn("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", msg.String())
+		log.Warnf("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", msg.String())
 		return p.genServerFailure(msg), nil
 	}
 

@@ -113,7 +113,7 @@ func (p *Proxy) packetLoop() {
 				// don't try to nullify p.udpListen here, because p.udpListen could be already re-bound to listen
 				break
 			}
-			log.Printf("Got error when reading from udp listen: %p", err)
+			log.Printf("Got error when reading from udp listen: %s", err)
 		}
 	}
 }
@@ -123,7 +123,7 @@ func (p *Proxy) handlePacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
 	msg := &dns.Msg{}
 	err := msg.Unpack(packet)
 	if err != nil {
-		log.Printf("got invalid DNS packet: %p", err)
+		log.Printf("got invalid DNS packet: %s", err)
 		return // do nothing
 	}
 
@@ -145,7 +145,7 @@ func (p *Proxy) handlePacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
 	// we're good to respond
 	err = p.respond(reply, addr, conn)
 	if err != nil {
-		log.Printf("Couldn't respond to UDP packet: %p", err)
+		log.Printf("Couldn't respond to UDP packet: %s", err)
 	}
 }
 
@@ -155,12 +155,10 @@ func (p *Proxy) handlePacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
 //
 // If an error is returned, log it, don't try to generate data based on that error.
 func (p *Proxy) handlePacketInternal(msg *dns.Msg, addr net.Addr, conn *net.UDPConn) (*dns.Msg, error) {
-	// log.Printf("Got packet %d bytes from %p: %v", len(p), addr, p)
 	//
 	// DNS packet byte format is valid
 	//
 	// any errors below here require a response to client
-	// log.Printf("Unpacked: %v", msg.String())
 	if len(msg.Question) != 1 {
 		log.Printf("Got invalid number of questions: %v", len(msg.Question))
 		return p.genServerFailure(msg), nil
@@ -179,11 +177,11 @@ func (p *Proxy) handlePacketInternal(msg *dns.Msg, addr net.Addr, conn *net.UDPC
 	p.calculateUpstreamWeights(upstreamIdx, rtt)
 
 	if err != nil {
-		log.Printf("talking to dnsUpstream failed for request %p: %p", msg.String(), err)
+		log.Printf("talking to dnsUpstream failed for request %s: %s", msg.String(), err)
 		return p.genServerFailure(msg), err
 	}
 	if reply == nil {
-		log.Printf("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %p", msg.String())
+		log.Printf("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", msg.String())
 		return p.genServerFailure(msg), nil
 	}
 

@@ -145,8 +145,7 @@ func (p *Proxy) udpPacketLoop() {
 		}
 		if err != nil {
 			if isConnClosed(err) {
-				log.Printf("ReadFrom() returned because we're reading from a closed connection, exiting loop")
-				// don't try to nullify p.udpListen here, because p.udpListen could be already re-bound to listen
+				log.Printf("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
 			log.Warn("got error when reading from UDP listen: %s", err)
@@ -207,8 +206,7 @@ func (p *Proxy) tcpPacketLoop() {
 
 		if err != nil {
 			if isConnClosed(err) {
-				log.Printf("ReadFrom() returned because we're reading from a closed connection, exiting loop")
-				// don't try to nullify p.udpListen here, because p.udpListen could be already re-bound to listen
+				log.Printf("tcpListen.Accept() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
 			log.Warn("got error when reading from TCP listen: %s", err)

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -17,11 +18,6 @@ import (
 	"github.com/jmcvetta/randutil"
 )
 
-var (
-	defaultUdpListenAddr = &net.UDPAddr{Port: 53}
-	defaultTcpListenAddr = &net.TCPAddr{Port: 53}
-)
-
 const (
 	defaultTimeout   = 10 * time.Second
 	minDNSPacketSize = 12 + 5
@@ -29,16 +25,22 @@ const (
 
 // Server combines the proxy server state and configuration
 type Proxy struct {
-	UDPListenAddr *net.UDPAddr        // if nil, then default is is used (port 53 on *)
-	TCPListenAddr *net.TCPAddr        // if nil, then default is is used (port 53 on *)
-	Upstreams     []upstream.Upstream // list of upstreams
+	UDPListenAddr *net.UDPAddr // if nil, then it does not listen for UDP
+	TCPListenAddr *net.TCPAddr // if nil, then it does not listen for TCP
+
+	TLSListenAddr *net.TCPAddr // if nil, then it does not listen for TLS (DoT)
+	TLSConfig     *tls.Config  // necessary for listening for TLS
+
+	Upstreams []upstream.Upstream // list of upstreams
 
 	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
 	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
 	rttLock           sync.Mutex        // Synchronizes access to the upstreamsRtt/upstreamsWeighted arrays
 
-	udpListen *net.UDPConn     // UDP listen connection
-	tcpListen *net.TCPListener // TCP listener
+	started   bool         // Started flag
+	udpListen *net.UDPConn // UDP listen connection
+	tcpListen net.Listener // TCP listener
+	tlsListen net.Listener // TLS listener
 	sync.RWMutex
 }
 
@@ -49,34 +51,53 @@ func (p *Proxy) Start() error {
 
 	log.Println("Starting the DNS proxy server")
 
-	if p.udpListen != nil {
-		return fmt.Errorf("server has been already started")
+	if p.started {
+		return errors.New("server has been already started")
 	}
 
-	log.Printf("Creating the UDP server socket")
-	var err error
-	udpAddr := p.UDPListenAddr
-	if udpAddr == nil {
-		udpAddr = defaultUdpListenAddr
+	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil {
+		return errors.New("no listen address specified")
 	}
-	p.udpListen, err = net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		p.udpListen = nil
-		return errorx.Decorate(err, "couldn't listen to UDP socket")
-	}
-	log.Printf("Listening on udp://%s", p.udpListen.LocalAddr())
 
-	log.Printf("Creating the TCP server socket")
-	tcpAddr := p.TCPListenAddr
-	if tcpAddr == nil {
-		tcpAddr = defaultTcpListenAddr
+	if len(p.Upstreams) == 0 {
+		return errors.New("no upstreams specified")
 	}
-	p.tcpListen, err = net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		p.tcpListen = nil
-		return errorx.Decorate(err, "couldn't listen to TCP socket")
+
+	if p.UDPListenAddr != nil {
+		log.Printf("Creating the UDP server socket")
+		udpAddr := p.UDPListenAddr
+		udpListen, err := net.ListenUDP("udp", udpAddr)
+		if err != nil {
+			return errorx.Decorate(err, "couldn't listen to UDP socket")
+		}
+		p.udpListen = udpListen
+		log.Printf("Listening on udp://%s", p.udpListen.LocalAddr())
 	}
-	log.Printf("Listening on tcp://%s", p.tcpListen.Addr())
+
+	if p.TCPListenAddr != nil {
+		log.Printf("Creating the TCP server socket")
+		tcpAddr := p.TCPListenAddr
+		tcpListen, err := net.ListenTCP("tcp", tcpAddr)
+		if err != nil {
+			return errorx.Decorate(err, "couldn't listen to TCP socket")
+		}
+		p.tcpListen = tcpListen
+		log.Printf("Listening on tcp://%s", p.tcpListen.Addr())
+	}
+
+	if p.TLSListenAddr != nil {
+		log.Printf("Creating the TLS server socket")
+		if p.TLSConfig == nil {
+			return errors.New("cannot create a TLS listener without TLS config")
+		}
+		tlsAddr := p.TLSListenAddr
+		tcpListen, err := net.ListenTCP("tcp", tlsAddr)
+		if err != nil {
+			return errorx.Decorate(err, "could not start TLS listener")
+		}
+		p.tlsListen = tls.NewListener(tcpListen, p.TLSConfig)
+		log.Printf("Listening on tls://%s", p.tlsListen.Addr())
+	}
 
 	p.upstreamsRtt = make([]int, len(p.Upstreams))
 	p.upstreamsWeighted = make([]randutil.Choice, len(p.Upstreams))
@@ -84,8 +105,19 @@ func (p *Proxy) Start() error {
 		p.upstreamsWeighted[idx] = randutil.Choice{Weight: 1, Item: idx}
 	}
 
-	go p.udpPacketLoop()
-	go p.tcpPacketLoop()
+	if p.udpListen != nil {
+		go p.udpPacketLoop(p.udpListen)
+	}
+
+	if p.tcpListen != nil {
+		go p.tcpPacketLoop(p.tcpListen)
+	}
+
+	if p.tlsListen != nil {
+		go p.tcpPacketLoop(p.tlsListen)
+	}
+
+	p.started = true
 	return nil
 }
 
@@ -118,22 +150,30 @@ func (p *Proxy) Stop() error {
 		}
 	}
 
+	if p.tlsListen != nil {
+		err = p.tlsListen.Close()
+		p.tlsListen = nil
+		if err != nil {
+			return errorx.Decorate(err, "couldn't close TLS listening socket")
+		}
+	}
+
+	p.started = false
 	log.Println("Stopped the DNS proxy server")
 	return nil
 }
 
 // udpPacketLoop listens for incoming UDP packets
-func (p *Proxy) udpPacketLoop() {
-	log.Printf("Entering the UDP listener loop")
+func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
+	log.Printf("Entering the UDP listener loop on %s", conn.LocalAddr())
 	b := make([]byte, dns.MaxMsgSize)
 	for {
 		p.RLock()
-		conn := p.udpListen
-		p.RUnlock()
-		if conn == nil {
-			log.Printf("UDP socket has disappeared, exiting loop")
-			break
+		if !p.started {
+			return
 		}
+		p.RUnlock()
+
 		n, addr, err := conn.ReadFrom(b)
 		// documentation says to handle the packet even if err occurs, so do that first
 		if n > 0 {
@@ -192,18 +232,9 @@ func (p *Proxy) respondUdp(resp *dns.Msg, addr net.Addr, conn *net.UDPConn) erro
 }
 
 // tcpPacketLoop listens for incoming TCP packets
-func (p *Proxy) tcpPacketLoop() {
-	log.Printf("Entering the TCP listener loop")
+func (p *Proxy) tcpPacketLoop(l net.Listener) {
+	log.Printf("Entering the TCP listener loop on %s", l.Addr())
 	for {
-		p.RLock()
-		l := p.tcpListen
-		p.RUnlock()
-
-		if l == nil {
-			log.Printf("TCP socket has disappeared, exiting loop")
-			break
-		}
-
 		clientConn, err := l.Accept()
 
 		if err != nil {
@@ -221,13 +252,11 @@ func (p *Proxy) tcpPacketLoop() {
 // handleTcpConnection starts a loop that handles an incoming TCP connection
 func (p *Proxy) handleTcpConnection(conn net.Conn) {
 	log.Debug("Start handling the new TCP connection")
-
 	defer conn.Close()
 
 	for {
 		p.RLock()
-		if p.tcpListen == nil {
-			// If server is stopped, do nothing
+		if !p.started {
 			return
 		}
 		p.RUnlock()

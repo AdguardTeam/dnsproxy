@@ -28,7 +28,7 @@ Help Options:
 
 ## Examples
 
-Runs a DNS proxy on `0.0.0.1:53` with a single upstream - Google DNS.
+Runs a DNS proxy on `0.0.0.0:53` with a single upstream - Google DNS.
 ```
 ./dnsproxy -u 8.8.8.8:53
 ```

@@ -155,6 +155,8 @@ func (p *Proxy) udpPacketLoop() {
 
 // handleUdpPacket processes the incoming UDP packet and sends a DNS response
 func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
+
+	log.Debug("Start handling the new UDP packet")
 	reply, err := p.handlePacket(packet)
 
 	if err != nil {
@@ -211,35 +213,50 @@ func (p *Proxy) tcpPacketLoop() {
 			}
 			log.Warnf("got error when reading from TCP listen: %s", err)
 		} else {
-			go p.handleTcpPacket(clientConn)
+			go p.handleTcpConnection(clientConn)
 		}
 	}
 }
 
-// handleTcpPacket processes the incoming UDP packet and sends a DNS response
-func (p *Proxy) handleTcpPacket(conn net.Conn) {
-	//noinspection GoUnhandledErrorResult
+// handleTcpConnection starts a loop that handles an incoming TCP connection
+func (p *Proxy) handleTcpConnection(conn net.Conn) {
+	log.Debug("Start handling the new TCP connection")
+
 	defer conn.Close()
-	//noinspection GoUnhandledErrorResult
-	conn.SetDeadline(time.Now().Add(defaultTimeout))
-	packet, err := readPrefixed(&conn)
-	if err != nil {
-		return
-	}
-	reply, err := p.handlePacket(packet)
 
-	if err != nil {
-		log.Warnf("error handling TCP packet: %s", err)
-	}
+	for {
+		p.RLock()
+		if p.tcpListen == nil {
+			// If server is stopped, do nothing
+			return
+		}
+		p.RUnlock()
 
-	if reply != nil {
-		// we're good to respond
-		//noinspection GoUnhandledErrorResult
-		conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
-		err = p.respondTcp(reply, conn)
+		conn.SetDeadline(time.Now().Add(defaultTimeout))
+		packet, err := readPrefixed(&conn)
+		if err != nil {
+			return
+		}
+
+		reply, err := p.handlePacket(packet)
+		if err != nil {
+			log.Warnf("error handling TCP packet: %s", err)
+			return
+		}
 
 		if err != nil {
-			log.Warnf("Couldn't respond to TCP packet: %s", err)
+			log.Warnf("error handling TCP packet: %s", err)
+		}
+
+		if reply != nil {
+			// we're good to respond
+			//noinspection GoUnhandledErrorResult
+			conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
+			err = p.respondTcp(reply, conn)
+
+			if err != nil {
+				log.Warnf("Couldn't respond to TCP packet: %s", err)
+			}
 		}
 	}
 }

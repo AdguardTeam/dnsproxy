@@ -74,7 +74,8 @@ func run(options Options) {
 		log.Fatalf("cannot parse %s", options.ListenAddr)
 	}
 
-	listenAddr := &net.UDPAddr{Port: options.ListenPort, IP: listenIp}
+	listenUdpAddr := &net.UDPAddr{Port: options.ListenPort, IP: listenIp}
+	listenTcpAddr := &net.TCPAddr{Port: options.ListenPort, IP: listenIp}
 	upstreams := make([]upstream.Upstream, 0)
 
 	for i, u := range options.Upstreams {
@@ -87,7 +88,7 @@ func run(options Options) {
 	}
 
 	// Prepare the proxy server
-	dnsProxy := proxy.Proxy{UDPListenAddr: listenAddr, Upstreams: upstreams}
+	dnsProxy := proxy.Proxy{UDPListenAddr: listenUdpAddr, TCPListenAddr: listenTcpAddr, Upstreams: upstreams}
 	err := dnsProxy.Start()
 
 	if err != nil {

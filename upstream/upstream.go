@@ -224,7 +224,7 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	reply, _, err := client.Exchange(m, serverInfo)
 
-	if err, ok := err.(net.Error); ok && err.Timeout() {
+	if errorx.IsTimeout(err) {
 		// If request times out, it is possible that the server configuration has been changed.
 		// It is safe to assume that the key was rotated (for instance, as it is described here: https://dnscrypt.pl/2017/02/26/how-key-rotation-is-automated/).
 		// We should re-fetch the server certificate info so that the new requests were not failing.

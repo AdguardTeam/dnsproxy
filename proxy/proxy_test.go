@@ -14,8 +14,45 @@ const (
 	upstreamAddr = "8.8.8.8:53"
 )
 
-func TestTcpProxy(t *testing.T) {
+func TestUdpProxy(t *testing.T) {
+	// Prepare the proxy server
+	dnsProxy := createTestProxy(t)
 
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create a DNS-over-UDP client connection
+	addr := fmt.Sprintf("%s:%d", listenIp, listenPort)
+	conn, err := dns.Dial("udp", addr)
+	if err != nil {
+		t.Fatalf("cannot connect to the proxy: %s", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		req := createTestMessage()
+		err := conn.WriteMsg(req)
+		if err != nil {
+			t.Fatalf("cannot write message #%d: %s", i, err)
+		}
+
+		res, err := conn.ReadMsg()
+		if err != nil {
+			t.Fatalf("cannot read response to message #%d: %s", i, err)
+		}
+		assertResponse(t, res)
+	}
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
+func TestTcpProxy(t *testing.T) {
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t)
 

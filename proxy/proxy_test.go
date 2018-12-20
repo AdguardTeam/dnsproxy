@@ -9,12 +9,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/miekg/dns"
 	"math/big"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/miekg/dns"
 )
 
 const (
@@ -47,19 +48,7 @@ func TestTlsProxy(t *testing.T) {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
 
-	for i := 0; i < 10; i++ {
-		req := createTestMessage()
-		err := conn.WriteMsg(req)
-		if err != nil {
-			t.Fatalf("cannot write message #%d: %s", i, err)
-		}
-
-		res, err := conn.ReadMsg()
-		if err != nil {
-			t.Fatalf("cannot read response to message #%d: %s", i, err)
-		}
-		assertResponse(t, res)
-	}
+	sendTestMessages(t, conn)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -85,19 +74,7 @@ func TestUdpProxy(t *testing.T) {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
 
-	for i := 0; i < 10; i++ {
-		req := createTestMessage()
-		err := conn.WriteMsg(req)
-		if err != nil {
-			t.Fatalf("cannot write message #%d: %s", i, err)
-		}
-
-		res, err := conn.ReadMsg()
-		if err != nil {
-			t.Fatalf("cannot read response to message #%d: %s", i, err)
-		}
-		assertResponse(t, res)
-	}
+	sendTestMessages(t, conn)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -123,19 +100,7 @@ func TestTcpProxy(t *testing.T) {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
 
-	for i := 0; i < 10; i++ {
-		req := createTestMessage()
-		err := conn.WriteMsg(req)
-		if err != nil {
-			t.Fatalf("cannot write message #%d: %s", i, err)
-		}
-
-		res, err := conn.ReadMsg()
-		if err != nil {
-			t.Fatalf("cannot read response to message #%d: %s", i, err)
-		}
-		assertResponse(t, res)
-	}
+	sendTestMessages(t, conn)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -162,6 +127,22 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	}
 	p.Upstreams = append(upstreams, dnsUpstream)
 	return &p
+}
+
+func sendTestMessages(t *testing.T, conn *dns.Conn) {
+	for i := 0; i < 10; i++ {
+		req := createTestMessage()
+		err := conn.WriteMsg(req)
+		if err != nil {
+			t.Fatalf("cannot write message #%d: %s", i, err)
+		}
+
+		res, err := conn.ReadMsg()
+		if err != nil {
+			t.Fatalf("cannot read response to message #%d: %s", i, err)
+		}
+		assertResponse(t, res)
+	}
 }
 
 func createTestMessage() *dns.Msg {

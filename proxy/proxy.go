@@ -32,6 +32,7 @@ type Proxy struct {
 	TLSConfig     *tls.Config  // necessary for listening for TLS
 
 	Upstreams []upstream.Upstream // list of upstreams
+	Plugins   []Plugin            // proxy plugins
 
 	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
 	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
@@ -42,6 +43,16 @@ type Proxy struct {
 	tcpListen net.Listener // TCP listener
 	tlsListen net.Listener // TLS listener
 	sync.RWMutex
+}
+
+// DnsContext represents a DNS request message context
+type DnsContext struct {
+	Proto    string            // "udp", "tcp", "tls", "https"
+	Req      *dns.Msg          // DNS request (can be modified by the plugin)
+	Res      *dns.Msg          // DNS response from an upstream (can be modified by the plugin)
+	Conn     net.Conn          // underlying client connection
+	Addr     net.Addr          // client address
+	Upstream upstream.Upstream // upstream that was chosen
 }
 
 // Starts the proxy server
@@ -110,11 +121,11 @@ func (p *Proxy) Start() error {
 	}
 
 	if p.tcpListen != nil {
-		go p.tcpPacketLoop(p.tcpListen)
+		go p.tcpPacketLoop(p.tcpListen, "tcp")
 	}
 
 	if p.tlsListen != nil {
-		go p.tcpPacketLoop(p.tlsListen)
+		go p.tcpPacketLoop(p.tlsListen, "tls")
 	}
 
 	p.started = true
@@ -197,28 +208,47 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
 
 	log.Debugf("Start handling new UDP packet from %s", addr)
-	reply, err := p.handlePacket(packet)
 
+	msg := &dns.Msg{}
+	err := msg.Unpack(packet)
 	if err != nil {
 		log.Warnf("error handling UDP packet: %s", err)
+		return
 	}
 
-	if reply != nil {
+	d := &DnsContext{
+		Proto: "udp",
+		Req:   msg,
+		Addr:  addr,
+		Conn:  conn,
+	}
+
+	err = p.handleDnsRequest(d)
+
+	if err != nil {
+		log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
+	}
+
+	if d.Res != nil {
 		// we're good to respond
-		err = p.respondUdp(reply, addr, conn)
+		err = p.respondUdp(d)
 		if err != nil {
-			log.Warnf("Couldn't respond to UDP packet: %s", err)
+			log.Warnf("couldn't respond to UDP packet: %s", err)
 		}
 	}
 }
 
 // Writes a response to the client
-func (p *Proxy) respondUdp(resp *dns.Msg, addr net.Addr, conn *net.UDPConn) error {
+func (p *Proxy) respondUdp(d *DnsContext) error {
+
+	resp := d.Res
+	conn := d.Conn.(*net.UDPConn)
+
 	bytes, err := resp.Pack()
 	if err != nil {
 		return errorx.Decorate(err, "couldn't convert message into wire format")
 	}
-	n, err := conn.WriteTo(bytes, addr)
+	n, err := conn.WriteTo(bytes, d.Addr)
 	if n == 0 && isConnClosed(err) {
 		return err
 	}
@@ -232,7 +262,8 @@ func (p *Proxy) respondUdp(resp *dns.Msg, addr net.Addr, conn *net.UDPConn) erro
 }
 
 // tcpPacketLoop listens for incoming TCP packets
-func (p *Proxy) tcpPacketLoop(l net.Listener) {
+// proto is either "tcp" or "tls"
+func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 	log.Printf("Entering the TCP listener loop on %s", l.Addr())
 	for {
 		clientConn, err := l.Accept()
@@ -244,13 +275,14 @@ func (p *Proxy) tcpPacketLoop(l net.Listener) {
 			}
 			log.Warnf("got error when reading from TCP listen: %s", err)
 		} else {
-			go p.handleTcpConnection(clientConn)
+			go p.handleTcpConnection(clientConn, proto)
 		}
 	}
 }
 
 // handleTcpConnection starts a loop that handles an incoming TCP connection
-func (p *Proxy) handleTcpConnection(conn net.Conn) {
+// proto is either "tcp" or "tls"
+func (p *Proxy) handleTcpConnection(conn net.Conn, proto string) {
 	log.Debugf("Start handling the new TCP connection %s", conn.RemoteAddr())
 	defer conn.Close()
 
@@ -267,21 +299,30 @@ func (p *Proxy) handleTcpConnection(conn net.Conn) {
 			return
 		}
 
-		reply, err := p.handlePacket(packet)
+		msg := &dns.Msg{}
+		err = msg.Unpack(packet)
 		if err != nil {
 			log.Warnf("error handling TCP packet: %s", err)
 			return
 		}
 
-		if err != nil {
-			log.Warnf("error handling TCP packet: %s", err)
+		d := &DnsContext{
+			Proto: proto,
+			Req:   msg,
+			Addr:  conn.RemoteAddr(),
+			Conn:  conn,
 		}
 
-		if reply != nil {
+		err = p.handleDnsRequest(d)
+		if err != nil {
+			log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
+		}
+
+		if d.Res != nil {
 			// we're good to respond
 			//noinspection GoUnhandledErrorResult
 			conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
-			err = p.respondTcp(reply, conn)
+			err = p.respondTcp(d)
 
 			if err != nil {
 				log.Warnf("Couldn't respond to TCP packet: %s", err)
@@ -291,7 +332,10 @@ func (p *Proxy) handleTcpConnection(conn net.Conn) {
 }
 
 // Writes a response to the client
-func (p *Proxy) respondTcp(resp *dns.Msg, conn net.Conn) error {
+func (p *Proxy) respondTcp(d *DnsContext) error {
+	resp := d.Res
+	conn := d.Conn
+
 	bytes, err := resp.Pack()
 	if err != nil {
 		return errorx.Decorate(err, "couldn't convert message into wire format")
@@ -315,35 +359,46 @@ func (p *Proxy) respondTcp(resp *dns.Msg, conn net.Conn) error {
 	return nil
 }
 
-// handlePacket processes the incoming packet bytes and returns with an optional response packet.
-func (p *Proxy) handlePacket(packet []byte) (*dns.Msg, error) {
-
-	msg := &dns.Msg{}
-	err := msg.Unpack(packet)
-	if err != nil {
-		return nil, errorx.Decorate(err, "got invalid DNS packet")
-	}
+// handleDnsRequest processes the incoming packet bytes and returns with an optional response packet.
+func (p *Proxy) handleDnsRequest(d *DnsContext) error {
 
 	if log.IsLevelEnabled(log.DebugLevel) {
 		// Avoid calling String() if debug level is not enabled
-		log.Debugf("IN: %s", msg.String())
+		log.Debugf("IN: %s", d.Req.String())
 	}
 
-	//
-	// DNS packet byte format is valid
-	//
-	// any errors below here require a response to client
-	if len(msg.Question) != 1 {
-		log.Warnf("Got invalid number of questions: %v", len(msg.Question))
-		return p.genServerFailure(msg), nil
+	if len(d.Req.Question) != 1 {
+		log.Warnf("Got invalid number of questions: %v", len(d.Req.Question))
+		d.Res = p.genServerFailure(d.Req)
+		return nil
 	}
 
 	// we need dnsUpstream to resolve A records
 	dnsUpstream, upstreamIdx := p.chooseUpstream()
+	d.Upstream = dnsUpstream
 	log.Debugf("Upstream: %s", dnsUpstream.Address())
 
+	// apply plugins before request is sent
+	r, err := p.beforeRequest(d)
+	if err != nil {
+		d.Res = p.genServerFailure(d.Req)
+		return errorx.Decorate(err, "failed applying plugins")
+	}
+	if r == ReturnNoResponse {
+		return nil
+	}
+
+	// if response was already supplied by the plugin - do nothing
+	if d.Res != nil {
+		if log.IsLevelEnabled(log.DebugLevel) {
+			// Avoid calling String() if debug level is not enabled
+			log.Debugf("OUT[PLUGIN]: %s", d.Res.String())
+		}
+		return nil
+	}
+
 	startTime := time.Now()
-	reply, err := dnsUpstream.Exchange(msg)
+	reply, err := dnsUpstream.Exchange(d.Req)
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Debugf("RTT: %dms", rtt)
 
@@ -351,23 +406,34 @@ func (p *Proxy) handlePacket(packet []byte) (*dns.Msg, error) {
 	p.calculateUpstreamWeights(upstreamIdx, rtt)
 
 	if err != nil {
-		log.Warnf("talking to dnsUpstream failed for request %s: %s", msg.String(), err)
-		return p.genServerFailure(msg), err
+		d.Res = p.genServerFailure(d.Req)
+		err = errorx.Decorate(err, "talking to dnsUpstream failed")
 	}
 
 	if reply == nil {
-		log.Warnf("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", msg.String())
-		return p.genServerFailure(msg), nil
+		d.Res = p.genServerFailure(d.Req)
+		err = fmt.Errorf("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", d.Req.String())
+	} else {
+		d.Res = reply
 	}
 
-	if log.IsLevelEnabled(log.DebugLevel) {
+	// apply plugins after request was sent
+	if err == nil {
+		r, err = p.afterRequest(d)
+		if r == ReturnNoResponse {
+			return nil
+		}
+	}
+
+	if log.IsLevelEnabled(log.DebugLevel) && d.Res != nil {
 		// Avoid calling String() if debug level is not enabled
-		log.Debugf("OUT: %s", reply.String())
+		log.Debugf("OUT: %s", d.Res.String())
 	}
 
-	return reply, nil
+	return err
 }
 
+// re-calculates upstreams weights
 func (p *Proxy) calculateUpstreamWeights(upstreamIdx int, rtt int) {
 	p.rttLock.Lock()
 	defer p.rttLock.Unlock()

@@ -34,7 +34,10 @@ type Proxy struct {
 	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
 	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
 	rttLock           sync.Mutex        // Synchronizes access to the upstreamsRtt/upstreamsWeighted arrays
-	ratelimitBuckets  *gocache.Cache    // where the ratelimiters are stored, per IP
+
+	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
+
+	cache *cache // cache instance (nil if cache is disabled)
 
 	sync.RWMutex
 	Config
@@ -50,6 +53,8 @@ type Config struct {
 
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
+
+	CacheEnabled bool // cache status
 
 	Upstreams []upstream.Upstream // list of upstreams
 	Handler   Handler             // custom middleware (optional)
@@ -87,6 +92,11 @@ func (p *Proxy) Start() error {
 
 	if p.Ratelimit >= 0 {
 		log.Printf("Ratelimit is enabled and set to %d rps", p.Ratelimit)
+	}
+
+	if p.CacheEnabled {
+		log.Printf("DNS cache is enabled")
+		p.cache = &cache{}
 	}
 
 	if p.UDPListenAddr != nil {

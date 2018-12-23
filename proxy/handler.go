@@ -15,6 +15,16 @@ type Handler interface {
 
 // ServeDNS is a Handler implementation. If there is a custom middleware supplied, *p will be passed to it
 func (p *Proxy) ServeDNS(d *DnsContext, next Handler) error {
+
+	if p.cache != nil {
+		val, ok := p.cache.Get(d.Req)
+		if ok && val != nil {
+			d.Res = val
+			log.Debugf("Serving cached response")
+			return nil
+		}
+	}
+
 	dnsUpstream := d.Upstream
 
 	// execute the DNS request
@@ -25,6 +35,11 @@ func (p *Proxy) ServeDNS(d *DnsContext, next Handler) error {
 
 	// Update the upstreams weight
 	p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
+
+	// Saving cached response
+	if p.cache != nil && reply != nil {
+		p.cache.Set(reply)
+	}
 
 	if reply == nil {
 		d.Res = p.genServerFailure(d.Req)

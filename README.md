@@ -72,6 +72,11 @@ DNS-over-HTTPS upstream ([DNS Stamp](https://dnscrypt.info/stamps) of Cloudflare
 ./dnsproxy -u sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk
 ```
 
+Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `30 rps` and enabled DNS cache.
+```
+./dnsproxy -u 8.8.8.8:53 -r 10 --cache
+```
+
 ### TODO:
 
 * [ ] Configure fallback resolver

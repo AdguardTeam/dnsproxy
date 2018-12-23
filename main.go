@@ -45,6 +45,9 @@ type Options struct {
 	// Ratelimit value
 	Ratelimit int `short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
 
+	// If true, DNS cache is enabled
+	Cache bool `short:"z" long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
+
 	// DNS upstreams
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
 }
@@ -109,6 +112,7 @@ func run(options Options) {
 			TCPListenAddr: listenTcpAddr,
 			Upstreams:     upstreams,
 			Ratelimit:     options.Ratelimit,
+			CacheEnabled:  options.Cache,
 		},
 	}
 

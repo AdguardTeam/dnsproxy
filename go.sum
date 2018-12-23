@@ -8,6 +8,8 @@ github.com/beefsack/go-rate v0.0.0-20180408011153-efa7637bb9b6 h1:KXlsf+qt/X5ttP
 github.com/beefsack/go-rate v0.0.0-20180408011153-efa7637bb9b6/go.mod h1:6YNgTHLutezwnBvyneBbwvB8C82y3dcoOj5EQJIdGXA=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/go-test/deep v1.0.1 h1:UQhStjbkDClarlmv0am7OXXO4/GaPdCGiUiMTvi28sg=
+github.com/go-test/deep v1.0.1/go.mod h1:wGDj63lr65AM2AQyKZd/NYHGb0R+1RLqB8NKt3aSFNA=
 github.com/jedisct1/go-dnsstamps v0.0.0-20180418170050-1e4999280f86 h1:Olj4M6T1omUfx7yTTcnhLf4xo6gYMmRHSJIfeA1NZy0=
 github.com/jedisct1/go-dnsstamps v0.0.0-20180418170050-1e4999280f86/go.mod h1:j/ONpSHHmPgDwmFKXg9vhQvIjADe/ft1X4a3TVOmp9g=
 github.com/jedisct1/xsecretbox v0.0.0-20180508184500-7a679c0bcd9a h1:2nyBWKszM41RO/gt5ElUXigAFiRgJ9KifHDlWOlw0lc=

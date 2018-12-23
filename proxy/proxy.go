@@ -32,7 +32,7 @@ type Proxy struct {
 	TLSConfig     *tls.Config  // necessary for listening for TLS
 
 	Upstreams []upstream.Upstream // list of upstreams
-	Plugins   []Plugin            // proxy plugins
+	Handler   Handler             // custom middleware (optional)
 
 	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
 	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
@@ -47,12 +47,13 @@ type Proxy struct {
 
 // DnsContext represents a DNS request message context
 type DnsContext struct {
-	Proto    string            // "udp", "tcp", "tls", "https"
-	Req      *dns.Msg          // DNS request (can be modified by the plugin)
-	Res      *dns.Msg          // DNS response from an upstream (can be modified by the plugin)
-	Conn     net.Conn          // underlying client connection
-	Addr     net.Addr          // client address
-	Upstream upstream.Upstream // upstream that was chosen
+	Proto       string            // "udp", "tcp", "tls", "https"
+	Req         *dns.Msg          // DNS request
+	Res         *dns.Msg          // DNS response from an upstream
+	Conn        net.Conn          // underlying client connection
+	Addr        net.Addr          // client address
+	Upstream    upstream.Upstream // upstream that was chosen
+	UpstreamIdx int               // upstream index
 }
 
 // Starts the proxy server
@@ -228,17 +229,9 @@ func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 	if err != nil {
 		log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
 	}
-
-	if d.Res != nil {
-		// we're good to respond
-		err = p.respondUdp(d)
-		if err != nil {
-			log.Warnf("couldn't respond to UDP packet: %s", err)
-		}
-	}
 }
 
-// Writes a response to the client
+// Writes a response to the UDP client
 func (p *Proxy) respondUdp(d *DnsContext) error {
 
 	resp := d.Res
@@ -317,21 +310,10 @@ func (p *Proxy) handleTcpConnection(conn net.Conn, proto string) {
 		if err != nil {
 			log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
 		}
-
-		if d.Res != nil {
-			// we're good to respond
-			//noinspection GoUnhandledErrorResult
-			conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
-			err = p.respondTcp(d)
-
-			if err != nil {
-				log.Warnf("Couldn't respond to TCP packet: %s", err)
-			}
-		}
 	}
 }
 
-// Writes a response to the client
+// Writes a response to the TCP client
 func (p *Proxy) respondTcp(d *DnsContext) error {
 	resp := d.Res
 	conn := d.Conn
@@ -361,7 +343,6 @@ func (p *Proxy) respondTcp(d *DnsContext) error {
 
 // handleDnsRequest processes the incoming packet bytes and returns with an optional response packet.
 func (p *Proxy) handleDnsRequest(d *DnsContext) error {
-
 	if log.IsLevelEnabled(log.DebugLevel) {
 		// Avoid calling String() if debug level is not enabled
 		log.Debugf("IN: %s", d.Req.String())
@@ -373,56 +354,24 @@ func (p *Proxy) handleDnsRequest(d *DnsContext) error {
 		return nil
 	}
 
-	// we need dnsUpstream to resolve A records
+	// choose the DNS upstream
 	dnsUpstream, upstreamIdx := p.chooseUpstream()
 	d.Upstream = dnsUpstream
-	log.Debugf("Upstream: %s", dnsUpstream.Address())
+	d.UpstreamIdx = upstreamIdx
+	log.Debugf("Upstream is %s (%d)", dnsUpstream.Address(), upstreamIdx)
 
-	// apply plugins before request is sent
-	r, err := p.beforeRequest(d)
-	if err != nil {
-		d.Res = p.genServerFailure(d.Req)
-		return errorx.Decorate(err, "failed applying plugins")
-	}
-	if r == ReturnNoResponse {
-		return nil
-	}
+	// execute the DNS request
+	var err error
 
-	// if response was already supplied by the plugin - do nothing
-	if d.Res != nil {
-		if log.IsLevelEnabled(log.DebugLevel) {
-			// Avoid calling String() if debug level is not enabled
-			log.Debugf("OUT[PLUGIN]: %s", d.Res.String())
-		}
-		return nil
-	}
-
-	startTime := time.Now()
-	reply, err := dnsUpstream.Exchange(d.Req)
-	rtt := int(time.Since(startTime) / time.Millisecond)
-	log.Debugf("RTT: %dms", rtt)
-
-	// Update the upstreams weight
-	p.calculateUpstreamWeights(upstreamIdx, rtt)
-
-	if err != nil {
-		d.Res = p.genServerFailure(d.Req)
-		err = errorx.Decorate(err, "talking to dnsUpstream failed")
-	}
-
-	if reply == nil {
-		d.Res = p.genServerFailure(d.Req)
-		err = fmt.Errorf("SHOULD NOT HAPPEN dnsUpstream returned empty message for request %s", d.Req.String())
+	// if there is a custom middleware configured, use it
+	if p.Handler != nil {
+		err = p.Handler.ServeDNS(d, p)
 	} else {
-		d.Res = reply
+		err = p.ServeDNS(d, nil)
 	}
 
-	// apply plugins after request was sent
-	if err == nil {
-		r, err = p.afterRequest(d)
-		if r == ReturnNoResponse {
-			return nil
-		}
+	if err != nil {
+		err = errorx.Decorate(err, "talking to dnsUpstream failed")
 	}
 
 	if log.IsLevelEnabled(log.DebugLevel) && d.Res != nil {
@@ -430,7 +379,32 @@ func (p *Proxy) handleDnsRequest(d *DnsContext) error {
 		log.Debugf("OUT: %s", d.Res.String())
 	}
 
+	p.respond(d)
 	return err
+}
+
+// respond writes the specified response to the client (or does nothing if d.Res is empty)
+func (p *Proxy) respond(d *DnsContext) {
+
+	if d.Res == nil {
+		return
+	}
+
+	var err error
+
+	// we're good to respond
+	//noinspection GoUnhandledErrorResult
+	d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
+
+	if d.Proto == "udp" {
+		err = p.respondUdp(d)
+	} else {
+		err = p.respondTcp(d)
+	}
+
+	if err != nil {
+		log.Warnf("error while responding to a DNS request: %s", err)
+	}
 }
 
 // re-calculates upstreams weights

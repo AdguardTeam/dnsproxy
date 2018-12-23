@@ -15,7 +15,6 @@ type Handler interface {
 
 // ServeDNS is a Handler implementation. If there is a custom middleware supplied, *p will be passed to it
 func (p *Proxy) ServeDNS(d *DNSContext, next Handler) error {
-
 	if p.cache != nil {
 		val, ok := p.cache.Get(d.Req)
 		if ok && val != nil {

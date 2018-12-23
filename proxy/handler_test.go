@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,7 +37,9 @@ func TestFilteringHandler(t *testing.T) {
 	assertResponse(t, r)
 
 	// Now send the second and make sure it is blocked
+	h.Lock()
 	h.blockResponse = true
+	h.Unlock()
 
 	r, _, err = client.Exchange(req, addr)
 	if err != nil {
@@ -55,9 +58,13 @@ func TestFilteringHandler(t *testing.T) {
 
 type testFilteringHandler struct {
 	blockResponse bool
+	sync.RWMutex
 }
 
 func (h *testFilteringHandler) ServeDNS(d *DNSContext, next Handler) error {
+	h.Lock()
+	defer h.Unlock()
+
 	if h.blockResponse {
 		resp := dns.Msg{}
 		resp.SetRcode(d.Req, dns.RcodeNotImplemented)

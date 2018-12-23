@@ -23,7 +23,7 @@ func TestFilteringHandler(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIp, listenPort)
+	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Send the first message (not blocked)
@@ -57,7 +57,7 @@ type testFilteringHandler struct {
 	blockResponse bool
 }
 
-func (h *testFilteringHandler) ServeDNS(d *DnsContext, next Handler) error {
+func (h *testFilteringHandler) ServeDNS(d *DNSContext, next Handler) error {
 	if h.blockResponse {
 		resp := dns.Msg{}
 		resp.SetRcode(d.Req, dns.RcodeNotImplemented)

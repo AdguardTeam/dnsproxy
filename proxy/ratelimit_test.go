@@ -2,10 +2,11 @@ package proxy
 
 import (
 	"fmt"
-	"github.com/miekg/dns"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 func TestRatelimitingProxy(t *testing.T) {
@@ -20,7 +21,7 @@ func TestRatelimitingProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIp, listenPort)
+	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Send the first message (not blocked)

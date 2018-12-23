@@ -11,10 +11,10 @@ import (
 )
 
 func TestCacheSanity(t *testing.T) {
-	cache := cache{}
+	testCache := cache{}
 	request := dns.Msg{}
 	request.SetQuestion("google.com.", dns.TypeA)
-	_, ok := cache.Get(&request)
+	_, ok := testCache.Get(&request)
 	if ok {
 		t.Fatal("empty cache replied with positive response")
 	}
@@ -39,7 +39,7 @@ func TestServeCached(t *testing.T) {
 	dnsProxy.cache.Set(&reply)
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIp, listenPort)
+	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request
@@ -65,7 +65,7 @@ func TestServeCached(t *testing.T) {
 }
 
 func TestCache(t *testing.T) {
-	tests := tests{
+	tests := testCases{
 		cache: []testEntry{
 			{q: "google.com.", t: dns.TypeA, a: []dns.RR{newRR("google.com. 3600 IN A 8.8.8.8")}},
 		},
@@ -78,7 +78,7 @@ func TestCache(t *testing.T) {
 }
 
 func TestCacheMixedCase(t *testing.T) {
-	tests := tests{
+	tests := testCases{
 		cache: []testEntry{
 			{q: "gOOgle.com.", t: dns.TypeA, a: []dns.RR{newRR("google.com. 3600 IN A 8.8.8.8")}},
 		},
@@ -95,7 +95,7 @@ func TestCacheMixedCase(t *testing.T) {
 }
 
 func TestZeroTTL(t *testing.T) {
-	tests := tests{
+	tests := testCases{
 		cache: []testEntry{
 			{q: "gOOgle.com.", t: dns.TypeA, a: []dns.RR{newRR("google.com. 0 IN A 8.8.8.8")}},
 		},
@@ -111,20 +111,20 @@ func TestZeroTTL(t *testing.T) {
 	runTests(t, tests)
 }
 
-func runTests(t *testing.T, tests tests) {
+func runTests(t *testing.T, tests testCases) {
 	t.Helper()
-	cache := cache{}
+	testCache := cache{}
 	for _, tc := range tests.cache {
 		reply := dns.Msg{}
 		reply.SetQuestion(tc.q, tc.t)
 		reply.Response = true
 		reply.Answer = tc.a
-		cache.Set(&reply)
+		testCache.Set(&reply)
 	}
 	for _, tc := range tests.cases {
 		request := dns.Msg{}
 		request.SetQuestion(tc.q, tc.t)
-		val, ok := cache.Get(&request)
+		val, ok := testCache.Get(&request)
 		if diff := deep.Equal(ok, tc.ok); diff != nil {
 			t.Error(diff)
 		}
@@ -136,7 +136,7 @@ func runTests(t *testing.T, tests tests) {
 			reply.SetQuestion(tc.q, tc.t)
 			reply.Response = true
 			reply.Answer = tc.a
-			cache.Set(&reply)
+			testCache.Set(&reply)
 			if diff := deepEqualMsg(val, &reply); diff != nil {
 				t.Error(diff)
 			} else {
@@ -148,7 +148,7 @@ func runTests(t *testing.T, tests tests) {
 	}
 }
 
-type tests struct {
+type testCases struct {
 	cache []testEntry
 	cases []testCase
 }

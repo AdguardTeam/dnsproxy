@@ -20,15 +20,15 @@ import (
 
 const (
 	listenPort    = 43812
-	listenTlsPort = 43813
-	listenIp      = "127.0.0.1"
+	listenTLSPort = 43813
+	listenIP      = "127.0.0.1"
 	upstreamAddr  = "8.8.8.8:53"
 	tlsServerName = "testdns.adguard.com"
 )
 
 func TestTlsProxy(t *testing.T) {
 	// Prepare the proxy server
-	serverConfig, caPem := createServerTlsConfig(t)
+	serverConfig, caPem := createServerTLSConfig(t)
 	dnsProxy := createTestProxy(t, serverConfig)
 
 	// Start listening
@@ -42,7 +42,7 @@ func TestTlsProxy(t *testing.T) {
 	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
 
 	// Create a DNS-over-TLS client connection
-	addr := fmt.Sprintf("%s:%d", listenIp, listenTlsPort)
+	addr := fmt.Sprintf("%s:%d", listenIP, listenTLSPort)
 	conn, err := dns.DialWithTLS("tcp-tls", addr, tlsConfig)
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -68,7 +68,7 @@ func TestUdpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIp, listenPort)
+	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
 	conn, err := dns.Dial("udp", addr)
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -94,7 +94,7 @@ func TestTcpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-TCP client connection
-	addr := fmt.Sprintf("%s:%d", listenIp, listenPort)
+	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
 	conn, err := dns.Dial("tcp", addr)
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -112,11 +112,11 @@ func TestTcpProxy(t *testing.T) {
 func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	p := Proxy{}
 
-	p.UDPListenAddr = &net.UDPAddr{Port: listenPort, IP: net.ParseIP(listenIp)}
-	p.TCPListenAddr = &net.TCPAddr{Port: listenPort, IP: net.ParseIP(listenIp)}
+	p.UDPListenAddr = &net.UDPAddr{Port: listenPort, IP: net.ParseIP(listenIP)}
+	p.TCPListenAddr = &net.TCPAddr{Port: listenPort, IP: net.ParseIP(listenIP)}
 
 	if tlsConfig != nil {
-		p.TLSListenAddr = &net.TCPAddr{Port: listenTlsPort, IP: net.ParseIP(listenIp)}
+		p.TLSListenAddr = &net.TCPAddr{Port: listenTLSPort, IP: net.ParseIP(listenIP)}
 		p.TLSConfig = tlsConfig
 	}
 	upstreams := make([]upstream.Upstream, 0)
@@ -168,7 +168,7 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 	}
 }
 
-func createServerTlsConfig(t *testing.T) (*tls.Config, []byte) {
+func createServerTLSConfig(t *testing.T) (*tls.Config, []byte) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("cannot generate RSA key: %s", err)
@@ -194,7 +194,7 @@ func createServerTlsConfig(t *testing.T) (*tls.Config, []byte) {
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 	}
 	template.DNSNames = append(template.DNSNames, tlsServerName)
 

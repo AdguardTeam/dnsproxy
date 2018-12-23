@@ -8,13 +8,13 @@ import (
 
 // Handler is an optional middleware interface
 type Handler interface {
-	// ServeDNS can modify the DnsContext instance in any way
+	// ServeDNS can modify the DNSContext instance in any way
 	// and should call next.ServeDNS to continue the execution
-	ServeDNS(d *DnsContext, next Handler) error
+	ServeDNS(d *DNSContext, next Handler) error
 }
 
 // ServeDNS is a Handler implementation. If there is a custom middleware supplied, *p will be passed to it
-func (p *Proxy) ServeDNS(d *DnsContext, next Handler) error {
+func (p *Proxy) ServeDNS(d *DNSContext, next Handler) error {
 
 	if p.cache != nil {
 		val, ok := p.cache.Get(d.Req)

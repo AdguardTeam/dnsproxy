@@ -33,13 +33,13 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	}
 
 	c.RLock()
-	item, ok := c.items[key]
+	cacheItem, ok := c.items[key]
 	c.RUnlock()
 	if !ok {
 		return nil, false
 	}
 	// get item's TTL
-	ttl := findLowestTTL(item.m)
+	ttl := findLowestTTL(cacheItem.m)
 	// zero TTL? delete and don't serve it
 	if ttl == 0 {
 		c.Lock()
@@ -48,13 +48,13 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 	// too much time has passed? delete and don't serve it
-	if time.Since(item.when) >= time.Duration(ttl)*time.Second {
+	if time.Since(cacheItem.when) >= time.Duration(ttl)*time.Second {
 		c.Lock()
 		delete(c.items, key)
 		c.Unlock()
 		return nil, false
 	}
-	response := item.fromItem(request)
+	response := cacheItem.fromItem(request)
 	return response, true
 }
 
@@ -122,42 +122,39 @@ func isResponseCacheable(m *dns.Msg) bool {
 
 func findLowestTTL(m *dns.Msg) uint32 {
 	var ttl uint32 = math.MaxUint32
-	found := false
 
 	if m.Answer != nil {
 		for _, r := range m.Answer {
-			if r.Header().Ttl < ttl {
-				ttl = r.Header().Ttl
-				found = true
-			}
+			ttl = getTTLIfLower(r.Header(), ttl)
 		}
 	}
 
 	if m.Ns != nil {
 		for _, r := range m.Ns {
-			if r.Header().Ttl < ttl {
-				ttl = r.Header().Ttl
-				found = true
-			}
+			ttl = getTTLIfLower(r.Header(), ttl)
 		}
 	}
 
 	if m.Extra != nil {
 		for _, r := range m.Extra {
-			if r.Header().Rrtype == dns.TypeOPT {
-				continue // OPT records use TTL for other purposes
-			}
-			if r.Header().Ttl < ttl {
-				ttl = r.Header().Ttl
-				found = true
-			}
+			ttl = getTTLIfLower(r.Header(), ttl)
 		}
 	}
 
-	if found == false {
+	if ttl == math.MaxUint32 {
 		return 0
 	}
 
+	return ttl
+}
+
+func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
+	if h.Rrtype == dns.TypeOPT {
+		return ttl
+	}
+	if h.Ttl < ttl {
+		return h.Ttl
+	}
 	return ttl
 }
 

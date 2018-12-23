@@ -24,7 +24,7 @@ const (
 	minDNSPacketSize = 12 + 5
 )
 
-// Server combines the proxy server state and configuration
+// Proxy combines the proxy server state and configuration
 type Proxy struct {
 	started   bool         // Started flag
 	udpListen *net.UDPConn // UDP listen connection
@@ -43,7 +43,7 @@ type Proxy struct {
 	Config
 }
 
-// ProxyConfig contains all the fields necessary for proxy configuration
+// Config contains all the fields necessary for proxy configuration
 type Config struct {
 	UDPListenAddr *net.UDPAddr // if nil, then it does not listen for UDP
 	TCPListenAddr *net.TCPAddr // if nil, then it does not listen for TCP
@@ -60,8 +60,8 @@ type Config struct {
 	Handler   Handler             // custom middleware (optional)
 }
 
-// DnsContext represents a DNS request message context
-type DnsContext struct {
+// DNSContext represents a DNS request message context
+type DNSContext struct {
 	Proto       string            // "udp", "tcp", "tls", "https"
 	Req         *dns.Msg          // DNS request
 	Res         *dns.Msg          // DNS response from an upstream
@@ -71,23 +71,15 @@ type DnsContext struct {
 	UpstreamIdx int               // upstream index
 }
 
-// Starts the proxy server
+// Start initializes the proxy server and starts listening
 func (p *Proxy) Start() error {
 	p.Lock()
 	defer p.Unlock()
 
 	log.Println("Starting the DNS proxy server")
-
-	if p.started {
-		return errors.New("server has been already started")
-	}
-
-	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil {
-		return errors.New("no listen address specified")
-	}
-
-	if len(p.Upstreams) == 0 {
-		return errors.New("no upstreams specified")
+	err := p.validateConfig()
+	if err != nil {
+		return err
 	}
 
 	if p.Ratelimit >= 0 {
@@ -99,65 +91,22 @@ func (p *Proxy) Start() error {
 		p.cache = &cache{}
 	}
 
-	if p.UDPListenAddr != nil {
-		log.Printf("Creating the UDP server socket")
-		udpAddr := p.UDPListenAddr
-		udpListen, err := net.ListenUDP("udp", udpAddr)
-		if err != nil {
-			return errorx.Decorate(err, "couldn't listen to UDP socket")
-		}
-		p.udpListen = udpListen
-		log.Printf("Listening on udp://%s", p.udpListen.LocalAddr())
-	}
-
-	if p.TCPListenAddr != nil {
-		log.Printf("Creating the TCP server socket")
-		tcpAddr := p.TCPListenAddr
-		tcpListen, err := net.ListenTCP("tcp", tcpAddr)
-		if err != nil {
-			return errorx.Decorate(err, "couldn't listen to TCP socket")
-		}
-		p.tcpListen = tcpListen
-		log.Printf("Listening on tcp://%s", p.tcpListen.Addr())
-	}
-
-	if p.TLSListenAddr != nil {
-		log.Printf("Creating the TLS server socket")
-		if p.TLSConfig == nil {
-			return errors.New("cannot create a TLS listener without TLS config")
-		}
-		tlsAddr := p.TLSListenAddr
-		tcpListen, err := net.ListenTCP("tcp", tlsAddr)
-		if err != nil {
-			return errorx.Decorate(err, "could not start TLS listener")
-		}
-		p.tlsListen = tls.NewListener(tcpListen, p.TLSConfig)
-		log.Printf("Listening on tls://%s", p.tlsListen.Addr())
-	}
-
 	p.upstreamsRtt = make([]int, len(p.Upstreams))
 	p.upstreamsWeighted = make([]randutil.Choice, len(p.Upstreams))
 	for idx := range p.Upstreams {
 		p.upstreamsWeighted[idx] = randutil.Choice{Weight: 1, Item: idx}
 	}
 
-	if p.udpListen != nil {
-		go p.udpPacketLoop(p.udpListen)
-	}
-
-	if p.tcpListen != nil {
-		go p.tcpPacketLoop(p.tcpListen, "tcp")
-	}
-
-	if p.tlsListen != nil {
-		go p.tcpPacketLoop(p.tlsListen, "tls")
+	err = p.startListeners()
+	if err != nil {
+		return err
 	}
 
 	p.started = true
 	return nil
 }
 
-// Stops the proxy server
+// Stop stops the proxy server including all its listeners
 func (p *Proxy) Stop() error {
 	log.Println("Stopping the DNS proxy server")
 
@@ -199,6 +148,77 @@ func (p *Proxy) Stop() error {
 	return nil
 }
 
+// validateConfig verifies that the supplied configuration is valid and returns an error if it's not
+func (p *Proxy) validateConfig() error {
+	if p.started {
+		return errors.New("server has been already started")
+	}
+
+	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil {
+		return errors.New("no listen address specified")
+	}
+
+	if p.TLSListenAddr != nil && p.TLSConfig == nil {
+		return errors.New("cannot create a TLS listener without TLS config")
+	}
+
+	if len(p.Upstreams) == 0 {
+		return errors.New("no upstreams specified")
+	}
+
+	return nil
+}
+
+// startListeners configures and starts listener loops
+func (p *Proxy) startListeners() error {
+	if p.UDPListenAddr != nil {
+		log.Printf("Creating the UDP server socket")
+		udpAddr := p.UDPListenAddr
+		udpListen, err := net.ListenUDP("udp", udpAddr)
+		if err != nil {
+			return errorx.Decorate(err, "couldn't listen to UDP socket")
+		}
+		p.udpListen = udpListen
+		log.Printf("Listening on udp://%s", p.udpListen.LocalAddr())
+	}
+
+	if p.TCPListenAddr != nil {
+		log.Printf("Creating the TCP server socket")
+		tcpAddr := p.TCPListenAddr
+		tcpListen, err := net.ListenTCP("tcp", tcpAddr)
+		if err != nil {
+			return errorx.Decorate(err, "couldn't listen to TCP socket")
+		}
+		p.tcpListen = tcpListen
+		log.Printf("Listening on tcp://%s", p.tcpListen.Addr())
+	}
+
+	if p.TLSListenAddr != nil {
+		log.Printf("Creating the TLS server socket")
+		tlsAddr := p.TLSListenAddr
+		tcpListen, err := net.ListenTCP("tcp", tlsAddr)
+		if err != nil {
+			return errorx.Decorate(err, "could not start TLS listener")
+		}
+		p.tlsListen = tls.NewListener(tcpListen, p.TLSConfig)
+		log.Printf("Listening on tls://%s", p.tlsListen.Addr())
+	}
+
+	if p.udpListen != nil {
+		go p.udpPacketLoop(p.udpListen)
+	}
+
+	if p.tcpListen != nil {
+		go p.tcpPacketLoop(p.tcpListen, "tcp")
+	}
+
+	if p.tlsListen != nil {
+		go p.tcpPacketLoop(p.tlsListen, "tls")
+	}
+
+	return nil
+}
+
 // udpPacketLoop listens for incoming UDP packets
 func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 	log.Printf("Entering the UDP listener loop on %s", conn.LocalAddr())
@@ -217,7 +237,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 			// we need the contents to survive the call because we're handling them in goroutine
 			packet := make([]byte, n)
 			copy(packet, b)
-			go p.handleUdpPacket(packet, addr, conn) // ignore errors
+			go p.handleUDPPacket(packet, addr, conn) // ignore errors
 		}
 		if err != nil {
 			if isConnClosed(err) {
@@ -229,9 +249,8 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 	}
 }
 
-// handleUdpPacket processes the incoming UDP packet and sends a DNS response
-func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
-
+// handleUDPPacket processes the incoming UDP packet and sends a DNS response
+func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
 	log.Debugf("Start handling new UDP packet from %s", addr)
 
 	msg := &dns.Msg{}
@@ -241,14 +260,14 @@ func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 		return
 	}
 
-	d := &DnsContext{
+	d := &DNSContext{
 		Proto: "udp",
 		Req:   msg,
 		Addr:  addr,
 		Conn:  conn,
 	}
 
-	err = p.handleDnsRequest(d)
+	err = p.handleDNSRequest(d)
 
 	if err != nil {
 		log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
@@ -256,8 +275,7 @@ func (p *Proxy) handleUdpPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 }
 
 // Writes a response to the UDP client
-func (p *Proxy) respondUdp(d *DnsContext) error {
-
+func (p *Proxy) respondUDP(d *DNSContext) error {
 	resp := d.Res
 	conn := d.Conn.(*net.UDPConn)
 
@@ -292,14 +310,14 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 			}
 			log.Warnf("got error when reading from TCP listen: %s", err)
 		} else {
-			go p.handleTcpConnection(clientConn, proto)
+			go p.handleTCPConnection(clientConn, proto)
 		}
 	}
 }
 
-// handleTcpConnection starts a loop that handles an incoming TCP connection
+// handleTCPConnection starts a loop that handles an incoming TCP connection
 // proto is either "tcp" or "tls"
-func (p *Proxy) handleTcpConnection(conn net.Conn, proto string) {
+func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 	log.Debugf("Start handling the new TCP connection %s", conn.RemoteAddr())
 	defer conn.Close()
 
@@ -323,14 +341,14 @@ func (p *Proxy) handleTcpConnection(conn net.Conn, proto string) {
 			return
 		}
 
-		d := &DnsContext{
+		d := &DNSContext{
 			Proto: proto,
 			Req:   msg,
 			Addr:  conn.RemoteAddr(),
 			Conn:  conn,
 		}
 
-		err = p.handleDnsRequest(d)
+		err = p.handleDNSRequest(d)
 		if err != nil {
 			log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
 		}
@@ -338,7 +356,7 @@ func (p *Proxy) handleTcpConnection(conn net.Conn, proto string) {
 }
 
 // Writes a response to the TCP client
-func (p *Proxy) respondTcp(d *DnsContext) error {
+func (p *Proxy) respondTCP(d *DNSContext) error {
 	resp := d.Res
 	conn := d.Conn
 
@@ -365,8 +383,8 @@ func (p *Proxy) respondTcp(d *DnsContext) error {
 	return nil
 }
 
-// handleDnsRequest processes the incoming packet bytes and returns with an optional response packet.
-func (p *Proxy) handleDnsRequest(d *DnsContext) error {
+// handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
+func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	if log.IsLevelEnabled(log.DebugLevel) {
 		// Avoid calling String() if debug level is not enabled
 		log.Debugf("IN: %s", d.Req.String())
@@ -414,7 +432,7 @@ func (p *Proxy) handleDnsRequest(d *DnsContext) error {
 }
 
 // respond writes the specified response to the client (or does nothing if d.Res is empty)
-func (p *Proxy) respond(d *DnsContext) {
+func (p *Proxy) respond(d *DNSContext) {
 
 	if d.Res == nil {
 		return
@@ -427,9 +445,9 @@ func (p *Proxy) respond(d *DnsContext) {
 	d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
 
 	if d.Proto == "udp" {
-		err = p.respondUdp(d)
+		err = p.respondUDP(d)
 	} else {
-		err = p.respondTcp(d)
+		err = p.respondTCP(d)
 	}
 
 	if err != nil {

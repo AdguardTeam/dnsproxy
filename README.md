@@ -24,6 +24,7 @@ Application Options:
   -k, --tls-key=   Path to a file with the private key
   -b, --bootstrap= Bootstrap DNS for DoH and DoT (default: 8.8.8.8:53)
   -r, --ratelimit= Ratelimit (requests per second) (default: 0)
+  -z, --cache      If specified, DNS cache is enabled
   -u, --upstream=  An upstream to be used (can be specified multiple times)
 
 Help Options:

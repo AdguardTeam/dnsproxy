@@ -42,6 +42,9 @@ type Options struct {
 	// Bootstrap DNS
 	BootstrapDNS string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT" default:"8.8.8.8:53"`
 
+	// Ratelimit value
+	Ratelimit int `short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
+
 	// DNS upstreams
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
 }
@@ -101,9 +104,12 @@ func run(options Options) {
 
 	// Prepare the proxy server
 	dnsProxy := proxy.Proxy{
-		UDPListenAddr: listenUdpAddr,
-		TCPListenAddr: listenTcpAddr,
-		Upstreams:     upstreams,
+		Config: proxy.Config{
+			UDPListenAddr: listenUdpAddr,
+			TCPListenAddr: listenTcpAddr,
+			Upstreams:     upstreams,
+			Ratelimit:     options.Ratelimit,
+		},
 	}
 
 	// Prepare the TLS config

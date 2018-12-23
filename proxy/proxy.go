@@ -12,6 +12,7 @@ import (
 
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
+	gocache "github.com/patrickmn/go-cache"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -25,24 +26,33 @@ const (
 
 // Server combines the proxy server state and configuration
 type Proxy struct {
+	started   bool         // Started flag
+	udpListen *net.UDPConn // UDP listen connection
+	tcpListen net.Listener // TCP listener
+	tlsListen net.Listener // TLS listener
+
+	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
+	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
+	rttLock           sync.Mutex        // Synchronizes access to the upstreamsRtt/upstreamsWeighted arrays
+	ratelimitBuckets  *gocache.Cache    // where the ratelimiters are stored, per IP
+
+	sync.RWMutex
+	Config
+}
+
+// ProxyConfig contains all the fields necessary for proxy configuration
+type Config struct {
 	UDPListenAddr *net.UDPAddr // if nil, then it does not listen for UDP
 	TCPListenAddr *net.TCPAddr // if nil, then it does not listen for TCP
 
 	TLSListenAddr *net.TCPAddr // if nil, then it does not listen for TLS (DoT)
 	TLSConfig     *tls.Config  // necessary for listening for TLS
 
+	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
+	RatelimitWhitelist []string // a list of whitelisted client IP addresses
+
 	Upstreams []upstream.Upstream // list of upstreams
 	Handler   Handler             // custom middleware (optional)
-
-	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
-	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
-	rttLock           sync.Mutex        // Synchronizes access to the upstreamsRtt/upstreamsWeighted arrays
-
-	started   bool         // Started flag
-	udpListen *net.UDPConn // UDP listen connection
-	tcpListen net.Listener // TCP listener
-	tlsListen net.Listener // TLS listener
-	sync.RWMutex
 }
 
 // DnsContext represents a DNS request message context
@@ -73,6 +83,10 @@ func (p *Proxy) Start() error {
 
 	if len(p.Upstreams) == 0 {
 		return errors.New("no upstreams specified")
+	}
+
+	if p.Ratelimit >= 0 {
+		log.Printf("Ratelimit is enabled and set to %d rps", p.Ratelimit)
 	}
 
 	if p.UDPListenAddr != nil {
@@ -346,6 +360,12 @@ func (p *Proxy) handleDnsRequest(d *DnsContext) error {
 	if log.IsLevelEnabled(log.DebugLevel) {
 		// Avoid calling String() if debug level is not enabled
 		log.Debugf("IN: %s", d.Req.String())
+	}
+
+	// ratelimit based on IP only, protects CPU cycles and outbound connections
+	if d.Proto == "udp" && p.isRatelimited(d.Addr) {
+		log.Debugf("Ratelimiting %v based on IP only", d.Addr)
+		return nil // do nothing, don't reply, we got ratelimited
 	}
 
 	if len(d.Req.Question) != 1 {

@@ -194,7 +194,7 @@ func createServerTlsConfig(t *testing.T) (*tls.Config, []byte) {
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA:                  true,
+		IsCA: true,
 	}
 	template.DNSNames = append(template.DNSNames, tlsServerName)
 

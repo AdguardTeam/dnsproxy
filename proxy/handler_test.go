@@ -2,9 +2,10 @@ package proxy
 
 import (
 	"fmt"
-	"github.com/miekg/dns"
 	"testing"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 func TestFilteringHandler(t *testing.T) {

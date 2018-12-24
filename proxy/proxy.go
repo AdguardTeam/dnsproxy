@@ -54,6 +54,8 @@ type Config struct {
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
 
+	RefuseAny bool // if true, refuse ANY requests
+
 	CacheEnabled bool // cache status
 
 	Upstreams []upstream.Upstream // list of upstreams
@@ -80,10 +82,6 @@ func (p *Proxy) Start() error {
 	err := p.validateConfig()
 	if err != nil {
 		return err
-	}
-
-	if p.Ratelimit >= 0 {
-		log.Printf("Ratelimit is enabled and set to %d rps", p.Ratelimit)
 	}
 
 	if p.CacheEnabled {
@@ -164,6 +162,14 @@ func (p *Proxy) validateConfig() error {
 
 	if len(p.Upstreams) == 0 {
 		return errors.New("no upstreams specified")
+	}
+
+	if p.Ratelimit >= 0 {
+		log.Printf("Ratelimit is enabled and set to %d rps", p.Ratelimit)
+	}
+
+	if p.RefuseAny {
+		log.Print("The server is configured to refuse ANY requests")
 	}
 
 	return nil
@@ -385,10 +391,7 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
 func (p *Proxy) handleDNSRequest(d *DNSContext) error {
-	if log.IsLevelEnabled(log.DebugLevel) {
-		// Avoid calling String() if debug level is not enabled
-		log.Debugf("IN: %s", d.Req.String())
-	}
+	p.logDNSMessage(d.Req)
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
 	if d.Proto == "udp" && p.isRatelimited(d.Addr) {
@@ -399,6 +402,13 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	if len(d.Req.Question) != 1 {
 		log.Warnf("Got invalid number of questions: %v", len(d.Req.Question))
 		d.Res = p.genServerFailure(d.Req)
+		return nil
+	}
+
+	// refuse ANY requests (anti-DDOS measure)
+	if p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY {
+		log.Debugf("Refusing type=ANY request")
+		d.Res = p.genNotImpl(d.Req)
 		return nil
 	}
 
@@ -422,11 +432,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		err = errorx.Decorate(err, "talking to dnsUpstream failed")
 	}
 
-	if log.IsLevelEnabled(log.DebugLevel) && d.Res != nil {
-		// Avoid calling String() if debug level is not enabled
-		log.Debugf("OUT: %s", d.Res.String())
-	}
-
+	p.logDNSMessage(d.Res)
 	p.respond(d)
 	return err
 }
@@ -548,6 +554,27 @@ func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {
 	resp.SetRcode(request, dns.RcodeServerFailure)
 	resp.RecursionAvailable = true
 	return &resp
+}
+
+func (p *Proxy) genNotImpl(request *dns.Msg) *dns.Msg {
+	resp := dns.Msg{}
+	resp.SetRcode(request, dns.RcodeNotImplemented)
+	resp.RecursionAvailable = true
+	resp.SetEdns0(1452, false) // NOTIMPL without EDNS is treated as 'we don't support EDNS', so explicitly set it
+	return &resp
+}
+
+func (p *Proxy) logDNSMessage(m *dns.Msg) {
+	if !log.IsLevelEnabled(log.DebugLevel) || m == nil {
+		// Avoid calling m.String() when logging level is not debug
+		return
+	}
+
+	if m.Response {
+		log.Debugf("OUT: %s", m.String())
+	} else {
+		log.Debugf("IN: %s", m.String())
+	}
 }
 
 // Checks if the error signals of a closed server connecting

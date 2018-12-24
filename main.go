@@ -31,13 +31,13 @@ type Options struct {
 	ListenPort int `short:"p" long:"port" description:"Listen port" default:"53"`
 
 	// TLS listen port
-	TlsListenPort int `short:"t" long:"tls-port" description:"Listen port for DNS-over-TLS" default:"853"`
+	TLSListenPort int `short:"t" long:"tls-port" description:"Listen port for DNS-over-TLS" default:"853"`
 
 	// Path to the .crt with the certificate chain
-	TlsCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
+	TLSCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
 
 	// Path to the file with the private key
-	TlsKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
+	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
 	// Bootstrap DNS
 	BootstrapDNS string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT" default:"8.8.8.8:53"`
@@ -47,6 +47,9 @@ type Options struct {
 
 	// If true, DNS cache is enabled
 	Cache bool `short:"z" long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
+
+	// If true, refuse ANY requests
+	RefuseAny bool `short:"a" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
 
 	// DNS upstreams
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
@@ -86,46 +89,9 @@ func run(options Options) {
 		log.SetOutput(file)
 	}
 
-	listenIp := net.ParseIP(options.ListenAddr)
-	if listenIp == nil {
-		log.Fatalf("cannot parse %s", options.ListenAddr)
-	}
-
-	// Init listen addresses and upstreams
-	listenUdpAddr := &net.UDPAddr{Port: options.ListenPort, IP: listenIp}
-	listenTcpAddr := &net.TCPAddr{Port: options.ListenPort, IP: listenIp}
-	upstreams := make([]upstream.Upstream, 0)
-
-	for i, u := range options.Upstreams {
-		dnsUpstream, err := upstream.AddressToUpstream(u, options.BootstrapDNS)
-		if err != nil {
-			log.Fatalf("cannot prepare the upstream %s (%s): %s", u, options.BootstrapDNS, err)
-		}
-		log.Printf("Upstream %d: %s", i, dnsUpstream.Address())
-		upstreams = append(upstreams, dnsUpstream)
-	}
-
 	// Prepare the proxy server
-	dnsProxy := proxy.Proxy{
-		Config: proxy.Config{
-			UDPListenAddr: listenUdpAddr,
-			TCPListenAddr: listenTcpAddr,
-			Upstreams:     upstreams,
-			Ratelimit:     options.Ratelimit,
-			CacheEnabled:  options.Cache,
-		},
-	}
-
-	// Prepare the TLS config
-	if options.TlsListenPort > 0 && options.TlsCertPath != "" && options.TlsKeyPath != "" {
-
-		dnsProxy.TLSListenAddr = &net.TCPAddr{Port: options.TlsListenPort, IP: listenIp}
-		tlsConfig, err := newTLSConfig(options.TlsCertPath, options.TlsKeyPath)
-		if err != nil {
-			log.Fatalf("failed to load TLS config: %s", err)
-		}
-		dnsProxy.TLSConfig = tlsConfig
-	}
+	config := createProxyConfig(options)
+	dnsProxy := proxy.Proxy{Config: config}
 
 	// Start the proxy
 	err := dnsProxy.Start()
@@ -143,6 +109,52 @@ func run(options Options) {
 	if err != nil {
 		log.Fatalf("cannot stop the DNS proxy due to %s", err)
 	}
+}
+
+// createProxyConfig creates proxy.Config from the command line arguments
+func createProxyConfig(options Options) proxy.Config {
+
+	listenIP := net.ParseIP(options.ListenAddr)
+	if listenIP == nil {
+		log.Fatalf("cannot parse %s", options.ListenAddr)
+	}
+
+	// Init listen addresses and upstreams
+	listenUDPAddr := &net.UDPAddr{Port: options.ListenPort, IP: listenIP}
+	listenTCPAddr := &net.TCPAddr{Port: options.ListenPort, IP: listenIP}
+	upstreams := make([]upstream.Upstream, 0)
+
+	for i, u := range options.Upstreams {
+		dnsUpstream, err := upstream.AddressToUpstream(u, options.BootstrapDNS)
+		if err != nil {
+			log.Fatalf("cannot prepare the upstream %s (%s): %s", u, options.BootstrapDNS, err)
+		}
+		log.Printf("Upstream %d: %s", i, dnsUpstream.Address())
+		upstreams = append(upstreams, dnsUpstream)
+	}
+
+	// Create the config
+	config := proxy.Config{
+		UDPListenAddr: listenUDPAddr,
+		TCPListenAddr: listenTCPAddr,
+		Upstreams:     upstreams,
+		Ratelimit:     options.Ratelimit,
+		CacheEnabled:  options.Cache,
+		RefuseAny:     options.RefuseAny,
+	}
+
+	// Prepare the TLS config
+	if options.TLSListenPort > 0 && options.TLSCertPath != "" && options.TLSKeyPath != "" {
+
+		config.TLSListenAddr = &net.TCPAddr{Port: options.TLSListenPort, IP: listenIP}
+		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath)
+		if err != nil {
+			log.Fatalf("failed to load TLS config: %s", err)
+		}
+		config.TLSConfig = tlsConfig
+	}
+
+	return config
 }
 
 // NewTLSConfig returns a TLS config that includes a certificate

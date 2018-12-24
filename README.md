@@ -15,20 +15,21 @@ Usage:
   dnsproxy [OPTIONS]
 
 Application Options:
-  -v, --verbose    Verbose output (optional)
-  -o, --output=    Path to the log file. If not set, write to stdout.
-  -l, --listen=    Listen address (default: 0.0.0.0)
-  -p, --port=      Listen port (default: 53)
-  -t, --tls-port=  Listen port for DNS-over-TLS (default: 853)
-  -c, --tls-crt=   Path to a file with the certificate chain
-  -k, --tls-key=   Path to a file with the private key
-  -b, --bootstrap= Bootstrap DNS for DoH and DoT (default: 8.8.8.8:53)
-  -r, --ratelimit= Ratelimit (requests per second) (default: 0)
-  -z, --cache      If specified, DNS cache is enabled
-  -u, --upstream=  An upstream to be used (can be specified multiple times)
+  -v, --verbose     Verbose output (optional)
+  -o, --output=     Path to the log file. If not set, write to stdout.
+  -l, --listen=     Listen address (default: 0.0.0.0)
+  -p, --port=       Listen port (default: 53)
+  -t, --tls-port=   Listen port for DNS-over-TLS (default: 853)
+  -c, --tls-crt=    Path to a file with the certificate chain
+  -k, --tls-key=    Path to a file with the private key
+  -b, --bootstrap=  Bootstrap DNS for DoH and DoT (default: 8.8.8.8:53)
+  -r, --ratelimit=  Ratelimit (requests per second) (default: 0)
+  -z, --cache       If specified, DNS cache is enabled
+  -a, --refuse-any  If specified, refuse ANY requests
+  -u, --upstream=   An upstream to be used (can be specified multiple times)
 
 Help Options:
-  -h, --help       Show this help message
+  -h, --help        Show this help message
 ```
 
 ## Examples
@@ -73,14 +74,17 @@ DNS-over-HTTPS upstream ([DNS Stamp](https://dnscrypt.info/stamps) of Cloudflare
 ./dnsproxy -u sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk
 ```
 
-Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `30 rps` and enabled DNS cache.
+Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `30 rps`, enabled DNS cache, and that refuses type=ANY requests.
 ```
-./dnsproxy -u 8.8.8.8:53 -r 10 --cache
+./dnsproxy -u 8.8.8.8:53 -r 10 --cache --refuse-any
 ```
 
-### TODO:
+### TODO
 
 * [ ] Configure fallback resolver
-* [x] Listen on TCP as well
+* [x] Listen on TCP/TLS as well
 * [ ] Mobile builds
 * [ ] Gobind interfaces
+* [ ] 1.0.0 release
+* [ ] Listen on HTTPS
+* [ ] DNSSEC validation

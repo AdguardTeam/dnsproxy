@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	goFlags "github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
@@ -57,6 +58,8 @@ type Options struct {
 	// Fallback DNS resolver
 	Fallback string `short:"f" long:"fallback" description:"A fallback resolver to use when regular ones aren't available"`
 }
+
+const defaultTimeout = 10 * time.Second
 
 func main() {
 
@@ -128,7 +131,7 @@ func createProxyConfig(options Options) proxy.Config {
 	upstreams := make([]upstream.Upstream, 0)
 
 	for i, u := range options.Upstreams {
-		dnsUpstream, err := upstream.AddressToUpstream(u, options.BootstrapDNS)
+		dnsUpstream, err := upstream.AddressToUpstream(u, options.BootstrapDNS, defaultTimeout)
 		if err != nil {
 			log.Fatalf("cannot prepare the upstream %s (%s): %s", u, options.BootstrapDNS, err)
 		}
@@ -147,7 +150,7 @@ func createProxyConfig(options Options) proxy.Config {
 	}
 
 	if options.Fallback != "" {
-		fallback, err := upstream.AddressToUpstream(options.Fallback, options.BootstrapDNS)
+		fallback, err := upstream.AddressToUpstream(options.Fallback, options.BootstrapDNS, defaultTimeout)
 		if err != nil {
 			log.Fatalf("cannot parse the fallback %s (%s): %s", options.Fallback, options.BootstrapDNS, err)
 		}

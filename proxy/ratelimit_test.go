@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -21,13 +20,13 @@ func TestRatelimitingProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
+	addr := dnsProxy.Addr("udp")
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Send the first message (not blocked)
 	req := createTestMessage()
 
-	r, _, err := client.Exchange(req, addr)
+	r, _, err := client.Exchange(req, addr.String())
 	if err != nil {
 		t.Fatalf("error in the first request: %s", err)
 	}
@@ -36,7 +35,7 @@ func TestRatelimitingProxy(t *testing.T) {
 	// Send the second message (blocked)
 	req = createTestMessage()
 
-	_, _, err = client.Exchange(req, addr)
+	_, _, err = client.Exchange(req, addr.String())
 	if err == nil {
 		t.Fatalf("second request was not blocked")
 	}

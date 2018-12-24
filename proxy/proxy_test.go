@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
 	"math/big"
 	"net"
 	"testing"
@@ -19,8 +18,6 @@ import (
 )
 
 const (
-	listenPort    = 43812
-	listenTLSPort = 43813
 	listenIP      = "127.0.0.1"
 	upstreamAddr  = "8.8.8.8:53"
 	tlsServerName = "testdns.adguard.com"
@@ -42,8 +39,8 @@ func TestTlsProxy(t *testing.T) {
 	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
 
 	// Create a DNS-over-TLS client connection
-	addr := fmt.Sprintf("%s:%d", listenIP, listenTLSPort)
-	conn, err := dns.DialWithTLS("tcp-tls", addr, tlsConfig)
+	addr := dnsProxy.Addr("tls")
+	conn, err := dns.DialWithTLS("tcp-tls", addr.String(), tlsConfig)
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
@@ -68,8 +65,8 @@ func TestUdpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
-	conn, err := dns.Dial("udp", addr)
+	addr := dnsProxy.Addr("udp")
+	conn, err := dns.Dial("udp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
@@ -94,8 +91,8 @@ func TestTcpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-TCP client connection
-	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
-	conn, err := dns.Dial("tcp", addr)
+	addr := dnsProxy.Addr("tcp")
+	conn, err := dns.Dial("tcp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
@@ -121,7 +118,7 @@ func TestRefuseAny(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
+	addr := dnsProxy.Addr("udp")
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request
@@ -130,7 +127,7 @@ func TestRefuseAny(t *testing.T) {
 	request.RecursionDesired = true
 	request.SetQuestion("google.com.", dns.TypeANY)
 
-	r, _, err := client.Exchange(&request, addr)
+	r, _, err := client.Exchange(&request, addr.String())
 	if err != nil {
 		t.Fatalf("error in the first request: %s", err)
 	}
@@ -149,11 +146,11 @@ func TestRefuseAny(t *testing.T) {
 func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	p := Proxy{}
 
-	p.UDPListenAddr = &net.UDPAddr{Port: listenPort, IP: net.ParseIP(listenIP)}
-	p.TCPListenAddr = &net.TCPAddr{Port: listenPort, IP: net.ParseIP(listenIP)}
+	p.UDPListenAddr = &net.UDPAddr{Port: 0, IP: net.ParseIP(listenIP)}
+	p.TCPListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
 
 	if tlsConfig != nil {
-		p.TLSListenAddr = &net.TCPAddr{Port: listenTLSPort, IP: net.ParseIP(listenIP)}
+		p.TLSListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
 		p.TLSConfig = tlsConfig
 	}
 	upstreams := make([]upstream.Upstream, 0)

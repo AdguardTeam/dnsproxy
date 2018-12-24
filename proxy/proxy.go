@@ -146,6 +146,29 @@ func (p *Proxy) Stop() error {
 	return nil
 }
 
+// Addr returns the listen address for the specified proto or null if the proxy does not listen to it
+func (p *Proxy) Addr(proto string) net.Addr {
+	p.RLock()
+	defer p.RUnlock()
+	switch proto {
+	case "tcp":
+		if p.tcpListen == nil {
+			return nil
+		}
+		return p.tcpListen.Addr()
+	case "tls":
+		if p.tlsListen == nil {
+			return nil
+		}
+		return p.tlsListen.Addr()
+	default:
+		if p.udpListen == nil {
+			return nil
+		}
+		return p.udpListen.LocalAddr()
+	}
+}
+
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not
 func (p *Proxy) validateConfig() error {
 	if p.started {

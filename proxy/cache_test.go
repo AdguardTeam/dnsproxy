@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +38,7 @@ func TestServeCached(t *testing.T) {
 	dnsProxy.cache.Set(&reply)
 
 	// Create a DNS-over-UDP client connection
-	addr := fmt.Sprintf("%s:%d", listenIP, listenPort)
+	addr := dnsProxy.Addr("udp")
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request
@@ -48,7 +47,7 @@ func TestServeCached(t *testing.T) {
 	request.RecursionDesired = true
 	request.SetQuestion("google.com.", dns.TypeA)
 
-	r, _, err := client.Exchange(&request, addr)
+	r, _, err := client.Exchange(&request, addr.String())
 	if err != nil {
 		t.Fatalf("error in the first request: %s", err)
 	}

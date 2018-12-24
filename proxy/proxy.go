@@ -402,34 +402,34 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	if len(d.Req.Question) != 1 {
 		log.Warnf("Got invalid number of questions: %v", len(d.Req.Question))
 		d.Res = p.genServerFailure(d.Req)
-		return nil
 	}
 
 	// refuse ANY requests (anti-DDOS measure)
 	if p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY {
 		log.Debugf("Refusing type=ANY request")
 		d.Res = p.genNotImpl(d.Req)
-		return nil
 	}
 
-	// choose the DNS upstream
-	dnsUpstream, upstreamIdx := p.chooseUpstream()
-	d.Upstream = dnsUpstream
-	d.UpstreamIdx = upstreamIdx
-	log.Debugf("Upstream is %s (%d)", dnsUpstream.Address(), upstreamIdx)
-
-	// execute the DNS request
 	var err error
 
-	// if there is a custom middleware configured, use it
-	if p.Handler != nil {
-		err = p.Handler.ServeDNS(d, p)
-	} else {
-		err = p.ServeDNS(d, nil)
-	}
+	if d.Res == nil {
+		// choose the DNS upstream
+		dnsUpstream, upstreamIdx := p.chooseUpstream()
+		d.Upstream = dnsUpstream
+		d.UpstreamIdx = upstreamIdx
+		log.Debugf("Upstream is %s (%d)", dnsUpstream.Address(), upstreamIdx)
 
-	if err != nil {
-		err = errorx.Decorate(err, "talking to dnsUpstream failed")
+		// execute the DNS request
+		// if there is a custom middleware configured, use it
+		if p.Handler != nil {
+			err = p.Handler.ServeDNS(d, p)
+		} else {
+			err = p.ServeDNS(d, nil)
+		}
+
+		if err != nil {
+			err = errorx.Decorate(err, "talking to dnsUpstream failed")
+		}
 	}
 
 	p.logDNSMessage(d.Res)

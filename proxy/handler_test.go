@@ -10,11 +10,28 @@ import (
 
 func TestFilteringHandler(t *testing.T) {
 	// Initializing the test middleware
-	h := &testFilteringHandler{}
+	m := sync.RWMutex{}
+	blockResponse := false
 
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.Handler = h
+	dnsProxy.Handler = func(p *Proxy, d *DNSContext) error {
+		m.Lock()
+		defer m.Unlock()
+
+		if !blockResponse {
+			// Use the default Resolve method if response is not blocked
+			return p.Resolve(d)
+		}
+
+		resp := dns.Msg{}
+		resp.SetRcode(d.Req, dns.RcodeNotImplemented)
+		resp.RecursionAvailable = true
+
+		// Set the response right away
+		d.Res = &resp
+		return nil
+	}
 
 	// Start listening
 	err := dnsProxy.Start()
@@ -36,9 +53,9 @@ func TestFilteringHandler(t *testing.T) {
 	assertResponse(t, r)
 
 	// Now send the second and make sure it is blocked
-	h.Lock()
-	h.blockResponse = true
-	h.Unlock()
+	m.Lock()
+	blockResponse = true
+	m.Unlock()
 
 	r, _, err = client.Exchange(req, addr.String())
 	if err != nil {
@@ -53,26 +70,4 @@ func TestFilteringHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot stop the DNS proxy: %s", err)
 	}
-}
-
-type testFilteringHandler struct {
-	blockResponse bool
-	sync.RWMutex
-}
-
-func (h *testFilteringHandler) ServeDNS(d *DNSContext, next Handler) error {
-	h.Lock()
-	defer h.Unlock()
-
-	if h.blockResponse {
-		resp := dns.Msg{}
-		resp.SetRcode(d.Req, dns.RcodeNotImplemented)
-		resp.RecursionAvailable = true
-
-		// Set the response right away
-		d.Res = &resp
-		return nil
-	}
-
-	return next.ServeDNS(d, nil)
 }

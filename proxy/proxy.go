@@ -24,6 +24,11 @@ const (
 	minDNSPacketSize = 12 + 5
 )
 
+// Handler is an optional middleware
+// It is called instead of the default method (Proxy.Resolve())
+// See handler_test.go for examples
+type Handler func(p *Proxy, d *DNSContext) error
+
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
 	started   bool         // Started flag
@@ -167,6 +172,42 @@ func (p *Proxy) Addr(proto string) net.Addr {
 		}
 		return p.udpListen.LocalAddr()
 	}
+}
+
+// Resolve is the default resolving method used by the DNS proxy to query upstreams
+func (p *Proxy) Resolve(d *DNSContext) error {
+	if p.cache != nil {
+		val, ok := p.cache.Get(d.Req)
+		if ok && val != nil {
+			d.Res = val
+			log.Debugf("Serving cached response")
+			return nil
+		}
+	}
+
+	dnsUpstream := d.Upstream
+
+	// execute the DNS request
+	startTime := time.Now()
+	reply, err := dnsUpstream.Exchange(d.Req)
+	rtt := int(time.Since(startTime) / time.Millisecond)
+	log.Debugf("RTT: %d ms", rtt)
+
+	// Update the upstreams weight
+	p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
+
+	// Saving cached response
+	if p.cache != nil && reply != nil {
+		p.cache.Set(reply)
+	}
+
+	if reply == nil {
+		d.Res = p.genServerFailure(d.Req)
+	} else {
+		d.Res = reply
+	}
+
+	return err
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not
@@ -445,9 +486,9 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		// execute the DNS request
 		// if there is a custom middleware configured, use it
 		if p.Handler != nil {
-			err = p.Handler.ServeDNS(d, p)
+			err = p.Handler(p, d)
 		} else {
-			err = p.ServeDNS(d, nil)
+			err = p.Resolve(d)
 		}
 
 		if err != nil {

@@ -86,7 +86,7 @@ func TestFallback(t *testing.T) {
 
 	dnsProxy.Fallback = dnsProxy.Upstreams[0]
 	// using some random port to make sure that this upstream won't work
-	u, _ := upstream.AddressToUpstream("8.8.8.8:555", "")
+	u, _ := upstream.AddressToUpstream("8.8.8.8:555", "", 1*time.Second)
 	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
@@ -102,10 +102,6 @@ func TestFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
-
-	// Set smaller timeout for this test
-	upstream.Timeout = 1 * time.Second
-	defer func() { upstream.Timeout = upstream.DefaultTimeout }()
 
 	// Make sure that the response is okay and resolved by the fallback
 	req := createTestMessage()
@@ -202,7 +198,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	}
 	upstreams := make([]upstream.Upstream, 0)
 
-	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, "")
+	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, "", 10*time.Second)
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}

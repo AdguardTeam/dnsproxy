@@ -20,16 +20,6 @@ import (
 	"github.com/miekg/dns"
 )
 
-const (
-	// DefaultTimeout is a default value for upstream.Timeout
-	DefaultTimeout = time.Second * 10
-)
-
-var (
-	// Timeout is a global timeout for all upstreams
-	Timeout = DefaultTimeout
-)
-
 // Upstream is an interface for a DNS resolver
 type Upstream interface {
 	Exchange(m *dns.Msg) (*dns.Msg, error)
@@ -53,16 +43,16 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, err
 	}
 	if p.preferTCP {
-		tcpClient := dns.Client{Net: "tcp", Timeout: Timeout}
+		tcpClient := dns.Client{Net: "tcp", Timeout: p.boot.timeout}
 		reply, _, tcpErr := tcpClient.Exchange(m, addr)
 		return reply, tcpErr
 	}
 
-	client := dns.Client{Timeout: Timeout, UDPSize: dns.MaxMsgSize}
+	client := dns.Client{Timeout: p.boot.timeout, UDPSize: dns.MaxMsgSize}
 	reply, _, err := client.Exchange(m, addr)
 	if err != nil && reply != nil && reply.Truncated {
 		log.Debugf("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
-		tcpClient := dns.Client{Net: "tcp", Timeout: Timeout}
+		tcpClient := dns.Client{Net: "tcp", Timeout: p.boot.timeout}
 		reply, _, err = tcpClient.Exchange(m, addr)
 	}
 
@@ -154,7 +144,7 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	req.Header.Set("Content-Type", "application/dns-message")
 	client := http.Client{
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
-		Timeout:   Timeout,
+		Timeout:   p.boot.timeout,
 	}
 	resp, err := client.Do(&req)
 	if resp != nil && resp.Body != nil {
@@ -206,7 +196,7 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		p.Lock()
 
 		// Using "udp" for DNSCrypt upstreams by default
-		client = &dnscrypt.Client{Timeout: Timeout, AdjustPayloadSize: true}
+		client = &dnscrypt.Client{Timeout: p.boot.timeout, AdjustPayloadSize: true}
 		si, _, err := client.Dial(p.boot.address)
 
 		if err != nil {
@@ -241,13 +231,13 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 // * tls://1.1.1.1 -- DNS-over-TLS
 // * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
 // * sdns://... -- DNS stamp that is either DNSCrypt or DNS-over-HTTPS
-func AddressToUpstream(address string, bootstrap string) (Upstream, error) {
+func AddressToUpstream(address string, bootstrap string, timeout time.Duration) (Upstream, error) {
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
 			return nil, errorx.Decorate(err, "failed to parse %s", address)
 		}
-		return urlToUpstream(upstreamURL, bootstrap)
+		return urlToUpstream(upstreamURL, bootstrap, timeout)
 	}
 
 	// we don't have scheme in the url, so it's just a plain DNS host:port
@@ -256,33 +246,33 @@ func AddressToUpstream(address string, bootstrap string) (Upstream, error) {
 		// doesn't have port, default to 53
 		address = net.JoinHostPort(address, "53")
 	}
-	return &plainDNS{boot: toBoot(address, bootstrap)}, nil
+	return &plainDNS{boot: toBoot(address, bootstrap, timeout)}, nil
 }
 
 // urlToUpstream converts a URL to an Upstream
-func urlToUpstream(upstreamURL *url.URL, bootstrap string) (Upstream, error) {
+func urlToUpstream(upstreamURL *url.URL, bootstrap string, timeout time.Duration) (Upstream, error) {
 	switch upstreamURL.Scheme {
 	case "sdns":
-		return stampToUpstream(upstreamURL.String(), bootstrap)
+		return stampToUpstream(upstreamURL.String(), bootstrap, timeout)
 	case "dns":
-		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap)}, nil
+		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap, timeout)}, nil
 	case "tcp":
-		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap), preferTCP: true}, nil
+		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap, timeout), preferTCP: true}, nil
 	case "tls":
-		return &dnsOverTLS{boot: toBoot(getHostWithPort(upstreamURL, "853"), bootstrap)}, nil
+		return &dnsOverTLS{boot: toBoot(getHostWithPort(upstreamURL, "853"), bootstrap, timeout)}, nil
 	case "https":
 		if upstreamURL.Port() == "" {
 			upstreamURL.Host += ":443"
 		}
-		return &dnsOverHTTPS{boot: toBoot(upstreamURL.String(), bootstrap)}, nil
+		return &dnsOverHTTPS{boot: toBoot(upstreamURL.String(), bootstrap, timeout)}, nil
 	default:
 		// assume it's plain DNS
-		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap)}, nil
+		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap, timeout)}, nil
 	}
 }
 
 // stampToUpstream converts a DNS stamp to an Upstream
-func stampToUpstream(address string, bootstrap string) (Upstream, error) {
+func stampToUpstream(address string, bootstrap string, timeout time.Duration) (Upstream, error) {
 	stamp, err := dnsstamps.NewServerStampFromString(address)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to parse %s", address)
@@ -290,9 +280,9 @@ func stampToUpstream(address string, bootstrap string) (Upstream, error) {
 
 	switch stamp.Proto {
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		return &dnsCrypt{boot: toBoot(address, bootstrap)}, nil
+		return &dnsCrypt{boot: toBoot(address, bootstrap, timeout)}, nil
 	case dnsstamps.StampProtoTypeDoH:
-		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), bootstrap)
+		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), bootstrap, timeout)
 	}
 
 	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, address)

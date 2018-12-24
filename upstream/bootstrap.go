@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/joomcode/errorx"
 )
@@ -16,17 +17,18 @@ type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
 	resolver       *net.Resolver // resolver to use to resolve hostname, if necessary
 	resolved       string        // in form "IP:port"
+	timeout        time.Duration // resolution duration (shared with the upstream)
 	resolvedConfig *tls.Config
 	sync.Mutex
 }
 
-func toBoot(address, bootstrapAddr string) bootstrapper {
+func toBoot(address, bootstrapAddr string, timeout time.Duration) bootstrapper {
 	var resolver *net.Resolver
 	if bootstrapAddr != "" {
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				d := net.Dialer{}
+				d := net.Dialer{Timeout: timeout}
 				return d.DialContext(ctx, network, bootstrapAddr)
 			},
 		}
@@ -35,6 +37,7 @@ func toBoot(address, bootstrapAddr string) bootstrapper {
 	return bootstrapper{
 		address:  address,
 		resolver: resolver,
+		timeout:  timeout,
 	}
 }
 

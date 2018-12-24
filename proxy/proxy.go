@@ -2,11 +2,9 @@ package proxy
 
 import (
 	"crypto/tls"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -256,7 +254,7 @@ func (p *Proxy) startListeners() error {
 			return errorx.Decorate(err, "couldn't listen to UDP socket")
 		}
 		p.udpListen = udpListen
-		log.Printf("Listening on udp://%s", p.udpListen.LocalAddr())
+		log.Printf("Listening to udp://%s", p.udpListen.LocalAddr())
 	}
 
 	if p.TCPListenAddr != nil {
@@ -267,7 +265,7 @@ func (p *Proxy) startListeners() error {
 			return errorx.Decorate(err, "couldn't listen to TCP socket")
 		}
 		p.tcpListen = tcpListen
-		log.Printf("Listening on tcp://%s", p.tcpListen.Addr())
+		log.Printf("Listening to tcp://%s", p.tcpListen.Addr())
 	}
 
 	if p.TLSListenAddr != nil {
@@ -278,7 +276,7 @@ func (p *Proxy) startListeners() error {
 			return errorx.Decorate(err, "could not start TLS listener")
 		}
 		p.tlsListen = tls.NewListener(tcpListen, p.TLSConfig)
-		log.Printf("Listening on tls://%s", p.tlsListen.Addr())
+		log.Printf("Listening to tls://%s", p.tlsListen.Addr())
 	}
 
 	if p.udpListen != nil {
@@ -345,9 +343,8 @@ func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 	}
 
 	err = p.handleDNSRequest(d)
-
 	if err != nil {
-		log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
+		log.Debugf("error handling DNS (%s) request: %s", d.Proto, err)
 	}
 }
 
@@ -427,7 +424,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 
 		err = p.handleDNSRequest(d)
 		if err != nil {
-			log.Warnf("error handling DNS (%s) request: %s", d.Proto, err)
+			log.Debugf("error handling DNS (%s) request: %s", d.Proto, err)
 		}
 	}
 }
@@ -472,7 +469,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	}
 
 	if len(d.Req.Question) != 1 {
-		log.Warnf("Got invalid number of questions: %v", len(d.Req.Question))
+		log.Warnf("got invalid number of questions: %v", len(d.Req.Question))
 		d.Res = p.genServerFailure(d.Req)
 	}
 
@@ -586,41 +583,6 @@ func (p *Proxy) chooseUpstream() (upstream.Upstream, int) {
 	return upstreams[idx], idx
 }
 
-func readPrefixed(conn *net.Conn) ([]byte, error) {
-	buf := make([]byte, 2+dns.MaxMsgSize)
-	packetLength, pos := -1, 0
-	for {
-		readnb, err := (*conn).Read(buf[pos:])
-		if err != nil {
-			return buf, err
-		}
-		pos += readnb
-		if pos >= 2 && packetLength < 0 {
-			packetLength = int(binary.BigEndian.Uint16(buf[0:2]))
-			if packetLength >= dns.MaxMsgSize {
-				return buf, errors.New("packet too large")
-			}
-			if packetLength < minDNSPacketSize {
-				return buf, errors.New("packet too short")
-			}
-		}
-		if packetLength >= 0 && pos >= 2+packetLength {
-			return buf[2 : 2+packetLength], nil
-		}
-	}
-}
-
-func prefixWithSize(packet []byte) ([]byte, error) {
-	packetLen := len(packet)
-	if packetLen > 0xffff {
-		return packet, errors.New("packet too large")
-	}
-	packet = append(append(packet, 0), 0)
-	copy(packet[2:], packet[:len(packet)-2])
-	binary.BigEndian.PutUint16(packet[0:2], uint16(len(packet)-2))
-	return packet, nil
-}
-
 func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {
 	resp := dns.Msg{}
 	resp.SetRcode(request, dns.RcodeServerFailure)
@@ -647,21 +609,4 @@ func (p *Proxy) logDNSMessage(m *dns.Msg) {
 	} else {
 		log.Debugf("IN: %s", m.String())
 	}
-}
-
-// Checks if the error signals of a closed server connecting
-func isConnClosed(err error) bool {
-	if err == nil {
-		return false
-	}
-	nerr, ok := err.(*net.OpError)
-	if !ok {
-		return false
-	}
-
-	if strings.Contains(nerr.Err.Error(), "use of closed network connection") {
-		return true
-	}
-
-	return false
 }

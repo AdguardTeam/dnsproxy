@@ -74,6 +74,7 @@ type DNSContext struct {
 	Res         *dns.Msg          // DNS response from an upstream
 	Conn        net.Conn          // underlying client connection
 	Addr        net.Addr          // client address
+	StartTime   time.Time         // processing start time
 	Upstream    upstream.Upstream // upstream that was chosen
 	UpstreamIdx int               // upstream index
 }
@@ -455,6 +456,7 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
 func (p *Proxy) handleDNSRequest(d *DNSContext) error {
+	d.StartTime = time.Now()
 	p.logDNSMessage(d.Req)
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections

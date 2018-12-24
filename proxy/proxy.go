@@ -24,7 +24,7 @@ const (
 	minDNSPacketSize = 12 + 5
 )
 
-// Handler is an optional middleware
+// Handler is an optional custom handler for DNS requests
 // It is called instead of the default method (Proxy.Resolve())
 // See handler_test.go for examples
 type Handler func(p *Proxy, d *DNSContext) error

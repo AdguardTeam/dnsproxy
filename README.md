@@ -27,6 +27,7 @@ Application Options:
   -z, --cache       If specified, DNS cache is enabled
   -a, --refuse-any  If specified, refuse ANY requests
   -u, --upstream=   An upstream to be used (can be specified multiple times)
+  -f, --fallback=   A fallback resolver to use when regular ones aren't available
 
 Help Options:
   -h, --help        Show this help message
@@ -74,6 +75,11 @@ DNS-over-HTTPS upstream ([DNS Stamp](https://dnscrypt.info/stamps) of Cloudflare
 ./dnsproxy -u sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk
 ```
 
+DNS-over-TLS upstream with fallback (to be used when the main upstream is not available):
+```
+./dnsproxy -u tls://dns.adguard.com -f 8.8.8.8:53
+```
+
 Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `30 rps`, enabled DNS cache, and that refuses type=ANY requests.
 ```
 ./dnsproxy -u 8.8.8.8:53 -r 10 --cache --refuse-any
@@ -81,7 +87,7 @@ Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `30 rps`, enabled DNS ca
 
 ### TODO
 
-* [ ] Configure fallback resolver
+* [x] Configure fallback resolver
 * [x] Listen on TCP/TLS as well
 * [ ] Mobile builds
 * [ ] Gobind interfaces

@@ -21,7 +21,13 @@ import (
 )
 
 const (
-	defaultTimeout = time.Second * 10
+	// DefaultTimeout is a default value for upstream.Timeout
+	DefaultTimeout = time.Second * 10
+)
+
+var (
+	// Timeout is a global timeout for all upstreams
+	Timeout = DefaultTimeout
 )
 
 // Upstream is an interface for a DNS resolver
@@ -38,17 +44,6 @@ type plainDNS struct {
 	preferTCP bool
 }
 
-var defaultUDPClient = dns.Client{
-	Timeout: defaultTimeout,
-	UDPSize: dns.MaxMsgSize,
-}
-
-var defaultTCPClient = dns.Client{
-	Net:     "tcp",
-	UDPSize: dns.MaxMsgSize,
-	Timeout: defaultTimeout,
-}
-
 // Address returns the original address that we've put in initially, not resolved one
 func (p *plainDNS) Address() string { return p.boot.address }
 
@@ -58,14 +53,17 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, err
 	}
 	if p.preferTCP {
-		reply, _, tcpErr := defaultTCPClient.Exchange(m, addr)
+		tcpClient := dns.Client{Net: "tcp", Timeout: Timeout}
+		reply, _, tcpErr := tcpClient.Exchange(m, addr)
 		return reply, tcpErr
 	}
 
-	reply, _, err := defaultUDPClient.Exchange(m, addr)
+	client := dns.Client{Timeout: Timeout, UDPSize: dns.MaxMsgSize}
+	reply, _, err := client.Exchange(m, addr)
 	if err != nil && reply != nil && reply.Truncated {
 		log.Printf("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
-		reply, _, err = defaultTCPClient.Exchange(m, addr)
+		tcpClient := dns.Client{Net: "tcp", Timeout: Timeout}
+		reply, _, err = tcpClient.Exchange(m, addr)
 	}
 
 	return reply, err
@@ -156,7 +154,7 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	req.Header.Set("Content-Type", "application/dns-message")
 	client := http.Client{
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
-		Timeout:   defaultTimeout,
+		Timeout:   Timeout,
 	}
 	resp, err := client.Do(&req)
 	if resp != nil && resp.Body != nil {
@@ -208,7 +206,7 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		p.Lock()
 
 		// Using "udp" for DNSCrypt upstreams by default
-		client = &dnscrypt.Client{Timeout: defaultTimeout, AdjustPayloadSize: true}
+		client = &dnscrypt.Client{Timeout: Timeout, AdjustPayloadSize: true}
 		si, _, err := client.Dial(p.boot.address)
 
 		if err != nil {

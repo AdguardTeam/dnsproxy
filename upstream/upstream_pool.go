@@ -81,6 +81,6 @@ func (n *TLSPool) Put(c net.Conn) {
 // tlsDial is basically the same as tls.Dial, but with timeout
 func tlsDial(network, addr string, config *tls.Config) (*tls.Conn, error) {
 	dialer := new(net.Dialer)
-	dialer.Timeout = defaultTimeout
+	dialer.Timeout = Timeout
 	return tls.DialWithDialer(dialer, network, addr, config)
 }

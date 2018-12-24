@@ -80,6 +80,53 @@ func TestUdpProxy(t *testing.T) {
 	}
 }
 
+func TestFallback(t *testing.T) {
+	// Prepare the proxy server
+	dnsProxy := createTestProxy(t, nil)
+
+	dnsProxy.Fallback = dnsProxy.Upstreams[0]
+	// using some random port to make sure that this upstream won't work
+	u, _ := upstream.AddressToUpstream("8.8.8.8:555", "")
+	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
+	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
+
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr("udp")
+	conn, err := dns.Dial("udp", addr.String())
+	if err != nil {
+		t.Fatalf("cannot connect to the proxy: %s", err)
+	}
+
+	// Set smaller timeout for this test
+	upstream.Timeout = 1 * time.Second
+	defer func() { upstream.Timeout = upstream.DefaultTimeout }()
+
+	// Make sure that the response is okay and resolved by the fallback
+	req := createTestMessage()
+	err = conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	res, err := conn.ReadMsg()
+	if err != nil {
+		t.Fatalf("cannot read response to message: %s", err)
+	}
+	assertResponse(t, res)
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
 func TestTcpProxy(t *testing.T) {
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)

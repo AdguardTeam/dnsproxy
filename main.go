@@ -53,6 +53,9 @@ type Options struct {
 
 	// DNS upstreams
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
+
+	// Fallback DNS resolver
+	Fallback string `short:"f" long:"fallback" description:"A fallback resolver to use when regular ones aren't available"`
 }
 
 func main() {
@@ -143,9 +146,17 @@ func createProxyConfig(options Options) proxy.Config {
 		RefuseAny:     options.RefuseAny,
 	}
 
+	if options.Fallback != "" {
+		fallback, err := upstream.AddressToUpstream(options.Fallback, options.BootstrapDNS)
+		if err != nil {
+			log.Fatalf("cannot parse the fallback %s (%s): %s", options.Fallback, options.BootstrapDNS, err)
+		}
+		log.Printf("Fallback is %s", fallback.Address())
+		config.Fallback = fallback
+	}
+
 	// Prepare the TLS config
 	if options.TLSListenPort > 0 && options.TLSCertPath != "" && options.TLSKeyPath != "" {
-
 		config.TLSListenAddr = &net.TCPAddr{Port: options.TLSListenPort, IP: listenIP}
 		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath)
 		if err != nil {

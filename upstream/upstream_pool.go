@@ -60,7 +60,8 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 	// we'll need a new connection, dial now
 	log.Debugf("Dialing to %s", address)
-	conn, err := tls.Dial("tcp", address, tlsConfig)
+
+	conn, err := tlsDial("tcp", address, tlsConfig)
 	if err != nil {
 		return nil, errorx.Decorate(err, "Failed to connect to %s", address)
 	}
@@ -75,4 +76,11 @@ func (n *TLSPool) Put(c net.Conn) {
 	n.connsMutex.Lock()
 	n.conns = append(n.conns, c)
 	n.connsMutex.Unlock()
+}
+
+// tlsDial is basically the same as tls.Dial, but with timeout
+func tlsDial(network, addr string, config *tls.Config) (*tls.Conn, error) {
+	dialer := new(net.Dialer)
+	dialer.Timeout = defaultTimeout
+	return tls.DialWithDialer(dialer, network, addr, config)
 }

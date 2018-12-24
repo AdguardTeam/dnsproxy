@@ -42,12 +42,12 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: "8.8.8.8:53",
 		},
 		{
-			address:   "tls://security-filter-dns.cleanbrowsing.org",
+			address:   "tls://dns.adguard.com:853",
 			bootstrap: "8.8.8.8:53",
 		},
 		{
-			address:   "tls://adult-filter-dns.cleanbrowsing.org:853",
-			bootstrap: "8.8.8.8:53",
+			address:   "tls://one.one.one.one",
+			bootstrap: "",
 		},
 		{
 			address:   "https://cloudflare-dns.com/dns-query",
@@ -55,10 +55,6 @@ func TestUpstreams(t *testing.T) {
 		},
 		{
 			address:   "https://dns.google.com/experimental",
-			bootstrap: "8.8.8.8:53",
-		},
-		{
-			address:   "https://doh.cleanbrowsing.org/doh/security-filter/",
 			bootstrap: "",
 		},
 		{
@@ -74,11 +70,6 @@ func TestUpstreams(t *testing.T) {
 		{
 			// Cloudflare DNS (DoH)
 			address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
-			bootstrap: "8.8.8.8:53",
-		},
-		{
-			// doh-cleanbrowsing-security (https://doh.cleanbrowsing.org/doh/security-filter/)
-			address:   "sdns://AgMAAAAAAAAAAAAVZG9oLmNsZWFuYnJvd3Npbmcub3JnFS9kb2gvc2VjdXJpdHktZmlsdGVyLw",
 			bootstrap: "8.8.8.8:53",
 		},
 		{

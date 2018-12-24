@@ -156,6 +156,7 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	req.Header.Set("Content-Type", "application/dns-message")
 	client := http.Client{
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Timeout:   defaultTimeout,
 	}
 	resp, err := client.Do(&req)
 	if resp != nil && resp.Body != nil {

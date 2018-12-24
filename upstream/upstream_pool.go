@@ -10,7 +10,7 @@ import (
 	"github.com/joomcode/errorx"
 )
 
-// Upstream TLS pool.
+// TLSPool is a connections pool for the DNS-over-TLS Upstream.
 //
 // Example:
 //  pool := TLSPool{Address: "tls://1.1.1.1:853"}
@@ -34,6 +34,7 @@ type TLSPool struct {
 	connsMutex sync.Mutex // protects conns
 }
 
+// Get gets or creates a new TLS connection
 func (n *TLSPool) Get() (net.Conn, error) {
 	address, tlsConfig, err := n.boot.get()
 	if err != nil {
@@ -66,6 +67,7 @@ func (n *TLSPool) Get() (net.Conn, error) {
 	return conn, nil
 }
 
+// Put returns connection to the pool
 func (n *TLSPool) Put(c net.Conn) {
 	if c == nil {
 		return

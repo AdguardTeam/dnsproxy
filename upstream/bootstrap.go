@@ -14,7 +14,7 @@ import (
 
 type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
-	resolver       *net.Resolver // resolver to use to resolve hostname, if neccessary
+	resolver       *net.Resolver // resolver to use to resolve hostname, if necessary
 	resolved       string        // in form "IP:port"
 	resolvedConfig *tls.Config
 	sync.Mutex
@@ -31,6 +31,7 @@ func toBoot(address, bootstrapAddr string) bootstrapper {
 			},
 		}
 	}
+
 	return bootstrapper{
 		address:  address,
 		resolver: resolver,
@@ -55,15 +56,15 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 
 	justHostPort := n.address
 	if strings.Contains(n.address, "://") {
-		parsedUrl, err := url.Parse(n.address)
+		parsedURL, err := url.Parse(n.address)
 		if err != nil {
 			return "", nil, errorx.Decorate(err, "failed to parse %s", n.address)
 		}
 
-		justHostPort = parsedUrl.Host
+		justHostPort = parsedURL.Host
 	}
 
-	// convert host to IP if neccessary, we know that it's scheme://hostname:port/
+	// convert host to IP if necessary, we know that it's scheme://hostname:port/
 
 	// get a host without port
 	host, port, err := net.SplitHostPort(justHostPort)

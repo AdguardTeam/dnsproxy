@@ -20,8 +20,11 @@ import (
 	"github.com/miekg/dns"
 )
 
-const defaultTimeout = time.Second * 10
+const (
+	defaultTimeout = time.Second * 10
+)
 
+// Upstream is an interface for a DNS resolver
 type Upstream interface {
 	Exchange(m *dns.Msg) (*dns.Msg, error)
 	Address() string
@@ -55,8 +58,8 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, err
 	}
 	if p.preferTCP {
-		reply, _, err := defaultTCPClient.Exchange(m, addr)
-		return reply, err
+		reply, _, tcpErr := defaultTCPClient.Exchange(m, addr)
+		return reply, tcpErr
 	}
 
 	reply, _, err := defaultUDPClient.Exchange(m, addr)
@@ -138,18 +141,18 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	bb := bytes.NewBuffer(buf)
 
 	// set up a custom request with custom URL
-	upstreamUrl, err := url.Parse(p.boot.address)
+	upstreamURL, err := url.Parse(p.boot.address)
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't parse URL %s", p.boot.address)
 	}
 	req := http.Request{
 		Method: "POST",
-		URL:    upstreamUrl,
+		URL:    upstreamURL,
 		Body:   ioutil.NopCloser(bb),
 		Header: make(http.Header),
-		Host:   upstreamUrl.Host,
+		Host:   upstreamURL.Host,
 	}
-	upstreamUrl.Host = addr
+	upstreamURL.Host = addr
 	req.Header.Set("Content-Type", "application/dns-message")
 	client := http.Client{
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
@@ -168,9 +171,6 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("got an unexpected HTTP status code %d from '%s'", resp.StatusCode, addr)
-	}
-	if len(body) == 0 {
-		return nil, fmt.Errorf("got an unexpected empty body from '%s'", addr)
 	}
 	response := dns.Msg{}
 	err = response.Unpack(body)
@@ -194,7 +194,6 @@ type dnsCrypt struct {
 func (p *dnsCrypt) Address() string { return p.boot.address }
 
 func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
-
 	var client *dnscrypt.Client
 	var serverInfo *dnscrypt.ServerInfo
 
@@ -237,54 +236,19 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	return reply, err
 }
 
+// AddressToUpstream converts the specified address to an Upstream instance
+// * 8.8.8.8:53 -- plain DNS
+// * tcp://8.8.8.8:53 -- plain DNS over TCP
+// * tls://1.1.1.1 -- DNS-over-TLS
+// * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
+// * sdns://... -- DNS stamp that is either DNSCrypt or DNS-over-HTTPS
 func AddressToUpstream(address string, bootstrap string) (Upstream, error) {
 	if strings.Contains(address, "://") {
-		upstreamUrl, err := url.Parse(address)
+		upstreamURL, err := url.Parse(address)
 		if err != nil {
 			return nil, errorx.Decorate(err, "failed to parse %s", address)
 		}
-		switch upstreamUrl.Scheme {
-		case "sdns":
-			stamp, err := dnsstamps.NewServerStampFromString(address)
-			if err != nil {
-				return nil, errorx.Decorate(err, "failed to parse %s", address)
-			}
-
-			switch stamp.Proto {
-			case dnsstamps.StampProtoTypeDNSCrypt:
-				return &dnsCrypt{boot: toBoot(upstreamUrl.String(), bootstrap)}, nil
-			case dnsstamps.StampProtoTypeDoH:
-				return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), bootstrap)
-			}
-
-			return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, address)
-		case "dns":
-			if upstreamUrl.Port() == "" {
-				upstreamUrl.Host += ":53"
-			}
-			return &plainDNS{boot: toBoot(upstreamUrl.Host, bootstrap)}, nil
-		case "tcp":
-			if upstreamUrl.Port() == "" {
-				upstreamUrl.Host += ":53"
-			}
-			return &plainDNS{boot: toBoot(upstreamUrl.Host, bootstrap), preferTCP: true}, nil
-		case "tls":
-			if upstreamUrl.Port() == "" {
-				upstreamUrl.Host += ":853"
-			}
-			return &dnsOverTLS{boot: toBoot(upstreamUrl.String(), bootstrap)}, nil
-		case "https":
-			if upstreamUrl.Port() == "" {
-				upstreamUrl.Host += ":443"
-			}
-			return &dnsOverHTTPS{boot: toBoot(upstreamUrl.String(), bootstrap)}, nil
-		default:
-			// assume it's plain DNS
-			if upstreamUrl.Port() == "" {
-				upstreamUrl.Host += ":53"
-			}
-			return &plainDNS{boot: toBoot(upstreamUrl.String(), bootstrap)}, nil
-		}
+		return urlToUpstream(upstreamURL, bootstrap)
 	}
 
 	// we don't have scheme in the url, so it's just a plain DNS host:port
@@ -294,4 +258,51 @@ func AddressToUpstream(address string, bootstrap string) (Upstream, error) {
 		address = net.JoinHostPort(address, "53")
 	}
 	return &plainDNS{boot: toBoot(address, bootstrap)}, nil
+}
+
+// urlToUpstream converts a URL to an Upstream
+func urlToUpstream(upstreamURL *url.URL, bootstrap string) (Upstream, error) {
+	switch upstreamURL.Scheme {
+	case "sdns":
+		return stampToUpstream(upstreamURL.String(), bootstrap)
+	case "dns":
+		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap)}, nil
+	case "tcp":
+		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap), preferTCP: true}, nil
+	case "tls":
+		return &dnsOverTLS{boot: toBoot(getHostWithPort(upstreamURL, "853"), bootstrap)}, nil
+	case "https":
+		if upstreamURL.Port() == "" {
+			upstreamURL.Host += ":443"
+		}
+		return &dnsOverHTTPS{boot: toBoot(upstreamURL.String(), bootstrap)}, nil
+	default:
+		// assume it's plain DNS
+		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap)}, nil
+	}
+}
+
+// stampToUpstream converts a DNS stamp to an Upstream
+func stampToUpstream(address string, bootstrap string) (Upstream, error) {
+	stamp, err := dnsstamps.NewServerStampFromString(address)
+	if err != nil {
+		return nil, errorx.Decorate(err, "failed to parse %s", address)
+	}
+
+	switch stamp.Proto {
+	case dnsstamps.StampProtoTypeDNSCrypt:
+		return &dnsCrypt{boot: toBoot(address, bootstrap)}, nil
+	case dnsstamps.StampProtoTypeDoH:
+		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), bootstrap)
+	}
+
+	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, address)
+}
+
+// getHostWithPort is a helper function that appends port if needed
+func getHostWithPort(upstreamURL *url.URL, defaultPort string) string {
+	if upstreamURL.Port() == "" {
+		return upstreamURL.Host + ":" + defaultPort
+	}
+	return upstreamURL.Host
 }

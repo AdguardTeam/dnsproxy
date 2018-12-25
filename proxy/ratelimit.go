@@ -26,7 +26,7 @@ func (p *Proxy) limiterForIP(ip string) interface{} {
 }
 
 func (p *Proxy) isRatelimited(addr net.Addr) bool {
-	if p.Ratelimit == 0 { // 0 -- disabled
+	if p.Ratelimit <= 0 { // 0 -- disabled
 		return false
 	}
 
@@ -57,7 +57,7 @@ func (p *Proxy) isRatelimited(addr net.Addr) bool {
 }
 
 func (p *Proxy) isRatelimitedForReply(ip string, size int) bool {
-	if p.Ratelimit == 0 { // 0 -- disabled
+	if p.Ratelimit <= 0 { // 0 -- disabled
 		return false
 	}
 	if len(p.RatelimitWhitelist) > 0 {

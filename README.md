@@ -7,6 +7,14 @@
 
 A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, and `DNSCrypt`.
 
+## How to build
+
+You will need go v1.11 or later.
+
+```
+$ go build
+```
+
 ## Usage
 
 ```

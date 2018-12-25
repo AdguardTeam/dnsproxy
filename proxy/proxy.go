@@ -233,7 +233,7 @@ func (p *Proxy) validateConfig() error {
 		return errors.New("no upstreams specified")
 	}
 
-	if p.Ratelimit >= 0 {
+	if p.Ratelimit > 0 {
 		log.Printf("Ratelimit is enabled and set to %d rps", p.Ratelimit)
 	}
 

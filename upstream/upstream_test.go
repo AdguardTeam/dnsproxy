@@ -9,7 +9,6 @@ import (
 )
 
 func TestUpstreams(t *testing.T) {
-
 	upstreams := []struct {
 		address   string
 		bootstrap string
@@ -82,7 +81,7 @@ func TestUpstreams(t *testing.T) {
 	for _, test := range upstreams {
 
 		t.Run(test.address, func(t *testing.T) {
-			u, err := AddressToUpstream(test.address, test.bootstrap, 10 * time.Second)
+			u, err := AddressToUpstream(test.address, test.bootstrap, 10*time.Second)
 			if err != nil {
 				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
 			}

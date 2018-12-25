@@ -6,7 +6,7 @@ We are using [gomobile](https://github.com/golang/go/wiki/Mobile) to build mobil
 
 ## How to build
 
-You will need go v1.11 or later.
+You will need go v1.11 or newer.
 
 ```
 $ export ANDROID_HOME=PATH_TO_ANDROID_SDK

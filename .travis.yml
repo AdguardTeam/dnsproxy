@@ -1,5 +1,6 @@
 language: go
 sudo: true
+dist: precise
 
 os:
   - linux

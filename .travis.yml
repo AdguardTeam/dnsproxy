@@ -63,7 +63,6 @@ matrix:
           - dnsproxy-android-library-*.zip
         on:
           repo: AdguardTeam/dnsproxy
-          branch: feature/mobile_build # This is for tests
+          tags: true
         file_glob: true
         skip_cleanup: true
-        draft: true

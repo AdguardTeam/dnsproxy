@@ -54,19 +54,16 @@ matrix:
         - cd mobile
         - make
         - zip -9 -r dnsproxy-android-library-${TRAVIS_TAG:-dev}.zip dnsproxy.aar dnsproxy-sources.jar
-        - ls -l dnsproxy-*
+        - ls -l dnsproxy-android-library-*
 
       deploy:
         provider: releases
         api_key: $GITHUB_TOKEN
         file:
-          - dnsproxy-android-library-*.zip
+          - mobile/dnsproxy-android-library-*.zip
         on:
           repo: AdguardTeam/dnsproxy
-          branches:
-            only:
-              - feature/mobile_build # This is for tests
-
+          branch: feature/mobile_build # This is for tests
         file_glob: true
         skip_cleanup: true
         draft: true

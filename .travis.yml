@@ -42,10 +42,7 @@ matrix:
         - echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
 
       install:
-        - curl -sL -o gimme https://raw.githubusercontent.com/travis-ci/gimme/master/gimme
-        - chmod +x gimme
-        - gimme --list
-        - gimme 1.X
+        - sudo eval "$(curl -sL https://raw.githubusercontent.com/travis-ci/gimme/master/gimme | GIMME_GO_VERSION=1.X bash)"
         - echo y | sdkmanager "ndk-bundle"
         - echo y | sdkmanager "cmake;3.6.4111459"
         - echo y | sdkmanager "lldb;3.1"

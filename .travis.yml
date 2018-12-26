@@ -8,6 +8,7 @@ matrix:
 
       env:
         - GO111MODULE=on
+        - GIMME_GO_VERSION=1.x
 
       go:
         - 1.x
@@ -34,6 +35,7 @@ matrix:
 
       env:
         - GO111MODULE=on
+        - GIMME_GO_VERSION=1.x
 
       # Make sure Android NDK is installed
       before_install:
@@ -42,7 +44,7 @@ matrix:
         - echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
 
       install:
-        - eval "$(curl -sL https://raw.githubusercontent.com/travis-ci/gimme/master/gimme | GIMME_GO_VERSION=1.x bash)"
+        - eval "$(curl -sL https://raw.githubusercontent.com/travis-ci/gimme/master/gimme | bash)"
         - echo y | sdkmanager "ndk-bundle"
         - echo y | sdkmanager "cmake;3.6.4111459"
         - echo y | sdkmanager "lldb;3.1"
@@ -51,3 +53,14 @@ matrix:
         - go version
         - cd mobile
         - make
+        - zip -9 -r dnsproxy-android-library-${TRAVIS_TAG:-dev}.zip
+        - ls -l dnsproxy-*
+
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file:
+          - dnsproxy-android-library-*.zip
+        file_glob: true
+        skip_cleanup: true
+        draft: true

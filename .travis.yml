@@ -61,6 +61,12 @@ matrix:
         api_key: $GITHUB_TOKEN
         file:
           - dnsproxy-android-library-*.zip
+        on:
+          repo: AdguardTeam/dnsproxy
+          branches:
+            only:
+              - feature/mobile_build # This is for tests
+
         file_glob: true
         skip_cleanup: true
         draft: true

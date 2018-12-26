@@ -53,7 +53,7 @@ matrix:
         - go version
         - cd mobile
         - make
-        - zip -9 -r dnsproxy-android-library-${TRAVIS_TAG:-dev}.zip
+        - zip -9 -r dnsproxy-android-library-${TRAVIS_TAG:-dev}.zip dnsproxy.aar dnsproxy-sources.jar
         - ls -l dnsproxy-*
 
       deploy:

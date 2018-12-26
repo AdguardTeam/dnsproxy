@@ -7,6 +7,14 @@
 
 A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, and `DNSCrypt`.
 
+## How to build
+
+You will need go v1.11 or later.
+
+```
+$ go build
+```
+
 ## Usage
 
 ```
@@ -40,6 +48,11 @@ Runs a DNS proxy on `0.0.0.0:53` with a single upstream - Google DNS.
 ./dnsproxy -u 8.8.8.8:53
 ```
 
+The same proxy with verbose logging enabled writing it to the file `log.txt`. 
+```
+./dnsproxy -u 8.8.8.8:53 -v -o log.txt
+```
+
 Runs a DNS proxy on `127.0.0.1:5353` with multiple upstreams.
 ```
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53
@@ -48,11 +61,6 @@ Runs a DNS proxy on `127.0.0.1:5353` with multiple upstreams.
 Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
 ```
 ./dnsproxy -l 127.0.0.1 --tls-port=853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 
-```
-
-The same proxy with verbose logging enabled writing it to the file `log.txt`. 
-```
-./dnsproxy -u 8.8.8.8:53 -v -out log.txt
 ```
 
 DNS-over-TLS upstream:
@@ -80,7 +88,7 @@ DNS-over-TLS upstream with fallback (to be used when the main upstream is not av
 ./dnsproxy -u tls://dns.adguard.com -f 8.8.8.8:53
 ```
 
-Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `30 rps`, enabled DNS cache, and that refuses type=ANY requests.
+Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `10 rps`, enabled DNS cache, and that refuses type=ANY requests.
 ```
 ./dnsproxy -u 8.8.8.8:53 -r 10 --cache --refuse-any
 ```
@@ -89,8 +97,7 @@ Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `30 rps`, enabled DNS ca
 
 * [x] Configure fallback resolver
 * [x] Listen on TCP/TLS as well
-* [ ] Mobile builds
-* [ ] Gobind interfaces
+* [ ] gomobile/gobind builds
 * [ ] 1.0.0 release
 * [ ] Listen on HTTPS
 * [ ] DNSSEC validation

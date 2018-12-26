@@ -19,7 +19,7 @@ matrix:
         - bash <(curl -s https://codecov.io/bash)
 
     - language: android
-      sudo: false
+      sudo: true
 
       android:
         components:
@@ -48,3 +48,4 @@ matrix:
 
       script:
         - echo 'hello android'
+        - go version

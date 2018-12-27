@@ -96,8 +96,6 @@ matrix:
           - dnsproxy-ios-library-*.zip
         on:
           repo: AdguardTeam/dnsproxy
-#          tags: true
-          branch: feature/ios_build
+          tags: true
         file_glob: true
         skip_cleanup: true
-        draft: true

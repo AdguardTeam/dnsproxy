@@ -17,7 +17,7 @@ type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
 	resolver       *net.Resolver // resolver to use to resolve hostname, if necessary
 	resolved       string        // in form "IP:port"
-	timeout        time.Duration // resolution duration (shared with the upstream)
+	timeout        time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
 	resolvedConfig *tls.Config
 	sync.Mutex
 }

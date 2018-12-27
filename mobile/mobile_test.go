@@ -10,7 +10,6 @@ import (
 )
 
 func TestMobileApi(t *testing.T) {
-
 	upstreams := []string{
 		"tls://dns.adguard.com",
 		"https://dns.adguard.com/dns-query",

@@ -231,6 +231,9 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 // * tls://1.1.1.1 -- DNS-over-TLS
 // * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
 // * sdns://... -- DNS stamp that is either DNSCrypt or DNS-over-HTTPS
+// bootstrap is a plain DNS which is used to resolve DoH/DoT hostnames (if any)
+// timeout is a default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.
+// timeout=0 means infinite timeout
 func AddressToUpstream(address string, bootstrap string, timeout time.Duration) (Upstream, error) {
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)

@@ -52,7 +52,7 @@ matrix:
       script:
         - go version
         - cd mobile
-        - make
+        - make android
         - zip -9 -r dnsproxy-android-library-${TRAVIS_TAG:-dev}.zip dnsproxy.aar dnsproxy-sources.jar
         - ls -l dnsproxy-android-library-*
 
@@ -66,3 +66,38 @@ matrix:
           tags: true
         file_glob: true
         skip_cleanup: true
+
+    - language: go
+      sudo: true
+
+      os:
+        - osx
+
+      osx_image: xcode10.1
+
+      go:
+        - 1.x
+
+      env:
+        - GO111MODULE=on
+        - GIMME_GO_VERSION=1.x
+
+      script:
+        - go version
+        - cd mobile
+        - make ios
+        - zip -9 -r dnsproxy-ios-library-${TRAVIS_TAG:-dev}.zip dnsproxy.framework
+        - ls -l dnsproxy-ios-library-*
+
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file:
+          - dnsproxy-ios-library-*.zip
+        on:
+          repo: AdguardTeam/dnsproxy
+#          tags: true
+          branch: feature/ios_build
+        file_glob: true
+        skip_cleanup: true
+        draft: true

@@ -77,6 +77,16 @@ func TestUpstreams(t *testing.T) {
 			address:   "sdns://AgUAAAAAAAAAACAe9iTP_15r07rd8_3b_epWVGfjdymdx-5mdRZvMAzBuQ5kbnMuZ29vZ2xlLmNvbQ0vZXhwZXJpbWVudGFs",
 			bootstrap: "8.8.8.8:53",
 		},
+		{
+			// Google (Plain)
+			address:   "sdns://AAcAAAAAAAAABzguOC44Ljg",
+			bootstrap: "",
+		},
+		{
+			// AdGuard DNS (DNS-over-TLS)
+			address:   "sdns://AwAAAAAAAAAAAA9kbnMuYWRndWFyZC5jb20",
+			bootstrap: "8.8.8.8:53",
+		},
 	}
 	for _, test := range upstreams {
 

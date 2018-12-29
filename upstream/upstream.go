@@ -11,13 +11,11 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
-	"github.com/jedisct1/go-dnsstamps"
-
 	"github.com/ameshkov/dnscrypt"
+	"github.com/ameshkov/dnsstamps"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
+	log "github.com/sirupsen/logrus"
 )
 
 // Upstream is an interface for a DNS resolver
@@ -230,7 +228,7 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 // * tcp://8.8.8.8:53 -- plain DNS over TCP
 // * tls://1.1.1.1 -- DNS-over-TLS
 // * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
-// * sdns://... -- DNS stamp that is either DNSCrypt or DNS-over-HTTPS
+// * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
 // bootstrap is a plain DNS which is used to resolve DoH/DoT hostnames (if any)
 // timeout is a default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.
 // timeout=0 means infinite timeout
@@ -282,10 +280,14 @@ func stampToUpstream(address string, bootstrap string, timeout time.Duration) (U
 	}
 
 	switch stamp.Proto {
+	case dnsstamps.StampProtoTypePlain:
+		return &plainDNS{boot: toBoot(stamp.ServerAddrStr, bootstrap, timeout)}, nil
 	case dnsstamps.StampProtoTypeDNSCrypt:
 		return &dnsCrypt{boot: toBoot(address, bootstrap, timeout)}, nil
 	case dnsstamps.StampProtoTypeDoH:
 		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), bootstrap, timeout)
+	case dnsstamps.StampProtoTypeTLS:
+		return AddressToUpstream(fmt.Sprintf("tls://%s", stamp.ProviderName), bootstrap, timeout)
 	}
 
 	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, address)

@@ -11,7 +11,7 @@ import (
 
 // DNSStamp is mobile-friendly DNS stamp structure
 type DNSStamp struct {
-	Proto        uint8  // Protocol (0x00 for plain, 0x01 for DNSCrypt, 0x02 for DOH, 0x03 for DOT
+	Proto        int    // Protocol (0x00 for plain, 0x01 for DNSCrypt, 0x02 for DOH, 0x03 for DOT
 	ServerAddr   string // Server address
 	ProviderName string // Provider name
 	Path         string // Path (for DOH)
@@ -25,7 +25,7 @@ func ParseDNSStamp(stampStr string) (*DNSStamp, error) {
 	}
 
 	return &DNSStamp{
-		Proto:        uint8(serverStamp.Proto),
+		Proto:        int(serverStamp.Proto),
 		ServerAddr:   serverStamp.ServerAddrStr,
 		ProviderName: serverStamp.ProviderName,
 		Path:         serverStamp.Path,

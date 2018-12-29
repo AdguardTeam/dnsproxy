@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/ameshkov/dnscrypt"
 	"github.com/ameshkov/dnsstamps"
+	"github.com/hmage/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )

@@ -2,11 +2,11 @@ package upstream
 
 import (
 	"crypto/tls"
-	"log"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/hmage/golibs/log"
 	"github.com/joomcode/errorx"
 )
 

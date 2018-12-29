@@ -4,12 +4,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/hmage/golibs/log"
 	"github.com/jmcvetta/randutil"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -38,6 +38,7 @@ type Proxy struct {
 	rttLock           sync.Mutex        // Synchronizes access to the upstreamsRtt/upstreamsWeighted arrays
 
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
+	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
 	cache *cache // cache instance (nil if cache is disabled)
 

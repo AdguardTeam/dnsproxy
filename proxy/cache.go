@@ -2,12 +2,12 @@ package proxy
 
 import (
 	"encoding/binary"
-	"log"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hmage/golibs/log"
 	"github.com/miekg/dns"
 )
 

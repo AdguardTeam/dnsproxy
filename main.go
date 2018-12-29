@@ -4,17 +4,17 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	goFlags "github.com/jessevdk/go-flags"
-	log "github.com/sirupsen/logrus"
-
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/hashicorp/logutils"
+	goFlags "github.com/jessevdk/go-flags"
 )
 
 // Options represents console arguments
@@ -81,19 +81,23 @@ func main() {
 }
 
 func run(options Options) {
-
-	if options.Verbose {
-		log.SetLevel(log.TraceLevel)
+	filter := &logutils.LevelFilter{
+		Levels:   []logutils.LogLevel{"DEBUG", "INFO", "WARN", "ERROR"},
+		MinLevel: logutils.LogLevel("INFO"),
+		Writer:   os.Stderr,
 	}
-
+	if options.Verbose {
+		filter.MinLevel = logutils.LogLevel("DEBUG")
+	}
 	if options.LogOutput != "" {
 		file, err := os.OpenFile(options.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0755)
 		if err != nil {
 			log.Fatalf("cannot create a log file: %s", err)
 		}
 		defer file.Close()
-		log.SetOutput(file)
+		filter.Writer = file
 	}
+	log.SetOutput(filter)
 
 	// Prepare the proxy server
 	config := createProxyConfig(options)

@@ -2,13 +2,13 @@ package proxy
 
 import (
 	"encoding/binary"
+	"log"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/miekg/dns"
-	log "github.com/sirupsen/logrus"
 )
 
 type item struct {
@@ -28,7 +28,7 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	}
 	ok, key := key(request)
 	if !ok {
-		log.Debug("Get(): key returned !ok")
+		log.Print("[DEBUG] Get(): key returned !ok")
 		return nil, false
 	}
 
@@ -87,13 +87,13 @@ func (c *cache) Set(m *dns.Msg) {
 func isRequestCacheable(m *dns.Msg) bool {
 	// truncated messages aren't valid
 	if m.Truncated {
-		log.Debugf("Refusing to cache truncated message")
+		log.Printf("[DEBUG] Refusing to cache truncated message")
 		return false
 	}
 
 	// if has wrong number of questions, also don't cache
 	if len(m.Question) != 1 {
-		log.Debugf("Refusing to cache message with wrong number of questions")
+		log.Printf("[DEBUG] Refusing to cache message with wrong number of questions")
 		return false
 	}
 
@@ -104,7 +104,7 @@ func isRequestCacheable(m *dns.Msg) bool {
 	case dns.RcodeServerFailure:
 		return false // quietly refuse, don't log
 	default:
-		log.Debugf("%s: Refusing to cache message with rcode: %s", m.Question[0].Name, dns.RcodeToString[m.Rcode])
+		log.Printf("[DEBUG] %s: Refusing to cache message with rcode: %s", m.Question[0].Name, dns.RcodeToString[m.Rcode])
 		return false
 	}
 
@@ -162,7 +162,7 @@ func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
 // uint16(qtype) then uint16(qclass) then name
 func key(m *dns.Msg) (bool, string) {
 	if len(m.Question) != 1 {
-		log.Debugf("got msg with len(m.Question) != 1: %d", len(m.Question))
+		log.Printf("[DEBUG] got msg with len(m.Question) != 1: %d", len(m.Question))
 		return false, ""
 	}
 

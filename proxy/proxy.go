@@ -4,17 +4,16 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/jmcvetta/randutil"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
-	log "github.com/sirupsen/logrus"
-
-	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/jmcvetta/randutil"
 )
 
 const (
@@ -180,7 +179,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		val, ok := p.cache.Get(d.Req)
 		if ok && val != nil {
 			d.Res = val
-			log.Debugf("Serving cached response")
+			log.Printf("[DEBUG] Serving cached response")
 			return nil
 		}
 	}
@@ -191,13 +190,13 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	startTime := time.Now()
 	reply, err := dnsUpstream.Exchange(d.Req)
 	rtt := int(time.Since(startTime) / time.Millisecond)
-	log.Debugf("RTT: %d ms", rtt)
+	log.Printf("[DEBUG] RTT: %d ms", rtt)
 
 	// Update the upstreams weight
 	p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
 
 	if err != nil && p.Fallback != nil {
-		log.Debugf("Using the fallback upstream due to %s", err)
+		log.Printf("[DEBUG] Using the fallback upstream due to %s", err)
 		reply, err = p.Fallback.Exchange(d.Req)
 	}
 
@@ -319,19 +318,19 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 				log.Printf("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
-			log.Warnf("got error when reading from UDP listen: %s", err)
+			log.Printf("[WARN] got error when reading from UDP listen: %s", err)
 		}
 	}
 }
 
 // handleUDPPacket processes the incoming UDP packet and sends a DNS response
 func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
-	log.Debugf("Start handling new UDP packet from %s", addr)
+	log.Printf("[DEBUG] Start handling new UDP packet from %s", addr)
 
 	msg := &dns.Msg{}
 	err := msg.Unpack(packet)
 	if err != nil {
-		log.Warnf("error handling UDP packet: %s", err)
+		log.Printf("[WARN] error handling UDP packet: %s", err)
 		return
 	}
 
@@ -344,7 +343,7 @@ func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
-		log.Debugf("error handling DNS (%s) request: %s", d.Proto, err)
+		log.Printf("[DEBUG] error handling DNS (%s) request: %s", d.Proto, err)
 	}
 }
 
@@ -382,7 +381,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 				log.Printf("tcpListen.Accept() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
-			log.Warnf("got error when reading from TCP listen: %s", err)
+			log.Printf("[WARN] got error when reading from TCP listen: %s", err)
 		} else {
 			go p.handleTCPConnection(clientConn, proto)
 		}
@@ -392,7 +391,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 // handleTCPConnection starts a loop that handles an incoming TCP connection
 // proto is either "tcp" or "tls"
 func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
-	log.Debugf("Start handling the new TCP connection %s", conn.RemoteAddr())
+	log.Printf("[DEBUG] Start handling the new TCP connection %s", conn.RemoteAddr())
 	defer conn.Close()
 
 	for {
@@ -411,7 +410,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 		msg := &dns.Msg{}
 		err = msg.Unpack(packet)
 		if err != nil {
-			log.Warnf("error handling TCP packet: %s", err)
+			log.Printf("[WARN] error handling TCP packet: %s", err)
 			return
 		}
 
@@ -424,7 +423,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 
 		err = p.handleDNSRequest(d)
 		if err != nil {
-			log.Debugf("error handling DNS (%s) request: %s", d.Proto, err)
+			log.Printf("[DEBUG] error handling DNS (%s) request: %s", d.Proto, err)
 		}
 	}
 }
@@ -464,18 +463,18 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
 	if d.Proto == "udp" && p.isRatelimited(d.Addr) {
-		log.Debugf("Ratelimiting %v based on IP only", d.Addr)
+		log.Printf("[DEBUG] Ratelimiting %v based on IP only", d.Addr)
 		return nil // do nothing, don't reply, we got ratelimited
 	}
 
 	if len(d.Req.Question) != 1 {
-		log.Warnf("got invalid number of questions: %v", len(d.Req.Question))
+		log.Printf("[WARN] got invalid number of questions: %v", len(d.Req.Question))
 		d.Res = p.genServerFailure(d.Req)
 	}
 
 	// refuse ANY requests (anti-DDOS measure)
 	if p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY {
-		log.Debugf("Refusing type=ANY request")
+		log.Printf("[DEBUG] Refusing type=ANY request")
 		d.Res = p.genNotImpl(d.Req)
 	}
 
@@ -486,7 +485,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		dnsUpstream, upstreamIdx := p.chooseUpstream()
 		d.Upstream = dnsUpstream
 		d.UpstreamIdx = upstreamIdx
-		log.Debugf("Upstream is %s (%d)", dnsUpstream.Address(), upstreamIdx)
+		log.Printf("[DEBUG] Upstream is %s (%d)", dnsUpstream.Address(), upstreamIdx)
 
 		// execute the DNS request
 		// if there is a custom middleware configured, use it
@@ -525,7 +524,7 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 
 	if err != nil {
-		log.Warnf("error while responding to a DNS request: %s", err)
+		log.Printf("[WARN] error while responding to a DNS request: %s", err)
 	}
 }
 
@@ -599,14 +598,9 @@ func (p *Proxy) genNotImpl(request *dns.Msg) *dns.Msg {
 }
 
 func (p *Proxy) logDNSMessage(m *dns.Msg) {
-	if !log.IsLevelEnabled(log.DebugLevel) || m == nil {
-		// Avoid calling m.String() when logging level is not debug
-		return
-	}
-
 	if m.Response {
-		log.Debugf("OUT: %s", m.String())
+		log.Printf("[DEBUG] OUT: %s", m)
 	} else {
-		log.Debugf("IN: %s", m.String())
+		log.Printf("[DEBUG] IN: %s", m)
 	}
 }

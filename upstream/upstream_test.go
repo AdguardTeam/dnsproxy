@@ -84,7 +84,7 @@ func TestUpstreams(t *testing.T) {
 		},
 		{
 			// AdGuard DNS (DNS-over-TLS)
-			address:   "sdns://AwAAAAAAAAAAAA9kbnMuYWRndWFyZC5jb20",
+			address:   "sdns://AwAAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
 			bootstrap: "8.8.8.8:53",
 		},
 	}

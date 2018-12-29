@@ -1,13 +1,13 @@
 package proxy
 
 import (
+	"log"
 	"net"
 	"sort"
 	"time"
 
 	"github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
-	log "github.com/sirupsen/logrus"
 )
 
 func (p *Proxy) limiterForIP(ip string) interface{} {
@@ -32,7 +32,7 @@ func (p *Proxy) isRatelimited(addr net.Addr) bool {
 
 	ip := getIPString(addr)
 	if ip == "" {
-		log.Warnf("failed to split %v into host/port", addr)
+		log.Printf("[WARN] failed to split %v into host/port", addr)
 		return false
 	}
 

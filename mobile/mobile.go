@@ -6,6 +6,7 @@ package mobile
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -14,7 +15,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	log "github.com/sirupsen/logrus"
+	"github.com/hashicorp/logutils"
 )
 
 // DNSProxy represents a proxy with it's configuration
@@ -101,19 +102,22 @@ func (d *DNSProxy) Addr() string {
 
 // updateLogLevel updates log level and creates a log file
 func (d *DNSProxy) updateLogLevel(config *Config) error {
-	if config.Verbose {
-		log.SetLevel(log.TraceLevel)
+	filter := &logutils.LevelFilter{
+		Levels:   []logutils.LogLevel{"DEBUG", "INFO", "WARN", "ERROR"},
+		MinLevel: logutils.LogLevel("INFO"),
+		Writer:   os.Stderr,
 	}
-
+	if config.Verbose {
+		filter.MinLevel = logutils.LogLevel("DEBUG")
+	}
 	if config.LogOutput != "" {
 		file, err := os.OpenFile(config.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0755)
 		if err != nil {
 			return fmt.Errorf("cannot create a log file: %s", err)
 		}
-		d.logFile = file
-		log.SetOutput(file)
+		filter.Writer = file
 	}
-
+	log.SetOutput(filter)
 	return nil
 }
 

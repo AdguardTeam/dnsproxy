@@ -9,7 +9,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-// Mobile-friendly DNS stamp structure
+// DNSStamp is mobile-friendly DNS stamp structure
 type DNSStamp struct {
 	Proto        uint8  // Protocol (0x00 for plain, 0x01 for DNSCrypt, 0x02 for DOH, 0x03 for DOT
 	ServerAddr   string // Server address

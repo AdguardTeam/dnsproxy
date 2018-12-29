@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,7 +16,6 @@ import (
 	"github.com/ameshkov/dnsstamps"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
-	log "github.com/sirupsen/logrus"
 )
 
 // Upstream is an interface for a DNS resolver
@@ -49,7 +49,7 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	client := dns.Client{Timeout: p.boot.timeout, UDPSize: dns.MaxMsgSize}
 	reply, _, err := client.Exchange(m, addr)
 	if err != nil && reply != nil && reply.Truncated {
-		log.Debugf("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
+		log.Printf("[DEBUG] Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
 		tcpClient := dns.Client{Net: "tcp", Timeout: p.boot.timeout}
 		reply, _, err = tcpClient.Exchange(m, addr)
 	}

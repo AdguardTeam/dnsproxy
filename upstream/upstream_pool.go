@@ -2,11 +2,10 @@ package upstream
 
 import (
 	"crypto/tls"
+	"log"
 	"net"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/joomcode/errorx"
 )
@@ -57,12 +56,12 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 	// if we got connection from the slice, return it
 	if c != nil {
-		log.Debugf("Returning existing connection to %s", address)
+		log.Printf("[DEBUG] Returning existing connection to %s", address)
 		return c, nil
 	}
 
 	// we'll need a new connection, dial now
-	log.Debugf("Dialing to %s", address)
+	log.Printf("[DEBUG] Dialing to %s", address)
 
 	conn, err := tlsDial("tcp", address, tlsConfig)
 	if err != nil {

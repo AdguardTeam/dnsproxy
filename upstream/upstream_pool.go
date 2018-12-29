@@ -56,12 +56,12 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 	// if we got connection from the slice, return it
 	if c != nil {
-		log.Printf("[DEBUG] Returning existing connection to %s", address)
+		log.Tracef("Returning existing connection to %s", address)
 		return c, nil
 	}
 
 	// we'll need a new connection, dial now
-	log.Printf("[DEBUG] Dialing to %s", address)
+	log.Tracef("Dialing to %s", address)
 
 	conn, err := tlsDial("tcp", address, tlsConfig)
 	if err != nil {

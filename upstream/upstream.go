@@ -50,7 +50,7 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	client := dns.Client{Timeout: p.boot.timeout, UDPSize: dns.MaxMsgSize}
 	reply, _, err := client.Exchange(m, addr)
 	if err != nil && reply != nil && reply.Truncated {
-		log.Printf("[DEBUG] Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
+		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
 		tcpClient := dns.Client{Net: "tcp", Timeout: p.boot.timeout}
 		reply, _, err = tcpClient.Exchange(m, addr)
 	}

@@ -1,16 +1,18 @@
 package proxy
 
 import (
-	"log"
 	"net"
 	"sort"
 	"time"
 
 	"github.com/beefsack/go-rate"
+	"github.com/hmage/golibs/log"
 	gocache "github.com/patrickmn/go-cache"
 )
 
 func (p *Proxy) limiterForIP(ip string) interface{} {
+	p.ratelimitLock.Lock()
+	defer p.ratelimitLock.Unlock()
 	if p.ratelimitBuckets == nil {
 		p.ratelimitBuckets = gocache.New(time.Hour, time.Hour)
 	}

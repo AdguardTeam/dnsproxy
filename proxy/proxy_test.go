@@ -186,6 +186,42 @@ func TestRefuseAny(t *testing.T) {
 	}
 }
 
+func TestInvalidDNSRequest(t *testing.T) {
+	// Prepare the proxy server
+	dnsProxy := createTestProxy(t, nil)
+	dnsProxy.RefuseAny = true
+
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr("udp")
+	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+
+	// Create a DNS request
+	request := dns.Msg{}
+	request.Id = dns.Id()
+	request.RecursionDesired = true
+
+	r, _, err := client.Exchange(&request, addr.String())
+	if err != nil {
+		t.Fatalf("error in the first request: %s", err)
+	}
+
+	if r.Rcode != dns.RcodeServerFailure {
+		t.Fatalf("wrong response code (must've been ServerFailure)")
+	}
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
 func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	p := Proxy{}
 

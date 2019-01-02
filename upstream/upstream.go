@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/ameshkov/dnscrypt"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/hmage/golibs/log"
@@ -127,25 +129,33 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	}
 	bb := bytes.NewBuffer(buf)
 
-	// set up a custom request with custom URL
-	upstreamURL, err := url.Parse(p.boot.address)
+	req, err := http.NewRequest("POST", p.boot.address, bb)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't parse URL %s", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't create a HTTP request to %s", p.boot.address)
 	}
-	req := http.Request{
-		Method: "POST",
-		URL:    upstreamURL,
-		Body:   ioutil.NopCloser(bb),
-		Header: make(http.Header),
-		Host:   upstreamURL.Host,
-	}
-	upstreamURL.Host = addr
 	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+
+	// TODO: Temporary, just an experiment
+	dialer := &net.Dialer{
+		Timeout:   p.boot.timeout,
+		DualStack: true,
+		Resolver:  p.boot.resolver,
+	}
+	// TODO: it needs to be re-used according to the godoc:
+	// Transports should be reused instead of created as needed.
+	// Transports are safe for concurrent use by multiple goroutines.
+	transport := &http.Transport{
+		TLSClientConfig:    tlsConfig,
+		DisableCompression: true,
+		DialContext:        dialer.DialContext,
+	}
+	http2.ConfigureTransport(transport)
 	client := http.Client{
-		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Transport: transport,
 		Timeout:   p.boot.timeout,
 	}
-	resp, err := client.Do(&req)
+	resp, err := client.Do(req)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
 	}

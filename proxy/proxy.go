@@ -473,15 +473,15 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		d.Res = p.genServerFailure(d.Req)
 	}
 
+	// refuse ANY requests (anti-DDOS measure)
+	if p.RefuseAny && len(d.Req.Question) > 0 && d.Req.Question[0].Qtype == dns.TypeANY {
+		log.Tracef("Refusing type=ANY request")
+		d.Res = p.genNotImpl(d.Req)
+	}
+
 	var err error
 
 	if d.Res == nil {
-		// refuse ANY requests (anti-DDOS measure)
-		if p.RefuseAny && len(d.Req.Question) > 0 && d.Req.Question[0].Qtype == dns.TypeANY {
-			log.Tracef("Refusing type=ANY request")
-			d.Res = p.genNotImpl(d.Req)
-		}
-
 		// choose the DNS upstream
 		dnsUpstream, upstreamIdx := p.chooseUpstream()
 		d.Upstream = dnsUpstream

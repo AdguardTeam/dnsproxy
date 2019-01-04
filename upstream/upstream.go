@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -135,14 +136,20 @@ func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, erro
 //
 type dnsOverHTTPS struct {
 	boot bootstrapper
+
+	// transport is an http.Transport configured to use the bootstrapped IP address
+	// Transports should be reused instead of created as needed.
+	// Transports are safe for concurrent use by multiple goroutines.
+	transport    *http.Transport
+	sync.RWMutex // protects transport
 }
 
 func (p *dnsOverHTTPS) Address() string { return p.boot.address }
 
 func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	addr, tlsConfig, err := p.boot.get()
+	transport, err := p.getTransport()
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't bootstrap %s", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't initialize HTTP transport")
 	}
 
 	buf, err := m.Pack()
@@ -151,45 +158,72 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	}
 	bb := bytes.NewBuffer(buf)
 
-	// set up a custom request with custom URL
-	upstreamURL, err := url.Parse(p.boot.address)
+	req, err := http.NewRequest("POST", p.boot.address, bb)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't parse URL %s", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't create a HTTP request to %s", p.boot.address)
 	}
-	req := http.Request{
-		Method: "POST",
-		URL:    upstreamURL,
-		Body:   ioutil.NopCloser(bb),
-		Header: make(http.Header),
-		Host:   upstreamURL.Host,
-	}
-	upstreamURL.Host = addr
 	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+
 	client := http.Client{
-		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Transport: transport,
 		Timeout:   p.boot.timeout,
 	}
-	resp, err := client.Do(&req)
+	resp, err := client.Do(req)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't do a POST request to '%s'", addr)
+		return nil, errorx.Decorate(err, "couldn't do a POST request to '%s'", p.boot.address)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't read body contents for '%s'", addr)
+		return nil, errorx.Decorate(err, "couldn't read body contents for '%s'", p.boot.address)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("got an unexpected HTTP status code %d from '%s'", resp.StatusCode, addr)
+		return nil, fmt.Errorf("got an unexpected HTTP status code %d from '%s'", resp.StatusCode, p.boot.address)
 	}
 	response := dns.Msg{}
 	err = response.Unpack(body)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't unpack DNS response from '%s': body is %s", addr, string(body))
+		return nil, errorx.Decorate(err, "couldn't unpack DNS response from '%s': body is %s", p.boot.address, string(body))
 	}
 	return &response, nil
+}
+
+// getTransport gets or lazily initializes an HTTP transport that will be used specifically for this DOH resolver
+// This HTTP transport ensures that the HTTP requests will be sent exactly to the IP address got from the bootstrap resolver
+func (p *dnsOverHTTPS) getTransport() (*http.Transport, error) {
+	p.Lock()
+	defer p.Unlock()
+	if p.transport != nil {
+		return p.transport, nil
+	}
+
+	resolverAddr, tlsConfig, err := p.boot.get()
+	if err != nil {
+		return nil, errorx.Decorate(err, "couldn't bootstrap %s", p.boot.address)
+	}
+	dialer := &net.Dialer{
+		Timeout:   p.boot.timeout,
+		DualStack: true,
+	}
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		// Note that we're using bootstrapped resolverAddr instead of what's passed to the function
+		return dialer.DialContext(ctx, network, resolverAddr)
+	}
+	transport := &http.Transport{
+		TLSClientConfig:    tlsConfig,
+		DisableCompression: true,
+		DialContext:        dialContext,
+	}
+	// Uncomment to reproduce the conditions for https://github.com/AdguardTeam/dnsproxy/issues/5
+	// http2.ConfigureTransport(transport)
+
+	// Save the transport for the future use
+	p.transport = transport
+	return transport, nil
 }
 
 //

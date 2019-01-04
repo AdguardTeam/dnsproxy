@@ -8,6 +8,40 @@ import (
 	"github.com/miekg/dns"
 )
 
+func TestTLSPoolReconnect(t *testing.T) {
+	u, err := AddressToUpstream("tls://one.one.one.one", "8.8.8.8:53", 10*time.Second)
+	if err != nil {
+		t.Fatalf("cannot create upstream: %s", err)
+	}
+
+	// Send the first test message
+	req := createTestMessage()
+	reply, err := u.Exchange(req)
+	if err != nil {
+		t.Fatalf("first DNS message failed: %s", err)
+	}
+	assertResponse(t, reply)
+
+	// Now let's close the pooled connection and return it back to the pool
+	p := u.(*dnsOverTLS)
+	conn, _ := p.pool.Get()
+	conn.Close()
+	p.pool.Put(conn)
+
+	// Send the second test message
+	req = createTestMessage()
+	reply, err = u.Exchange(req)
+	if err != nil {
+		t.Fatalf("second DNS message failed: %s", err)
+	}
+	assertResponse(t, reply)
+
+	// Now assert that the number of connections in the pool is not changed
+	if len(p.pool.conns) != 1 {
+		t.Fatal("wrong number of pooled connections")
+	}
+}
+
 func TestUpstreams(t *testing.T) {
 	upstreams := []struct {
 		address   string
@@ -104,25 +138,33 @@ func TestUpstreams(t *testing.T) {
 func checkUpstream(t *testing.T, u Upstream, addr string) {
 	t.Helper()
 
+	req := createTestMessage()
+	reply, err := u.Exchange(req)
+	if err != nil {
+		t.Fatalf("Couldn't talk to upstream %s: %s", addr, err)
+	}
+	assertResponse(t, reply)
+}
+
+func createTestMessage() *dns.Msg {
 	req := dns.Msg{}
 	req.Id = dns.Id()
 	req.RecursionDesired = true
 	req.Question = []dns.Question{
 		{Name: "google-public-dns-a.google.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET},
 	}
+	return &req
+}
 
-	reply, err := u.Exchange(&req)
-	if err != nil {
-		t.Fatalf("Couldn't talk to upstream %s: %s", addr, err)
-	}
+func assertResponse(t *testing.T, reply *dns.Msg) {
 	if len(reply.Answer) != 1 {
-		t.Fatalf("DNS upstream %s returned reply with wrong number of answers - %d", addr, len(reply.Answer))
+		t.Fatalf("DNS upstream returned reply with wrong number of answers - %d", len(reply.Answer))
 	}
 	if a, ok := reply.Answer[0].(*dns.A); ok {
 		if !net.IPv4(8, 8, 8, 8).Equal(a.A) {
-			t.Fatalf("DNS upstream %s returned wrong answer instead of 8.8.8.8: %v", addr, a.A)
+			t.Fatalf("DNS upstream returned wrong answer instead of 8.8.8.8: %v", a.A)
 		}
 	} else {
-		t.Fatalf("DNS upstream %s returned wrong answer type instead of A: %v", addr, reply.Answer[0])
+		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
 	}
 }

@@ -38,7 +38,7 @@ type TLSPool struct {
 
 // Get gets or creates a new TLS connection
 func (n *TLSPool) Get() (net.Conn, error) {
-	address, tlsConfig, err := n.boot.get()
+	address, _, err := n.boot.get()
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +58,16 @@ func (n *TLSPool) Get() (net.Conn, error) {
 	if c != nil {
 		log.Tracef("Returning existing connection to %s", address)
 		return c, nil
+	}
+
+	return n.Create()
+}
+
+// Create creates a new connection for the pool (but not puts it there)
+func (n *TLSPool) Create() (net.Conn, error) {
+	address, tlsConfig, err := n.boot.get()
+	if err != nil {
+		return nil, err
 	}
 
 	// we'll need a new connection, dial now

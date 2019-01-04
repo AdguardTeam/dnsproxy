@@ -88,8 +88,35 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	if err != nil {
 		return nil, errorx.Decorate(err, "Failed to get a connection from TLSPool to %s", p.Address())
 	}
+
+	reply, err := p.exchangeConn(poolConn, m)
+	if err != nil {
+		// The pooled connection might have been closed already (see https://github.com/AdguardTeam/dnsproxy/issues/3)
+		// So we're trying to re-connect right away here.
+		// We are forcing creation of a new connection instead of calling Get() again
+		// as there's no guarantee that other pooled connections are intact
+		p.RLock()
+		poolConn, err = p.pool.Create()
+		p.RUnlock()
+		if err != nil {
+			return nil, errorx.Decorate(err, "Failed to create a new connection from TLSPool to %s", p.Address())
+		}
+
+		// Retry sending the DNS request
+		reply, err = p.exchangeConn(poolConn, m)
+	}
+
+	if err == nil {
+		p.RLock()
+		p.pool.Put(poolConn)
+		p.RUnlock()
+	}
+	return reply, err
+}
+
+func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, error) {
 	c := dns.Conn{Conn: poolConn}
-	err = c.WriteMsg(m)
+	err := c.WriteMsg(m)
 	if err != nil {
 		poolConn.Close()
 		return nil, errorx.Decorate(err, "Failed to send a request to %s", p.Address())
@@ -100,10 +127,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		poolConn.Close()
 		return nil, errorx.Decorate(err, "Failed to read a request from %s", p.Address())
 	}
-	p.RLock()
-	p.pool.Put(poolConn)
-	p.RUnlock()
-	return reply, nil
+	return reply, err
 }
 
 //

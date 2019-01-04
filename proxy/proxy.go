@@ -477,7 +477,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 
 	if d.Res == nil {
 		// refuse ANY requests (anti-DDOS measure)
-		if p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY {
+		if p.RefuseAny && len(d.Req.Question) > 0 && d.Req.Question[0].Qtype == dns.TypeANY {
 			log.Tracef("Refusing type=ANY request")
 			d.Res = p.genNotImpl(d.Req)
 		}

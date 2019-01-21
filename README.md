@@ -32,7 +32,6 @@ Application Options:
   -t, --tls-port=   Listen port for DNS-over-TLS (default: 0)
   -c, --tls-crt=    Path to a file with the certificate chain
   -k, --tls-key=    Path to a file with the private key
-  -n, --tls-name=   HTTPS/TLS server name
   -b, --bootstrap=  Bootstrap DNS for DoH and DoT (default: 8.8.8.8:53)
   -r, --ratelimit=  Ratelimit (requests per second) (default: 0)
   -z, --cache       If specified, DNS cache is enabled
@@ -99,7 +98,7 @@ Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
 
 Runs a DNS-over-HTTPS proxy on `127.0.0.1:443`.
 ```
-./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key --tls-name=example.org -u 8.8.8.8:53 
+./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 
 ```
 
 ### Additional features

@@ -43,9 +43,6 @@ type Options struct {
 	// Path to the file with the private key
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
-	// Server name to use in tls.Config
-	TLSServerName string `short:"n" long:"tls-name" description:"HTTPS/TLS server name"`
-
 	// Bootstrap DNS
 	BootstrapDNS string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT" default:"8.8.8.8:53"`
 
@@ -167,7 +164,6 @@ func createProxyConfig(options Options) proxy.Config {
 		if err != nil {
 			log.Fatalf("failed to load TLS config: %s", err)
 		}
-		tlsConfig.ServerName = options.TLSServerName
 		config.TLSConfig = tlsConfig
 	}
 

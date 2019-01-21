@@ -31,11 +31,11 @@ type Options struct {
 	// Server listen port
 	ListenPort int `short:"p" long:"port" description:"Listen port" default:"53"`
 
-	// HTTPS listen port
-	HTTPSListenPort int `short:"h" long:"https-port" description:"Listen port for DNS-over-HTTPS" default:"443"`
+	// HTTPS listen port (0 to disable DOH server)
+	HTTPSListenPort int `short:"h" long:"https-port" description:"Listen port for DNS-over-HTTPS" default:"0"`
 
-	// TLS listen port
-	TLSListenPort int `short:"t" long:"tls-port" description:"Listen port for DNS-over-TLS" default:"853"`
+	// TLS listen port (0 to disable DOH server)
+	TLSListenPort int `short:"t" long:"tls-port" description:"Listen port for DNS-over-TLS" default:"0"`
 
 	// Path to the .crt with the certificate chain
 	TLSCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`

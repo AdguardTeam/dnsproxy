@@ -38,7 +38,7 @@ func TestServeCached(t *testing.T) {
 	dnsProxy.cache.Set(&reply)
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request

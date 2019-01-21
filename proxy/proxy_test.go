@@ -11,7 +11,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"io/ioutil"
-	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -44,7 +43,7 @@ func TestHttpsProxy(t *testing.T) {
 	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
 
 	// Send a DNS-over-HTTPS request
-	httpsAddr := dnsProxy.Addr("https")
+	httpsAddr := dnsProxy.Addr(ProtoHTTPS)
 
 	dialer := &net.Dialer{
 		Timeout:   defaultTimeout,
@@ -60,9 +59,18 @@ func TestHttpsProxy(t *testing.T) {
 		DialContext:        dialContext,
 	}
 
-	buf := []byte("TEST")
+	msg := createTestMessage()
+	buf, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("couldn't pack DNS request: %s", err)
+	}
+
 	bb := bytes.NewBuffer(buf)
 	req, err := http.NewRequest("POST", "https://test.com", bb)
+	if err != nil {
+		t.Fatalf("couldn't create a new HTTP request: %s", err)
+	}
+
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
 
@@ -71,12 +79,24 @@ func TestHttpsProxy(t *testing.T) {
 		Timeout:   defaultTimeout,
 	}
 	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("couldn't exec the HTTP request: %s", err)
+	}
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
-	log.Print(string(body))
+	if err != nil {
+		t.Fatalf("coulnd't read the response body: %s", err)
+	}
+	reply := &dns.Msg{}
+	err = reply.Unpack(body)
+	if err != nil {
+		t.Fatalf("invalid DNS response: %s", err)
+	}
+
+	assertResponse(t, reply)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -101,7 +121,7 @@ func TestTlsProxy(t *testing.T) {
 	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
 
 	// Create a DNS-over-TLS client connection
-	addr := dnsProxy.Addr("tls")
+	addr := dnsProxy.Addr(ProtoTLS)
 	conn, err := dns.DialWithTLS("tcp-tls", addr.String(), tlsConfig)
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -127,7 +147,7 @@ func TestUdpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	conn, err := dns.Dial("udp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -159,7 +179,7 @@ func TestFallback(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	conn, err := dns.Dial("udp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -196,7 +216,7 @@ func TestTcpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-TCP client connection
-	addr := dnsProxy.Addr("tcp")
+	addr := dnsProxy.Addr(ProtoTCP)
 	conn, err := dns.Dial("tcp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -223,7 +243,7 @@ func TestRefuseAny(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request
@@ -260,7 +280,7 @@ func TestInvalidDNSRequest(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request

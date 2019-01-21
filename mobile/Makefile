@@ -7,7 +7,7 @@ mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 mkfile_dir := $(patsubst %/,%,$(dir $(mkfile_path)))
 GOPATH := $(mkfile_dir)/build/gopath
 ANDROID_HOME := $(ANDROID_HOME)
-ANDROID_NDK := $(ANDROID_HOME)ndk-bundle
+ANDROID_NDK := $(ANDROID_HOME)/ndk-bundle
 
 clean: cleanfast
 	rm -rf build

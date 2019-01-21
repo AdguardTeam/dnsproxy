@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
@@ -8,8 +10,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"io/ioutil"
+	"log"
 	"math/big"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -22,6 +27,63 @@ const (
 	upstreamAddr  = "8.8.8.8:53"
 	tlsServerName = "testdns.adguard.com"
 )
+
+func TestHttpsProxy(t *testing.T) {
+	// Prepare the proxy server
+	serverConfig, caPem := createServerTLSConfig(t)
+	dnsProxy := createTestProxy(t, serverConfig)
+
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPem)
+	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
+
+	// Send a DNS-over-HTTPS request
+	httpsAddr := dnsProxy.Addr("https")
+
+	dialer := &net.Dialer{
+		Timeout:   defaultTimeout,
+		DualStack: true,
+	}
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		// Route request to the DOH server address
+		return dialer.DialContext(ctx, network, httpsAddr.String())
+	}
+	transport := &http.Transport{
+		TLSClientConfig:    tlsConfig,
+		DisableCompression: true,
+		DialContext:        dialContext,
+	}
+
+	buf := []byte("TEST")
+	bb := bytes.NewBuffer(buf)
+	req, err := http.NewRequest("POST", "https://test.com", bb)
+	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+
+	client := http.Client{
+		Transport: transport,
+		Timeout:   defaultTimeout,
+	}
+	resp, err := client.Do(req)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	log.Print(string(body))
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
 
 func TestTlsProxy(t *testing.T) {
 	// Prepare the proxy server
@@ -230,6 +292,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 
 	if tlsConfig != nil {
 		p.TLSListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
+		p.HTTPSListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
 		p.TLSConfig = tlsConfig
 	}
 	upstreams := make([]upstream.Upstream, 0)
@@ -324,7 +387,7 @@ func createServerTLSConfig(t *testing.T) (*tls.Config, []byte) {
 		t.Fatalf("failed to create certificate: %s", err)
 	}
 
-	return &tls.Config{Certificates: []tls.Certificate{cert}}, certPem
+	return &tls.Config{Certificates: []tls.Certificate{cert}, ServerName: tlsServerName}, certPem
 }
 
 func publicKey(priv interface{}) interface{} {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -28,10 +29,12 @@ type Handler func(p *Proxy, d *DNSContext) error
 
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
-	started   bool         // Started flag
-	udpListen *net.UDPConn // UDP listen connection
-	tcpListen net.Listener // TCP listener
-	tlsListen net.Listener // TLS listener
+	started     bool         // Started flag
+	udpListen   *net.UDPConn // UDP listen connection
+	tcpListen   net.Listener // TCP listener
+	tlsListen   net.Listener // TLS listener
+	httpsListen net.Listener // HTTPS listener
+	httpsServer *http.Server // HTTPS server instance
 
 	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
 	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
@@ -51,8 +54,9 @@ type Config struct {
 	UDPListenAddr *net.UDPAddr // if nil, then it does not listen for UDP
 	TCPListenAddr *net.TCPAddr // if nil, then it does not listen for TCP
 
-	TLSListenAddr *net.TCPAddr // if nil, then it does not listen for TLS (DoT)
-	TLSConfig     *tls.Config  // necessary for listening for TLS
+	HTTPSListenAddr *net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
+	TLSListenAddr   *net.TCPAddr // if nil, then it does not listen for TLS (DoT)
+	TLSConfig       *tls.Config  // necessary for listening for TLS
 
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
@@ -115,7 +119,7 @@ func (p *Proxy) Stop() error {
 
 	p.Lock()
 	defer p.Unlock()
-	if p.udpListen == nil && p.tcpListen == nil {
+	if !p.started {
 		log.Println("The DNS proxy server is not started")
 		return nil
 	}
@@ -146,12 +150,22 @@ func (p *Proxy) Stop() error {
 		}
 	}
 
+	if p.httpsServer != nil {
+		err = p.httpsServer.Close()
+		p.httpsListen = nil
+		p.httpsServer = nil
+		if err != nil {
+			return errorx.Decorate(err, "couldn't close HTTPS server")
+		}
+	}
+
 	p.started = false
 	log.Println("Stopped the DNS proxy server")
 	return nil
 }
 
 // Addr returns the listen address for the specified proto or null if the proxy does not listen to it
+// proto can be "tcp", "tls", "https" or anything else for udp
 func (p *Proxy) Addr(proto string) net.Addr {
 	p.RLock()
 	defer p.RUnlock()
@@ -166,6 +180,11 @@ func (p *Proxy) Addr(proto string) net.Addr {
 			return nil
 		}
 		return p.tlsListen.Addr()
+	case "https":
+		if p.httpsListen == nil {
+			return nil
+		}
+		return p.httpsListen.Addr()
 	default:
 		if p.udpListen == nil {
 			return nil
@@ -221,12 +240,16 @@ func (p *Proxy) validateConfig() error {
 		return errors.New("server has been already started")
 	}
 
-	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil {
+	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil && p.HTTPSListenAddr == nil {
 		return errors.New("no listen address specified")
 	}
 
 	if p.TLSListenAddr != nil && p.TLSConfig == nil {
 		return errors.New("cannot create a TLS listener without TLS config")
+	}
+
+	if p.HTTPSListenAddr != nil && p.TLSConfig == nil {
+		return errors.New("cannot create an HTTPS listener without TLS config")
 	}
 
 	if len(p.Upstreams) == 0 {
@@ -279,6 +302,17 @@ func (p *Proxy) startListeners() error {
 		log.Printf("Listening to tls://%s", p.tlsListen.Addr())
 	}
 
+	if p.HTTPSListenAddr != nil {
+		log.Printf("Creating the HTTPS server")
+		tcpListen, err := net.ListenTCP("tcp", p.HTTPSListenAddr)
+		if err != nil {
+			return errorx.Decorate(err, "could not start HTTPS listener")
+		}
+		p.httpsListen = tls.NewListener(tcpListen, p.TLSConfig)
+		log.Printf("Listening to https://%s", p.httpsListen.Addr())
+		p.httpsServer = &http.Server{Handler: p}
+	}
+
 	if p.udpListen != nil {
 		go p.udpPacketLoop(p.udpListen)
 	}
@@ -289,6 +323,10 @@ func (p *Proxy) startListeners() error {
 
 	if p.tlsListen != nil {
 		go p.tcpPacketLoop(p.tlsListen, "tls")
+	}
+
+	if p.httpsListen != nil {
+		go p.listenHTTPS()
 	}
 
 	return nil
@@ -455,6 +493,25 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 		return fmt.Errorf("conn.Write() returned with %d != %d", n, len(bytes))
 	}
 	return nil
+}
+
+// serveHttps starts the HTTPS server
+func (p *Proxy) listenHTTPS() {
+	log.Printf("Listening to DNS-over-HTTPS on %s", p.httpsListen.Addr())
+	err := p.httpsServer.Serve(p.httpsListen)
+
+	if err != http.ErrServerClosed {
+		log.Printf("HTTPS server was closed unexpectedly: %s", err)
+	} else {
+		log.Printf("HTTPS server was closed")
+	}
+}
+
+// ServeHTTP is the http.Handler implementation
+func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	rw.Header().Set("content-type", "text/plain")
+	rw.WriteHeader(http.StatusOK)
+	rw.Write([]byte("OK"))
 }
 
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.

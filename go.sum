@@ -12,8 +12,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-test/deep v1.0.1 h1:UQhStjbkDClarlmv0am7OXXO4/GaPdCGiUiMTvi28sg=
 github.com/go-test/deep v1.0.1/go.mod h1:wGDj63lr65AM2AQyKZd/NYHGb0R+1RLqB8NKt3aSFNA=
-github.com/hmage/golibs v0.0.0-20181229160906-c8491df0bfc4 h1:FMAReGTEDNr4AdbScv/PqzjMQUpkkVHiF/t8sDHQQVQ=
-github.com/hmage/golibs v0.0.0-20181229160906-c8491df0bfc4/go.mod h1:H6Ev6svFxUVPFThxLtdnFfcE9e3GWufpfmcVFpqV6HM=
+github.com/hmage/golibs v0.0.0-20190121112702-20153bd03c24 h1:yyDtaSMcAZdm1I6uL8YLghpWiJljfBHs8NC/P86PYQk=
+github.com/hmage/golibs v0.0.0-20190121112702-20153bd03c24/go.mod h1:H6Ev6svFxUVPFThxLtdnFfcE9e3GWufpfmcVFpqV6HM=
 github.com/jessevdk/go-flags v1.4.0 h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=
 github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJSGM75WSRxI=
 github.com/jmcvetta/randutil v0.0.0-20150817122601-2bb1b664bcff h1:6NvhExg4omUC9NfA+l4Oq3ibNNeJUdiAF3iBVB0PlDk=

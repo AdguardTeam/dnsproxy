@@ -26,6 +26,8 @@ matrix:
         - GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:dev} make release
         # Darwin-amd64 build
         - GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:dev} make release
+        # List build output
+        ls -l build/dnsproxy-*
 
       after_success:
         - bash <(curl -s https://codecov.io/bash)
@@ -34,8 +36,8 @@ matrix:
         provider: releases
         api_key: $GITHUB_TOKEN
         file:
-          - dnsproxy-*.zip
-          - dnsproxy-*.tar.gz
+          - build/dnsproxy-*.zip
+          - build/dnsproxy-*.tar.gz
         on:
           repo: AdguardTeam/dnsproxy
           branch: feature/travis_binary_builds

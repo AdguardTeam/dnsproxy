@@ -27,7 +27,7 @@ matrix:
         # Darwin-amd64 build
         - GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:dev} make release
         # List build output
-        ls -l build/dnsproxy-*
+        - ls -l build/dnsproxy-*
 
       after_success:
         - bash <(curl -s https://codecov.io/bash)

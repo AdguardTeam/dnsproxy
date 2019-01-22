@@ -42,6 +42,53 @@ func TestTLSPoolReconnect(t *testing.T) {
 	}
 }
 
+func TestDNSTruncated(t *testing.T) {
+	// AdGuard DNS
+	address := "176.103.130.130:53"
+	u, err := AddressToUpstream(address, "", 10*time.Second)
+
+	if err != nil {
+		t.Fatalf("error while creating an upstream: %s", err)
+	}
+
+	req := new(dns.Msg)
+	req.SetQuestion("unit-test2.dns.adguard.com.", dns.TypeTXT)
+	req.RecursionDesired = true
+
+	res, err := u.Exchange(req)
+	if err != nil {
+		t.Fatalf("error while making a request: %s", err)
+	}
+
+	if res.Truncated {
+		t.Fatalf("response must NOT be truncated")
+	}
+}
+
+// See the details here: https://github.com/AdguardTeam/AdGuardHome/issues/524
+func TestDNSCryptTruncated(t *testing.T) {
+	// AdGuard DNS (DNSCrypt)
+	address := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
+	u, err := AddressToUpstream(address, "", 10*time.Second)
+
+	if err != nil {
+		t.Fatalf("error while creating an upstream: %s", err)
+	}
+
+	req := new(dns.Msg)
+	req.SetQuestion("unit-test2.dns.adguard.com.", dns.TypeTXT)
+	req.RecursionDesired = true
+
+	res, err := u.Exchange(req)
+	if err != nil {
+		t.Fatalf("error while making a request: %s", err)
+	}
+
+	if res.Truncated {
+		t.Fatalf("response must NOT be truncated")
+	}
+}
+
 func TestUpstreams(t *testing.T) {
 	upstreams := []struct {
 		address   string

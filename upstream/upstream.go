@@ -270,6 +270,7 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	reply, _, err := client.Exchange(m, serverInfo)
 
 	if reply != nil && reply.Truncated {
+		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
 		tcpClient := &dnscrypt.Client{Timeout: p.boot.timeout, Proto: "tcp"}
 		reply, _, err = tcpClient.Exchange(m, serverInfo)
 	}

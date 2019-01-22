@@ -14,10 +14,35 @@ matrix:
         - 1.x
 
       script:
+        # Run tests
         - go test -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+        # Windows-386 build
+        - GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+        # Windows-amd64 build
+        - GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+        # Linux-386 build
+        - GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+        # Linux-amd64 build
+        - GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+        # Darwin-amd64 build
+        - GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+        # List build output
+        - ls -l build/dnsproxy-*
 
       after_success:
         - bash <(curl -s https://codecov.io/bash)
+
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file:
+          - build/dnsproxy-*.zip
+          - build/dnsproxy-*.tar.gz
+        on:
+          repo: AdguardTeam/dnsproxy
+          tags: true
+        file_glob: true
+        skip_cleanup: true
 
     - language: android
       sudo: true

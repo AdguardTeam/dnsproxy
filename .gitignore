@@ -1,7 +1,9 @@
 .DS_Store
 .idea
 .vscode
+build
 dnsproxy
 dnsproxy.exe
 example.crt
 example.key
+coverage.txt

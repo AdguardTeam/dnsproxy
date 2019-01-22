@@ -6,7 +6,7 @@ require (
 	github.com/beefsack/go-rate v0.0.0-20180408011153-efa7637bb9b6
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-test/deep v1.0.1
-	github.com/hmage/golibs v0.0.0-20181229160906-c8491df0bfc4
+	github.com/hmage/golibs v0.0.0-20190121112702-20153bd03c24
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/jmcvetta/randutil v0.0.0-20150817122601-2bb1b664bcff
 	github.com/joomcode/errorx v0.1.0

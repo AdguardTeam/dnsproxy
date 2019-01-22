@@ -40,9 +40,7 @@ matrix:
           - build/dnsproxy-*.tar.gz
         on:
           repo: AdguardTeam/dnsproxy
-          branch: feature/travis_binary_builds
-#          tags: true
-        draft: true
+          tags: true
         file_glob: true
         skip_cleanup: true
 

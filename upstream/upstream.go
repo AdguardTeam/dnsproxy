@@ -50,7 +50,7 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	client := dns.Client{Timeout: p.boot.timeout, UDPSize: dns.MaxMsgSize}
 	reply, _, err := client.Exchange(m, addr)
-	if err != nil && reply != nil && reply.Truncated {
+	if reply != nil && reply.Truncated {
 		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
 		tcpClient := dns.Client{Net: "tcp", Timeout: p.boot.timeout}
 		reply, _, err = tcpClient.Exchange(m, addr)
@@ -268,6 +268,12 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	}
 
 	reply, _, err := client.Exchange(m, serverInfo)
+
+	if reply != nil && reply.Truncated {
+		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
+		tcpClient := dnscrypt.Client{Timeout: p.boot.timeout, Proto: "tcp"}
+		reply, _, err = tcpClient.Exchange(m, serverInfo)
+	}
 
 	if os.IsTimeout(err) {
 		// If request times out, it is possible that the server configuration has been changed.

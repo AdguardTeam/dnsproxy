@@ -40,7 +40,7 @@ func TestFilteringHandler(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Send the first message (not blocked)

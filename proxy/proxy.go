@@ -2,9 +2,13 @@ package proxy
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
+	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -21,6 +25,17 @@ const (
 	minDNSPacketSize = 12 + 5
 )
 
+const (
+	// ProtoUDP is plain DNS-over-UDP
+	ProtoUDP = "udp"
+	// ProtoTCP is plain DNS-over-TCP
+	ProtoTCP = "tcp"
+	// ProtoTLS is DNS-over-TLS
+	ProtoTLS = "tls"
+	// ProtoHTTPS is DNS-over-HTTPS
+	ProtoHTTPS = "https"
+)
+
 // Handler is an optional custom handler for DNS requests
 // It is called instead of the default method (Proxy.Resolve())
 // See handler_test.go for examples
@@ -28,10 +43,12 @@ type Handler func(p *Proxy, d *DNSContext) error
 
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
-	started   bool         // Started flag
-	udpListen *net.UDPConn // UDP listen connection
-	tcpListen net.Listener // TCP listener
-	tlsListen net.Listener // TLS listener
+	started     bool         // Started flag
+	udpListen   *net.UDPConn // UDP listen connection
+	tcpListen   net.Listener // TCP listener
+	tlsListen   net.Listener // TLS listener
+	httpsListen net.Listener // HTTPS listener
+	httpsServer *http.Server // HTTPS server instance
 
 	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
 	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
@@ -51,8 +68,9 @@ type Config struct {
 	UDPListenAddr *net.UDPAddr // if nil, then it does not listen for UDP
 	TCPListenAddr *net.TCPAddr // if nil, then it does not listen for TCP
 
-	TLSListenAddr *net.TCPAddr // if nil, then it does not listen for TLS (DoT)
-	TLSConfig     *tls.Config  // necessary for listening for TLS
+	HTTPSListenAddr *net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
+	TLSListenAddr   *net.TCPAddr // if nil, then it does not listen for TLS (DoT)
+	TLSConfig       *tls.Config  // necessary for listening for TLS
 
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
@@ -68,14 +86,16 @@ type Config struct {
 
 // DNSContext represents a DNS request message context
 type DNSContext struct {
-	Proto       string            // "udp", "tcp", "tls", "https"
-	Req         *dns.Msg          // DNS request
-	Res         *dns.Msg          // DNS response from an upstream
-	Conn        net.Conn          // underlying client connection
-	Addr        net.Addr          // client address
-	StartTime   time.Time         // processing start time
-	Upstream    upstream.Upstream // upstream that was chosen
-	UpstreamIdx int               // upstream index
+	Proto              string              // "udp", "tcp", "tls", "https"
+	Req                *dns.Msg            // DNS request
+	Res                *dns.Msg            // DNS response from an upstream
+	Conn               net.Conn            // underlying client connection. Can be null in the case of DOH.
+	Addr               net.Addr            // client address.
+	HTTPRequest        *http.Request       // HTTP request (for DOH only)
+	HTTPResponseWriter http.ResponseWriter // HTTP response writer (for DOH only)
+	StartTime          time.Time           // processing start time
+	Upstream           upstream.Upstream   // upstream that was chosen
+	UpstreamIdx        int                 // upstream index
 }
 
 // Start initializes the proxy server and starts listening
@@ -115,7 +135,7 @@ func (p *Proxy) Stop() error {
 
 	p.Lock()
 	defer p.Unlock()
-	if p.udpListen == nil && p.tcpListen == nil {
+	if !p.started {
 		log.Println("The DNS proxy server is not started")
 		return nil
 	}
@@ -146,31 +166,48 @@ func (p *Proxy) Stop() error {
 		}
 	}
 
+	if p.httpsServer != nil {
+		err = p.httpsServer.Close()
+		p.httpsListen = nil
+		p.httpsServer = nil
+		if err != nil {
+			return errorx.Decorate(err, "couldn't close HTTPS server")
+		}
+	}
+
 	p.started = false
 	log.Println("Stopped the DNS proxy server")
 	return nil
 }
 
 // Addr returns the listen address for the specified proto or null if the proxy does not listen to it
+// proto must be "tcp", "tls", "https" or "udp"
 func (p *Proxy) Addr(proto string) net.Addr {
 	p.RLock()
 	defer p.RUnlock()
 	switch proto {
-	case "tcp":
+	case ProtoTCP:
 		if p.tcpListen == nil {
 			return nil
 		}
 		return p.tcpListen.Addr()
-	case "tls":
+	case ProtoTLS:
 		if p.tlsListen == nil {
 			return nil
 		}
 		return p.tlsListen.Addr()
-	default:
+	case ProtoHTTPS:
+		if p.httpsListen == nil {
+			return nil
+		}
+		return p.httpsListen.Addr()
+	case ProtoUDP:
 		if p.udpListen == nil {
 			return nil
 		}
 		return p.udpListen.LocalAddr()
+	default:
+		panic("proto must be 'tcp', 'tls', 'https' or 'udp'")
 	}
 }
 
@@ -221,12 +258,16 @@ func (p *Proxy) validateConfig() error {
 		return errors.New("server has been already started")
 	}
 
-	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil {
+	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil && p.HTTPSListenAddr == nil {
 		return errors.New("no listen address specified")
 	}
 
 	if p.TLSListenAddr != nil && p.TLSConfig == nil {
 		return errors.New("cannot create a TLS listener without TLS config")
+	}
+
+	if p.HTTPSListenAddr != nil && p.TLSConfig == nil {
+		return errors.New("cannot create an HTTPS listener without TLS config")
 	}
 
 	if len(p.Upstreams) == 0 {
@@ -279,16 +320,35 @@ func (p *Proxy) startListeners() error {
 		log.Printf("Listening to tls://%s", p.tlsListen.Addr())
 	}
 
+	if p.HTTPSListenAddr != nil {
+		log.Printf("Creating the HTTPS server")
+		tcpListen, err := net.ListenTCP("tcp", p.HTTPSListenAddr)
+		if err != nil {
+			return errorx.Decorate(err, "could not start HTTPS listener")
+		}
+		p.httpsListen = tls.NewListener(tcpListen, p.TLSConfig)
+		log.Printf("Listening to https://%s", p.httpsListen.Addr())
+		p.httpsServer = &http.Server{
+			Handler:           p,
+			ReadHeaderTimeout: defaultTimeout,
+			WriteTimeout:      defaultTimeout,
+		}
+	}
+
 	if p.udpListen != nil {
 		go p.udpPacketLoop(p.udpListen)
 	}
 
 	if p.tcpListen != nil {
-		go p.tcpPacketLoop(p.tcpListen, "tcp")
+		go p.tcpPacketLoop(p.tcpListen, ProtoTCP)
 	}
 
 	if p.tlsListen != nil {
-		go p.tcpPacketLoop(p.tlsListen, "tls")
+		go p.tcpPacketLoop(p.tlsListen, ProtoTLS)
+	}
+
+	if p.httpsListen != nil {
+		go p.listenHTTPS()
 	}
 
 	return nil
@@ -319,7 +379,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 				log.Printf("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
-			log.Printf("[WARN] got error when reading from UDP listen: %s", err)
+			log.Printf("got error when reading from UDP listen: %s", err)
 		}
 	}
 }
@@ -331,7 +391,7 @@ func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 	msg := &dns.Msg{}
 	err := msg.Unpack(packet)
 	if err != nil {
-		log.Printf("[WARN] error handling UDP packet: %s", err)
+		log.Printf("error handling UDP packet: %s", err)
 		return
 	}
 
@@ -373,7 +433,7 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 // tcpPacketLoop listens for incoming TCP packets
 // proto is either "tcp" or "tls"
 func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
-	log.Printf("Entering the TCP listener loop on %s", l.Addr())
+	log.Printf("Entering the %s listener loop on %s", proto, l.Addr())
 	for {
 		clientConn, err := l.Accept()
 
@@ -382,7 +442,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 				log.Printf("tcpListen.Accept() returned because we're reading from a closed connection, exiting loop")
 				break
 			}
-			log.Printf("[WARN] got error when reading from TCP listen: %s", err)
+			log.Printf("got error when reading from TCP listen: %s", err)
 		} else {
 			go p.handleTCPConnection(clientConn, proto)
 		}
@@ -392,7 +452,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 // handleTCPConnection starts a loop that handles an incoming TCP connection
 // proto is either "tcp" or "tls"
 func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
-	log.Tracef("Start handling the new TCP connection %s", conn.RemoteAddr())
+	log.Tracef("Start handling the new %s connection %s", proto, conn.RemoteAddr())
 	defer conn.Close()
 
 	for {
@@ -411,7 +471,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 		msg := &dns.Msg{}
 		err = msg.Unpack(packet)
 		if err != nil {
-			log.Printf("[WARN] error handling TCP packet: %s", err)
+			log.Printf("error handling TCP packet: %s", err)
 			return
 		}
 
@@ -429,7 +489,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 	}
 }
 
-// Writes a response to the TCP client
+// Writes a response to the TCP (or TLS) client
 func (p *Proxy) respondTCP(d *DNSContext) error {
 	resp := d.Res
 	conn := d.Conn
@@ -457,19 +517,130 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 	return nil
 }
 
+// serveHttps starts the HTTPS server
+func (p *Proxy) listenHTTPS() {
+	log.Printf("Listening to DNS-over-HTTPS on %s", p.httpsListen.Addr())
+	err := p.httpsServer.Serve(p.httpsListen)
+
+	if err != http.ErrServerClosed {
+		log.Printf("HTTPS server was closed unexpectedly: %s", err)
+	} else {
+		log.Printf("HTTPS server was closed")
+	}
+}
+
+// ServeHTTP is the http.Handler implementation that handles DOH queries
+// Here is what it returns:
+// http.StatusBadRequest - if there is no DNS request data
+// http.StatusUnsupportedMediaType - if request content type is not application/dns-message
+// http.StatusMethodNotAllowed - if request method is not GET or POST
+func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Tracef("Incoming HTTPS request on %s", r.URL)
+
+	var buf []byte
+	var err error
+
+	switch r.Method {
+	case http.MethodGet:
+		dnsParam := r.URL.Query().Get("dns")
+		buf, err = base64.RawURLEncoding.DecodeString(dnsParam)
+		if len(buf) == 0 || err != nil {
+			log.Tracef("Cannot parse DNS request from %s", dnsParam)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+	case http.MethodPost:
+		contentType := r.Header.Get("Content-Type")
+		if contentType != "application/dns-message" {
+			log.Tracef("Unsupported media type: %s", contentType)
+			http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
+			return
+		}
+
+		buf, err = ioutil.ReadAll(r.Body)
+		if err != nil {
+			log.Tracef("Cannot read the request body: %s", err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+	default:
+		log.Tracef("Wrong HTTP method: %s", r.Method)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	msg := new(dns.Msg)
+	if err := msg.Unpack(buf); err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	addr, _ := p.remoteAddr(r)
+
+	d := &DNSContext{
+		Proto:              ProtoHTTPS,
+		Req:                msg,
+		Addr:               addr,
+		HTTPRequest:        r,
+		HTTPResponseWriter: w,
+	}
+
+	err = p.handleDNSRequest(d)
+	if err != nil {
+		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
+	}
+}
+
+// Writes a response to the DOH client
+func (p *Proxy) respondHTTPS(d *DNSContext) error {
+	resp := d.Res
+	w := d.HTTPResponseWriter
+
+	bytes, err := resp.Pack()
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return errorx.Decorate(err, "couldn't convert message into wire format")
+	}
+
+	w.Header().Set("Server", "AdGuard DNS")
+	w.Header().Set("Content-Type", "application/dns-message")
+	_, err = w.Write(bytes)
+	return err
+}
+
+func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
+	host, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	portValue, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, err
+	}
+
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return nil, fmt.Errorf("invalid IP: %s", host)
+	}
+
+	return &net.TCPAddr{IP: ip, Port: portValue}, nil
+}
+
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
 func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	d.StartTime = time.Now()
 	p.logDNSMessage(d.Req)
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
-	if d.Proto == "udp" && p.isRatelimited(d.Addr) {
+	if d.Proto == ProtoUDP && p.isRatelimited(d.Addr) {
 		log.Tracef("Ratelimiting %v based on IP only", d.Addr)
 		return nil // do nothing, don't reply, we got ratelimited
 	}
 
 	if len(d.Req.Question) != 1 {
-		log.Printf("[WARN] got invalid number of questions: %v", len(d.Req.Question))
+		log.Printf("got invalid number of questions: %v", len(d.Req.Question))
 		d.Res = p.genServerFailure(d.Req)
 	}
 
@@ -512,20 +683,28 @@ func (p *Proxy) respond(d *DNSContext) {
 		return
 	}
 
+	// d.Conn can be nil in the case of a DOH request
+	if d.Conn != nil {
+		d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
+	}
+
 	var err error
 
-	// we're good to respond
-	//noinspection GoUnhandledErrorResult
-	d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
-
-	if d.Proto == "udp" {
+	switch d.Proto {
+	case ProtoUDP:
 		err = p.respondUDP(d)
-	} else {
+	case ProtoTCP:
 		err = p.respondTCP(d)
+	case ProtoTLS:
+		err = p.respondTCP(d)
+	case ProtoHTTPS:
+		err = p.respondHTTPS(d)
+	default:
+		err = fmt.Errorf("SHOULD NOT HAPPEN - unknown protocol: %s", d.Proto)
 	}
 
 	if err != nil {
-		log.Printf("[WARN] error while responding to a DNS request: %s", err)
+		log.Printf("error while responding to a DNS request: %s", err)
 	}
 }
 

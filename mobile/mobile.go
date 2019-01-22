@@ -92,7 +92,7 @@ func (d *DNSProxy) Addr() string {
 		return ""
 	}
 
-	addr := d.dnsProxy.Addr("udp")
+	addr := d.dnsProxy.Addr(proxy.ProtoUDP)
 	if addr == nil {
 		return ""
 	}

@@ -31,8 +31,11 @@ type Options struct {
 	// Server listen port
 	ListenPort int `short:"p" long:"port" description:"Listen port" default:"53"`
 
-	// TLS listen port
-	TLSListenPort int `short:"t" long:"tls-port" description:"Listen port for DNS-over-TLS" default:"853"`
+	// HTTPS listen port (0 to disable DOH server)
+	HTTPSListenPort int `short:"h" long:"https-port" description:"Listen port for DNS-over-HTTPS" default:"0"`
+
+	// TLS listen port (0 to disable DOH server)
+	TLSListenPort int `short:"t" long:"tls-port" description:"Listen port for DNS-over-TLS" default:"0"`
 
 	// Path to the .crt with the certificate chain
 	TLSCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
@@ -99,7 +102,6 @@ func run(options Options) {
 
 	// Start the proxy
 	err := dnsProxy.Start()
-
 	if err != nil {
 		log.Fatalf("cannot start the DNS proxy due to %s", err)
 	}
@@ -157,13 +159,20 @@ func createProxyConfig(options Options) proxy.Config {
 	}
 
 	// Prepare the TLS config
-	if options.TLSListenPort > 0 && options.TLSCertPath != "" && options.TLSKeyPath != "" {
-		config.TLSListenAddr = &net.TCPAddr{Port: options.TLSListenPort, IP: listenIP}
+	if options.TLSCertPath != "" && options.TLSKeyPath != "" {
 		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath)
 		if err != nil {
 			log.Fatalf("failed to load TLS config: %s", err)
 		}
 		config.TLSConfig = tlsConfig
+	}
+
+	if options.TLSListenPort > 0 && config.TLSConfig != nil {
+		config.TLSListenAddr = &net.TCPAddr{Port: options.TLSListenPort, IP: listenIP}
+	}
+
+	if options.HTTPSListenPort > 0 && config.TLSConfig != nil {
+		config.HTTPSListenAddr = &net.TCPAddr{Port: options.HTTPSListenPort, IP: listenIP}
 	}
 
 	return config

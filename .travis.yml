@@ -46,6 +46,9 @@ matrix:
       install:
         - eval "$(curl -sL https://raw.githubusercontent.com/travis-ci/gimme/master/gimme | bash)"
         - echo y | sdkmanager "ndk-bundle"
+        # Patching NDK (see https://github.com/golang/go/issues/29706). Remove after
+        # TODO: Remove after new NDK stable update
+        - sed -i.bak 's/-target {} -stdlib=libc\+\+/-target {}/g' "$ANDROID_HOME/ndk-bundle/build/tools/make_standalone_toolchain.py"
         - echo y | sdkmanager "cmake;3.6.4111459"
         - echo y | sdkmanager "lldb;3.1"
 

@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
@@ -8,8 +10,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"io/ioutil"
 	"math/big"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -22,6 +26,84 @@ const (
 	upstreamAddr  = "8.8.8.8:53"
 	tlsServerName = "testdns.adguard.com"
 )
+
+func TestHttpsProxy(t *testing.T) {
+	// Prepare the proxy server
+	serverConfig, caPem := createServerTLSConfig(t)
+	dnsProxy := createTestProxy(t, serverConfig)
+
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPem)
+	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
+
+	// Send a DNS-over-HTTPS request
+	httpsAddr := dnsProxy.Addr(ProtoHTTPS)
+
+	dialer := &net.Dialer{
+		Timeout:   defaultTimeout,
+		DualStack: true,
+	}
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		// Route request to the DOH server address
+		return dialer.DialContext(ctx, network, httpsAddr.String())
+	}
+	transport := &http.Transport{
+		TLSClientConfig:    tlsConfig,
+		DisableCompression: true,
+		DialContext:        dialContext,
+	}
+
+	msg := createTestMessage()
+	buf, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("couldn't pack DNS request: %s", err)
+	}
+
+	bb := bytes.NewBuffer(buf)
+	req, err := http.NewRequest("POST", "https://test.com", bb)
+	if err != nil {
+		t.Fatalf("couldn't create a new HTTP request: %s", err)
+	}
+
+	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+
+	client := http.Client{
+		Transport: transport,
+		Timeout:   defaultTimeout,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("couldn't exec the HTTP request: %s", err)
+	}
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("coulnd't read the response body: %s", err)
+	}
+	reply := &dns.Msg{}
+	err = reply.Unpack(body)
+	if err != nil {
+		t.Fatalf("invalid DNS response: %s", err)
+	}
+
+	assertResponse(t, reply)
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
 
 func TestTlsProxy(t *testing.T) {
 	// Prepare the proxy server
@@ -39,7 +121,7 @@ func TestTlsProxy(t *testing.T) {
 	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
 
 	// Create a DNS-over-TLS client connection
-	addr := dnsProxy.Addr("tls")
+	addr := dnsProxy.Addr(ProtoTLS)
 	conn, err := dns.DialWithTLS("tcp-tls", addr.String(), tlsConfig)
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -65,7 +147,7 @@ func TestUdpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	conn, err := dns.Dial("udp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -97,7 +179,7 @@ func TestFallback(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	conn, err := dns.Dial("udp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -134,7 +216,7 @@ func TestTcpProxy(t *testing.T) {
 	}
 
 	// Create a DNS-over-TCP client connection
-	addr := dnsProxy.Addr("tcp")
+	addr := dnsProxy.Addr(ProtoTCP)
 	conn, err := dns.Dial("tcp", addr.String())
 	if err != nil {
 		t.Fatalf("cannot connect to the proxy: %s", err)
@@ -161,7 +243,7 @@ func TestRefuseAny(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request
@@ -198,7 +280,7 @@ func TestInvalidDNSRequest(t *testing.T) {
 	}
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr("udp")
+	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Create a DNS request
@@ -230,6 +312,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 
 	if tlsConfig != nil {
 		p.TLSListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
+		p.HTTPSListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
 		p.TLSConfig = tlsConfig
 	}
 	upstreams := make([]upstream.Upstream, 0)
@@ -324,7 +407,7 @@ func createServerTLSConfig(t *testing.T) (*tls.Config, []byte) {
 		t.Fatalf("failed to create certificate: %s", err)
 	}
 
-	return &tls.Config{Certificates: []tls.Certificate{cert}}, certPem
+	return &tls.Config{Certificates: []tls.Certificate{cert}, ServerName: tlsServerName}, certPem
 }
 
 func publicKey(priv interface{}) interface{} {

@@ -34,7 +34,7 @@ func (p *Proxy) isRatelimited(addr net.Addr) bool {
 
 	ip := getIPString(addr)
 	if ip == "" {
-		log.Printf("[WARN] failed to split %v into host/port", addr)
+		log.Printf("failed to split %v into host/port", addr)
 		return false
 	}
 

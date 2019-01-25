@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/beefsack/go-rate"
+	rate "github.com/beefsack/go-rate"
 	"github.com/hmage/golibs/log"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -27,6 +27,7 @@ func (p *Proxy) limiterForIP(ip string) interface{} {
 	return value
 }
 
+// isRatelimited checks if the specified IP is ratelimited
 func (p *Proxy) isRatelimited(addr net.Addr) bool {
 	if p.Ratelimit <= 0 { // 0 -- disabled
 		return false
@@ -56,35 +57,4 @@ func (p *Proxy) isRatelimited(addr net.Addr) bool {
 
 	allow, _ := rl.Try()
 	return !allow
-}
-
-func (p *Proxy) isRatelimitedForReply(ip string, size int) bool {
-	if p.Ratelimit <= 0 { // 0 -- disabled
-		return false
-	}
-	if len(p.RatelimitWhitelist) > 0 {
-		i := sort.SearchStrings(p.RatelimitWhitelist, ip)
-
-		if i < len(p.RatelimitWhitelist) && p.RatelimitWhitelist[i] == ip {
-			// found, don't ratelimit
-			return false
-		}
-	}
-
-	value := p.limiterForIP(ip)
-	rl, ok := value.(*rate.RateLimiter)
-	if !ok {
-		log.Println("SHOULD NOT HAPPEN: non-bool entry found in safebrowsing lookup cache")
-		return false
-	}
-
-	// For large UDP responses we try more times, effectively limiting per bandwidth
-	// The exact number of times depends on the response size
-	for i := 0; i < size/1000; i++ {
-		allow, _ := rl.Try()
-		if !allow { // not allowed -> ratelimited
-			return true
-		}
-	}
-	return false
 }

@@ -65,12 +65,10 @@ type Options struct {
 const defaultTimeout = 10 * time.Second
 
 func main() {
-
 	var options Options
 	var parser = goFlags.NewParser(&options, goFlags.Default)
 
 	_, err := parser.Parse()
-
 	if err != nil {
 		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
 			os.Exit(0)
@@ -92,7 +90,7 @@ func run(options Options) {
 		if err != nil {
 			log.Fatalf("cannot create a log file: %s", err)
 		}
-		defer file.Close()
+		defer file.Close() //nolint
 		stdlog.SetOutput(file)
 	}
 
@@ -106,7 +104,7 @@ func run(options Options) {
 		log.Fatalf("cannot start the DNS proxy due to %s", err)
 	}
 
-	signalChannel := make(chan os.Signal)
+	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
 	<-signalChannel
 

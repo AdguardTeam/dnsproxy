@@ -1,0 +1,33 @@
+# options for analysis running
+run:
+  # default concurrency is a available CPU number
+  concurrency: 4
+
+  # timeout for analysis, e.g. 30s, 5m, default is 1m
+  deadline: 2m
+
+# all available settings of specific linters
+linters-settings:
+  gocyclo:
+    min-complexity: 16
+  lll:
+    line-length: 200
+
+linters:
+  enable-all: true
+  disable:
+    - gocritic
+    - scopelint
+    - prealloc
+    - maligned
+    - unparam
+    - gosimple
+
+issues:
+  # List of regexps of issue texts to exclude, empty list by default.
+  # But independently from this option we use default exclude patterns,
+  # it can be disabled by `exclude-use-default: false`. To list all
+  # excluded by default patterns execute `golangci-lint run --help`
+  exclude:
+    # errcheck defer Close
+    - error return value not checked \(defer .*\.Close()\)

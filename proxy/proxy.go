@@ -462,7 +462,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 		}
 		p.RUnlock()
 
-		conn.SetDeadline(time.Now().Add(defaultTimeout))
+		conn.SetDeadline(time.Now().Add(defaultTimeout)) //nolint
 		packet, err := readPrefixed(&conn)
 		if err != nil {
 			return
@@ -571,7 +571,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := new(dns.Msg)
-	if err := msg.Unpack(buf); err != nil {
+	if err = msg.Unpack(buf); err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -685,7 +685,7 @@ func (p *Proxy) respond(d *DNSContext) {
 
 	// d.Conn can be nil in the case of a DOH request
 	if d.Conn != nil {
-		d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
+		d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout)) //nolint
 	}
 
 	var err error

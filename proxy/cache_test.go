@@ -128,7 +128,7 @@ func runTests(t *testing.T, tests testCases) {
 			t.Error(diff)
 		}
 		if tc.a != nil {
-			if ok == false {
+			if !ok {
 				continue
 			}
 			reply := dns.Msg{}

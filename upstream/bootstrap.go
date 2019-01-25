@@ -87,7 +87,10 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	//
 
 	resolver := n.resolver // no need to check for nil resolver -- documented that nil is default resolver
-	addrs, err := resolver.LookupIPAddr(context.TODO(), host)
+	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
+	defer cancel() // important to avoid a resource leak
+
+	addrs, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}

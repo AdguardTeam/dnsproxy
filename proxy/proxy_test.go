@@ -168,6 +168,7 @@ func TestFallback(t *testing.T) {
 
 	dnsProxy.Fallback = dnsProxy.Upstreams[0]
 	// using some random port to make sure that this upstream won't work
+	timeout := 1 * time.Second
 	u, _ := upstream.AddressToUpstream("8.8.8.8:555", "", 1*time.Second)
 	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
@@ -192,11 +193,67 @@ func TestFallback(t *testing.T) {
 		t.Fatalf("cannot write message: %s", err)
 	}
 
+	start := time.Now()
 	res, err := conn.ReadMsg()
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
 	assertResponse(t, res)
+
+	elapsed := time.Since(start)
+	if elapsed > 3*timeout {
+		t.Fatalf("the operation took much more time than the configured timeout")
+	}
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
+func TestFallbackFromInvalidBootstrap(t *testing.T) {
+	// Prepare the proxy server
+	dnsProxy := createTestProxy(t, nil)
+
+	dnsProxy.Fallback = dnsProxy.Upstreams[0]
+	// using a DOT server with invalid bootstrap
+	timeout := 1 * time.Second
+	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", "8.8.8.8:555", timeout)
+	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
+	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
+
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr(ProtoUDP)
+	conn, err := dns.Dial("udp", addr.String())
+	if err != nil {
+		t.Fatalf("cannot connect to the proxy: %s", err)
+	}
+
+	// Make sure that the response is okay and resolved by the fallback
+	req := createTestMessage()
+	err = conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	start := time.Now()
+	res, err := conn.ReadMsg()
+	if err != nil {
+		t.Fatalf("cannot read response to message: %s", err)
+	}
+	assertResponse(t, res)
+
+	elapsed := time.Since(start)
+	if elapsed > 3*timeout {
+		t.Fatalf("the operation took much more time than the configured timeout")
+	}
 
 	// Stop the proxy
 	err = dnsProxy.Stop()

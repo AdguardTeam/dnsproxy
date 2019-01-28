@@ -18,6 +18,7 @@ import (
 	"github.com/hmage/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
+	"golang.org/x/net/http2"
 )
 
 // Upstream is an interface for a DNS resolver
@@ -218,8 +219,9 @@ func (p *dnsOverHTTPS) getTransport() (*http.Transport, error) {
 		DisableCompression: true,
 		DialContext:        dialContext,
 	}
-	// Uncomment to reproduce the conditions for https://github.com/AdguardTeam/dnsproxy/issues/5
-	// http2.ConfigureTransport(transport)
+	// It appears that this is important to explicitly configure transport to use HTTP2
+	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11
+	http2.ConfigureTransport(transport) // nolint
 
 	// Save the transport for the future use
 	p.transport = transport

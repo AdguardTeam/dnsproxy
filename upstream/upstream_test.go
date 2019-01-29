@@ -103,6 +103,10 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: "",
 		},
 		{
+			address:   "1.1.1.1",
+			bootstrap: "1.0.0.1",
+		},
+		{
 			address:   "tcp://1.1.1.1:53",
 			bootstrap: "",
 		},
@@ -127,8 +131,16 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: "8.8.8.8:53",
 		},
 		{
+			address:   "tls://dns.adguard.com:853",
+			bootstrap: "8.8.8.8",
+		},
+		{
 			address:   "tls://one.one.one.one",
 			bootstrap: "",
+		},
+		{
+			address:   "https://dns9.quad9.net:443/dns-query",
+			bootstrap: "8.8.8.8",
 		},
 		{
 			address:   "https://cloudflare-dns.com/dns-query",
@@ -167,6 +179,11 @@ func TestUpstreams(t *testing.T) {
 			// AdGuard DNS (DNS-over-TLS)
 			address:   "sdns://AwAAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
 			bootstrap: "8.8.8.8:53",
+		},
+		{
+			// Nawala (DNSCrypt)
+			address:   "sdns://AQAAAAAAAAAADzE4MC4xMzEuMTQ0LjE0NCDGC-b_38Dj4-ikI477AO1GXcLPfETOFpE36KZIHdOzLhkyLmRuc2NyeXB0LWNlcnQubmF3YWxhLmlk",
+			bootstrap: "8.8.8.8",
 		},
 	}
 	for _, test := range upstreams {

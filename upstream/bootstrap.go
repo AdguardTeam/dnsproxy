@@ -57,8 +57,9 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	// get a host without port
 	host, port, err := n.getAddressHostPort()
 	if err != nil {
-		defer n.RUnlock()
-		return "", nil, fmt.Errorf("bootstrapper requires port in address %s", n.address)
+		addr := n.address
+		n.RUnlock()
+		return "", nil, fmt.Errorf("bootstrapper requires port in address %s", addr)
 	}
 
 	// if n.address's host is an IP, just use it right away
@@ -67,10 +68,11 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 		n.RUnlock()
 
 		// Upgrade lock to protect n.resolved
+		addr := net.JoinHostPort(host, port)
 		n.Lock()
-		defer n.Unlock()
-		n.resolved = net.JoinHostPort(host, port)
-		return n.resolved, nil, nil
+		n.resolved = addr
+		n.Unlock()
+		return addr, nil, nil
 	}
 
 	// Don't lock anymore (we can launch multiple lookup requests at a time)
@@ -91,8 +93,6 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}
 
-	n.Lock()
-	defer n.Unlock()
 	for _, addr := range addrs {
 		// TODO: support ipv6, support multiple ipv4
 		if addr.IP.To4() == nil {
@@ -107,6 +107,8 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 		return "", nil, fmt.Errorf("couldn't find any suitable IP address for host %s", host)
 	}
 
+	n.Lock()
+	defer n.Unlock()
 	n.resolved = net.JoinHostPort(ip.String(), port)
 	n.resolvedConfig = &tls.Config{ServerName: host}
 	return n.resolved, n.resolvedConfig, nil

@@ -25,6 +25,11 @@ type bootstrapper struct {
 func toBoot(address, bootstrapAddr string, timeout time.Duration) bootstrapper {
 	var resolver *net.Resolver
 	if bootstrapAddr != "" {
+		_, _, err := net.SplitHostPort(bootstrapAddr)
+		if err != nil {
+			// Add the default port for bootstrap DNS address if no port is defined
+			bootstrapAddr = net.JoinHostPort(bootstrapAddr, "53")
+		}
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {

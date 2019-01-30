@@ -300,7 +300,6 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 // timeout is a default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.
 // timeout=0 means infinite timeout
 func AddressToUpstream(address string, bootstrap string, timeout time.Duration) (Upstream, error) {
-	checkBootstrapPort(&bootstrap)
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
@@ -337,21 +336,6 @@ func urlToUpstream(upstreamURL *url.URL, bootstrap string, timeout time.Duration
 	default:
 		// assume it's plain DNS
 		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap, timeout)}, nil
-	}
-}
-
-// Add the default port for bootstrap DNS if address string is not empty and no port is defined
-func checkBootstrapPort (address *string) {
-	if *address == "" {
-		return
-	}
-
-	if partsLength := len(strings.Split(*address, ":")); partsLength == 2 {
-		return
-	} else if partsLength == 1 {
-		*address += ":53"
-	} else if partsLength = len(strings.Split(*address, "]")); partsLength == 1 {
-		*address += "[" + *address + "]:53"
 	}
 }
 

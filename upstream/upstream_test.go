@@ -103,6 +103,10 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: "",
 		},
 		{
+			address:   "1.1.1.1",
+			bootstrap: "1.0.0.1",
+		},
+		{
 			address:   "tcp://1.1.1.1:53",
 			bootstrap: "",
 		},
@@ -127,8 +131,16 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: "8.8.8.8:53",
 		},
 		{
+			address:   "tls://dns.adguard.com:853",
+			bootstrap: "8.8.8.8",
+		},
+		{
 			address:   "tls://one.one.one.one",
 			bootstrap: "",
+		},
+		{
+			address:   "https://dns9.quad9.net:443/dns-query",
+			bootstrap: "8.8.8.8",
 		},
 		{
 			address:   "https://cloudflare-dns.com/dns-query",
@@ -142,6 +154,11 @@ func TestUpstreams(t *testing.T) {
 			// AdGuard DNS (DNSCrypt)
 			address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
 			bootstrap: "",
+		},
+		{
+			// AdGuard Family (DNSCrypt)
+			address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMjo1NDQzILgxXdexS27jIKRw3C7Wsao5jMnlhvhdRUXWuMm1AFq6ITIuZG5zY3J5cHQuZmFtaWx5Lm5zMS5hZGd1YXJkLmNvbQ",
+			bootstrap: "8.8.8.8",
 		},
 		{
 			// Cisco OpenDNS (DNSCrypt)

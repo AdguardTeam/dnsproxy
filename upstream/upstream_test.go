@@ -156,6 +156,11 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: "",
 		},
 		{
+			// AdGuard Family (DNSCrypt)
+			address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMjo1NDQzILgxXdexS27jIKRw3C7Wsao5jMnlhvhdRUXWuMm1AFq6ITIuZG5zY3J5cHQuZmFtaWx5Lm5zMS5hZGd1YXJkLmNvbQ",
+			bootstrap: "8.8.8.8",
+		},
+		{
 			// Cisco OpenDNS (DNSCrypt)
 			address:   "sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ",
 			bootstrap: "8.8.8.8:53",
@@ -179,11 +184,6 @@ func TestUpstreams(t *testing.T) {
 			// AdGuard DNS (DNS-over-TLS)
 			address:   "sdns://AwAAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
 			bootstrap: "8.8.8.8:53",
-		},
-		{
-			// Nawala (DNSCrypt)
-			address:   "sdns://AQAAAAAAAAAADzE4MC4xMzEuMTQ0LjE0NCDGC-b_38Dj4-ikI477AO1GXcLPfETOFpE36KZIHdOzLhkyLmRuc2NyeXB0LWNlcnQubmF3YWxhLmlk",
-			bootstrap: "8.8.8.8",
 		},
 	}
 	for _, test := range upstreams {

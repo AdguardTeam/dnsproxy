@@ -1,12 +1,99 @@
 package upstream
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
 )
+
+func TestBootstrapTimeout(t *testing.T) {
+	const (
+		timeout = 100 * time.Millisecond
+		count   = 10
+	)
+
+	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
+	u, err := AddressToUpstream("tls://one.one.one.one", "8.8.8.8:555", timeout)
+	if err != nil {
+		t.Fatalf("cannot create upstream: %s", err)
+	}
+
+	ch := make(chan int, count)
+	abort := make(chan string, 1)
+	for i := 0; i < count; i++ {
+		go func(idx int) {
+			t.Logf("Start %d", idx)
+			start := time.Now()
+			req := createTestMessage()
+
+			_, err := u.Exchange(req)
+
+			if err == nil {
+				abort <- fmt.Sprintf("the upstream must have timed out: %v", err)
+			}
+
+			elapsed := time.Since(start)
+			if elapsed > 2*timeout {
+				abort <- fmt.Sprintf("exchange took more time than the configured timeout: %v", elapsed)
+			}
+			t.Logf("Finished %d", idx)
+			ch <- idx
+		}(i)
+	}
+	for i := 0; i < count; i++ {
+		select {
+		case res := <-ch:
+			t.Logf("Got result from %d", res)
+		case msg := <-abort:
+			t.Fatalf("Aborted from the goroutine: %s", msg)
+		case <-time.After(timeout * 10):
+			t.Fatalf("No response in time")
+		}
+	}
+}
+
+// TestUpstreamRace launches several parallel lookups, useful when testing with -race
+func TestUpstreamRace(t *testing.T) {
+	const (
+		timeout = 5 * time.Second
+		count   = 5
+	)
+
+	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
+	u, err := AddressToUpstream("tls://1.1.1.1", "", timeout)
+	if err != nil {
+		t.Fatalf("cannot create upstream: %s", err)
+	}
+
+	ch := make(chan int, count)
+	abort := make(chan string, 1)
+	for i := 0; i < count; i++ {
+		go func(idx int) {
+			t.Logf("Start %d", idx)
+			req := createTestMessage()
+			res, err := u.Exchange(req)
+			if err != nil {
+				abort <- fmt.Sprintf("failed to resolve: %v", err)
+			}
+			assertResponse(t, res)
+			t.Logf("Finished %d", idx)
+			ch <- idx
+		}(i)
+	}
+	for i := 0; i < count; i++ {
+		select {
+		case res := <-ch:
+			t.Logf("Got result from %d", res)
+		case msg := <-abort:
+			t.Fatalf("Aborted from the goroutine: %s", msg)
+		case <-time.After(timeout * 10):
+			t.Fatalf("No response in time")
+		}
+	}
+}
 
 func TestTLSPoolReconnect(t *testing.T) {
 	u, err := AddressToUpstream("tls://one.one.one.one", "8.8.8.8:53", 10*time.Second)

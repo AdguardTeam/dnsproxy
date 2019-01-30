@@ -57,7 +57,7 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	// get a host without port
 	host, port, err := n.getAddressHostPort()
 	if err != nil {
-		n.RUnlock()
+		defer n.RUnlock()
 		return "", nil, fmt.Errorf("bootstrapper requires port in address %s", n.address)
 	}
 
@@ -65,6 +65,10 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	ip := net.ParseIP(host)
 	if ip != nil {
 		n.RUnlock()
+
+		// Upgrade lock to protect n.resolved
+		n.Lock()
+		defer n.Unlock()
 		n.resolved = net.JoinHostPort(host, port)
 		return n.resolved, nil, nil
 	}

@@ -19,7 +19,7 @@ type bootstrapper struct {
 	resolved       string        // in form "IP:port"
 	timeout        time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
 	resolvedConfig *tls.Config
-	sync.Mutex
+	sync.RWMutex
 }
 
 func toBoot(address, bootstrapAddr string, timeout time.Duration) bootstrapper {
@@ -43,44 +43,36 @@ func toBoot(address, bootstrapAddr string, timeout time.Duration) bootstrapper {
 
 // will get usable IP address from Address field, and caches the result
 func (n *bootstrapper) get() (string, *tls.Config, error) {
-	// TODO: RLock() here but atomically upgrade to Lock() if fast path doesn't work
-	n.Lock()
+	n.RLock()
 	if n.resolved != "" { // fast path
 		retval, tlsconfig := n.resolved, n.resolvedConfig
-		n.Unlock()
+		n.RUnlock()
 		return retval, tlsconfig, nil
 	}
 
 	//
-	// slow path
+	// Slow path: resolve the IP address of the n.address's host
 	//
 
-	defer n.Unlock()
-
-	justHostPort := n.address
-	if strings.Contains(n.address, "://") {
-		parsedURL, err := url.Parse(n.address)
-		if err != nil {
-			return "", nil, errorx.Decorate(err, "failed to parse %s", n.address)
-		}
-
-		justHostPort = parsedURL.Host
-	}
-
-	// convert host to IP if necessary, we know that it's scheme://hostname:port/
-
 	// get a host without port
-	host, port, err := net.SplitHostPort(justHostPort)
+	host, port, err := n.getAddressHostPort()
 	if err != nil {
+		n.RUnlock()
 		return "", nil, fmt.Errorf("bootstrapper requires port in address %s", n.address)
 	}
 
-	// if it's an IP
+	// if n.address's host is an IP, just use it right away
 	ip := net.ParseIP(host)
 	if ip != nil {
-		n.resolved = justHostPort
+		n.RUnlock()
+		n.resolved = net.JoinHostPort(host, port)
 		return n.resolved, nil, nil
 	}
+
+	// Don't lock anymore (we can launch multiple lookup requests at a time)
+	// Otherwise, it might mess with the timeout specified for the Upstream
+	// See here: https://github.com/AdguardTeam/dnsproxy/issues/15
+	n.RUnlock()
 
 	//
 	// if it's a hostname
@@ -94,6 +86,9 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}
+
+	n.Lock()
+	defer n.Unlock()
 	for _, addr := range addrs {
 		// TODO: support ipv6, support multiple ipv4
 		if addr.IP.To4() == nil {
@@ -111,4 +106,21 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	n.resolved = net.JoinHostPort(ip.String(), port)
 	n.resolvedConfig = &tls.Config{ServerName: host}
 	return n.resolved, n.resolvedConfig, nil
+}
+
+func (n *bootstrapper) getAddressHostPort() (string, string, error) {
+	justHostPort := n.address
+	if strings.Contains(n.address, "://") {
+		parsedURL, err := url.Parse(n.address)
+		if err != nil {
+			return "", "", errorx.Decorate(err, "failed to parse %s", n.address)
+		}
+
+		justHostPort = parsedURL.Host
+	}
+
+	// convert host to IP if necessary, we know that it's scheme://hostname:port/
+
+	// get a host without port
+	return net.SplitHostPort(justHostPort)
 }

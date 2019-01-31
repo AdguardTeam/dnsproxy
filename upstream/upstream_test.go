@@ -130,8 +130,8 @@ func TestTLSPoolReconnect(t *testing.T) {
 }
 
 func TestDNSTruncated(t *testing.T) {
-	// AdGuard DNS
-	address := "176.103.130.130:53"
+	// Google DNS
+	address := "8.8.8.8:53"
 	u, err := AddressToUpstream(address, "", 10*time.Second)
 
 	if err != nil {

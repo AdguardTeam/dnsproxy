@@ -27,12 +27,12 @@ type DNSProxy struct {
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
 type Config struct {
-	ListenAddr   string 	// IP address to listen to
-	ListenPort   int    	// Port to listen to
-	BootstrapDNS string 	// Bootstrap DNS (i.e. 8.8.8.8:53)
-	Fallback     string 	// Fallback resolver that will be used if the main one is not available (i.e. 1.1.1.1:53)
-	Upstreams    string 	// A list of upstream resolvers (each on a new line)
-	Timeout      int    	// Default timeout for all resolvers (milliseconds)
+	ListenAddr   string // IP address to listen to
+	ListenPort   int   	// Port to listen to
+	BootstrapDNS string // Bootstrap DNS (i.e. 8.8.8.8:53)
+	Fallback     string // Fallback resolver that will be used if the main one is not available (i.e. 1.1.1.1:53)
+	Upstreams    string // A list of upstream resolvers (each on a new line)
+	Timeout      int    // Default timeout for all resolvers (milliseconds)
 }
 
 // Start starts the DNS proxy

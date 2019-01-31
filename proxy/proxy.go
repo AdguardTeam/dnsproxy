@@ -233,7 +233,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// Update the upstreams weight
 	if err != nil {
 		// If there was an error, consider RTT equal to the default timeout (this will make the upstream's weight lower)
-		rtt = int(defaultTimeout)
+		rtt = int(defaultTimeout / time.Millisecond)
 	}
 	p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
 

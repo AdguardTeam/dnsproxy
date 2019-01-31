@@ -2,7 +2,6 @@ package mobile
 
 import (
 	"net"
-	"os"
 	"strings"
 	"testing"
 
@@ -19,8 +18,6 @@ func TestMobileApi(t *testing.T) {
 	upstreamsStr := strings.Join(upstreams, "\n")
 
 	config := &Config{
-		Verbose:      true,
-		LogOutput:    "test_log.txt",
 		ListenAddr:   "127.0.0.1",
 		ListenPort:   0, // Specify 0 to start listening on a random free port
 		BootstrapDNS: "8.8.8.8:53",
@@ -66,13 +63,5 @@ func TestMobileApi(t *testing.T) {
 	err = proxy.Stop()
 	if err != nil {
 		t.Fatalf("cannot start the mobile proxy: %s", err)
-	}
-
-	//
-	// Test that the log file exists by deleting it
-	//
-	err = os.Remove(config.LogOutput)
-	if err != nil {
-		t.Fatalf("problem with the log file: %s", err)
 	}
 }

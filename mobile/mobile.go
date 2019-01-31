@@ -8,7 +8,6 @@ import (
 	"fmt"
 	stdlog "log"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -22,21 +21,18 @@ import (
 type DNSProxy struct {
 	Config *Config // Proxy configuration
 
-	logFile  *os.File // Log file (if it's open)
 	dnsProxy *proxy.Proxy
 	sync.RWMutex
 }
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
 type Config struct {
-	Verbose      bool   // true if verbose output is enabled
-	LogOutput    string // Path to the log file
-	ListenAddr   string // IP address to listen to
-	ListenPort   int    // Port to listen to
-	BootstrapDNS string // Bootstrap DNS (i.e. 8.8.8.8:53)
-	Fallback     string // Fallback resolver that will be used if the main one is not available (i.e. 1.1.1.1:53)
-	Upstreams    string // A list of upstream resolvers (each on a new line)
-	Timeout      int    // Default timeout for all resolvers (milliseconds)
+	ListenAddr   string 	// IP address to listen to
+	ListenPort   int    	// Port to listen to
+	BootstrapDNS string 	// Bootstrap DNS (i.e. 8.8.8.8:53)
+	Fallback     string 	// Fallback resolver that will be used if the main one is not available (i.e. 1.1.1.1:53)
+	Upstreams    string 	// A list of upstream resolvers (each on a new line)
+	Timeout      int    	// Default timeout for all resolvers (milliseconds)
 }
 
 // Start starts the DNS proxy
@@ -46,11 +42,6 @@ func (d *DNSProxy) Start() error {
 
 	if d.dnsProxy != nil {
 		return errors.New("DNS proxy is already started")
-	}
-
-	err := d.updateLogLevel(d.Config)
-	if err != nil {
-		return fmt.Errorf("cannot start the DNS proxy: %s", err)
 	}
 
 	c, err := createConfig(d.Config)
@@ -75,11 +66,6 @@ func (d *DNSProxy) Stop() error {
 		d.dnsProxy = nil
 	}
 
-	if d.logFile != nil {
-		d.logFile.Close()
-		d.logFile = nil
-	}
-
 	return err
 }
 
@@ -98,23 +84,6 @@ func (d *DNSProxy) Addr() string {
 	}
 
 	return addr.String()
-}
-
-// updateLogLevel updates log level and creates a log file
-func (d *DNSProxy) updateLogLevel(config *Config) error {
-	if config.LogOutput != "" {
-		file, err := os.OpenFile(config.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0755)
-		if err != nil {
-			return fmt.Errorf("cannot create a log file: %s", err)
-		}
-		stdlog.SetOutput(file)
-	}
-
-	if config.Verbose {
-		log.Verbose = true
-	}
-
-	return nil
 }
 
 // createProxyConfig creates proxy.Config from mobile.Config values
@@ -162,4 +131,25 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	}
 
 	return &proxyConfig, nil
+}
+
+type LogWriter interface {
+	Write(s string)
+}
+
+type LogWriterAdapter struct {
+	lw LogWriter
+}
+
+func (w *LogWriterAdapter) Write(p []byte) (n int, err error) {
+	line := strings.TrimSpace(string(p))
+	w.lw.Write(line)
+	return len(p), nil
+}
+
+// This function is called from mobile API to write dnsproxy log into mobile log
+// You need to create object that implements LogWriter interface and set it as argument of this function
+func ConfigureLogger(verbose bool, w LogWriter) {
+	log.Verbose = verbose
+	stdlog.SetOutput(&LogWriterAdapter{lw: w})
 }

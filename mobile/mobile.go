@@ -28,7 +28,7 @@ type DNSProxy struct {
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
 type Config struct {
 	ListenAddr   string // IP address to listen to
-	ListenPort   int   	// Port to listen to
+	ListenPort   int    // Port to listen to
 	BootstrapDNS string // Bootstrap DNS (i.e. 8.8.8.8:53)
 	Fallback     string // Fallback resolver that will be used if the main one is not available (i.e. 1.1.1.1:53)
 	Upstreams    string // A list of upstream resolvers (each on a new line)
@@ -133,10 +133,12 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	return &proxyConfig, nil
 }
 
+// LogWriter interface should be implemented inside project that will use dnsproxy mobile API to write dnsproxy log into mobile log
 type LogWriter interface {
 	Write(s string)
 }
 
+// LogWriterAdapter between go log and LogWriter
 type LogWriterAdapter struct {
 	lw LogWriter
 }
@@ -147,7 +149,7 @@ func (w *LogWriterAdapter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// This function is called from mobile API to write dnsproxy log into mobile log
+// ConfigureLogger function is called from mobile API to write dnsproxy log into mobile log
 // You need to create object that implements LogWriter interface and set it as argument of this function
 func ConfigureLogger(verbose bool, w LogWriter) {
 	log.Verbose = verbose

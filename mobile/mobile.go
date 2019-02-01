@@ -128,6 +128,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 			if line == "" {
 				continue
 			}
+
 			fallback, err := upstream.AddressToUpstream(config.Fallback, config.BootstrapDNS, timeout)
 			if err != nil {
 				return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", config.Fallback, config.BootstrapDNS, err)

@@ -256,6 +256,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	return err
 }
 
+// fallback function is called when there is no response from upstream
 func fallback(u []upstream.Upstream, d *dns.Msg) (*dns.Msg, error) {
 	size := len(u)
 
@@ -279,7 +280,8 @@ func fallback(u []upstream.Upstream, d *dns.Msg) (*dns.Msg, error) {
 	}
 }
 
-func resolveFallback(u upstream.Upstream, d *dns.Msg, c chan *dns.Msg, q chan int)  {
+// resolveFallback tries to resolve DNS request with one of fallback upstreams
+func resolveFallback(u upstream.Upstream, d *dns.Msg, c chan *dns.Msg, q chan int) {
 	reply, err := u.Exchange(d)
 	if err == nil && reply != nil {
 		c <- reply

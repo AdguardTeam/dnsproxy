@@ -166,8 +166,10 @@ func TestFallback(t *testing.T) {
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
 
-	fallbackAddresses := []string {"1.2.3.4", "1.2.3.5", "8.8.8.8"}
+	// List of fallback server addresses. Only one is valid
+	fallbackAddresses := []string{"1.2.3.4", "1.2.3.5", "8.8.8.8"}
 	dnsProxy.Fallback = make([]upstream.Upstream, 0)
+
 	for _, s := range fallbackAddresses {
 		f, _ := upstream.AddressToUpstream(s, "", 1*time.Second)
 		dnsProxy.Fallback = append(dnsProxy.Fallback, f)

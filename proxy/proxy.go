@@ -239,7 +239,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, err = fallback(p.Fallbacks, d.Req)
+		reply, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
 	}
 
 	// Saving cached response
@@ -254,40 +254,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 
 	return err
-}
-
-// fallback function is called when upstream failed to answer
-func fallback(u []upstream.Upstream, req *dns.Msg) (*dns.Msg, error) {
-	size := len(u)
-
-	resp := make(chan *dns.Msg, 1)
-	quit := make(chan int, size)
-
-	for _, f := range u {
-		go resolveFallback(f, req, resp, quit)
-	}
-	var count int
-	for {
-		select {
-		case reply := <-resp:
-			return reply, nil
-		case <-quit:
-			count++
-			if count == size {
-				return nil, errors.New("all fallback servers are dead")
-			}
-		}
-	}
-}
-
-// resolveFallback tries to resolve DNS request with one of fallback upstreams
-func resolveFallback(u upstream.Upstream, req *dns.Msg, resp chan *dns.Msg, quit chan int) {
-	reply, err := u.Exchange(req)
-	if err == nil && reply != nil {
-		resp <- reply
-	} else {
-		quit <- 0
-	}
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

@@ -4,13 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/AdguardTeam/dnsproxy/mobile/build/gopath/src/github.com/AdguardTeam/dnsproxy/mobile/build/gopath/src/github.com/hmage/golibs/log"
 	"net"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hmage/golibs/log"
 	"github.com/joomcode/errorx"
 )
 
@@ -104,7 +104,7 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
 	defer cancel() // important to avoid a resource leak
 
-	addrs, err := multipleLookup(ctx, resolver, host)
+	addrs, err := parallelLookup(ctx, resolver, host)
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}
@@ -130,11 +130,8 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	return n.resolved, n.resolvedConfig, nil
 }
 
-func multipleLookup(ctx context.Context, resolvers []*net.Resolver, host string) ([]net.IPAddr, error) {
+func parallelLookup(ctx context.Context, resolvers []*net.Resolver, host string) ([]net.IPAddr, error) {
 	size := len(resolvers)
-	if size == 1 && resolvers[1] == nil {
-		return resolvers[1].LookupIPAddr(ctx, host)
-	}
 
 	resp := make(chan []net.IPAddr, size)
 	quit := make(chan error, size)
@@ -159,6 +156,7 @@ func multipleLookup(ctx context.Context, resolvers []*net.Resolver, host string)
 	}
 }
 
+// TODO change it like ExchangeParallel and use new structure
 func lookupIp(ctx context.Context, resolver *net.Resolver, host string, ip chan []net.IPAddr, quit chan error) {
 	address, err := resolver.LookupIPAddr(ctx, host)
 	if address != nil {

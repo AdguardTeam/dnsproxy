@@ -20,8 +20,8 @@ func TestMobileApi(t *testing.T) {
 	config := &Config{
 		ListenAddr:   "127.0.0.1",
 		ListenPort:   0, // Specify 0 to start listening on a random free port
-		BootstrapDNS: "8.8.8.8:53",
-		Fallbacks:    "8.8.8.8:53",
+		BootstrapDNS: "8.8.8.8:53\n1.1.1.1:53",
+		Fallbacks:    "8.8.8.8:53\n1.1.1.1:53",
 		Timeout:      5000,
 		Upstreams:    upstreamsStr,
 	}

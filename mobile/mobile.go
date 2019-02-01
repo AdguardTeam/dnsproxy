@@ -29,8 +29,8 @@ type DNSProxy struct {
 type Config struct {
 	ListenAddr   string // IP address to listen to
 	ListenPort   int    // Port to listen to
-	BootstrapDNS string // Bootstrap DNS (i.e. 8.8.8.8:53)
-	Fallbacks    string // A list of fallback resolvers that will be used if the main one is not available (each on a new line)
+	BootstrapDNS string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
+	Fallbacks    string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
 	Upstreams    string // A list of upstream resolvers (each on a new line)
 	Timeout      int    // Default timeout for all resolvers (milliseconds)
 }
@@ -100,7 +100,17 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	upstreams := make([]upstream.Upstream, 0)
 
 	lines := strings.Split(config.Upstreams, "\n")
-	bootstraps := strings.Split(config.BootstrapDNS, "\n")
+
+	// Check bootstraps list for empty strings
+	bootstrapLines := strings.Split(config.BootstrapDNS, "\n")
+	var bootstraps []string
+	for _, line := range bootstrapLines {
+		if line == "" {
+			continue
+		}
+
+		bootstraps = append(bootstraps, line)
+	}
 
 	for i, line := range lines {
 		if line == "" {

@@ -80,7 +80,7 @@ type Config struct {
 	CacheEnabled bool // cache status
 
 	Upstreams []upstream.Upstream // list of upstreams
-	Fallback  []upstream.Upstream // fallback resolver (which will be used if regular upstream failed to answer)
+	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 	Handler   Handler             // custom middleware (optional)
 }
 
@@ -237,9 +237,9 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 	p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
 
-	if err != nil && p.Fallback != nil {
+	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, err = fallback(p.Fallback, d.Req)
+		reply, err = fallback(p.Fallbacks, d.Req)
 	}
 
 	// Saving cached response
@@ -256,20 +256,20 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	return err
 }
 
-// fallback function is called when there is no response from upstream
-func fallback(u []upstream.Upstream, d *dns.Msg) (*dns.Msg, error) {
+// fallback function is called when upstream failed to answer
+func fallback(u []upstream.Upstream, req *dns.Msg) (*dns.Msg, error) {
 	size := len(u)
 
-	ch := make(chan *dns.Msg, 1)
+	resp := make(chan *dns.Msg, 1)
 	quit := make(chan int, size)
 
 	for _, f := range u {
-		go resolveFallback(f, d, ch, quit)
+		go resolveFallback(f, req, resp, quit)
 	}
 	var count int
 	for {
 		select {
-		case reply := <-ch:
+		case reply := <-resp:
 			return reply, nil
 		case <-quit:
 			count++
@@ -281,12 +281,12 @@ func fallback(u []upstream.Upstream, d *dns.Msg) (*dns.Msg, error) {
 }
 
 // resolveFallback tries to resolve DNS request with one of fallback upstreams
-func resolveFallback(u upstream.Upstream, d *dns.Msg, c chan *dns.Msg, q chan int) {
-	reply, err := u.Exchange(d)
+func resolveFallback(u upstream.Upstream, req *dns.Msg, resp chan *dns.Msg, quit chan int) {
+	reply, err := u.Exchange(req)
 	if err == nil && reply != nil {
-		c <- reply
+		resp <- reply
 	} else {
-		q <- 0
+		quit <- 0
 	}
 }
 

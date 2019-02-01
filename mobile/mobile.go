@@ -30,7 +30,7 @@ type Config struct {
 	ListenAddr   string // IP address to listen to
 	ListenPort   int    // Port to listen to
 	BootstrapDNS string // Bootstrap DNS (i.e. 8.8.8.8:53)
-	Fallback     string // Fallback resolver that will be used if the main one is not available (i.e. 1.1.1.1:53)
+	Fallbacks    string // A list of fallback resolvers that will be used if the main one is not available (each on a new line)
 	Upstreams    string // A list of upstream resolvers (each on a new line)
 	Timeout      int    // Default timeout for all resolvers (milliseconds)
 }
@@ -121,23 +121,23 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		Upstreams:     upstreams,
 	}
 
-	if config.Fallback != "" {
+	if config.Fallbacks != "" {
 		fallbacks := make([]upstream.Upstream, 0)
-		lines = strings.Split(config.Fallback, "\n")
+		lines = strings.Split(config.Fallbacks, "\n")
 		for i, line := range lines {
 			if line == "" {
 				continue
 			}
 
-			fallback, err := upstream.AddressToUpstream(config.Fallback, config.BootstrapDNS, timeout)
+			fallback, err := upstream.AddressToUpstream(line, config.BootstrapDNS, timeout)
 			if err != nil {
-				return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", config.Fallback, config.BootstrapDNS, err)
+				return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", line, config.BootstrapDNS, err)
 			}
 
-			log.Printf("Fallback %d: %s", i , fallback.Address())
+			log.Printf("Fallback %d: %s", i, fallback.Address())
 			fallbacks = append(fallbacks, fallback)
 		}
-		proxyConfig.Fallback = fallbacks
+		proxyConfig.Fallbacks = fallbacks
 	}
 
 	return &proxyConfig, nil

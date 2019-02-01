@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/AdguardTeam/dnsproxy/mobile/build/gopath/src/github.com/AdguardTeam/dnsproxy/mobile/build/gopath/src/github.com/hmage/golibs/log"
 	"net"
 	"net/url"
 	"strings"
@@ -15,34 +16,44 @@ import (
 
 type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
-	resolver       *net.Resolver // resolver to use to resolve hostname, if necessary
+	resolvers      []*net.Resolver // resolver to use to resolve hostname, if necessary
 	resolved       string        // in form "IP:port"
 	timeout        time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
 	resolvedConfig *tls.Config
 	sync.RWMutex
 }
 
-func toBoot(address, bootstrapAddr string, timeout time.Duration) bootstrapper {
-	var resolver *net.Resolver
-	if bootstrapAddr != "" {
-		_, _, err := net.SplitHostPort(bootstrapAddr)
-		if err != nil {
-			// Add the default port for bootstrap DNS address if no port is defined
-			bootstrapAddr = net.JoinHostPort(bootstrapAddr, "53")
+func toBoot(address string, bootstrapAddr []string, timeout time.Duration) bootstrapper {
+	resolvers := []*net.Resolver{}
+	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
+		for idx, adr := range bootstrapAddr {
+			_, _, err := net.SplitHostPort(adr)
+			if err != nil {
+				// Add the default port for bootstrap DNS address if no port is defined
+				adr = net.JoinHostPort(adr, "53")
+				bootstrapAddr[idx] = adr
+			}
 		}
-		resolver = &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				d := net.Dialer{Timeout: timeout}
-				return d.DialContext(ctx, network, bootstrapAddr)
-			},
+
+		for _, boot := range bootstrapAddr {
+			resolver := &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					d := net.Dialer{Timeout: timeout}
+					return d.DialContext(ctx, network, boot)
+				},
+			}
+			resolvers = append(resolvers, resolver)
 		}
+	} else {
+		var resolver *net.Resolver
+		resolvers = append(resolvers, resolver)
 	}
 
 	return bootstrapper{
-		address:  address,
-		resolver: resolver,
-		timeout:  timeout,
+		address:   address,
+		resolvers: resolvers,
+		timeout:   timeout,
 	}
 }
 
@@ -89,11 +100,11 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	// if it's a hostname
 	//
 
-	resolver := n.resolver // no need to check for nil resolver -- documented that nil is default resolver
+	resolver := n.resolvers // no need to check for nil resolver -- documented that nil is default resolver
 	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
 	defer cancel() // important to avoid a resource leak
 
-	addrs, err := resolver.LookupIPAddr(ctx, host)
+	addrs, err := multipleLookup(ctx, resolver, host)
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}
@@ -117,6 +128,44 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	n.resolved = net.JoinHostPort(ip.String(), port)
 	n.resolvedConfig = &tls.Config{ServerName: host}
 	return n.resolved, n.resolvedConfig, nil
+}
+
+func multipleLookup(ctx context.Context, resolvers []*net.Resolver, host string) ([]net.IPAddr, error) {
+	size := len(resolvers)
+	if size == 1 && resolvers[1] == nil {
+		return resolvers[1].LookupIPAddr(ctx, host)
+	}
+
+	resp := make(chan []net.IPAddr, size)
+	quit := make(chan error, size)
+
+	resolver := resolvers // no need to check for nil resolver -- documented that nil is default resolver
+	for _, res := range resolver {
+		go lookupIp(ctx, res, host, resp, quit)
+	}
+
+	var count int
+	for {
+		select {
+		case addrs := <- resp:
+			return addrs, nil
+		case err := <- quit:
+			log.Printf("failed to lookup for %s: %g", host, err)
+			count++
+			if count == size {
+				return nil, err
+			}
+		}
+	}
+}
+
+func lookupIp(ctx context.Context, resolver *net.Resolver, host string, ip chan []net.IPAddr, quit chan error) {
+	address, err := resolver.LookupIPAddr(ctx, host)
+	if address != nil {
+		ip <- address
+	} else {
+		quit <- err
+	}
 }
 
 func (n *bootstrapper) getAddressHostPort() (string, string, error) {

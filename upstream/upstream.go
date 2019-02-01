@@ -299,7 +299,7 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 // bootstrap is a plain DNS which is used to resolve DoH/DoT hostnames (if any)
 // timeout is a default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.
 // timeout=0 means infinite timeout
-func AddressToUpstream(address string, bootstrap string, timeout time.Duration) (Upstream, error) {
+func AddressToUpstream(address string, bootstrap []string, timeout time.Duration) (Upstream, error) {
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
@@ -318,7 +318,7 @@ func AddressToUpstream(address string, bootstrap string, timeout time.Duration) 
 }
 
 // urlToUpstream converts a URL to an Upstream
-func urlToUpstream(upstreamURL *url.URL, bootstrap string, timeout time.Duration) (Upstream, error) {
+func urlToUpstream(upstreamURL *url.URL, bootstrap []string, timeout time.Duration) (Upstream, error) {
 	switch upstreamURL.Scheme {
 	case "sdns":
 		return stampToUpstream(upstreamURL.String(), bootstrap, timeout)
@@ -340,7 +340,7 @@ func urlToUpstream(upstreamURL *url.URL, bootstrap string, timeout time.Duration
 }
 
 // stampToUpstream converts a DNS stamp to an Upstream
-func stampToUpstream(address string, bootstrap string, timeout time.Duration) (Upstream, error) {
+func stampToUpstream(address string, bootstrap []string, timeout time.Duration) (Upstream, error) {
 	stamp, err := dnsstamps.NewServerStampFromString(address)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to parse %s", address)

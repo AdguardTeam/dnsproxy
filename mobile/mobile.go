@@ -100,13 +100,14 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	upstreams := make([]upstream.Upstream, 0)
 
 	lines := strings.Split(config.Upstreams, "\n")
+	bootstraps := strings.Split(config.BootstrapDNS, "\n")
 
 	for i, line := range lines {
 		if line == "" {
 			continue
 		}
 
-		dnsUpstream, err := upstream.AddressToUpstream(line, config.BootstrapDNS, timeout)
+		dnsUpstream, err := upstream.AddressToUpstream(line, bootstraps, timeout)
 		if err != nil {
 			return nil, fmt.Errorf("cannot prepare the upstream %s (%s): %s", line, config.BootstrapDNS, err)
 		}
@@ -129,7 +130,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 				continue
 			}
 
-			fallback, err := upstream.AddressToUpstream(line, config.BootstrapDNS, timeout)
+			fallback, err := upstream.AddressToUpstream(line, bootstraps, timeout)
 			if err != nil {
 				return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", line, config.BootstrapDNS, err)
 			}

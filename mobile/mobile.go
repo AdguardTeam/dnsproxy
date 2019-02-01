@@ -122,7 +122,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	}
 
 	if config.Fallbacks != "" {
-		fallbacks := make([]upstream.Upstream, 0)
+		fallbacks := []upstream.Upstream{}
 		lines = strings.Split(config.Fallbacks, "\n")
 		for i, line := range lines {
 			if line == "" {

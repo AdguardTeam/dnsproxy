@@ -122,12 +122,21 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	}
 
 	if config.Fallback != "" {
-		fallback, err := upstream.AddressToUpstream(config.Fallback, config.BootstrapDNS, timeout)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", config.Fallback, config.BootstrapDNS, err)
+		fallbacks := make([]upstream.Upstream, 0)
+		lines = strings.Split(config.Fallback, "\n")
+		for i, line := range lines {
+			if line == "" {
+				continue
+			}
+			fallback, err := upstream.AddressToUpstream(config.Fallback, config.BootstrapDNS, timeout)
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", config.Fallback, config.BootstrapDNS, err)
+			}
+
+			log.Printf("Fallback %d: %s", i , fallback.Address())
+			fallbacks = append(fallbacks, fallback)
 		}
-		log.Printf("Fallback is %s", fallback.Address())
-		proxyConfig.Fallback = fallback
+		proxyConfig.Fallback = fallbacks
 	}
 
 	return &proxyConfig, nil

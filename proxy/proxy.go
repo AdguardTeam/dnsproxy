@@ -80,7 +80,7 @@ type Config struct {
 	CacheEnabled bool // cache status
 
 	Upstreams []upstream.Upstream // list of upstreams
-	Fallback  upstream.Upstream   // fallback resolver (which will be used if regular upstream failed to answer)
+	Fallback  []upstream.Upstream // fallback resolver (which will be used if regular upstream failed to answer)
 	Handler   Handler             // custom middleware (optional)
 }
 
@@ -239,7 +239,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 	if err != nil && p.Fallback != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, err = p.Fallback.Exchange(d.Req)
+		reply, err = fallback(p.Fallback, d.Req)
 	}
 
 	// Saving cached response
@@ -254,6 +254,38 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 
 	return err
+}
+
+func fallback(u []upstream.Upstream, d *dns.Msg) (*dns.Msg, error) {
+	size := len(u)
+
+	ch := make(chan *dns.Msg, 1)
+	quit := make(chan int, size)
+
+	for _, f := range u {
+		go resolveFallback(f, d, ch, quit)
+	}
+	var count int
+	for {
+		select {
+		case reply := <-ch:
+			return reply, nil
+		case <-quit:
+			count++
+			if count == size {
+				return nil, errors.New("all fallback servers are dead")
+			}
+		}
+	}
+}
+
+func resolveFallback(u upstream.Upstream, d *dns.Msg, c chan *dns.Msg, q chan int)  {
+	reply, err := u.Exchange(d)
+	if err == nil && reply != nil {
+		c <- reply
+	} else {
+		q <- 0
+	}
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

@@ -3,7 +3,6 @@ package upstream
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -291,46 +290,6 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	return reply, err
 }
 
-// structure that represents result of exchange
-type result struct {
-	reply 	*dns.Msg
-	elapsed time.Duration
-	err     error
-}
-
-// ExchangeParallel function is called to parallel exchange dns request by many upstreams
-// First answer without error fill be returned
-// quit channel used as errors counter. We will return nil and error if count of errors equals count of upstreams
-func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, error) {
-	size := len(u)
-	ch := make(chan *result, size)
-
-	for _, f := range u {
-		go exchangeWithResult(f, req, ch)
-	}
-
-	var count int
-	for {
-		select {
-		case rep := <-ch:
-			reply := rep.reply
-			err := rep.err
-			if err != nil {
-				log.Printf("fail to exchange : %g", err)
-				count++
-			}
-
-			if count == size {
-				return nil, errors.New("all upstreams failed to exchange")
-			}
-
-			if reply != nil && err == nil {
-				return reply, nil
-			}
-		}
-	}
-}
-
 // AddressToUpstream converts the specified address to an Upstream instance
 // * 8.8.8.8:53 -- plain DNS
 // * tcp://8.8.8.8:53 -- plain DNS over TCP
@@ -407,16 +366,4 @@ func getHostWithPort(upstreamURL *url.URL, defaultPort string) string {
 		return upstreamURL.Host + ":" + defaultPort
 	}
 	return upstreamURL.Host
-}
-
-// exchange tries to resolve DNS request with one upstream and send result to resp channel
-func exchangeWithResult(u Upstream, req *dns.Msg, resp chan *result) {
-	start := time.Now()
-	reply, err := u.Exchange(req)
-	elapsed := time.Since(start)
-	resp <- &result{
-		reply:   reply,
-		elapsed: elapsed,
-		err:     err,
-	}
 }

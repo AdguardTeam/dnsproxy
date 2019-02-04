@@ -26,6 +26,7 @@ type DNSProxy struct {
 }
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
+// In Java API this structure becomes an object that needs to be configured and setted as field of DNSProxy
 type Config struct {
 	ListenAddr   string // IP address to listen to
 	ListenPort   int    // Port to listen to
@@ -99,8 +100,6 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	listenTCPAddr := &net.TCPAddr{Port: config.ListenPort, IP: listenIP}
 	upstreams := make([]upstream.Upstream, 0)
 
-	lines := strings.Split(config.Upstreams, "\n")
-
 	// Check bootstraps list for empty strings
 	bootstrapLines := strings.Split(config.BootstrapDNS, "\n")
 	var bootstraps []string
@@ -111,6 +110,8 @@ func createConfig(config *Config) (*proxy.Config, error) {
 
 		bootstraps = append(bootstraps, line)
 	}
+
+	lines := strings.Split(config.Upstreams, "\n")
 
 	for i, line := range lines {
 		if line == "" {

@@ -44,7 +44,7 @@ type Options struct {
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
 	// Bootstrap DNS
-	BootstrapDNS string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT" default:"8.8.8.8:53"`
+	BootstrapDNS []string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT" default:"8.8.8.8:53 (can be specified multiple times)"`
 
 	// Ratelimit value
 	Ratelimit int `short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
@@ -59,7 +59,7 @@ type Options struct {
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
 
 	// Fallback DNS resolver
-	Fallback string `short:"f" long:"fallback" description:"A fallback resolver to use when regular ones aren't available"`
+	Fallbacks []string `short:"f" long:"fallback" description:"A fallback resolvers to use when regular ones aren't available (can be specified multiple times)"`
 }
 
 const defaultTimeout = 10 * time.Second
@@ -147,13 +147,17 @@ func createProxyConfig(options Options) proxy.Config {
 		RefuseAny:     options.RefuseAny,
 	}
 
-	if options.Fallback != "" {
-		fallback, err := upstream.AddressToUpstream(options.Fallback, options.BootstrapDNS, defaultTimeout)
-		if err != nil {
-			log.Fatalf("cannot parse the fallback %s (%s): %s", options.Fallback, options.BootstrapDNS, err)
+	if options.Fallbacks != nil {
+		fallbacks := []upstream.Upstream{}
+		for i, f := range options.Fallbacks {
+			fallback, err := upstream.AddressToUpstream(f, options.BootstrapDNS, defaultTimeout)
+			if err != nil {
+				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)
+			}
+			log.Printf("Fallback %d is %s", i, fallback.Address())
+			fallbacks = append(fallbacks, fallback)
 		}
-		log.Printf("Fallback is %s", fallback.Address())
-		config.Fallback = fallback
+		config.Fallbacks = fallbacks
 	}
 
 	// Prepare the TLS config

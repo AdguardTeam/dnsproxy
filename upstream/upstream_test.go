@@ -274,15 +274,15 @@ func TestUpstreams(t *testing.T) {
 		},
 		{
 			address:   "tls://dns.adguard.com",
-			bootstrap: []string{"8.8.8.8:53", "1.1.1.1"},
+			bootstrap: []string{"1.1.1.1:555", "8.8.8.8:53"},
 		},
 		{
 			address:   "tls://dns.adguard.com:853",
-			bootstrap: []string{"8.8.8.8:53", "1.1.1.1"},
+			bootstrap: []string{"8.8.8.8:535", "1.0.0.1"},
 		},
 		{
 			address:   "https://cloudflare-dns.com/dns-query",
-			bootstrap: []string{"8.8.8.1","1.0.0.1"},
+			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 		},
 	}
 	for _, test := range upstreams {

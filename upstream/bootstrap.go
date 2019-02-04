@@ -10,15 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hmage/golibs/log"
 	"github.com/joomcode/errorx"
 )
 
 type bootstrapper struct {
-	address        string        // in form of "tls://one.one.one.one:853"
+	address        string          // in form of "tls://one.one.one.one:853"
 	resolvers      []*net.Resolver // resolver to use to resolve hostname, if necessary
-	resolved       string        // in form "IP:port"
-	timeout        time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
+	resolved       string          // in form "IP:port"
+	timeout        time.Duration   // resolution duration (shared with the upstream) (0 == infinite timeout)
 	resolvedConfig *tls.Config
 	sync.RWMutex
 }
@@ -35,6 +34,8 @@ func toBoot(address string, bootstrapAddr []string, timeout time.Duration) boots
 			}
 		}
 
+		// Create list of resolvers for parallel lookup
+		// nil resolver if the default one
 		for _, boot := range bootstrapAddr {
 			resolver := &net.Resolver{
 				PreferGo: true,
@@ -100,11 +101,11 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	// if it's a hostname
 	//
 
-	resolver := n.resolvers // no need to check for nil resolver -- documented that nil is default resolver
+	resolvers := n.resolvers // no need to check for nil resolvers -- documented that nil is default resolver
 	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
 	defer cancel() // important to avoid a resource leak
 
-	addrs, err := parallelLookup(ctx, resolver, host)
+	addrs, err := LookupParallel(ctx, resolvers, host)
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}
@@ -128,42 +129,6 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	n.resolved = net.JoinHostPort(ip.String(), port)
 	n.resolvedConfig = &tls.Config{ServerName: host}
 	return n.resolved, n.resolvedConfig, nil
-}
-
-func parallelLookup(ctx context.Context, resolvers []*net.Resolver, host string) ([]net.IPAddr, error) {
-	size := len(resolvers)
-
-	resp := make(chan []net.IPAddr, size)
-	quit := make(chan error, size)
-
-	resolver := resolvers // no need to check for nil resolver -- documented that nil is default resolver
-	for _, res := range resolver {
-		go lookupIp(ctx, res, host, resp, quit)
-	}
-
-	var count int
-	for {
-		select {
-		case addrs := <- resp:
-			return addrs, nil
-		case err := <- quit:
-			log.Printf("failed to lookup for %s: %g", host, err)
-			count++
-			if count == size {
-				return nil, err
-			}
-		}
-	}
-}
-
-// TODO change it like ExchangeParallel and use new structure
-func lookupIp(ctx context.Context, resolver *net.Resolver, host string, ip chan []net.IPAddr, quit chan error) {
-	address, err := resolver.LookupIPAddr(ctx, host)
-	if address != nil {
-		ip <- address
-	} else {
-		quit <- err
-	}
 }
 
 func (n *bootstrapper) getAddressHostPort() (string, string, error) {

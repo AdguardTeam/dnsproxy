@@ -37,7 +37,7 @@ func TestExchangeParallel(t *testing.T) {
 }
 
 func TestLookupParallel(t *testing.T) {
-	resolvers := []*net.Resolver{}
+	resolvers := []resolverWithAddress{}
 	bootstraps := []string{"1.2.3.4:55", "8.8.8.1", "8.8.8.8:53"}
 
 	for _, b := range bootstraps {
@@ -48,7 +48,11 @@ func TestLookupParallel(t *testing.T) {
 				return d.DialContext(ctx, network, b)
 			},
 		}
-		resolvers = append(resolvers, resolver)
+
+		resolvers = append(resolvers, resolverWithAddress{
+			resolver: resolver,
+			address:  b,
+		})
 	}
 
 	ctx := context.TODO()

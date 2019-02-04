@@ -14,16 +14,22 @@ import (
 )
 
 type bootstrapper struct {
-	address        string          // in form of "tls://one.one.one.one:853"
-	resolvers      []*net.Resolver // resolver to use to resolve hostname, if necessary
-	resolved       string          // in form "IP:port"
-	timeout        time.Duration   // resolution duration (shared with the upstream) (0 == infinite timeout)
+	address        string                // in form of "tls://one.one.one.one:853"
+	resolvers      []resolverWithAddress // resolver to use to resolve hostname, if necessary
+	resolved       string                // in form "IP:port"
+	timeout        time.Duration         // resolution duration (shared with the upstream) (0 == infinite timeout)
 	resolvedConfig *tls.Config
 	sync.RWMutex
 }
 
+// resolverWithAddress is wrapper for resolver and it's bootstrap address
+type resolverWithAddress struct {
+	resolver *net.Resolver
+	address  string
+}
+
 func toBoot(address string, bootstrapAddr []string, timeout time.Duration) bootstrapper {
-	resolvers := []*net.Resolver{}
+	resolvers := []resolverWithAddress{}
 	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
 		for idx, adr := range bootstrapAddr {
 			_, _, err := net.SplitHostPort(adr)
@@ -37,18 +43,20 @@ func toBoot(address string, bootstrapAddr []string, timeout time.Duration) boots
 		// Create list of resolvers for parallel lookup
 		// nil resolver if the default one
 		for _, boot := range bootstrapAddr {
-			resolver := &net.Resolver{
+			data := resolverWithAddress{}
+			data.resolver = &net.Resolver{
 				PreferGo: true,
 				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 					d := net.Dialer{Timeout: timeout}
 					return d.DialContext(ctx, network, boot)
 				},
 			}
-			resolvers = append(resolvers, resolver)
+			data.address = boot
+			resolvers = append(resolvers, data)
 		}
 	} else {
 		var resolver *net.Resolver
-		resolvers = append(resolvers, resolver)
+		resolvers = append(resolvers, resolverWithAddress{resolver: resolver})
 	}
 
 	return bootstrapper{
@@ -101,11 +109,10 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	// if it's a hostname
 	//
 
-	resolvers := n.resolvers // no need to check for nil resolvers -- documented that nil is default resolver
 	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
 	defer cancel() // important to avoid a resource leak
 
-	addrs, err := LookupParallel(ctx, resolvers, host)
+	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}

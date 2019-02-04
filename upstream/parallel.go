@@ -38,7 +38,6 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, error) {
 			reply := rep.reply
 			err := rep.err
 			if err != nil {
-				log.Printf("fail to exchange : %s", err)
 				count++
 			}
 
@@ -58,6 +57,12 @@ func exchange(u Upstream, req *dns.Msg, resp chan *exchangeResult) {
 	start := time.Now()
 	reply, err := u.Exchange(req)
 	elapsed := time.Since(start)
+	if err == nil {
+		log.Tracef("upstream %s succesfully finished exchange of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
+	} else {
+		log.Tracef("upstream %s failed to exchange %s in %s milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
+	}
+
 	resp <- &exchangeResult{
 		reply:   reply,
 		elapsed: elapsed,
@@ -74,15 +79,14 @@ type lookupResult struct {
 // LookupParallel starts parallel lookup for host ip with many resolvers
 // First answer without error will be returned
 // Return nil and error if count of errors equals count of resolvers
-func LookupParallel(ctx context.Context, resolvers []*net.Resolver, host string) ([]net.IPAddr, error) {
+func LookupParallel(ctx context.Context, resolvers []resolverWithAddress, host string) ([]net.IPAddr, error) {
 	size := len(resolvers)
 
 	// Size of channel must accommodate results of lookups from all resolvers
 	// Otherwise sending in channel will be locked
 	ch := make(chan *lookupResult, size)
 
-	resolver := resolvers // no need to check for nil resolver -- documented that nil is default resolver
-	for _, res := range resolver {
+	for _, res := range resolvers {
 		go lookup(ctx, res, host, ch)
 	}
 
@@ -93,12 +97,11 @@ func LookupParallel(ctx context.Context, resolvers []*net.Resolver, host string)
 			addr := result.address
 			err := result.err
 			if err != nil {
-				log.Printf("fail to lookup : %s", err)
 				count++
 			}
 
 			if count == size {
-				return nil, errorx.Decorate(err, "all resolvers failed to lookup")
+				return nil, errorx.Decorate(err, "all resolvers failed to lookup for %s", host)
 			}
 
 			if addr != nil && err == nil {
@@ -109,8 +112,14 @@ func LookupParallel(ctx context.Context, resolvers []*net.Resolver, host string)
 }
 
 // lookup tries to lookup for host ip with one resolver and sends lookupResult to res channel
-func lookup(ctx context.Context, resolver *net.Resolver, host string, res chan *lookupResult) {
-	address, err := resolver.LookupIPAddr(ctx, host)
+func lookup(ctx context.Context, r resolverWithAddress, host string, res chan *lookupResult) {
+	address, err := r.resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		log.Tracef("failed to lookup for %s using %s: %s", host, r.address, err)
+	} else {
+		log.Tracef("successfully finish lookup for %s. Result : %s", host, address)
+	}
+
 	res <- &lookupResult{
 		err:     err,
 		address: address,

@@ -24,6 +24,7 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, error) {
 	size := len(u)
 
 	// Size of channel must accommodate results of exchange from all upstreams
+	// Otherwise sending in channel will be locked
 	ch := make(chan *exchangeResult, size)
 
 	for _, f := range u {
@@ -77,6 +78,7 @@ func LookupParallel(ctx context.Context, resolvers []*net.Resolver, host string)
 	size := len(resolvers)
 
 	// Size of channel must accommodate results of lookups from all resolvers
+	// Otherwise sending in channel will be locked
 	ch := make(chan *lookupResult, size)
 
 	resolver := resolvers // no need to check for nil resolver -- documented that nil is default resolver

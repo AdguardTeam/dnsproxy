@@ -22,6 +22,8 @@ type exchangeResult struct {
 // We will return nil and error if count of errors equals count of upstreams
 func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, error) {
 	size := len(u)
+
+	// Size of channel must accommodate results of exchange from all upstreams
 	ch := make(chan *exchangeResult, size)
 
 	for _, f := range u {
@@ -74,6 +76,7 @@ type lookupResult struct {
 func LookupParallel(ctx context.Context, resolvers []*net.Resolver, host string) ([]net.IPAddr, error) {
 	size := len(resolvers)
 
+	// Size of channel must accommodate results of lookups from all resolvers
 	ch := make(chan *lookupResult, size)
 
 	resolver := resolvers // no need to check for nil resolver -- documented that nil is default resolver

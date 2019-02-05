@@ -112,7 +112,7 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
 	defer cancel() // important to avoid a resource leak
 
-	addrs, err := LookupParallel(ctx, n.resolvers, host)
+	addrs, err := lookupParallel(ctx, n.resolvers, host)
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}

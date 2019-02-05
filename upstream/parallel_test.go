@@ -25,11 +25,12 @@ func TestExchangeParallel(t *testing.T) {
 
 	req := createTestMessage()
 	start := time.Now()
-	_, err := ExchangeParallel(upstreams, req)
+	resp, err := ExchangeParallel(upstreams, req)
 	if err != nil {
 		t.Fatalf("no response from test upstreams: %s", err)
 	}
 
+	assertResponse(t, resp)
 	elapsed := time.Since(start)
 	if elapsed > timeout {
 		t.Fatalf("exchange took more time than the configured timeout: %v", elapsed)
@@ -58,7 +59,7 @@ func TestLookupParallel(t *testing.T) {
 	ctx := context.TODO()
 
 	start := time.Now()
-	answer, err := LookupParallel(ctx, resolvers, "google.com")
+	answer, err := lookupParallel(ctx, resolvers, "google.com")
 	if err != nil || answer == nil {
 		t.Fatalf("failed to lookup %s", err)
 	}

@@ -19,12 +19,12 @@ func TestParseDNSStamp(t *testing.T) {
 }
 
 func TestTestUpstream(t *testing.T) {
-	err := TestUpstream("123.12.32.1:1493", "", 500)
+	err := TestUpstream("123.12.32.1:1493", []string{}, 500)
 	if err == nil {
 		t.Fatalf("cannot be successful")
 	}
 
-	err = TestUpstream("8.8.8.8:53", "", 500)
+	err = TestUpstream("8.8.8.8:53", []string{}, 500)
 	if err != nil {
 		t.Fatalf("cannot fail: %s", err)
 	}

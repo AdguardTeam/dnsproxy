@@ -26,11 +26,12 @@ type DNSProxy struct {
 }
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
+// In Java API this structure becomes an object that needs to be configured and setted as field of DNSProxy
 type Config struct {
 	ListenAddr   string // IP address to listen to
 	ListenPort   int    // Port to listen to
-	BootstrapDNS string // Bootstrap DNS (i.e. 8.8.8.8:53)
-	Fallback     string // Fallback resolver that will be used if the main one is not available (i.e. 1.1.1.1:53)
+	BootstrapDNS string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
+	Fallbacks    string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
 	Upstreams    string // A list of upstream resolvers (each on a new line)
 	Timeout      int    // Default timeout for all resolvers (milliseconds)
 }
@@ -99,6 +100,17 @@ func createConfig(config *Config) (*proxy.Config, error) {
 	listenTCPAddr := &net.TCPAddr{Port: config.ListenPort, IP: listenIP}
 	upstreams := make([]upstream.Upstream, 0)
 
+	// Check bootstraps list for empty strings
+	bootstrapLines := strings.Split(config.BootstrapDNS, "\n")
+	var bootstraps []string
+	for _, line := range bootstrapLines {
+		if line == "" {
+			continue
+		}
+
+		bootstraps = append(bootstraps, line)
+	}
+
 	lines := strings.Split(config.Upstreams, "\n")
 
 	for i, line := range lines {
@@ -106,7 +118,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 			continue
 		}
 
-		dnsUpstream, err := upstream.AddressToUpstream(line, config.BootstrapDNS, timeout)
+		dnsUpstream, err := upstream.AddressToUpstream(line, bootstraps, timeout)
 		if err != nil {
 			return nil, fmt.Errorf("cannot prepare the upstream %s (%s): %s", line, config.BootstrapDNS, err)
 		}
@@ -121,13 +133,23 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		Upstreams:     upstreams,
 	}
 
-	if config.Fallback != "" {
-		fallback, err := upstream.AddressToUpstream(config.Fallback, config.BootstrapDNS, timeout)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", config.Fallback, config.BootstrapDNS, err)
+	if config.Fallbacks != "" {
+		fallbacks := []upstream.Upstream{}
+		lines = strings.Split(config.Fallbacks, "\n")
+		for i, line := range lines {
+			if line == "" {
+				continue
+			}
+
+			fallback, err := upstream.AddressToUpstream(line, bootstraps, timeout)
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse the fallback %s (%s): %s", line, config.BootstrapDNS, err)
+			}
+
+			log.Printf("Fallback %d: %s", i, fallback.Address())
+			fallbacks = append(fallbacks, fallback)
 		}
-		log.Printf("Fallback is %s", fallback.Address())
-		proxyConfig.Fallback = fallback
+		proxyConfig.Fallbacks = fallbacks
 	}
 
 	return &proxyConfig, nil

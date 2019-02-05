@@ -15,34 +15,73 @@ import (
 
 type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
-	resolver       *net.Resolver // resolver to use to resolve hostname, if necessary
+	resolvers      []*Resolver   // list of Resolvers to use to resolve hostname, if necessary
 	resolved       string        // in form "IP:port"
 	timeout        time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
 	resolvedConfig *tls.Config
 	sync.RWMutex
 }
 
-func toBoot(address, bootstrapAddr string, timeout time.Duration) bootstrapper {
-	var resolver *net.Resolver
-	if bootstrapAddr != "" {
-		_, _, err := net.SplitHostPort(bootstrapAddr)
-		if err != nil {
-			// Add the default port for bootstrap DNS address if no port is defined
-			bootstrapAddr = net.JoinHostPort(bootstrapAddr, "53")
+// Resolver is wrapper for resolver and it's address
+type Resolver struct {
+	resolver        *net.Resolver // net.Resolver
+	resolverAddress string        // Resolver's address
+}
+
+// NewResolver creates an instance of Resolver structure with defined net.Resolver and it's address
+// resolverAddress is address of net.Resolver
+// The host in the address parameter of Dial func will always be a literal IP address (from documentation)
+func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
+	r := &Resolver{}
+
+	// set default net.Resolver as a resolver if resolverAddress is empty
+	if resolverAddress == "" {
+		r.resolver = &net.Resolver{}
+		return r
+	}
+
+	r.resolverAddress = resolverAddress
+	r.resolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{Timeout: timeout}
+			return d.DialContext(ctx, network, resolverAddress)
+		},
+	}
+	return r
+}
+
+// LookupIPAddr returns result of LookupIPAddr method of Resolver's net.Resolver
+func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
+	return r.resolver.LookupIPAddr(ctx, host)
+}
+
+func toBoot(address string, bootstrapAddr []string, timeout time.Duration) bootstrapper {
+	resolvers := []*Resolver{}
+	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
+		for idx, adr := range bootstrapAddr {
+			_, _, err := net.SplitHostPort(adr)
+			if err != nil {
+				// Add the default port for bootstrap DNS address if no port is defined
+				adr = net.JoinHostPort(adr, "53")
+				bootstrapAddr[idx] = adr
+			}
 		}
-		resolver = &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				d := net.Dialer{Timeout: timeout}
-				return d.DialContext(ctx, network, bootstrapAddr)
-			},
+
+		// Create list of resolvers for parallel lookup
+		for _, boot := range bootstrapAddr {
+			r := NewResolver(boot, timeout)
+			resolvers = append(resolvers, r)
 		}
+	} else {
+		// nil resolver if the default one
+		resolvers = append(resolvers, NewResolver("", timeout))
 	}
 
 	return bootstrapper{
-		address:  address,
-		resolver: resolver,
-		timeout:  timeout,
+		address:   address,
+		resolvers: resolvers,
+		timeout:   timeout,
 	}
 }
 
@@ -89,11 +128,10 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	// if it's a hostname
 	//
 
-	resolver := n.resolver // no need to check for nil resolver -- documented that nil is default resolver
 	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
 	defer cancel() // important to avoid a resource leak
 
-	addrs, err := resolver.LookupIPAddr(ctx, host)
+	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {
 		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}

@@ -166,10 +166,18 @@ func TestFallback(t *testing.T) {
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
 
-	dnsProxy.Fallback = dnsProxy.Upstreams[0]
+	// List of fallback server addresses. Only one is valid
+	fallbackAddresses := []string{"1.2.3.4", "1.2.3.5", "8.8.8.8"}
+	dnsProxy.Fallbacks = []upstream.Upstream{}
+
+	for _, s := range fallbackAddresses {
+		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
+		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
+	}
+
 	// using some random port to make sure that this upstream won't work
 	timeout := 1 * time.Second
-	u, _ := upstream.AddressToUpstream("8.8.8.8:555", "", 1*time.Second)
+	u, _ := upstream.AddressToUpstream("8.8.8.8:555", []string{}, 1*time.Second)
 	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
@@ -216,11 +224,19 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
 
-	dnsProxy.Fallback = dnsProxy.Upstreams[0]
+	// List of fallback server addresses. Both are valid
+	fallbackAddresses := []string{"1.0.0.1", "8.8.8.8"}
+	dnsProxy.Fallbacks = []upstream.Upstream{}
+
+	for _, s := range fallbackAddresses {
+		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
+		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
+	}
+
 	// using a DOT server with invalid bootstrap
 	timeout := 1 * time.Second
-	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", "8.8.8.8:555", timeout)
-	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
+	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", []string{"8.8.8.8:555"}, timeout)
+	dnsProxy.Upstreams = []upstream.Upstream{}
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
 	// Start listening
@@ -374,7 +390,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	}
 	upstreams := make([]upstream.Upstream, 0)
 
-	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, "", 10*time.Second)
+	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, []string{}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}

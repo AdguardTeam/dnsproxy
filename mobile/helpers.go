@@ -37,7 +37,7 @@ func ParseDNSStamp(stampStr string) (*DNSStamp, error) {
 // * address - see upstream.AddressToUpstream for examples
 // * bootstrap - an optional bootstrap DNS
 // * timeout - timeout in milliseconds
-func TestUpstream(address string, bootstrap string, timeout int) error {
+func TestUpstream(address string, bootstrap []string, timeout int) error {
 	t := time.Duration(timeout) * time.Millisecond
 	u, err := upstream.AddressToUpstream(address, bootstrap, t)
 	if err != nil {

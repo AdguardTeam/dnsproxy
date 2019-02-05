@@ -80,7 +80,7 @@ type Config struct {
 	CacheEnabled bool // cache status
 
 	Upstreams []upstream.Upstream // list of upstreams
-	Fallback  upstream.Upstream   // fallback resolver (which will be used if regular upstream failed to answer)
+	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 	Handler   Handler             // custom middleware (optional)
 }
 
@@ -237,9 +237,9 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 	p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
 
-	if err != nil && p.Fallback != nil {
+	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, err = p.Fallback.Exchange(d.Req)
+		reply, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
 	}
 
 	// Saving cached response

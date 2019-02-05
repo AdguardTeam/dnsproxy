@@ -2,7 +2,6 @@ package upstream
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 )
@@ -38,28 +37,18 @@ func TestExchangeParallel(t *testing.T) {
 }
 
 func TestLookupParallel(t *testing.T) {
-	resolvers := []resolverWithAddress{}
+	resolvers := []*Resolver{}
 	bootstraps := []string{"1.2.3.4:55", "8.8.8.1", "8.8.8.8:53"}
 
-	for _, b := range bootstraps {
-		resolver := &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				d := net.Dialer{Timeout: timeout}
-				return d.DialContext(ctx, network, b)
-			},
-		}
-
-		resolvers = append(resolvers, resolverWithAddress{
-			resolver: resolver,
-			address:  b,
-		})
+	for _, boot := range bootstraps {
+		resolver := NewResolver(boot, timeout)
+		resolvers = append(resolvers, resolver)
 	}
 
 	ctx := context.TODO()
 
 	start := time.Now()
-	answer, err := lookupParallel(ctx, resolvers, "google.com")
+	answer, err := LookupParallel(ctx, resolvers, "google.com")
 	if err != nil || answer == nil {
 		t.Fatalf("failed to lookup %s", err)
 	}

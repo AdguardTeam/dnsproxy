@@ -13,9 +13,9 @@ import (
 
 // exchangeResult is a structure that represents result of exchange
 type exchangeResult struct {
-	reply   *dns.Msg
-	elapsed time.Duration
-	err     error
+	reply   *dns.Msg      // Result of DNS request execution
+	elapsed time.Duration // Elapsed time
+	err     error         // Error
 }
 
 // ExchangeParallel function is called to parallel exchange dns request by many upstreams
@@ -81,14 +81,14 @@ func exchange(u Upstream, req *dns.Msg, resp chan *exchangeResult) {
 
 // lookupResult is a structure that represents result of lookup
 type lookupResult struct {
-	err     error
-	address []net.IPAddr
+	address []net.IPAddr // List of IP addresses
+	err     error        // Error
 }
 
-// lookupParallel starts parallel lookup for host ip with many resolvers
+// LookupParallel starts parallel lookup for host ip with many Resolvers
 // First answer without error will be returned
 // Return nil and error if count of errors equals count of resolvers
-func lookupParallel(ctx context.Context, resolvers []resolverWithAddress, host string) ([]net.IPAddr, error) {
+func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]net.IPAddr, error) {
 	size := len(resolvers)
 
 	if size == 0 {
@@ -127,10 +127,10 @@ func lookupParallel(ctx context.Context, resolvers []resolverWithAddress, host s
 	}
 }
 
-// lookup tries to lookup for host ip with one resolver and sends lookupResult to res channel
-func lookup(ctx context.Context, r resolverWithAddress, host string, res chan *lookupResult) {
+// lookup tries to lookup for host ip with one Resolver and sends lookupResult to res channel
+func lookup(ctx context.Context, r *Resolver, host string, res chan *lookupResult) {
 	start := time.Now()
-	address, err := r.resolver.LookupIPAddr(ctx, host)
+	address, err := r.LookupIPAddr(ctx, host)
 	elapsed := time.Since(start) / time.Millisecond
 	if err != nil {
 		log.Tracef("failed to lookup for %s in %d milliseconds using %s: %s", host, elapsed, r.address, err)

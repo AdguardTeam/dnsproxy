@@ -168,7 +168,7 @@ func TestFallback(t *testing.T) {
 
 	// List of fallback server addresses. Only one is valid
 	fallbackAddresses := []string{"1.2.3.4", "1.2.3.5", "8.8.8.8"}
-	dnsProxy.Fallbacks = make([]upstream.Upstream, 0)
+	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
 		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
@@ -226,7 +226,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 
 	// List of fallback server addresses. Both are valid
 	fallbackAddresses := []string{"1.0.0.1", "8.8.8.8"}
-	dnsProxy.Fallbacks = make([]upstream.Upstream, 0)
+	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
 		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
@@ -236,7 +236,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	// using a DOT server with invalid bootstrap
 	timeout := 1 * time.Second
 	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", []string{"8.8.8.8:555"}, timeout)
-	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
+	dnsProxy.Upstreams = []upstream.Upstream{}
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
 	// Start listening

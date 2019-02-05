@@ -133,9 +133,9 @@ func lookup(ctx context.Context, r *Resolver, host string, res chan *lookupResul
 	address, err := r.LookupIPAddr(ctx, host)
 	elapsed := time.Since(start) / time.Millisecond
 	if err != nil {
-		log.Tracef("failed to lookup for %s in %d milliseconds using %s: %s", host, elapsed, r.address, err)
+		log.Tracef("failed to lookup for %s in %d milliseconds using %s: %s", host, elapsed, r.resolverAddress, err)
 	} else {
-		log.Tracef("successfully finish lookup for %s in %d milliseconds using %s. Result : %s", host, elapsed, r.address, address)
+		log.Tracef("successfully finish lookup for %s in %d milliseconds using %s. Result : %s", host, elapsed, r.resolverAddress, address)
 	}
 
 	res <- &lookupResult{

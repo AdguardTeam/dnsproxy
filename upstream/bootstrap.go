@@ -24,19 +24,28 @@ type bootstrapper struct {
 
 // Resolver is wrapper for resolver and it's address
 type Resolver struct {
-	resolver *net.Resolver // Actual resolver
-	address  string        // Resolver's address
+	resolver        *net.Resolver // net.Resolver
+	resolverAddress string        // Resolver's address
 }
 
-// NewResolver creates an instance of Resolver structure with defined net.Resolver and bootstrap address
-func NewResolver(boot string, timeout time.Duration) *Resolver {
+// NewResolver creates an instance of Resolver structure with defined net.Resolver and it's address
+// resolverAddress is address of net.Resolver
+// The host in the address parameter of Dial func will always be a literal IP address (from documentation)
+func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
 	r := &Resolver{}
-	r.address = boot
+
+	// set default net.Resolver as a resolver if resolverAddress is empty
+	if resolverAddress == "" {
+		r.resolver = &net.Resolver{}
+		return r
+	}
+
+	r.resolverAddress = resolverAddress
 	r.resolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			d := net.Dialer{Timeout: timeout}
-			return d.DialContext(ctx, network, boot)
+			return d.DialContext(ctx, network, resolverAddress)
 		},
 	}
 	return r
@@ -66,8 +75,7 @@ func toBoot(address string, bootstrapAddr []string, timeout time.Duration) boots
 		}
 	} else {
 		// nil resolver if the default one
-		var resolver *net.Resolver
-		resolvers = append(resolvers, &Resolver{resolver: resolver})
+		resolvers = append(resolvers, NewResolver("", timeout))
 	}
 
 	return bootstrapper{

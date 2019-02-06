@@ -174,23 +174,24 @@ func (n *bootstrapper) get() (string, *tls.Config, func(ctx context.Context, net
 
 	// TODO remove. This crutch is necessary only until DoT doesn't work properly
 	address := resolved[0]
+
 	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		// Note that we're using bootstrapped resolverAddr instead of what's passed to the function
 		errs := []error{}
 
 		// Return first connection without error
-		for _, resolverAddr := range resolved {
+		// Note that we're using bootstrapped resolverAddress instead of what's passed to the function
+		for _, resolverAddress := range resolved {
 			start := time.Now()
-			con, err := dialer.DialContext(ctx, network, resolverAddr)
+			con, err := dialer.DialContext(ctx, network, resolverAddress)
 			elapsed := time.Since(start) / time.Millisecond
 
 			if err == nil {
-				address = resolverAddr
-				log.Printf("dialer successfully initialize connection in %d milliseconds using %s", elapsed, resolverAddr)
+				address = resolverAddress
+				log.Printf("dialer successfully initialize connection in %d milliseconds using %s", elapsed, resolverAddress)
 				return con, err
 			}
 			errs = append(errs, err)
-			log.Printf("dialer failed to initialize connection in %d milliseconds using %s, cause: %s", elapsed, resolverAddr, err)
+			log.Printf("dialer failed to initialize connection in %d milliseconds using %s, cause: %s", elapsed, resolverAddress, err)
 		}
 		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
 	}

@@ -2,6 +2,7 @@ package mobile
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -35,11 +36,24 @@ func ParseDNSStamp(stampStr string) (*DNSStamp, error) {
 // TestUpstream checks if upstream is valid and available
 // If it is, no error is returned. Otherwise this method returns an error with an explanation.
 // * address - see upstream.AddressToUpstream for examples
-// * bootstrap - an optional bootstrap DNS
+// * bootstrap - an optional bootstrap DNS. You can pass multiple addresses by separating them with a newline
 // * timeout - timeout in milliseconds
-func TestUpstream(address string, bootstrap []string, timeout int) error {
+func TestUpstream(address string, bootstrap string, timeout int) error {
 	t := time.Duration(timeout) * time.Millisecond
-	u, err := upstream.AddressToUpstream(address, bootstrap, t)
+
+	bootstraps := []string{}
+
+	// Check bootstrap for empty strings
+	lines := strings.Split(bootstrap, "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		bootstraps = append(bootstraps, line)
+	}
+
+	u, err := upstream.AddressToUpstream(address, bootstraps, t)
 	if err != nil {
 		return err
 	}

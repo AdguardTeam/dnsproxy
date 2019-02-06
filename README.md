@@ -33,13 +33,13 @@ Application Options:
   -t, --tls-port=   Listen port for DNS-over-TLS (default: 0)
   -c, --tls-crt=    Path to a file with the certificate chain
   -k, --tls-key=    Path to a file with the private key
-  -b, --bootstrap=  Bootstrap DNS for DoH and DoT (default: 8.8.8.8:53, can be specified multiple times)
+  -b, --bootstrap=  Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
   -r, --ratelimit=  Ratelimit (requests per second) (default: 0)
   -z, --cache       If specified, DNS cache is enabled
   -a, --refuse-any  If specified, refuse ANY requests
   -u, --upstream=   An upstream to be used (can be specified multiple times)
-  -f, --fallback=   A fallback resolver to use when regular ones aren't available (can be specified multiple times)
-  -s, --all-servers Enable parallel queries to all configured upstream servers
+  -f, --fallback=   Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
+  -s, --all-servers Use parallel queries to speed up resolving by querying all upstream servers simultaneously
 
 Help Options:
   -h, --help        Show this help message

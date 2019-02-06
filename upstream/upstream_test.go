@@ -182,107 +182,12 @@ func TestUpstreams(t *testing.T) {
 		bootstrap []string
 	}{
 		{
-			address:   "8.8.8.8:53",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			address:   "1.1.1.1",
-			bootstrap: []string{},
-		},
-		{
-			address:   "1.1.1.1",
-			bootstrap: []string{"1.0.0.1"},
-		},
-		{
-			address:   "tcp://1.1.1.1:53",
-			bootstrap: []string{},
-		},
-		{
-			address:   "176.103.130.130:5353",
-			bootstrap: []string{},
-		},
-		{
 			address:   "tls://1.1.1.1",
 			bootstrap: []string{},
 		},
 		{
 			address:   "tls://9.9.9.9:853",
 			bootstrap: []string{},
-		},
-		{
-			address:   "tls://dns.adguard.com",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			address:   "tls://dns.adguard.com:853",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			address:   "tls://dns.adguard.com:853",
-			bootstrap: []string{"8.8.8.8"},
-		},
-		{
-			address:   "tls://one.one.one.one",
-			bootstrap: []string{},
-		},
-		{
-			address:   "https://dns9.quad9.net:443/dns-query",
-			bootstrap: []string{"8.8.8.8"},
-		},
-		{
-			address:   "https://cloudflare-dns.com/dns-query",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			address:   "https://dns.google.com/experimental",
-			bootstrap: []string{},
-		},
-		{
-			// AdGuard DNS (DNSCrypt)
-			address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
-			bootstrap: []string{},
-		},
-		{
-			// AdGuard Family (DNSCrypt)
-			address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMjo1NDQzILgxXdexS27jIKRw3C7Wsao5jMnlhvhdRUXWuMm1AFq6ITIuZG5zY3J5cHQuZmFtaWx5Lm5zMS5hZGd1YXJkLmNvbQ",
-			bootstrap: []string{"8.8.8.8"},
-		},
-		{
-			// Cisco OpenDNS (DNSCrypt)
-			address:   "sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			// Cloudflare DNS (DoH)
-			address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			// Google (DNS-over-HTTPS)
-			address:   "sdns://AgUAAAAAAAAAACAe9iTP_15r07rd8_3b_epWVGfjdymdx-5mdRZvMAzBuQ5kbnMuZ29vZ2xlLmNvbQ0vZXhwZXJpbWVudGFs",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			// Google (Plain)
-			address:   "sdns://AAcAAAAAAAAABzguOC44Ljg",
-			bootstrap: []string{},
-		},
-		{
-			// AdGuard DNS (DNS-over-TLS)
-			address:   "sdns://AwAAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			address:   "tls://dns.adguard.com",
-			bootstrap: []string{"1.1.1.1:555", "8.8.8.8:53"},
-		},
-		{
-			address:   "tls://dns.adguard.com:853",
-			bootstrap: []string{"8.8.8.8:535", "1.0.0.1"},
-		},
-		{
-			address:   "https://cloudflare-dns.com/dns-query",
-			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 		},
 	}
 	for _, test := range upstreams {

@@ -2,7 +2,6 @@ package upstream
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -39,7 +38,7 @@ type plainDNS struct {
 func (p *plainDNS) Address() string { return p.boot.address }
 
 func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	addr, _, err := p.boot.get()
+	addr, _, _, err := p.boot.get()
 	if err != nil {
 		return nil, err
 	}
@@ -202,18 +201,11 @@ func (p *dnsOverHTTPS) getTransport() (*http.Transport, error) {
 		return p.transport, nil
 	}
 
-	resolverAddr, tlsConfig, err := p.boot.get()
+	_, tlsConfig, dialContext, err := p.boot.get()
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't bootstrap %s", p.boot.address)
 	}
-	dialer := &net.Dialer{
-		Timeout:   p.boot.timeout,
-		DualStack: true,
-	}
-	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		// Note that we're using bootstrapped resolverAddr instead of what's passed to the function
-		return dialer.DialContext(ctx, network, resolverAddr)
-	}
+
 	transport := &http.Transport{
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,

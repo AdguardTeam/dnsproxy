@@ -38,7 +38,7 @@ type TLSPool struct {
 
 // Get gets or creates a new TLS connection
 func (n *TLSPool) Get() (net.Conn, error) {
-	address, _, err := n.boot.get()
+	address, _, _, err := n.boot.get()
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 // Create creates a new connection for the pool (but not puts it there)
 func (n *TLSPool) Create() (net.Conn, error) {
-	address, tlsConfig, err := n.boot.get()
+	address, tlsConfig, _, err := n.boot.get()
 	if err != nil {
 		return nil, err
 	}

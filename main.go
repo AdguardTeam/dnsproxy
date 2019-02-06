@@ -44,7 +44,7 @@ type Options struct {
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
 	// Bootstrap DNS
-	BootstrapDNS []string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT" default:"8.8.8.8:53 (can be specified multiple times)"`
+	BootstrapDNS []string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)"`
 
 	// Ratelimit value
 	Ratelimit int `short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
@@ -59,7 +59,10 @@ type Options struct {
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
 
 	// Fallback DNS resolver
-	Fallbacks []string `short:"f" long:"fallback" description:"A fallback resolvers to use when regular ones aren't available (can be specified multiple times)"`
+	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times"`
+
+	// If true, parallel queries to all configured upstream servers
+	AllServers bool `short:"s" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
 }
 
 const defaultTimeout = 10 * time.Second
@@ -145,6 +148,7 @@ func createProxyConfig(options Options) proxy.Config {
 		Ratelimit:     options.Ratelimit,
 		CacheEnabled:  options.Cache,
 		RefuseAny:     options.RefuseAny,
+		AllServers:    options.AllServers,
 	}
 
 	if options.Fallbacks != nil {

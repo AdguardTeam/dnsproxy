@@ -33,12 +33,13 @@ Application Options:
   -t, --tls-port=   Listen port for DNS-over-TLS (default: 0)
   -c, --tls-crt=    Path to a file with the certificate chain
   -k, --tls-key=    Path to a file with the private key
-  -b, --bootstrap=  Bootstrap DNS for DoH and DoT (default: 8.8.8.8:53)
+  -b, --bootstrap=  Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
   -r, --ratelimit=  Ratelimit (requests per second) (default: 0)
   -z, --cache       If specified, DNS cache is enabled
   -a, --refuse-any  If specified, refuse ANY requests
   -u, --upstream=   An upstream to be used (can be specified multiple times)
-  -f, --fallback=   A fallback resolver to use when regular ones aren't available
+  -f, --fallback=   Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
+  -s, --all-servers Use parallel queries to speed up resolving by querying all upstream servers simultaneously
 
 Help Options:
   -h, --help        Show this help message
@@ -70,9 +71,9 @@ DNS-over-TLS upstream:
 ./dnsproxy -u tls://dns.adguard.com
 ```
 
-DNS-over-HTTPS upstream:
+DNS-over-HTTPS upstream with specified bootstrap DNS:
 ```
-./dnsproxy -u https://dns.adguard.com/dns-query
+./dnsproxy -u https://dns.adguard.com/dns-query -b 1.1.1.1:53
 ```
 
 DNSCrypt upstream ([DNS Stamp](https://dnscrypt.info/stamps) of AdGuard DNS):
@@ -85,9 +86,9 @@ DNS-over-HTTPS upstream ([DNS Stamp](https://dnscrypt.info/stamps) of Cloudflare
 ./dnsproxy -u sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk
 ```
 
-DNS-over-TLS upstream with fallback (to be used when the main upstream is not available):
+DNS-over-TLS upstream with two fallback servers (to be used when the main upstream is not available):
 ```
-./dnsproxy -u tls://dns.adguard.com -f 8.8.8.8:53
+./dnsproxy -u tls://dns.adguard.com -f 8.8.8.8:53 -f 1.1.1.1:53
 ```
 
 ### Encrypted DNS server
@@ -107,6 +108,11 @@ Runs a DNS-over-HTTPS proxy on `127.0.0.1:443`.
 Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `10 rps`, enabled DNS cache, and that refuses type=ANY requests.
 ```
 ./dnsproxy -u 8.8.8.8:53 -r 10 --cache --refuse-any
+```
+
+Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel queries to all configured upstream servers  
+```
+./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53 -u tls://dns.adguard.com --all-servers
 ```
 
 ### TODO

@@ -34,6 +34,7 @@ type Config struct {
 	Fallbacks    string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
 	Upstreams    string // A list of upstream resolvers (each on a new line)
 	Timeout      int    // Default timeout for all resolvers (milliseconds)
+	AllServers   bool   // If true, parallel queries to all configured upstream servers are enabled
 }
 
 // Start starts the DNS proxy
@@ -131,6 +132,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		UDPListenAddr: listenUDPAddr,
 		TCPListenAddr: listenTCPAddr,
 		Upstreams:     upstreams,
+		AllServers:    config.AllServers,
 	}
 
 	if config.Fallbacks != "" {

@@ -75,7 +75,8 @@ type Config struct {
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
 
-	RefuseAny bool // if true, refuse ANY requests
+	RefuseAny  bool // if true, refuse ANY requests
+	AllServers bool // if true, parallel queries to all configured upstream servers are enabled
 
 	CacheEnabled bool // cache status
 
@@ -225,17 +226,25 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	dnsUpstream := d.Upstream
 
 	// execute the DNS request
+	var reply *dns.Msg
+	var err error
 	startTime := time.Now()
-	reply, err := dnsUpstream.Exchange(d.Req)
+	if p.AllServers {
+		reply, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
+	} else {
+		reply, err = dnsUpstream.Exchange(d.Req)
+	}
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Tracef("RTT: %d ms", rtt)
 
-	// Update the upstreams weight
-	if err != nil {
-		// If there was an error, consider RTT equal to the default timeout (this will make the upstream's weight lower)
-		rtt = int(defaultTimeout / time.Millisecond)
+	if !p.AllServers {
+		// Update the upstreams weight
+		if err != nil {
+			// If there was an error, consider RTT equal to the default timeout (this will make the upstream's weight lower)
+			rtt = int(defaultTimeout / time.Millisecond)
+		}
+		p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
 	}
-	p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
 
 	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)

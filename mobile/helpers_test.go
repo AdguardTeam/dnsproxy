@@ -28,4 +28,10 @@ func TestTestUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot fail: %s", err)
 	}
+
+	// Test for DoT with 2 bootstraps. Only one is valid
+	err = TestUpstream("tls://dns.adguard.com", "1.2.3.4\n8.8.8.8", 500)
+	if err != nil {
+		t.Fatalf("cannot fail: %s", err)
+	}
 }

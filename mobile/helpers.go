@@ -36,7 +36,7 @@ func ParseDNSStamp(stampStr string) (*DNSStamp, error) {
 // TestUpstream checks if upstream is valid and available
 // If it is, no error is returned. Otherwise this method returns an error with an explanation.
 // * address - see upstream.AddressToUpstream for examples
-// * bootstrap - an optional bootstrap DNS. You can pass several addresses separated by `\n` on a line
+// * bootstrap - an optional bootstrap DNS. You can pass multiple addresses by separating them with a newline
 // * timeout - timeout in milliseconds
 func TestUpstream(address string, bootstrap string, timeout int) error {
 	t := time.Duration(timeout) * time.Millisecond

@@ -60,6 +60,9 @@ type Options struct {
 
 	// Fallback DNS resolver
 	Fallbacks []string `short:"f" long:"fallback" description:"A fallback resolvers to use when regular ones aren't available (can be specified multiple times)"`
+
+	// If true, parallel queries to all configured upstream servers
+	AllServers bool `short:"s" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
 }
 
 const defaultTimeout = 10 * time.Second
@@ -145,6 +148,7 @@ func createProxyConfig(options Options) proxy.Config {
 		Ratelimit:     options.Ratelimit,
 		CacheEnabled:  options.Cache,
 		RefuseAny:     options.RefuseAny,
+		AllServers:    options.AllServers,
 	}
 
 	if options.Fallbacks != nil {

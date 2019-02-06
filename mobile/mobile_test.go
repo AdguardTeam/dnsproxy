@@ -62,6 +62,6 @@ func TestMobileApi(t *testing.T) {
 
 	err = proxy.Stop()
 	if err != nil {
-		t.Fatalf("cannot start the mobile proxy: %s", err)
+		t.Fatalf("cannot stop the mobile proxy: %s", err)
 	}
 }

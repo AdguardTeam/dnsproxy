@@ -179,7 +179,7 @@ func TestDNSCryptTruncated(t *testing.T) {
 
 // See the details here: https://github.com/AdguardTeam/dnsproxy/issues/18
 func TestCreateDialContext(t *testing.T) {
-	const timeout = 5 * time.Second
+	const timeout = 2 * time.Second
 
 	resolved := []struct {
 		address []string
@@ -320,6 +320,10 @@ func TestUpstreams(t *testing.T) {
 		{
 			address:   "https://cloudflare-dns.com/dns-query",
 			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
+		},
+		{
+			address:   "https://1.1.1.1/dns-query",
+			bootstrap: []string{},
 		},
 	}
 	for _, test := range upstreams {

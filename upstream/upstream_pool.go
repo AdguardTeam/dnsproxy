@@ -39,7 +39,6 @@ type TLSPool struct {
 // Get gets or creates a new TLS connection
 func (n *TLSPool) Get() (net.Conn, error) {
 	_, _, err := n.boot.get()
-	address := "fake_address"
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +56,7 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 	// if we got connection from the slice, return it
 	if c != nil {
-		log.Tracef("Returning existing connection to %s", address)
+		log.Tracef("Returning existing connection to %s", c.RemoteAddr())
 		return c, nil
 	}
 
@@ -114,6 +113,7 @@ func tlsDial(dialContext func(ctx context.Context, network, addr string) (net.Co
 	}
 
 	conn := tls.Client(rawConn, config)
+	conn.SetDeadline(time.Now().Add(timeout))
 
 	go func() {
 		errChannel <- conn.Handshake()

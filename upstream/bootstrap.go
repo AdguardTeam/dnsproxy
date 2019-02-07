@@ -86,8 +86,11 @@ func toBoot(address string, bootstrapAddr []string, timeout time.Duration) boots
 	}
 }
 
+// dialHandler specifies the dial function for creating unencrypted TCP connections.
+type dialHandler func(ctx context.Context, network, addr string) (net.Conn, error)
+
 // will get usable IP address from Address field, and caches the result
-func (n *bootstrapper) get() (*tls.Config, func(ctx context.Context, network, addr string) (net.Conn, error), error) {
+func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	n.RLock()
 	if n.dialContext != nil && n.resolvedConfig != nil { // fast path
 		tlsconfig, dialContext := n.resolvedConfig, n.dialContext

@@ -89,7 +89,7 @@ func toBoot(address string, bootstrapAddr []string, timeout time.Duration) boots
 // will get usable IP address from Address field, and caches the result
 func (n *bootstrapper) get() (*tls.Config, func(ctx context.Context, network, addr string) (net.Conn, error), error) {
 	n.RLock()
-	if n.dialContext != nil { // fast path
+	if n.dialContext != nil && n.resolvedConfig != nil { // fast path
 		tlsconfig, dialContext := n.resolvedConfig, n.dialContext
 		n.RUnlock()
 		return tlsconfig, dialContext, nil
@@ -113,21 +113,14 @@ func (n *bootstrapper) get() (*tls.Config, func(ctx context.Context, network, ad
 		n.RUnlock()
 
 		// Upgrade lock to protect n.resolved
-		//address := net.JoinHostPort(host, "53")
-		address := "1.1.1.1:853"
+		resolverAddress := net.JoinHostPort(host, port)
 		n.Lock()
 
-		dialer := &net.Dialer{
-			Timeout:   n.timeout,
-			DualStack: true,
-		}
-
-		dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return dialer.DialContext(ctx, network, address)
-		}
+		dialContext := createDialContext([]string{resolverAddress}, n.timeout)
 
 		n.dialContext = dialContext
 		config := &tls.Config{ServerName: host}
+		n.resolvedConfig = config
 		n.Unlock()
 		return config, n.dialContext, nil
 	}
@@ -166,39 +159,42 @@ func (n *bootstrapper) get() (*tls.Config, func(ctx context.Context, network, ad
 	n.Lock()
 	defer n.Unlock()
 
-	// Decrease timeout for each dialer. Sum of timeouts equals bootstrap's timeout
-	count := time.Duration(len(resolved))
+	dialContext := createDialContext(resolved, n.timeout)
+	n.dialContext = dialContext
+	n.resolvedConfig = &tls.Config{ServerName: host}
+	return n.resolvedConfig, n.dialContext, nil
+}
+
+// createDialContext returns dialContext function that tries to establish connection with all given addresses one by one
+func createDialContext(addresses []string, timeout time.Duration) (dialContext func(ctx context.Context, network, addr string) (net.Conn, error)) {
+	// decrease timeout for each dialer. Sum of timeouts equals bootstrap's timeout
+	count := time.Duration(len(addresses))
 	dialer := &net.Dialer{
-		Timeout:   n.timeout / count,
+		Timeout:   timeout / count,
 		DualStack: true,
 	}
 
-	// TODO remove. This crutch is necessary only until DoT doesn't work properly
-	//address := resolved[0]
-
-	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+	dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		errs := []error{}
 
 		// Return first connection without error
 		// Note that we're using bootstrapped resolverAddress instead of what's passed to the function
-		for _, resolverAddress := range resolved {
+		for _, resolverAddress := range addresses {
+			log.Printf("Dialing to %s", resolverAddress)
 			start := time.Now()
 			con, err := dialer.DialContext(ctx, network, resolverAddress)
 			elapsed := time.Since(start) / time.Millisecond
 
 			if err == nil {
-				//address = resolverAddress
-				log.Printf("dialer successfully initialize connection in %d milliseconds using %s", elapsed, resolverAddress)
+				log.Printf("dialer successfully initialize connection to %s in %d milliseconds", resolverAddress, elapsed)
 				return con, err
 			}
 			errs = append(errs, err)
-			log.Printf("dialer failed to initialize connection in %d milliseconds using %s, cause: %s", elapsed, resolverAddress, err)
+			log.Printf("dialer failed to initialize connection to %s, in %d milliseconds, cause: %s", resolverAddress, elapsed, err)
 		}
 		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
 	}
-	n.dialContext = dialContext
-	n.resolvedConfig = &tls.Config{ServerName: host}
-	return n.resolvedConfig, n.dialContext, nil
+	return
 }
 
 func (n *bootstrapper) getAddressHostPort() (string, string, error) {

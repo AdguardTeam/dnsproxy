@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/hmage/golibs/log"
-	"github.com/joomcode/errorx"
 )
 
 const dialTimeout = 10 * time.Second
@@ -69,17 +68,14 @@ func (n *TLSPool) Get() (net.Conn, error) {
 func (n *TLSPool) Create() (net.Conn, error) {
 	tlsConfig, dialContext, err := n.boot.get()
 
-	address := "fake_address"
 	if err != nil {
 		return nil, err
 	}
 
 	// we'll need a new connection, dial now
-	log.Tracef("Dialing to %s", address)
-
 	conn, err := tlsDial(dialContext, "tcp", tlsConfig)
 	if err != nil {
-		return nil, errorx.Decorate(err, "Failed to connect to %s", address)
+		return nil, err
 	}
 	return conn, nil
 }
@@ -94,52 +90,36 @@ func (n *TLSPool) Put(c net.Conn) {
 	n.connsMutex.Unlock()
 }
 
-// tlsDial is basically the same as tls.Dial, but with timeout
+// tlsDial is basically the same as tls.DialWithDialer, but we will call our own dialContext function to get connection
 func tlsDial(dialContext func(ctx context.Context, network, addr string) (net.Conn, error), network string, config *tls.Config) (*tls.Conn, error) {
-	dialer := new(net.Dialer)
-	dialer.Timeout = dialTimeout
-	return DialWithDialer(dialer, network, dialContext, config)
-}
-
-func DialWithDialer(dialer *net.Dialer, network string, dialContext func(ctx context.Context, network, addr string) (net.Conn, error), config *tls.Config) (*tls.Conn, error) {
-	// We want the Timeout and Deadline values from dialer to cover the
-	// whole process: TCP connection and TLS handshake. This means that we
-	// also need to start our own timers now.
-	timeout := dialer.Timeout
-
-	if !dialer.Deadline.IsZero() {
-		deadlineTimeout := time.Until(dialer.Deadline)
-		if timeout == 0 || deadlineTimeout < timeout {
-			timeout = deadlineTimeout
-		}
-	}
+	// We want the timeout to cover the whole process:
+	// TCP connection and TLS handshake. This means that we also need to start our own timers now.
+	timeout := dialTimeout
 
 	var errChannel chan error
 
-	if timeout != 0 {
-		errChannel = make(chan error, 2)
-		time.AfterFunc(timeout, func() {
-			errChannel <- timeoutError{}
-		})
-	}
+	errChannel = make(chan error, 2)
+	time.AfterFunc(timeout, func() {
+		errChannel <- timeoutError{}
+	})
 
-	ctx := context.Background()
-	rawConn, err := dialContext(ctx, network, "fake_addr")
+	// important to avoid a resource leak
+	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
+	defer cancel()
+
+	// we're using bootstrapped address instead of what's passed to the function
+	rawConn, err := dialContext(ctx, network, "")
 	if err != nil {
 		return nil, err
 	}
 
 	conn := tls.Client(rawConn, config)
 
-	if timeout == 0 {
-		err = conn.Handshake()
-	} else {
-		go func() {
-			errChannel <- conn.Handshake()
-		}()
+	go func() {
+		errChannel <- conn.Handshake()
+	}()
 
-		err = <-errChannel
-	}
+	err = <-errChannel
 
 	if err != nil {
 		rawConn.Close()
@@ -149,9 +129,8 @@ func DialWithDialer(dialer *net.Dialer, network string, dialContext func(ctx con
 	return conn, nil
 }
 
-
 type timeoutError struct{}
 
-func (timeoutError) Error() string   { return "tls: DialWithDialer timed out" }
+func (timeoutError) Error() string   { return "upstream_pool: tlsDial timed out" }
 func (timeoutError) Timeout() bool   { return true }
 func (timeoutError) Temporary() bool { return true }

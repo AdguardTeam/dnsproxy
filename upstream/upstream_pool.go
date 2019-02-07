@@ -54,13 +54,13 @@ func (n *TLSPool) Get() (net.Conn, error) {
 	}
 	n.connsMutex.Unlock()
 
-	// if we got connection from the slice, return it
+	// if we got connection from the slice, update deadline and return it
 	if c != nil {
-		log.Tracef("Returning existing connection to %s", c.RemoteAddr())
 		err = c.SetDeadline(time.Now().Add(dialTimeout))
 		if err != nil {
-			log.Tracef("DeadLine is not supported  by connection cause: %s", err)
+			log.Tracef("Can't update deadLine cause: %s", err)
 		} else {
+			log.Tracef("Returning existing connection to %s with updated deadLine", c.RemoteAddr())
 			return c, nil
 		}
 	}
@@ -110,7 +110,7 @@ func tlsDial(dialContext func(ctx context.Context, network, addr string) (net.Co
 	conn := tls.Client(rawConn, config)
 	err = conn.SetDeadline(time.Now().Add(timeout))
 	if err != nil {
-		log.Tracef("DeadLine is not supported cause: %s", err)
+		log.Printf("DeadLine is not supported cause: %s", err)
 		conn.Close()
 		return nil, err
 	}

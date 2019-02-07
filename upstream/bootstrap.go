@@ -171,9 +171,8 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 // createDialContext returns dialContext function that tries to establish connection with all given addresses one by one
 func createDialContext(addresses []string, timeout time.Duration) (dialContext func(ctx context.Context, network, addr string) (net.Conn, error)) {
 	// decrease timeout for each dialer. Sum of timeouts equals bootstrap's timeout
-	count := time.Duration(len(addresses))
 	dialer := &net.Dialer{
-		Timeout:   timeout / count,
+		Timeout:   timeout,
 		DualStack: true,
 	}
 

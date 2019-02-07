@@ -130,6 +130,61 @@ func TestTLSPoolReconnect(t *testing.T) {
 	}
 }
 
+// TODO separate
+func TestTLSPoolDeadLine(t *testing.T) {
+	u, err := AddressToUpstream("tls://one.one.one.one", []string{"8.8.8.8:53"}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("cannot create upstream: %s", err)
+	}
+
+	// Send the first test message
+	req := createTestMessage()
+	reply, err := u.Exchange(req)
+	if err != nil {
+		t.Fatalf("first DNS message failed: %s", err)
+	}
+	assertResponse(t, reply)
+
+	// Now let's update pooled connection deadLine and return it's back to the pool
+	p := u.(*dnsOverTLS)
+
+	conn, err := p.pool.Get()
+	if err != nil {
+		t.Fatalf("couldn't get connection from pool: %s", err)
+	}
+
+	reply, err = p.exchangeConn(conn, req)
+	if err != nil {
+		t.Fatalf("first DNS message failed: %s", err)
+	}
+	assertResponse(t, reply)
+
+	err = conn.SetDeadline(time.Now().Add(10*time.Hour))
+	if err != nil {
+		t.Fatalf("can't set new deadLine for connection. Looks like it's alreadu closed: %s", err)
+	}
+	p.pool.Put(conn)
+
+	conn, err = p.pool.Get()
+	if err != nil {
+		t.Fatalf("couldn't get connection from pool: %s", err)
+	}
+	reply, err = p.exchangeConn(conn, req)
+	if err != nil {
+		t.Fatalf("first DNS message failed: %s", err)
+	}
+	assertResponse(t, reply)
+
+	err = conn.SetDeadline(time.Now().Add(-10*time.Hour))
+	if err != nil {
+		t.Fatalf("can't set new deadLine for connection. Looks like it's alreade closed: %s", err)
+	}
+	_, err = p.exchangeConn(conn, req)
+	if err == nil {
+		t.Fatalf("this connection should be already closed")
+	}
+}
+
 func TestDNSTruncated(t *testing.T) {
 	// Google DNS
 	address := "8.8.8.8:53"

@@ -2,7 +2,6 @@ package upstream
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -31,30 +30,27 @@ type Upstream interface {
 // plain DNS
 //
 type plainDNS struct {
-	boot      bootstrapper
+	address   string
+	timeout   time.Duration
 	preferTCP bool
 }
 
 // Address returns the original address that we've put in initially, not resolved one
-func (p *plainDNS) Address() string { return p.boot.address }
+func (p *plainDNS) Address() string { return p.address }
 
 func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	addr, _, err := p.boot.get()
-	if err != nil {
-		return nil, err
-	}
 	if p.preferTCP {
-		tcpClient := dns.Client{Net: "tcp", Timeout: p.boot.timeout}
-		reply, _, tcpErr := tcpClient.Exchange(m, addr)
+		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
+		reply, _, tcpErr := tcpClient.Exchange(m, p.address)
 		return reply, tcpErr
 	}
 
-	client := dns.Client{Timeout: p.boot.timeout, UDPSize: dns.MaxMsgSize}
-	reply, _, err := client.Exchange(m, addr)
+	client := dns.Client{Timeout: p.timeout, UDPSize: dns.MaxMsgSize}
+	reply, _, err := client.Exchange(m, p.address)
 	if reply != nil && reply.Truncated {
 		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
-		tcpClient := dns.Client{Net: "tcp", Timeout: p.boot.timeout}
-		reply, _, err = tcpClient.Exchange(m, addr)
+		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
+		reply, _, err = tcpClient.Exchange(m, p.address)
 	}
 
 	return reply, err
@@ -202,18 +198,11 @@ func (p *dnsOverHTTPS) getTransport() (*http.Transport, error) {
 		return p.transport, nil
 	}
 
-	resolverAddr, tlsConfig, err := p.boot.get()
+	tlsConfig, dialContext, err := p.boot.get()
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't bootstrap %s", p.boot.address)
 	}
-	dialer := &net.Dialer{
-		Timeout:   p.boot.timeout,
-		DualStack: true,
-	}
-	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		// Note that we're using bootstrapped resolverAddr instead of what's passed to the function
-		return dialer.DialContext(ctx, network, resolverAddr)
-	}
+
 	transport := &http.Transport{
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
@@ -314,7 +303,7 @@ func AddressToUpstream(address string, bootstrap []string, timeout time.Duration
 		// doesn't have port, default to 53
 		address = net.JoinHostPort(address, "53")
 	}
-	return &plainDNS{boot: toBoot(address, bootstrap, timeout)}, nil
+	return &plainDNS{address: address, timeout: timeout}, nil
 }
 
 // urlToUpstream converts a URL to an Upstream
@@ -323,9 +312,9 @@ func urlToUpstream(upstreamURL *url.URL, bootstrap []string, timeout time.Durati
 	case "sdns":
 		return stampToUpstream(upstreamURL.String(), bootstrap, timeout)
 	case "dns":
-		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap, timeout)}, nil
+		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: timeout}, nil
 	case "tcp":
-		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap, timeout), preferTCP: true}, nil
+		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: timeout, preferTCP: true}, nil
 	case "tls":
 		return &dnsOverTLS{boot: toBoot(getHostWithPort(upstreamURL, "853"), bootstrap, timeout)}, nil
 	case "https":
@@ -335,7 +324,7 @@ func urlToUpstream(upstreamURL *url.URL, bootstrap []string, timeout time.Durati
 		return &dnsOverHTTPS{boot: toBoot(upstreamURL.String(), bootstrap, timeout)}, nil
 	default:
 		// assume it's plain DNS
-		return &plainDNS{boot: toBoot(getHostWithPort(upstreamURL, "53"), bootstrap, timeout)}, nil
+		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: timeout}, nil
 	}
 }
 
@@ -348,7 +337,7 @@ func stampToUpstream(address string, bootstrap []string, timeout time.Duration) 
 
 	switch stamp.Proto {
 	case dnsstamps.StampProtoTypePlain:
-		return &plainDNS{boot: toBoot(stamp.ServerAddrStr, bootstrap, timeout)}, nil
+		return &plainDNS{address: stamp.ServerAddrStr, timeout: timeout}, nil
 	case dnsstamps.StampProtoTypeDNSCrypt:
 		return &dnsCrypt{boot: toBoot(address, bootstrap, timeout)}, nil
 	case dnsstamps.StampProtoTypeDoH:

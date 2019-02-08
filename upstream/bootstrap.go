@@ -10,14 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hmage/golibs/log"
 	"github.com/joomcode/errorx"
 )
 
 type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
 	resolvers      []*Resolver   // list of Resolvers to use to resolve hostname, if necessary
-	resolved       string        // in form "IP:port"
 	timeout        time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
+	dialContext    dialHandler   // specifies the dial function for creating unencrypted TCP connections.
 	resolvedConfig *tls.Config
 	sync.RWMutex
 }
@@ -85,13 +86,16 @@ func toBoot(address string, bootstrapAddr []string, timeout time.Duration) boots
 	}
 }
 
+// dialHandler specifies the dial function for creating unencrypted TCP connections.
+type dialHandler func(ctx context.Context, network, addr string) (net.Conn, error)
+
 // will get usable IP address from Address field, and caches the result
-func (n *bootstrapper) get() (string, *tls.Config, error) {
+func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	n.RLock()
-	if n.resolved != "" { // fast path
-		retval, tlsconfig := n.resolved, n.resolvedConfig
+	if n.dialContext != nil && n.resolvedConfig != nil { // fast path
+		tlsconfig, dialContext := n.resolvedConfig, n.dialContext
 		n.RUnlock()
-		return retval, tlsconfig, nil
+		return tlsconfig, dialContext, nil
 	}
 
 	//
@@ -103,7 +107,7 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 	if err != nil {
 		addr := n.address
 		n.RUnlock()
-		return "", nil, fmt.Errorf("bootstrapper requires port in address %s", addr)
+		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr)
 	}
 
 	// if n.address's host is an IP, just use it right away
@@ -112,11 +116,15 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 		n.RUnlock()
 
 		// Upgrade lock to protect n.resolved
-		addr := net.JoinHostPort(host, port)
+		resolverAddress := net.JoinHostPort(host, port)
 		n.Lock()
-		n.resolved = addr
+
+		dialContext := createDialContext([]string{resolverAddress}, n.timeout)
+		n.dialContext = dialContext
+		config := &tls.Config{ServerName: host}
+		n.resolvedConfig = config
 		n.Unlock()
-		return addr, nil, nil
+		return config, n.dialContext, nil
 	}
 
 	// Don't lock anymore (we can launch multiple lookup requests at a time)
@@ -133,28 +141,60 @@ func (n *bootstrapper) get() (string, *tls.Config, error) {
 
 	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {
-		return "", nil, errorx.Decorate(err, "failed to lookup %s", host)
+		return nil, nil, errorx.Decorate(err, "failed to lookup %s", host)
 	}
 
+	resolved := []string{}
 	for _, addr := range addrs {
-		// TODO: support ipv6, support multiple ipv4
-		if addr.IP.To4() == nil {
+		if addr.IP.To4() == nil && addr.IP.To16() == nil {
 			continue
 		}
-		ip = addr.IP
-		break
+
+		resolved = append(resolved, net.JoinHostPort(addr.String(), port))
 	}
 
-	if ip == nil {
+	if len(resolved) == 0 {
 		// couldn't find any suitable IP address
-		return "", nil, fmt.Errorf("couldn't find any suitable IP address for host %s", host)
+		return nil, nil, fmt.Errorf("couldn't find any suitable IP address for host %s", host)
 	}
 
 	n.Lock()
 	defer n.Unlock()
-	n.resolved = net.JoinHostPort(ip.String(), port)
+
+	dialContext := createDialContext(resolved, n.timeout)
+	n.dialContext = dialContext
 	n.resolvedConfig = &tls.Config{ServerName: host}
-	return n.resolved, n.resolvedConfig, nil
+	return n.resolvedConfig, n.dialContext, nil
+}
+
+// createDialContext returns dialContext function that tries to establish connection with all given addresses one by one
+func createDialContext(addresses []string, timeout time.Duration) (dialContext dialHandler) {
+	dialer := &net.Dialer{
+		Timeout:   timeout,
+		DualStack: true,
+	}
+
+	dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		errs := []error{}
+
+		// Return first connection without error
+		// Note that we're using bootstrapped resolverAddress instead of what's passed to the function
+		for _, resolverAddress := range addresses {
+			log.Printf("Dialing to %s", resolverAddress)
+			start := time.Now()
+			con, err := dialer.DialContext(ctx, network, resolverAddress)
+			elapsed := time.Since(start) / time.Millisecond
+
+			if err == nil {
+				log.Printf("dialer successfully initialize connection to %s in %d milliseconds", resolverAddress, elapsed)
+				return con, err
+			}
+			errs = append(errs, err)
+			log.Printf("dialer failed to initialize connection to %s, in %d milliseconds, cause: %s", resolverAddress, elapsed, err)
+		}
+		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
+	}
+	return
 }
 
 func (n *bootstrapper) getAddressHostPort() (string, string, error) {

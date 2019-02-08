@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"sync"
@@ -38,11 +39,6 @@ type TLSPool struct {
 
 // Get gets or creates a new TLS connection
 func (n *TLSPool) Get() (net.Conn, error) {
-	address, _, err := n.boot.get()
-	if err != nil {
-		return nil, err
-	}
-
 	// get the connection from the slice inside the lock
 	var c net.Conn
 	n.connsMutex.Lock()
@@ -54,10 +50,15 @@ func (n *TLSPool) Get() (net.Conn, error) {
 	}
 	n.connsMutex.Unlock()
 
-	// if we got connection from the slice, return it
+	// if we got connection from the slice, update deadline and return it.
 	if c != nil {
-		log.Tracef("Returning existing connection to %s", address)
-		return c, nil
+		err := c.SetDeadline(time.Now().Add(dialTimeout))
+
+		// If deadLine can't be updated it means that connection was already closed
+		if err == nil {
+			log.Tracef("Returning existing connection to %s with updated deadLine", c.RemoteAddr())
+			return c, nil
+		}
 	}
 
 	return n.Create()
@@ -65,17 +66,15 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 // Create creates a new connection for the pool (but not puts it there)
 func (n *TLSPool) Create() (net.Conn, error) {
-	address, tlsConfig, err := n.boot.get()
+	tlsConfig, dialContext, err := n.boot.get()
 	if err != nil {
 		return nil, err
 	}
 
 	// we'll need a new connection, dial now
-	log.Tracef("Dialing to %s", address)
-
-	conn, err := tlsDial("tcp", address, tlsConfig)
+	conn, err := tlsDial(dialContext, "tcp", tlsConfig)
 	if err != nil {
-		return nil, errorx.Decorate(err, "Failed to connect to %s", address)
+		return nil, errorx.Decorate(err, "Failed to connect to %s", tlsConfig.ServerName)
 	}
 	return conn, nil
 }
@@ -90,9 +89,29 @@ func (n *TLSPool) Put(c net.Conn) {
 	n.connsMutex.Unlock()
 }
 
-// tlsDial is basically the same as tls.Dial, but with timeout
-func tlsDial(network, addr string, config *tls.Config) (*tls.Conn, error) {
-	dialer := new(net.Dialer)
-	dialer.Timeout = dialTimeout
-	return tls.DialWithDialer(dialer, network, addr, config)
+// tlsDial is basically the same as tls.DialWithDialer, but we will call our own dialContext function to get connection
+func tlsDial(dialContext dialHandler, network string, config *tls.Config) (*tls.Conn, error) {
+	// we're using bootstrapped address instead of what's passed to the function
+	rawConn, err := dialContext(context.TODO(), network, "")
+	if err != nil {
+		return nil, err
+	}
+
+	// we want the timeout to cover the whole process: TCP connection and TLS handshake
+	// dialTimeout will be used as connection deadLine
+	conn := tls.Client(rawConn, config)
+	err = conn.SetDeadline(time.Now().Add(dialTimeout))
+	if err != nil {
+		log.Printf("DeadLine is not supported cause: %s", err)
+		conn.Close()
+		return nil, err
+	}
+
+	err = conn.Handshake()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return conn, nil
 }

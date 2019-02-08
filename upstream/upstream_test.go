@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"testing"
@@ -129,6 +130,65 @@ func TestTLSPoolReconnect(t *testing.T) {
 	}
 }
 
+func TestTLSPoolDeadLine(t *testing.T) {
+	// Create TLS upstream
+	u, err := AddressToUpstream("tls://one.one.one.one", []string{"8.8.8.8:53"}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("cannot create upstream: %s", err)
+	}
+
+	// Send the first test message
+	req := createTestMessage()
+	response, err := u.Exchange(req)
+	if err != nil {
+		t.Fatalf("first DNS message failed: %s", err)
+	}
+	assertResponse(t, response)
+
+	p := u.(*dnsOverTLS)
+
+	// Now let's get connection from the pool and use it
+	conn, err := p.pool.Get()
+	if err != nil {
+		t.Fatalf("couldn't get connection from pool: %s", err)
+	}
+	response, err = p.exchangeConn(conn, req)
+	if err != nil {
+		t.Fatalf("first DNS message failed: %s", err)
+	}
+	assertResponse(t, response)
+
+	// Update connection's deadLine and put it back to the pool
+	err = conn.SetDeadline(time.Now().Add(10 * time.Hour))
+	if err != nil {
+		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
+	}
+	p.pool.Put(conn)
+
+	// Get connection from the pool and reuse it
+	conn, err = p.pool.Get()
+	if err != nil {
+		t.Fatalf("couldn't get connection from pool: %s", err)
+	}
+	response, err = p.exchangeConn(conn, req)
+	if err != nil {
+		t.Fatalf("first DNS message failed: %s", err)
+	}
+	assertResponse(t, response)
+
+	// Set connection's deadLine to the past and try to reuse it
+	err = conn.SetDeadline(time.Now().Add(-10 * time.Hour))
+	if err != nil {
+		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
+	}
+
+	// Connection with expired deadLine can't be used
+	response, err = p.exchangeConn(conn, req)
+	if err == nil {
+		t.Fatalf("this connection should be already closed, got response %s", response)
+	}
+}
+
 func TestDNSTruncated(t *testing.T) {
 	// Google DNS
 	address := "8.8.8.8:53"
@@ -173,6 +233,34 @@ func TestDNSCryptTruncated(t *testing.T) {
 
 	if res.Truncated {
 		t.Fatalf("response must NOT be truncated")
+	}
+}
+
+// See the details here: https://github.com/AdguardTeam/dnsproxy/issues/18
+func TestDialContext(t *testing.T) {
+	resolved := []struct {
+		addresses []string
+		host      string
+	}{
+		{
+			addresses: []string{"216.239.32.59:443"},
+			host:      "dns.google.com",
+		},
+		{
+			addresses: []string{"176.103.130.130:855", "176.103.130.130:853"},
+			host:      "dns.adguard.com",
+		},
+		{
+			addresses: []string{"1.1.1.1:5555", "1.1.1.1:853", "8.8.8.8:85"},
+			host:      "dns.cloudflare.com",
+		},
+	}
+	for _, test := range resolved {
+		dialContext := createDialContext(test.addresses, 2*time.Second)
+		_, err := dialContext(context.TODO(), "tcp", "")
+		if err != nil {
+			t.Fatalf("Couldn't dial to %s: %s", test.host, err)
+		}
 	}
 }
 
@@ -273,16 +361,54 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
+			address:   "https://1.1.1.1/dns-query",
+			bootstrap: []string{},
+		},
+	}
+	for _, test := range upstreams {
+
+		t.Run(test.address, func(t *testing.T) {
+			u, err := AddressToUpstream(test.address, test.bootstrap, 10*time.Second)
+			if err != nil {
+				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
+			}
+
+			checkUpstream(t, u, test.address)
+		})
+	}
+}
+
+// Test for DoH and DoT upstreams with two bootstraps (only one is valid)
+func TestUpstreamsInvalidBootstrap(t *testing.T) {
+	upstreams := []struct {
+		address   string
+		bootstrap []string
+	}{
+		{
 			address:   "tls://dns.adguard.com",
 			bootstrap: []string{"1.1.1.1:555", "8.8.8.8:53"},
 		},
 		{
 			address:   "tls://dns.adguard.com:853",
-			bootstrap: []string{"8.8.8.8:535", "1.0.0.1"},
+			bootstrap: []string{"1.0.0.1", "8.8.8.8:535"},
 		},
 		{
 			address:   "https://cloudflare-dns.com/dns-query",
 			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
+		},
+		{
+			address:   "https://dns9.quad9.net:443/dns-query",
+			bootstrap: []string{"1.2.3.4:79", "8.8.8.8:53"},
+		},
+		{
+			// Cloudflare DNS (DoH)
+			address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
+			bootstrap: []string{"8.8.8.8:53", "8.8.8.1:53"},
+		},
+		{
+			// AdGuard DNS (DNS-over-TLS)
+			address:   "sdns://AwAAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
+			bootstrap: []string{"1.2.3.4:55", "8.8.8.8"},
 		},
 	}
 	for _, test := range upstreams {

@@ -139,11 +139,11 @@ func TestTLSPoolDeadLine(t *testing.T) {
 
 	// Send the first test message
 	req := createTestMessage()
-	reply, err := u.Exchange(req)
+	response, err := u.Exchange(req)
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
-	assertResponse(t, reply)
+	assertResponse(t, response)
 
 	p := u.(*dnsOverTLS)
 
@@ -152,11 +152,11 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("couldn't get connection from pool: %s", err)
 	}
-	reply, err = p.exchangeConn(conn, req)
+	response, err = p.exchangeConn(conn, req)
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
-	assertResponse(t, reply)
+	assertResponse(t, response)
 
 	// Update connection's deadLine and put it back to the pool
 	err = conn.SetDeadline(time.Now().Add(10 * time.Hour))
@@ -170,11 +170,11 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("couldn't get connection from pool: %s", err)
 	}
-	reply, err = p.exchangeConn(conn, req)
+	response, err = p.exchangeConn(conn, req)
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
-	assertResponse(t, reply)
+	assertResponse(t, response)
 
 	// Set connection's deadLine to the past and try to reuse it
 	err = conn.SetDeadline(time.Now().Add(-10 * time.Hour))
@@ -183,9 +183,9 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	}
 
 	// Connection with expired deadLine can't be used
-	_, err = p.exchangeConn(conn, req)
+	response, err = p.exchangeConn(conn, req)
 	if err == nil {
-		t.Fatalf("this connection should be already closed")
+		t.Fatalf("this connection should be already closed, got response %s", response)
 	}
 }
 
@@ -237,43 +237,30 @@ func TestDNSCryptTruncated(t *testing.T) {
 }
 
 // See the details here: https://github.com/AdguardTeam/dnsproxy/issues/18
-func TestCreateDialContext(t *testing.T) {
+func TestDialContext(t *testing.T) {
 	resolved := []struct {
-		address []string
-		host    string
+		addresses []string
+		host      string
 	}{
 		{
-			address: []string{"216.239.32.59:443"},
-			host:    "dns.google.com",
+			addresses: []string{"216.239.32.59:443"},
+			host:      "dns.google.com",
 		},
 		{
-			address: []string{"176.103.130.130:855", "176.103.130.130:853"},
-			host:    "dns.adguard.com",
+			addresses: []string{"176.103.130.130:855", "176.103.130.130:853"},
+			host:      "dns.adguard.com",
+		},
+		{
+			addresses: []string{"1.1.1.1:5555", "1.1.1.1:853", "8.8.8.8:85"},
+			host:      "dns.cloudflare.com",
 		},
 	}
 	for _, test := range resolved {
-		err := checkDial(t, test.address, test.host)
+		dialContext := createDialContext(test.addresses, 2*time.Second)
+		_, err := dialContext(context.TODO(), "tcp", "")
 		if err != nil {
 			t.Fatalf("Couldn't dial to %s: %s", test.host, err)
 		}
-	}
-}
-
-// See the details here: https://github.com/AdguardTeam/dnsproxy/issues/18
-// Test for NAT64-enabled ipv6-only network.ipv4 address, in this case, is unusable
-// To pass this test you should disable ipv4 network on your local machine
-func TestDialContextDNS64Network(t *testing.T) {
-	resolved := struct {
-		address []string
-		host    string
-	}{
-		// To emulate NAT64-enabled IPv6-only network we replace port in valid ipv4 addresses with fake one
-		address: []string{"1.1.1.1:555", "[2606:4700:4700::1001]:853", "[2606:4700:4700::1111]:853"},
-		host:    "dns.cloudflare.com",
-	}
-	err := checkDial(t, resolved.address, resolved.host)
-	if err != nil {
-		t.Fatalf("Couldn't dial to %s. Make sure that you enable ipv6-only network: %s", resolved.host, err)
 	}
 }
 
@@ -416,7 +403,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		{
 			// Cloudflare DNS (DoH)
 			address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
-			bootstrap: []string{ "8.8.8.8:53", "8.8.8.1:53"},
+			bootstrap: []string{"8.8.8.8:53", "8.8.8.1:53"},
 		},
 		{
 			// AdGuard DNS (DNS-over-TLS)
@@ -469,17 +456,4 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 	} else {
 		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
 	}
-}
-
-func checkDial(t *testing.T, address []string, host string) error {
-	const dialTimeout = 2 * time.Second
-	var err error
-	t.Run(host, func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.TODO(), dialTimeout)
-		defer cancel()
-
-		dialContext := createDialContext(address, dialTimeout)
-		_, err = dialContext(ctx, "tcp", "")
-	})
-	return err
 }

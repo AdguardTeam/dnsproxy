@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hmage/golibs/log"
+	"github.com/joomcode/errorx"
 )
 
 const dialTimeout = 10 * time.Second
@@ -38,11 +39,6 @@ type TLSPool struct {
 
 // Get gets or creates a new TLS connection
 func (n *TLSPool) Get() (net.Conn, error) {
-	_, _, err := n.boot.get()
-	if err != nil {
-		return nil, err
-	}
-
 	// get the connection from the slice inside the lock
 	var c net.Conn
 	n.connsMutex.Lock()
@@ -56,7 +52,7 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 	// if we got connection from the slice, update deadline and return it.
 	if c != nil {
-		err = c.SetDeadline(time.Now().Add(dialTimeout))
+		err := c.SetDeadline(time.Now().Add(dialTimeout))
 
 		// If deadLine can't be updated it means that connection was already closed
 		if err == nil {
@@ -78,7 +74,7 @@ func (n *TLSPool) Create() (net.Conn, error) {
 	// we'll need a new connection, dial now
 	conn, err := tlsDial(dialContext, "tcp", tlsConfig)
 	if err != nil {
-		return nil, err
+		return nil, errorx.Decorate(err, "Failed to connect to %s", tlsConfig.ServerName)
 	}
 	return conn, nil
 }
@@ -95,10 +91,8 @@ func (n *TLSPool) Put(c net.Conn) {
 
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own dialContext function to get connection
 func tlsDial(dialContext dialHandler, network string, config *tls.Config) (*tls.Conn, error) {
-	ctx := context.TODO()
-
 	// we're using bootstrapped address instead of what's passed to the function
-	rawConn, err := dialContext(ctx, network, "")
+	rawConn, err := dialContext(context.TODO(), network, "")
 	if err != nil {
 		return nil, err
 	}

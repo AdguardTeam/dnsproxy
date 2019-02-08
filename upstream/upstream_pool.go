@@ -94,7 +94,7 @@ func (n *TLSPool) Put(c net.Conn) {
 }
 
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own dialContext function to get connection
-func tlsDial(dialContext func(ctx context.Context, network, addr string) (net.Conn, error), network string, config *tls.Config) (*tls.Conn, error) {
+func tlsDial(dialContext dialHandler, network string, config *tls.Config) (*tls.Conn, error) {
 	ctx := context.TODO()
 
 	// we're using bootstrapped address instead of what's passed to the function

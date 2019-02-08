@@ -158,8 +158,8 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	}
 	assertResponse(t, reply)
 
-	// Update connection's deadline and put it back to the pool
-	err = conn.SetDeadline(time.Now().Add(10*time.Hour))
+	// Update connection's deadLine and put it back to the pool
+	err = conn.SetDeadline(time.Now().Add(10 * time.Hour))
 	if err != nil {
 		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
 	}
@@ -177,7 +177,7 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	assertResponse(t, reply)
 
 	// Set connection's deadLine to the past and try to reuse it
-	err = conn.SetDeadline(time.Now().Add(-10*time.Hour))
+	err = conn.SetDeadline(time.Now().Add(-10 * time.Hour))
 	if err != nil {
 		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
 	}

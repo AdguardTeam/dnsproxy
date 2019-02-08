@@ -115,7 +115,7 @@ func tlsDial(dialContext dialHandler, network string, config *tls.Config) (*tls.
 
 	err = conn.Handshake()
 	if err != nil {
-		rawConn.Close()
+		conn.Close()
 		return nil, err
 	}
 

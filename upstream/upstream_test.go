@@ -374,20 +374,54 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
+			address:   "https://1.1.1.1/dns-query",
+			bootstrap: []string{},
+		},
+	}
+	for _, test := range upstreams {
+
+		t.Run(test.address, func(t *testing.T) {
+			u, err := AddressToUpstream(test.address, test.bootstrap, 10*time.Second)
+			if err != nil {
+				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
+			}
+
+			checkUpstream(t, u, test.address)
+		})
+	}
+}
+
+// Test for DoH and DoT upstreams with two bootstraps (only one is valid)
+func TestUpstreamsInvalidBootstrap(t *testing.T) {
+	upstreams := []struct {
+		address   string
+		bootstrap []string
+	}{
+		{
 			address:   "tls://dns.adguard.com",
 			bootstrap: []string{"1.1.1.1:555", "8.8.8.8:53"},
 		},
 		{
 			address:   "tls://dns.adguard.com:853",
-			bootstrap: []string{"8.8.8.8:535", "1.0.0.1"},
+			bootstrap: []string{"1.0.0.1", "8.8.8.8:535"},
 		},
 		{
 			address:   "https://cloudflare-dns.com/dns-query",
 			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 		},
 		{
-			address:   "https://1.1.1.1/dns-query",
-			bootstrap: []string{},
+			address:   "https://dns9.quad9.net:443/dns-query",
+			bootstrap: []string{"1.2.3.4:79", "8.8.8.8:53"},
+		},
+		{
+			// Cloudflare DNS (DoH)
+			address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
+			bootstrap: []string{ "8.8.8.8:53", "8.8.8.1:53"},
+		},
+		{
+			// AdGuard DNS (DNS-over-TLS)
+			address:   "sdns://AwAAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
+			bootstrap: []string{"1.2.3.4:55", "8.8.8.8"},
 		},
 	}
 	for _, test := range upstreams {

@@ -130,8 +130,8 @@ func TestTLSPoolReconnect(t *testing.T) {
 	}
 }
 
-// TODO separate
 func TestTLSPoolDeadLine(t *testing.T) {
+	// Create TLS upstream
 	u, err := AddressToUpstream("tls://one.one.one.one", []string{"8.8.8.8:53"}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
@@ -145,26 +145,27 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	}
 	assertResponse(t, reply)
 
-	// Now let's update pooled connection deadLine and return it's back to the pool
 	p := u.(*dnsOverTLS)
 
+	// Now let's get connection from the pool and use it
 	conn, err := p.pool.Get()
 	if err != nil {
 		t.Fatalf("couldn't get connection from pool: %s", err)
 	}
-
 	reply, err = p.exchangeConn(conn, req)
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
 	assertResponse(t, reply)
 
+	// Update connection's deadline and put it back to the pool
 	err = conn.SetDeadline(time.Now().Add(10*time.Hour))
 	if err != nil {
-		t.Fatalf("can't set new deadLine for connection. Looks like it's alreadu closed: %s", err)
+		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
 	}
 	p.pool.Put(conn)
 
+	// Get connection from the pool and reuse it
 	conn, err = p.pool.Get()
 	if err != nil {
 		t.Fatalf("couldn't get connection from pool: %s", err)
@@ -175,10 +176,13 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	}
 	assertResponse(t, reply)
 
+	// Set connection's deadLine to the past and try to reuse it
 	err = conn.SetDeadline(time.Now().Add(-10*time.Hour))
 	if err != nil {
-		t.Fatalf("can't set new deadLine for connection. Looks like it's alreade closed: %s", err)
+		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
 	}
+
+	// Connection with expired deadLine can't be used
 	_, err = p.exchangeConn(conn, req)
 	if err == nil {
 		t.Fatalf("this connection should be already closed")
@@ -234,8 +238,6 @@ func TestDNSCryptTruncated(t *testing.T) {
 
 // See the details here: https://github.com/AdguardTeam/dnsproxy/issues/18
 func TestCreateDialContext(t *testing.T) {
-	const timeout = 2 * time.Second
-
 	resolved := []struct {
 		address []string
 		host    string
@@ -245,26 +247,33 @@ func TestCreateDialContext(t *testing.T) {
 			host:    "dns.google.com",
 		},
 		{
-			address: []string{"1.2.3.4:53", "176.103.130.130:853"},
+			address: []string{"176.103.130.130:855", "176.103.130.130:853"},
 			host:    "dns.adguard.com",
-		},
-		{
-			// To emulate NAT64-enabled IPv6-only network we replace valid ipv4 addresses with fake ones
-			address: []string{"1.2.3.4:53", "5.6.7.8:53", "[2606:4700:4700::1001]:853", "[2606:4700:4700::1111]:853"},
-			host:    "dns.cloudflare.com",
 		},
 	}
 	for _, test := range resolved {
-		t.Run(test.host, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.TODO(), timeout)
-			defer cancel()
+		err := checkDial(t, test.address, test.host)
+		if err != nil {
+			t.Fatalf("Couldn't dial to %s: %s", test.host, err)
+		}
+	}
+}
 
-			dialContext := createDialContext(test.address, timeout)
-			_, err := dialContext(ctx, "tcp", "")
-			if err != nil {
-				t.Fatalf("Couldn't dial to %s: %s", test.host, err)
-			}
-		})
+// See the details here: https://github.com/AdguardTeam/dnsproxy/issues/18
+// Test for NAT64-enabled ipv6-only network.ipv4 address, in this case, is unusable
+// To pass this test you should disable ipv4 network on your local machine
+func TestDialContextDNS64Network(t *testing.T) {
+	resolved := struct {
+		address []string
+		host    string
+	}{
+		// To emulate NAT64-enabled IPv6-only network we replace port in valid ipv4 addresses with fake one
+		address: []string{"1.1.1.1:555", "[2606:4700:4700::1001]:853", "[2606:4700:4700::1111]:853"},
+		host:    "dns.cloudflare.com",
+	}
+	err := checkDial(t, resolved.address, resolved.host)
+	if err != nil {
+		t.Fatalf("Couldn't dial to %s. Make sure that you enable ipv6-only network: %s", resolved.host, err)
 	}
 }
 
@@ -426,4 +435,17 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 	} else {
 		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
 	}
+}
+
+func checkDial(t *testing.T, address []string, host string) error {
+	const dialTimeout = 2 * time.Second
+	var err error
+	t.Run(host, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.TODO(), dialTimeout)
+		defer cancel()
+
+		dialContext := createDialContext(address, dialTimeout)
+		_, err = dialContext(ctx, "tcp", "")
+	})
+	return err
 }

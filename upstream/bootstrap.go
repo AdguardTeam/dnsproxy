@@ -18,8 +18,8 @@ type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
 	resolvers      []*Resolver   // list of Resolvers to use to resolve hostname, if necessary
 	timeout        time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
+	dialContext    dialHandler   // specifies the dial function for creating unencrypted TCP connections.
 	resolvedConfig *tls.Config
-	dialContext    func(ctx context.Context, network, addr string) (net.Conn, error)
 	sync.RWMutex
 }
 
@@ -120,7 +120,6 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		n.Lock()
 
 		dialContext := createDialContext([]string{resolverAddress}, n.timeout)
-
 		n.dialContext = dialContext
 		config := &tls.Config{ServerName: host}
 		n.resolvedConfig = config
@@ -156,7 +155,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 	if len(resolved) == 0 {
 		// couldn't find any suitable IP address
-		return nil, nil, fmt.Errorf("couldn't find any suitable IP slice address for host %s", host)
+		return nil, nil, fmt.Errorf("couldn't find any suitable IP address for host %s", host)
 	}
 
 	n.Lock()
@@ -169,7 +168,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 }
 
 // createDialContext returns dialContext function that tries to establish connection with all given addresses one by one
-func createDialContext(addresses []string, timeout time.Duration) (dialContext func(ctx context.Context, network, addr string) (net.Conn, error)) {
+func createDialContext(addresses []string, timeout time.Duration) (dialContext dialHandler) {
 	// decrease timeout for each dialer. Sum of timeouts equals bootstrap's timeout
 	dialer := &net.Dialer{
 		Timeout:   timeout,

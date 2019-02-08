@@ -54,12 +54,12 @@ func (n *TLSPool) Get() (net.Conn, error) {
 	}
 	n.connsMutex.Unlock()
 
-	// if we got connection from the slice, update deadline and return it
+	// if we got connection from the slice, update deadline and return it.
 	if c != nil {
 		err = c.SetDeadline(time.Now().Add(dialTimeout))
-		if err != nil {
-			log.Tracef("Can't update deadLine cause: %s", err)
-		} else {
+
+		// If deadLine can't be updated it means that connection was already closed
+		if err == nil {
 			log.Tracef("Returning existing connection to %s with updated deadLine", c.RemoteAddr())
 			return c, nil
 		}
@@ -71,7 +71,6 @@ func (n *TLSPool) Get() (net.Conn, error) {
 // Create creates a new connection for the pool (but not puts it there)
 func (n *TLSPool) Create() (net.Conn, error) {
 	tlsConfig, dialContext, err := n.boot.get()
-
 	if err != nil {
 		return nil, err
 	}
@@ -96,9 +95,6 @@ func (n *TLSPool) Put(c net.Conn) {
 
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own dialContext function to get connection
 func tlsDial(dialContext func(ctx context.Context, network, addr string) (net.Conn, error), network string, config *tls.Config) (*tls.Conn, error) {
-	// We want the timeout to cover the whole process:
-	// TCP connection and TLS handshake. This means that we also need to start our own timers now.
-	timeout := dialTimeout
 	ctx := context.TODO()
 
 	// we're using bootstrapped address instead of what's passed to the function
@@ -107,8 +103,10 @@ func tlsDial(dialContext func(ctx context.Context, network, addr string) (net.Co
 		return nil, err
 	}
 
+	// we want the timeout to cover the whole process: TCP connection and TLS handshake
+	// dialTimeout will be used as connection deadLine
 	conn := tls.Client(rawConn, config)
-	err = conn.SetDeadline(time.Now().Add(timeout))
+	err = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err != nil {
 		log.Printf("DeadLine is not supported cause: %s", err)
 		conn.Close()

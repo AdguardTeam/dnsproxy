@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	timeout = 5 * time.Second
+	timeout = 10 * time.Second
 )
 
 // TestExchangeParallel launches several parallel exchanges
@@ -38,14 +38,15 @@ func TestExchangeParallel(t *testing.T) {
 
 func TestLookupParallel(t *testing.T) {
 	resolvers := []*Resolver{}
-	bootstraps := []string{"1.2.3.4:55", "8.8.8.1", "8.8.8.8:53"}
+	bootstraps := []string{"1.2.3.4:55", "8.8.8.1:555", "8.8.8.8:53"}
 
 	for _, boot := range bootstraps {
 		resolver := NewResolver(boot, timeout)
 		resolvers = append(resolvers, resolver)
 	}
 
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
+	defer cancel()
 
 	start := time.Now()
 	answer, err := LookupParallel(ctx, resolvers, "google.com")

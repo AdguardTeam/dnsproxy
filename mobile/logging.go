@@ -25,12 +25,12 @@ func (w *LogWriterAdapter) Write(p []byte) (n int, err error) {
 
 // ConfigureLogger function is called from mobile API to write dnsproxy log into mobile log
 // You need to create object that implements LogWriter interface and set it as argument of this function
-func ConfigureLogger(verbose bool, w LogWriter) {
+func ConfigureLogger(verbose bool, stderrOutput string, w LogWriter) {
 	log.Verbose = verbose
 
 	if w != nil {
 		adapter := &LogWriterAdapter{lw: w}
 		stdlog.SetOutput(adapter)
-		configureStderr(w)
+		redirectStderr(stderrOutput)
 	}
 }

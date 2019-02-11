@@ -2,5 +2,5 @@
 
 package mobile
 
-func configureStderr(logWriter LogWriter) {
+func redirectStderr(stderrOutput string) {
 }

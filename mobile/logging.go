@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"fmt"
 	stdlog "log"
 	"strings"
 
@@ -25,12 +26,19 @@ func (w *LogWriterAdapter) Write(p []byte) (n int, err error) {
 
 // ConfigureLogger function is called from mobile API to write dnsproxy log into mobile log
 // You need to create object that implements LogWriter interface and set it as argument of this function
-func ConfigureLogger(verbose bool, stderrOutput string, w LogWriter) {
+func ConfigureLogger(verbose bool, stderrRedirectPath string, w LogWriter) error {
 	log.Verbose = verbose
 
 	if w != nil {
 		adapter := &LogWriterAdapter{lw: w}
 		stdlog.SetOutput(adapter)
-		redirectStderr(stderrOutput)
+		if stderrRedirectPath != "" {
+			err := redirectStderr(stderrRedirectPath)
+			if err != nil {
+				return fmt.Errorf("cannot redirect stderr to %s cause: %s", stderrRedirectPath, err)
+			}
+		}
 	}
+
+	return nil
 }

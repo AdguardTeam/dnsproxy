@@ -2,5 +2,6 @@
 
 package mobile
 
-func redirectStderr(stderrOutput string) {
+func redirectStderr(stderrRedirectPath string) error {
+	return nil
 }

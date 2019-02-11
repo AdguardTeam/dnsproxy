@@ -19,18 +19,20 @@ func TestParseDNSStamp(t *testing.T) {
 }
 
 func TestTestUpstream(t *testing.T) {
-	err := TestUpstream("123.12.32.1:1493", "", 500)
+	const timeout = 500 // 500 ms
+
+	err := TestUpstream("123.12.32.1:1493", "", timeout)
 	if err == nil {
 		t.Fatalf("cannot be successful")
 	}
 
-	err = TestUpstream("8.8.8.8:53", "", 500)
+	err = TestUpstream("8.8.8.8:53", "", timeout*10)
 	if err != nil {
 		t.Fatalf("cannot fail: %s", err)
 	}
 
 	// Test for DoT with 2 bootstraps. Only one is valid
-	err = TestUpstream("tls://dns.adguard.com", "1.2.3.4\n8.8.8.8", 500)
+	err = TestUpstream("tls://dns.adguard.com", "1.2.3.4\n8.8.8.8", timeout*10)
 	if err != nil {
 		t.Fatalf("cannot fail: %s", err)
 	}

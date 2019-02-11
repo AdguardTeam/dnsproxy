@@ -32,11 +32,12 @@ func ConfigureLogger(verbose bool, stderrRedirectPath string, w LogWriter) error
 	if w != nil {
 		adapter := &LogWriterAdapter{lw: w}
 		stdlog.SetOutput(adapter)
-		if stderrRedirectPath != "" {
-			err := redirectStderr(stderrRedirectPath)
-			if err != nil {
-				return fmt.Errorf("cannot redirect stderr to %s cause: %s", stderrRedirectPath, err)
-			}
+	}
+
+	if stderrRedirectPath != "" {
+		err := redirectStderr(stderrRedirectPath)
+		if err != nil {
+			return fmt.Errorf("cannot redirect stderr to %s cause: %s", stderrRedirectPath, err)
 		}
 	}
 

@@ -29,7 +29,16 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, error) {
 	}
 
 	if size == 1 {
-		return u[0].Exchange(req)
+		start := time.Now()
+		reply, err := u[0].Exchange(req)
+		elapsed := time.Since(start)
+		if err == nil {
+			log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", u[0].Address(), req.Question[0].String(), elapsed)
+		} else {
+			log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u[0].Address(), req.Question[0].String(), elapsed, err)
+		}
+
+		return reply, err
 	}
 
 	// Size of channel must accommodate results of exchange from all upstreams
@@ -95,7 +104,16 @@ func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]
 		return nil, errors.New("no resolvers specified")
 	}
 	if size == 1 {
-		return resolvers[0].resolver.LookupIPAddr(ctx, host)
+		start := time.Now()
+		address, err := resolvers[0].resolver.LookupIPAddr(ctx, host)
+		elapsed := time.Since(start)
+		if err != nil {
+			log.Tracef("failed to lookup for %s in %d milliseconds using %s: %s", host, elapsed, resolvers[0].resolverAddress, err)
+		} else {
+			log.Tracef("successfully finish lookup for %s in %d milliseconds using %s. Result: %s", host, elapsed, resolvers[0].resolverAddress, address)
+		}
+
+		return address, err
 	}
 
 	// Size of channel must accommodate results of lookups from all resolvers

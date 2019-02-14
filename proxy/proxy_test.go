@@ -277,6 +277,11 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 		t.Fatalf("the operation took much more time than the configured timeout")
 	}
 
+	// make sure that upstreams were sorted by rtt
+	if dnsProxy.upstreamsWithRtt[0].upstream.Address() != "1.1.1.1:53" {
+		t.Fatalf("upstreams were not sorted by rtt")
+	}
+
 	// Stop the proxy
 	err = dnsProxy.Stop()
 	if err != nil {

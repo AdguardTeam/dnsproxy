@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -48,6 +49,9 @@ type Proxy struct {
 	tlsListen   net.Listener // TLS listener
 	httpsListen net.Listener // HTTPS listener
 	httpsServer *http.Server // HTTPS server instance
+
+	upstreamsWithRtt []upstreamWithRtt // Array of upstreams with their rtt
+	rttLock          sync.Mutex		   // Synchronizes access to the upstreamsWithRtt array
 
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
@@ -93,6 +97,12 @@ type DNSContext struct {
 	UpstreamIdx        int                 // upstream index
 }
 
+// upstreamWithRtt is a wrapper for upstream and its rtt. Used to sort upstreams "from fast to slow"
+type upstreamWithRtt struct {
+	upstream upstream.Upstream
+	rtt 	 int
+}
+
 // Start initializes the proxy server and starts listening
 func (p *Proxy) Start() error {
 	p.Lock()
@@ -107,6 +117,14 @@ func (p *Proxy) Start() error {
 	if p.CacheEnabled {
 		log.Printf("DNS cache is enabled")
 		p.cache = &cache{}
+	}
+
+	if !p.AllServers {
+		// set 0 as rtt initial value for each upstream to sort them after exchange
+		p.upstreamsWithRtt = []upstreamWithRtt{}
+		for _, u := range p.Upstreams {
+			p.upstreamsWithRtt = append(p.upstreamsWithRtt, upstreamWithRtt{upstream: u, rtt: 0})
+		}
 	}
 
 	err = p.startListeners()
@@ -221,18 +239,31 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	if p.AllServers {
 		reply, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
 	} else {
-		for _, dnsUpstream := range p.Upstreams {
+		for i, dnsUpstream := range p.upstreamsWithRtt {
 			startTimeForUpstream := time.Now()
-			reply, err = dnsUpstream.Exchange(d.Req)
+			reply, err = dnsUpstream.upstream.Exchange(d.Req)
+
+			// set elapsed time for each upstream to sort them after successful exchange or after all upstreams failure
+			// initial rtt value for each upstream is 0, so unused servers will be at the top of the list after sorting
+			elapsed := time.Since(startTimeForUpstream) / time.Millisecond
 			if err == nil {
-				log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", dnsUpstream.Address(), d.Req.Question[0].String(), time.Since(startTimeForUpstream)/time.Millisecond)
+				log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", dnsUpstream.upstream.Address(), d.Req.Question[0].String(), elapsed)
+				p.upstreamsWithRtt[i].rtt = int(elapsed)
 				break
 			}
-			log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", dnsUpstream.Address(), d.Req.Question[0].String(), time.Since(startTimeForUpstream)/time.Millisecond, err)
+
+			// if there was an error, consider upstream RTT equal to the default timeout (this will set upstream to the last place in upstreamsWithRtt array)
+			log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", dnsUpstream.upstream.Address(), d.Req.Question[0].String(), elapsed, err)
+			p.upstreamsWithRtt[i].rtt = int(defaultTimeout / time.Millisecond)
 		}
 	}
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Tracef("RTT: %d ms", rtt)
+
+	// sort upstreams if parallel queries are not enabled
+	if !p.AllServers {
+		p.sortUpstreams()
+	}
 
 	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
@@ -654,7 +685,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	var err error
 
 	if d.Res == nil {
-		if len(p.Upstreams) == 0 {
+		if (len(p.upstreamsWithRtt) == 0 && !p.AllServers) || (len(p.Upstreams) == 0 && p.AllServers) {
 			panic("SHOULD NOT HAPPEN: no default upstreams specified")
 		}
 
@@ -705,6 +736,19 @@ func (p *Proxy) respond(d *DNSContext) {
 	if err != nil {
 		log.Printf("error while responding to a DNS request: %s", err)
 	}
+}
+
+// sort dnsProxy upstreams by rtt
+func (p *Proxy) sortUpstreams() {
+	p.rttLock.Lock()
+	defer p.rttLock.Unlock()
+	sort.Slice(p.upstreamsWithRtt, func(i, j int) bool {
+		if p.upstreamsWithRtt[i].rtt < p.upstreamsWithRtt[j].rtt {
+			return true
+		}
+
+		return false
+	})
 }
 
 func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {

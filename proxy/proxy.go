@@ -51,7 +51,7 @@ type Proxy struct {
 	httpsServer *http.Server // HTTPS server instance
 
 	upstreamsWithRtt []upstreamWithRtt // Array of upstreams with their rtt
-	rttLock          sync.Mutex		   // Synchronizes access to the upstreamsWithRtt array
+	rttLock          sync.Mutex        // Synchronizes access to the upstreamsWithRtt array
 
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
@@ -100,7 +100,7 @@ type DNSContext struct {
 // upstreamWithRtt is a wrapper for upstream and its rtt. Used to sort upstreams "from fast to slow"
 type upstreamWithRtt struct {
 	upstream upstream.Upstream
-	rtt 	 int
+	rtt      int
 }
 
 // Start initializes the proxy server and starts listening

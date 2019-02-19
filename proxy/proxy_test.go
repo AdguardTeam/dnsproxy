@@ -163,6 +163,7 @@ func TestUdpProxy(t *testing.T) {
 }
 
 func TestFallback(t *testing.T) {
+	timeout := 1 * time.Second
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
 
@@ -171,13 +172,12 @@ func TestFallback(t *testing.T) {
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
+		f, _ := upstream.AddressToUpstream(s, upstream.Options{Timeout: timeout})
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using some random port to make sure that this upstream won't work
-	timeout := 1 * time.Second
-	u, _ := upstream.AddressToUpstream("8.8.8.8:555", []string{}, 1*time.Second)
+	u, _ := upstream.AddressToUpstream("8.8.8.8:555", upstream.Options{Timeout: timeout})
 	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
@@ -221,6 +221,7 @@ func TestFallback(t *testing.T) {
 }
 
 func TestFallbackFromInvalidBootstrap(t *testing.T) {
+	timeout := 1 * time.Second
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
 
@@ -229,13 +230,12 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
+		f, _ := upstream.AddressToUpstream(s, upstream.Options{Timeout: timeout})
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using a DOT server with invalid bootstrap
-	timeout := 1 * time.Second
-	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", []string{"8.8.8.8:555"}, timeout)
+	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", upstream.Options{Bootstrap: []string{"8.8.8.8:555"}, Timeout: timeout})
 	dnsProxy.Upstreams = []upstream.Upstream{}
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
@@ -389,8 +389,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 		p.TLSConfig = tlsConfig
 	}
 	upstreams := make([]upstream.Upstream, 0)
-
-	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, []string{}, 10*time.Second)
+	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, upstream.Options{Timeout: defaultTimeout})
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}

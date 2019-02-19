@@ -17,7 +17,7 @@ func TestBootstrapTimeout(t *testing.T) {
 	)
 
 	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
-	u, err := AddressToUpstream("tls://one.one.one.one", []string{"8.8.8.8:555"}, timeout)
+	u, err := AddressToUpstream("tls://one.one.one.one", Options{Bootstrap: []string{"8.8.8.8:555"}, Timeout: timeout})
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}
@@ -64,7 +64,7 @@ func TestUpstreamRace(t *testing.T) {
 	)
 
 	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
-	u, err := AddressToUpstream("tls://1.1.1.1", []string{}, timeout)
+	u, err := AddressToUpstream("tls://1.1.1.1", Options{Timeout: timeout})
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}
@@ -97,7 +97,7 @@ func TestUpstreamRace(t *testing.T) {
 }
 
 func TestTLSPoolReconnect(t *testing.T) {
-	u, err := AddressToUpstream("tls://one.one.one.one", []string{"8.8.8.8:53"}, 10*time.Second)
+	u, err := AddressToUpstream("tls://one.one.one.one", Options{Bootstrap: []string{"8.8.8.8:53"}, Timeout: timeout})
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}
@@ -132,7 +132,7 @@ func TestTLSPoolReconnect(t *testing.T) {
 
 func TestTLSPoolDeadLine(t *testing.T) {
 	// Create TLS upstream
-	u, err := AddressToUpstream("tls://one.one.one.one", []string{"8.8.8.8:53"}, 10*time.Second)
+	u, err := AddressToUpstream("tls://one.one.one.one", Options{Bootstrap: []string{"8.8.8.8:53"}, Timeout: timeout})
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}
@@ -192,7 +192,7 @@ func TestTLSPoolDeadLine(t *testing.T) {
 func TestDNSTruncated(t *testing.T) {
 	// Google DNS
 	address := "8.8.8.8:53"
-	u, err := AddressToUpstream(address, []string{}, 10*time.Second)
+	u, err := AddressToUpstream(address, Options{Timeout: timeout})
 
 	if err != nil {
 		t.Fatalf("error while creating an upstream: %s", err)
@@ -216,7 +216,7 @@ func TestDNSTruncated(t *testing.T) {
 func TestDNSCryptTruncated(t *testing.T) {
 	// AdGuard DNS (DNSCrypt)
 	address := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
-	u, err := AddressToUpstream(address, []string{}, 10*time.Second)
+	u, err := AddressToUpstream(address, Options{Timeout: timeout})
 
 	if err != nil {
 		t.Fatalf("error while creating an upstream: %s", err)
@@ -366,15 +366,26 @@ func TestUpstreams(t *testing.T) {
 		},
 	}
 	for _, test := range upstreams {
-
 		t.Run(test.address, func(t *testing.T) {
-			u, err := AddressToUpstream(test.address, test.bootstrap, 10*time.Second)
+			u, err := AddressToUpstream(test.address, Options{Bootstrap: test.bootstrap, Timeout: timeout})
 			if err != nil {
 				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
 			}
 
 			checkUpstream(t, u, test.address)
 		})
+	}
+}
+
+func TestUpstreamDefaultOptions(t *testing.T) {
+	addresses := []string{"tls://1.1.1.1", "8.8.8.8"}
+
+	for _, address := range addresses {
+		u, err := AddressToUpstream(address, Options{})
+		if err != nil {
+			t.Fatalf("Failed to generate upstream from address %s", address)
+		}
+		checkUpstream(t, u, address)
 	}
 }
 
@@ -412,9 +423,8 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		},
 	}
 	for _, test := range upstreams {
-
 		t.Run(test.address, func(t *testing.T) {
-			u, err := AddressToUpstream(test.address, test.bootstrap, 10*time.Second)
+			u, err := AddressToUpstream(test.address, Options{Bootstrap: test.bootstrap, Timeout: timeout})
 			if err != nil {
 				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
 			}

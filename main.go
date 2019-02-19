@@ -132,7 +132,7 @@ func createProxyConfig(options Options) proxy.Config {
 	upstreams := make([]upstream.Upstream, 0)
 
 	for i, u := range options.Upstreams {
-		dnsUpstream, err := upstream.AddressToUpstream(u, options.BootstrapDNS, defaultTimeout)
+		dnsUpstream, err := upstream.AddressToUpstream(u, upstream.Options{Bootstrap: options.BootstrapDNS, Timeout: defaultTimeout})
 		if err != nil {
 			log.Fatalf("cannot prepare the upstream %s (%s): %s", u, options.BootstrapDNS, err)
 		}
@@ -154,7 +154,7 @@ func createProxyConfig(options Options) proxy.Config {
 	if options.Fallbacks != nil {
 		fallbacks := []upstream.Upstream{}
 		for i, f := range options.Fallbacks {
-			fallback, err := upstream.AddressToUpstream(f, options.BootstrapDNS, defaultTimeout)
+			fallback, err := upstream.AddressToUpstream(f, upstream.Options{Timeout: defaultTimeout})
 			if err != nil {
 				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)
 			}

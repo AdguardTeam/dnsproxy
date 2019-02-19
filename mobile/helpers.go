@@ -53,7 +53,7 @@ func TestUpstream(address string, bootstrap string, timeout int) error {
 		bootstraps = append(bootstraps, line)
 	}
 
-	u, err := upstream.AddressToUpstream(address, bootstraps, t)
+	u, err := upstream.AddressToUpstream(address, upstream.Options{Bootstrap: bootstraps, Timeout: t})
 	if err != nil {
 		return err
 	}

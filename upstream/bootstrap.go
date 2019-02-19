@@ -180,17 +180,17 @@ func createDialContext(addresses []string, timeout time.Duration) (dialContext d
 		// Return first connection without error
 		// Note that we're using bootstrapped resolverAddress instead of what's passed to the function
 		for _, resolverAddress := range addresses {
-			log.Printf("Dialing to %s", resolverAddress)
+			log.Tracef("Dialing to %s", resolverAddress)
 			start := time.Now()
 			con, err := dialer.DialContext(ctx, network, resolverAddress)
 			elapsed := time.Since(start) / time.Millisecond
 
 			if err == nil {
-				log.Printf("dialer successfully initialize connection to %s in %d milliseconds", resolverAddress, elapsed)
+				log.Tracef("dialer successfully initialize connection to %s in %d milliseconds", resolverAddress, elapsed)
 				return con, err
 			}
 			errs = append(errs, err)
-			log.Printf("dialer failed to initialize connection to %s, in %d milliseconds, cause: %s", resolverAddress, elapsed, err)
+			log.Tracef("dialer failed to initialize connection to %s, in %d milliseconds, cause: %s", resolverAddress, elapsed, err)
 		}
 		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
 	}

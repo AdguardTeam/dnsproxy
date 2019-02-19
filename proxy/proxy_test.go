@@ -163,21 +163,22 @@ func TestUdpProxy(t *testing.T) {
 }
 
 func TestFallback(t *testing.T) {
+	timeout := 1 * time.Second
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
 
 	// List of fallback server addresses. Only one is valid
 	fallbackAddresses := []string{"1.2.3.4", "1.2.3.5", "8.8.8.8"}
 	dnsProxy.Fallbacks = []upstream.Upstream{}
+	opts := upstream.Options{Timeout: timeout}
 
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
+		f, _ := upstream.AddressToUpstream(s, opts)
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using some random port to make sure that this upstream won't work
-	timeout := 1 * time.Second
-	u, _ := upstream.AddressToUpstream("8.8.8.8:555", []string{}, 1*time.Second)
+	u, _ := upstream.AddressToUpstream("8.8.8.8:555", opts)
 	dnsProxy.Upstreams = make([]upstream.Upstream, 0)
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
@@ -221,6 +222,7 @@ func TestFallback(t *testing.T) {
 }
 
 func TestFallbackFromInvalidBootstrap(t *testing.T) {
+	timeout := 1 * time.Second
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
 
@@ -228,14 +230,15 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	fallbackAddresses := []string{"1.0.0.1", "8.8.8.8"}
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 
+	opts := upstream.Options{Timeout: timeout}
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, []string{}, 1*time.Second)
+		f, _ := upstream.AddressToUpstream(s, opts)
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using a DOT server with invalid bootstrap
-	timeout := 1 * time.Second
-	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", []string{"8.8.8.8:555"}, timeout)
+	opts.Bootstrap = []string{"8.8.8.8:555"}
+	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", opts)
 	dnsProxy.Upstreams = []upstream.Upstream{}
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
 
@@ -389,8 +392,8 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 		p.TLSConfig = tlsConfig
 	}
 	upstreams := make([]upstream.Upstream, 0)
-
-	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, []string{}, 10*time.Second)
+	opts := upstream.Options{Timeout: defaultTimeout}
+	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, opts)
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}

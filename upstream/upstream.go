@@ -279,22 +279,28 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	return reply, err
 }
 
+// Options for AddressToUpstream func
+// bootstrap is a plain DNS list to be used to resolve DoH/DoT hostnames (if any)
+// timeout is a default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.
+// timeout=0 means infinite timeout
+type Options struct {
+	Bootstrap []string
+	Timeout   time.Duration
+}
+
 // AddressToUpstream converts the specified address to an Upstream instance
 // * 8.8.8.8:53 -- plain DNS
 // * tcp://8.8.8.8:53 -- plain DNS over TCP
 // * tls://1.1.1.1 -- DNS-over-TLS
 // * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
 // * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
-// bootstrap is a plain DNS which is used to resolve DoH/DoT hostnames (if any)
-// timeout is a default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.
-// timeout=0 means infinite timeout
-func AddressToUpstream(address string, bootstrap []string, timeout time.Duration) (Upstream, error) {
+func AddressToUpstream(address string, opts Options) (Upstream, error) {
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
 			return nil, errorx.Decorate(err, "failed to parse %s", address)
 		}
-		return urlToUpstream(upstreamURL, bootstrap, timeout)
+		return urlToUpstream(upstreamURL, opts)
 	}
 
 	// we don't have scheme in the url, so it's just a plain DNS host:port
@@ -303,33 +309,33 @@ func AddressToUpstream(address string, bootstrap []string, timeout time.Duration
 		// doesn't have port, default to 53
 		address = net.JoinHostPort(address, "53")
 	}
-	return &plainDNS{address: address, timeout: timeout}, nil
+	return &plainDNS{address: address, timeout: opts.Timeout}, nil
 }
 
 // urlToUpstream converts a URL to an Upstream
-func urlToUpstream(upstreamURL *url.URL, bootstrap []string, timeout time.Duration) (Upstream, error) {
+func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 	switch upstreamURL.Scheme {
 	case "sdns":
-		return stampToUpstream(upstreamURL.String(), bootstrap, timeout)
+		return stampToUpstream(upstreamURL.String(), opts)
 	case "dns":
-		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: timeout}, nil
+		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout}, nil
 	case "tcp":
-		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: timeout, preferTCP: true}, nil
+		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout, preferTCP: true}, nil
 	case "tls":
-		return &dnsOverTLS{boot: toBoot(getHostWithPort(upstreamURL, "853"), bootstrap, timeout)}, nil
+		return &dnsOverTLS{boot: toBoot(getHostWithPort(upstreamURL, "853"), opts.Bootstrap, opts.Timeout)}, nil
 	case "https":
 		if upstreamURL.Port() == "" {
 			upstreamURL.Host += ":443"
 		}
-		return &dnsOverHTTPS{boot: toBoot(upstreamURL.String(), bootstrap, timeout)}, nil
+		return &dnsOverHTTPS{boot: toBoot(upstreamURL.String(), opts.Bootstrap, opts.Timeout)}, nil
 	default:
 		// assume it's plain DNS
-		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: timeout}, nil
+		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout}, nil
 	}
 }
 
 // stampToUpstream converts a DNS stamp to an Upstream
-func stampToUpstream(address string, bootstrap []string, timeout time.Duration) (Upstream, error) {
+func stampToUpstream(address string, opts Options) (Upstream, error) {
 	stamp, err := dnsstamps.NewServerStampFromString(address)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to parse %s", address)
@@ -337,13 +343,13 @@ func stampToUpstream(address string, bootstrap []string, timeout time.Duration) 
 
 	switch stamp.Proto {
 	case dnsstamps.StampProtoTypePlain:
-		return &plainDNS{address: stamp.ServerAddrStr, timeout: timeout}, nil
+		return &plainDNS{address: stamp.ServerAddrStr, timeout: opts.Timeout}, nil
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		return &dnsCrypt{boot: toBoot(address, bootstrap, timeout)}, nil
+		return &dnsCrypt{boot: toBoot(address, opts.Bootstrap, opts.Timeout)}, nil
 	case dnsstamps.StampProtoTypeDoH:
-		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), bootstrap, timeout)
+		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), opts)
 	case dnsstamps.StampProtoTypeTLS:
-		return AddressToUpstream(fmt.Sprintf("tls://%s", stamp.ProviderName), bootstrap, timeout)
+		return AddressToUpstream(fmt.Sprintf("tls://%s", stamp.ProviderName), opts)
 	}
 
 	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, address)

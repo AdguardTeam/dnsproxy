@@ -14,8 +14,10 @@ const (
 func TestExchangeParallel(t *testing.T) {
 	upstreams := []Upstream{}
 	upstreamList := []string{"1.2.3.4:55", "8.8.8.1", "8.8.8.8:53"}
+	opts := Options{Timeout: timeout}
+
 	for _, s := range upstreamList {
-		u, err := AddressToUpstream(s, []string{}, timeout)
+		u, err := AddressToUpstream(s, opts)
 		if err != nil {
 			t.Fatalf("cannot create upstream: %s", err)
 		}

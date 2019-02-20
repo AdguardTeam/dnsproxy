@@ -239,29 +239,14 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	if p.AllServers {
 		reply, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
 	} else {
-		for i, dnsUpstream := range p.upstreamsWithRtt {
-			startTimeForUpstream := time.Now()
-			reply, err = dnsUpstream.upstream.Exchange(d.Req)
-
-			// set elapsed time for each upstream to sort them after successful exchange or after all upstreams failure
-			// initial rtt value for each upstream is 0, so unused servers will be at the top of the list after sorting
-			elapsed := time.Since(startTimeForUpstream) / time.Millisecond
-			if err == nil {
-				log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", dnsUpstream.upstream.Address(), d.Req.Question[0].String(), elapsed)
-				p.upstreamsWithRtt[i].rtt = int(elapsed)
-				break
-			}
-
-			// if there was an error, consider upstream RTT equal to the default timeout (this will set upstream to the last place in upstreamsWithRtt array)
-			log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", dnsUpstream.upstream.Address(), d.Req.Question[0].String(), elapsed, err)
-			p.upstreamsWithRtt[i].rtt = int(defaultTimeout / time.Millisecond)
-		}
+		reply, err = p.exchangeOneByOne(d.Req)
 	}
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Tracef("RTT: %d ms", rtt)
 
 	// sort upstreams if parallel queries are not enabled
-	if !p.AllServers && len(p.Upstreams) > 1 {
+	// and there are more than one upstream for current Proxy
+	if !p.AllServers && len(p.upstreamsWithRtt) > 1 {
 		p.sortUpstreams()
 	}
 
@@ -282,6 +267,34 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 
 	return err
+}
+
+// exchangeOneByOne tries to exchange the request with all upstreams one-by-one
+func (p *Proxy) exchangeOneByOne(req *dns.Msg) (*dns.Msg, error) {
+	p.rttLock.Lock()
+	defer p.rttLock.Unlock()
+
+	errs := []error{}
+	for i, dnsUpstream := range p.upstreamsWithRtt {
+		startTimeForUpstream := time.Now()
+		reply, err := dnsUpstream.upstream.Exchange(req)
+
+		// set elapsed time for each upstream to sort them after successful exchange or after all upstreams failure
+		// initial rtt value for each upstream is 0, so unused servers will be at the top of the list after sorting
+		elapsed := time.Since(startTimeForUpstream) / time.Millisecond
+		if err == nil {
+			log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", dnsUpstream.upstream.Address(), req.Question[0].String(), elapsed)
+			p.upstreamsWithRtt[i].rtt = int(elapsed)
+			return reply, nil
+		}
+
+		errs = append(errs, err)
+		// if there was an error, consider upstream RTT equal to the default timeout (this will set upstream to the last place in upstreamsWithRtt array)
+		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", dnsUpstream.upstream.Address(), req.Question[0].String(), elapsed, err)
+		p.upstreamsWithRtt[i].rtt = int(defaultTimeout / time.Millisecond)
+	}
+
+	return nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

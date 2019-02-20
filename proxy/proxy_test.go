@@ -185,10 +185,11 @@ func TestProxyRace(t *testing.T) {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
 
+	count := 30
 	g := &sync.WaitGroup{}
-	g.Add(10)
+	g.Add(count)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < count; i++ {
 		go sendTestMessage(t, conn, g)
 	}
 
@@ -506,6 +507,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	return &p
 }
 
+var i int
 func sendTestMessage(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	defer func() {
 		g.Done()

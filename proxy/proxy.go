@@ -239,7 +239,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	if p.AllServers {
 		reply, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
 	} else {
-		reply, err = p.exchangeOneByOne(d.Req)
+		reply, err = p.exchange(d.Req)
 	}
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Tracef("RTT: %d ms", rtt)
@@ -269,13 +269,15 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	return err
 }
 
-// exchangeOneByOne tries to exchange the request with all upstreams one-by-one
-func (p *Proxy) exchangeOneByOne(req *dns.Msg) (*dns.Msg, error) {
-	p.rttLock.Lock()
-	defer p.rttLock.Unlock()
-
+// exchange tries to exchange the request with all upstreams one-by-one
+func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, error) {
 	errs := []error{}
-	for i, dnsUpstream := range p.upstreamsWithRtt {
+	for i := 0; i < len(p.upstreamsWithRtt); i++{
+
+		p.rttLock.Lock()
+		dnsUpstream := p.upstreamsWithRtt[i]
+		p.rttLock.Unlock()
+
 		startTimeForUpstream := time.Now()
 		reply, err := dnsUpstream.upstream.Exchange(req)
 
@@ -284,17 +286,24 @@ func (p *Proxy) exchangeOneByOne(req *dns.Msg) (*dns.Msg, error) {
 		elapsed := time.Since(startTimeForUpstream) / time.Millisecond
 		if err == nil {
 			log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", dnsUpstream.upstream.Address(), req.Question[0].String(), elapsed)
-			p.upstreamsWithRtt[i].rtt = int(elapsed)
+			p.updateUpstreamRtt(i, int(elapsed))
 			return reply, nil
 		}
 
 		errs = append(errs, err)
 		// if there was an error, consider upstream RTT equal to the default timeout (this will set upstream to the last place in upstreamsWithRtt array)
 		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", dnsUpstream.upstream.Address(), req.Question[0].String(), elapsed, err)
-		p.upstreamsWithRtt[i].rtt = int(defaultTimeout / time.Millisecond)
+		p.updateUpstreamRtt(i, int(defaultTimeout / time.Millisecond))
 	}
 
 	return nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
+}
+
+// updateUpstreamRtt updates rtt for upstream with i index
+func (p *Proxy) updateUpstreamRtt(i, rtt int) {
+	p.rttLock.Lock()
+	defer p.rttLock.Unlock()
+	p.upstreamsWithRtt[i].rtt = rtt
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

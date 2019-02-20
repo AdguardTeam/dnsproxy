@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -154,6 +155,44 @@ func TestUdpProxy(t *testing.T) {
 	}
 
 	sendTestMessages(t, conn)
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
+// TestProxyRace sends multiple parallel DNS requests to the
+// fully configured dnsproxy to check for race conditions
+func TestProxyRace(t *testing.T) {
+	// Prepare the proxy server
+	dnsProxy := createTestProxy(t, nil)
+
+	// Use the same upstream twice so that we could rotate them
+	dnsProxy.Upstreams = append(dnsProxy.Upstreams, dnsProxy.Upstreams[0])
+
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr(ProtoUDP)
+	conn, err := dns.Dial("udp", addr.String())
+	if err != nil {
+		t.Fatalf("cannot connect to the proxy: %s", err)
+	}
+
+	g := &sync.WaitGroup{}
+	g.Add(10)
+
+	for i := 0; i < 10; i++ {
+		go sendTestMessage(t, conn, g)
+	}
+
+	g.Wait()
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -465,6 +504,24 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	}
 	p.Upstreams = append(upstreams, dnsUpstream)
 	return &p
+}
+
+func sendTestMessage(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
+	defer func() {
+		g.Done()
+	}()
+
+	req := createTestMessage()
+	err := conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	res, err := conn.ReadMsg()
+	if err != nil {
+		t.Fatalf("cannot read response to message: %s", err)
+	}
+	assertResponse(t, res)
 }
 
 func sendTestMessages(t *testing.T, conn *dns.Conn) {

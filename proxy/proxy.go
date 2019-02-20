@@ -261,7 +261,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	log.Tracef("RTT: %d ms", rtt)
 
 	// sort upstreams if parallel queries are not enabled
-	if !p.AllServers {
+	if !p.AllServers && len(p.Upstreams) > 1 {
 		p.sortUpstreams()
 	}
 

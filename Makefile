@@ -16,7 +16,7 @@ endif
 default: build
 
 build: clean test
-	go build
+	go build -ldflags "-X main.VersionString=$(VERSION)"
 
 release: check-env-release
 	mkdir -p $(BUILDDIR)

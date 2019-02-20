@@ -43,6 +43,7 @@ Application Options:
 
 Help Options:
   -h, --help        Show this help message
+  --version         Print DNS proxy version
 ```
 
 ## Examples

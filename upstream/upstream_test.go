@@ -38,7 +38,7 @@ func TestBootstrapTimeout(t *testing.T) {
 
 			elapsed := time.Since(start)
 			if elapsed > 2*timeout {
-				abort <- fmt.Sprintf("exchange took more time than the configured timeout: %v", elapsed)
+				abort <- fmt.Sprintf("exchangeAsync took more time than the configured timeout: %v", elapsed)
 			}
 			t.Logf("Finished %d", idx)
 			ch <- idx

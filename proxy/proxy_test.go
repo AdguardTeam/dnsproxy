@@ -260,75 +260,6 @@ func TestFallback(t *testing.T) {
 	}
 }
 
-func TestOneByOneUpstreamsExchange(t *testing.T) {
-	timeOut := 1 * time.Second
-	dnsProxy := createTestProxy(t, nil)
-
-	// invalid fallback to make sure that reply is not coming from fallback server
-	dnsProxy.Fallbacks = []upstream.Upstream{}
-	fallback := "1.2.3.4:567"
-	f, err := upstream.AddressToUpstream(fallback, []string{}, timeOut)
-	if err != nil {
-		t.Fatalf("cannot create fallback upstream %s cause %s", fallback, err)
-	}
-	dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
-
-	// add one valid and two invalid upstreams
-	upstreams := []string{"https://fake-dns.com/fake-dns-query", "tls://fake-dns.com", "1.1.1.1"}
-	dnsProxy.Upstreams = []upstream.Upstream{}
-	for _, line := range upstreams {
-		var u upstream.Upstream
-		u, err = upstream.AddressToUpstream(line, []string{"8.8.8.8:53"}, timeOut)
-		if err != nil {
-			t.Fatalf("cannot create upstream %s cause %s", line, err)
-		}
-
-		dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
-	}
-
-	err = dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
-
-	// create a DNS-over-TCP client connection
-	addr := dnsProxy.Addr(ProtoTCP)
-	conn, err := dns.Dial("tcp", addr.String())
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
-
-	// make sure that the response is okay and resolved by valid upstream
-	req := createTestMessage()
-	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
-
-	start := time.Now()
-	res, err := conn.ReadMsg()
-	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
-	}
-	assertResponse(t, res)
-
-	elapsed := time.Since(start)
-	if elapsed > 3*timeOut {
-		t.Fatalf("the operation took much more time than the configured timeout")
-	}
-
-	// make sure that upstreams were sorted by rtt
-	if dnsProxy.upstreamsWithRtt[0].upstream.Address() != "1.1.1.1:53" {
-		t.Fatalf("upstreams were not sorted by rtt")
-	}
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
-	}
-}
-
 func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
@@ -507,7 +438,6 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	return &p
 }
 
-var i int
 func sendTestMessage(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	defer func() {
 		g.Done()

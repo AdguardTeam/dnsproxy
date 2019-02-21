@@ -94,6 +94,7 @@ type DNSContext struct {
 	HTTPRequest        *http.Request       // HTTP request (for DOH only)
 	HTTPResponseWriter http.ResponseWriter // HTTP response writer (for DOH only)
 	StartTime          time.Time           // processing start time
+	Upstream           upstream.Upstream   // upstream that resolved DNS request
 	UpstreamIdx        int                 // upstream index
 }
 
@@ -232,26 +233,32 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// execute the DNS request
 	var reply *dns.Msg
 	var err error
+	var u upstream.Upstream
 	startTime := time.Now()
 
 	// use parallel exchange if "--all-servers" option was configured
 	// otherwise try to exchange the request with all upstreams one-by-one
 	if p.AllServers {
-		reply, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
+		reply, u, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
 	} else {
-		reply, err = p.exchange(d.Req)
+		reply, u, err = p.exchange(d.Req)
 	}
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Tracef("RTT: %d ms", rtt)
 
 	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
+		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
 	}
 
-	// Saving cached response
-	if p.cache != nil && reply != nil {
-		p.cache.Set(reply)
+	// set Upstream that resolved DNS request to DNSContext
+	if reply != nil {
+		d.Upstream = u
+
+		// Saving cached response
+		if p.cache != nil {
+			p.cache.Set(reply)
+		}
 	}
 
 	if reply == nil {
@@ -264,56 +271,63 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 }
 
 // exchange tries to exchange the request with all upstreams one-by-one
-func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, error) {
+func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 	errs := []error{}
 
+	p.rttLock.Lock()
 	if len(p.upstreamsWithRtt) == 1 {
-		dnsUpstream := p.upstreamsWithRtt[0].upstream
-		startTime := time.Now()
-		reply, err := dnsUpstream.Exchange(req)
-		elapsed := time.Since(startTime)
-		if err != nil {
-			log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", dnsUpstream.Address(), req.Question[0].String(), elapsed, err)
-		} else {
-			log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", dnsUpstream.Address(), req.Question[0].String(), elapsed)
-		}
-		return reply, err
+		u := p.upstreamsWithRtt[0].upstream
+		p.rttLock.Unlock()
 
+		reply, _, err := exchangeByUpstream(u, req)
+		return reply, u, err
 	}
 
-	// clone upstreamsWithRtt
-	upstreamsWithRttClone := make([]upstreamWithRtt, len(p.upstreamsWithRtt))
-	copy(upstreamsWithRttClone, p.upstreamsWithRtt)
+	// clone upstreamsWithRtt to avoid race condition while upstreams iteration after slice sort
+	clones := make([]upstreamWithRtt, len(p.upstreamsWithRtt))
+	copy(clones, p.upstreamsWithRtt)
+	p.rttLock.Unlock()
 
-	// sort cloned upstreamsWithRtt by rtt
-	idxMap := sortUpstreamsWithRtt(upstreamsWithRttClone)
+	// sort cloned upstreamsWithRtt by rtt "from fast to slow". idxMap is map of indexes in original and sorted slices
+	idxMap := sortUpstreamsWithRtt(clones)
 
-	for i, dnsUpstream := range upstreamsWithRttClone {
-		startTimeForUpstream := time.Now()
-		reply, err := dnsUpstream.upstream.Exchange(req)
+	for i, dnsUpstream := range clones {
+		reply, elapsed, err := exchangeByUpstream(dnsUpstream.upstream, req)
 
-		// set elapsed time for each upstream to sort them after successful exchange or after all upstreams failure
+		// set elapsed time for each upstream in original slice to sort them before next exchange
 		// initial rtt value for each upstream is 0, so unused servers will be at the top of the list after sorting
-		elapsed := time.Since(startTimeForUpstream) / time.Millisecond
 		if err == nil {
-			log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", dnsUpstream.upstream.Address(), req.Question[0].String(), elapsed)
 			p.updateUpstreamRtt(idxMap[i], int(elapsed))
-			return reply, nil
+			return reply, dnsUpstream.upstream, nil
 		}
 
 		errs = append(errs, err)
 		// if there was an error, consider upstream RTT equal to the default timeout (this will set upstream to the last place in upstreamsWithRtt array)
-		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", dnsUpstream.upstream.Address(), req.Question[0].String(), elapsed, err)
 		p.updateUpstreamRtt(idxMap[i], int(defaultTimeout / time.Millisecond))
 	}
 
-	return nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
+	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
+}
+
+// exchangeByUpstream returns result of Exchange with elapsed time
+func exchangeByUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, time.Duration, error) {
+	startTime := time.Now()
+	reply, err := u.Exchange(req)
+	elapsed := time.Since(startTime)
+	if err != nil {
+		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
+	} else {
+		log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
+	}
+	return reply, elapsed, err
 }
 
 // updateUpstreamRtt updates rtt for upstream with i index
 func (p *Proxy) updateUpstreamRtt(i, rtt int) {
 	p.rttLock.Lock()
 	defer p.rttLock.Unlock()
+
+	// Set rtt by idx is important cause otherwise rtt will be setted to copy of upstreamWithRtt!
 	p.upstreamsWithRtt[i].rtt = (p.upstreamsWithRtt[i].rtt + rtt) / 2
 }
 
@@ -771,9 +785,9 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 }
 
-// sortUpstreamsWithRtt returns map of old and new indexes
-func sortUpstreamsWithRtt(u[] upstreamWithRtt) map[int]int {
-	idxMap := make(map[int] int, len(u))
+// sortUpstreamsWithRtt returns map of indexes in original and sorted slices
+func sortUpstreamsWithRtt(u []upstreamWithRtt) map[int]int {
+	idxMap := make(map[int]int, len(u))
 	for i := range u {
 		idxMap[i] = i
 	}

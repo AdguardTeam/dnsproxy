@@ -11,42 +11,34 @@ import (
 	"github.com/miekg/dns"
 )
 
-// exchangeResult is a structure that represents result of exchange
+// exchangeResult is a structure that represents result of exchangeAsync
 type exchangeResult struct {
-	reply   *dns.Msg      // Result of DNS request execution
-	elapsed time.Duration // Elapsed time
-	err     error         // Error
+	reply    *dns.Msg // Result of DNS request execution
+	upstream Upstream // Upstream that successfully resolved request
+	err      error    // Error
 }
 
 // ExchangeParallel function is called to parallel exchange dns request by many upstreams
 // First answer without error will be returned
 // We will return nil and error if count of errors equals count of upstreams
-func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, error) {
+func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, Upstream, error) {
 	size := len(u)
 
 	if size == 0 {
-		return nil, errors.New("no upstream specified")
+		return nil, nil, errors.New("no upstream specified")
 	}
 
 	if size == 1 {
-		start := time.Now()
-		reply, err := u[0].Exchange(req)
-		elapsed := time.Since(start)
-		if err == nil {
-			log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", u[0].Address(), req.Question[0].String(), elapsed)
-		} else {
-			log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u[0].Address(), req.Question[0].String(), elapsed, err)
-		}
-
-		return reply, err
+		reply, err := exchange(u[0], req)
+		return reply, u[0], err
 	}
 
-	// Size of channel must accommodate results of exchange from all upstreams
+	// Size of channel must accommodate results of exchangeAsync from all upstreams
 	// Otherwise sending in channel will be locked
 	ch := make(chan *exchangeResult, size)
 
 	for _, f := range u {
-		go exchange(f, req, ch)
+		go exchangeAsync(f, req, ch)
 	}
 
 	errs := []error{}
@@ -60,32 +52,36 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, error) {
 			}
 
 			if len(errs) == size {
-				return nil, errorx.DecorateMany("all upstreams failed to exchange", errs...)
+				return nil, nil, errorx.DecorateMany("all upstreams failed to exchange", errs...)
 			}
 
 			if reply != nil && err == nil {
-				return reply, nil
+				return reply, rep.upstream, nil
 			}
 		}
 	}
 }
 
-// exchange tries to resolve DNS request with one upstream and send result to resp channel
-func exchange(u Upstream, req *dns.Msg, resp chan *exchangeResult) {
+// exchangeAsync tries to resolve DNS request with one upstream and send result to resp channel
+func exchangeAsync(u Upstream, req *dns.Msg, resp chan *exchangeResult) {
+	reply, err := u.Exchange(req)
+	resp <- &exchangeResult{
+		reply:    reply,
+		upstream: u,
+		err:      err,
+	}
+}
+
+func exchange(u Upstream, req *dns.Msg) (*dns.Msg, error) {
 	start := time.Now()
 	reply, err := u.Exchange(req)
 	elapsed := time.Since(start) / time.Millisecond
 	if err == nil {
-		log.Tracef("upstream %s succesfully finished exchange of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
+		log.Tracef("upstream %s succesfully finished exchangeAsync of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
 	} else {
-		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
+		log.Tracef("upstream %s failed to exchangeAsync %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
 	}
-
-	resp <- &exchangeResult{
-		reply:   reply,
-		elapsed: elapsed,
-		err:     err,
-	}
+	return reply, err
 }
 
 // lookupResult is a structure that represents result of lookup
@@ -104,15 +100,7 @@ func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]
 		return nil, errors.New("no resolvers specified")
 	}
 	if size == 1 {
-		start := time.Now()
-		address, err := resolvers[0].resolver.LookupIPAddr(ctx, host)
-		elapsed := time.Since(start)
-		if err != nil {
-			log.Tracef("failed to lookup for %s in %d milliseconds using %s: %s", host, elapsed, resolvers[0].resolverAddress, err)
-		} else {
-			log.Tracef("successfully finish lookup for %s in %d milliseconds using %s. Result: %s", host, elapsed, resolvers[0].resolverAddress, address)
-		}
-
+		address, err := lookup(ctx, resolvers[0], host)
 		return address, err
 	}
 
@@ -121,7 +109,7 @@ func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]
 	ch := make(chan *lookupResult, size)
 
 	for _, res := range resolvers {
-		go lookup(ctx, res, host, ch)
+		go lookupAsync(ctx, res, host, ch)
 	}
 
 	errs := []error{}
@@ -145,8 +133,16 @@ func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]
 	}
 }
 
-// lookup tries to lookup for host ip with one Resolver and sends lookupResult to res channel
-func lookup(ctx context.Context, r *Resolver, host string, res chan *lookupResult) {
+// lookupAsync tries to lookup for host ip with one Resolver and sends lookupResult to res channel
+func lookupAsync(ctx context.Context, r *Resolver, host string, res chan *lookupResult) {
+	address, err := lookup(ctx, r, host)
+	res <- &lookupResult{
+		err:     err,
+		address: address,
+	}
+}
+
+func lookup(ctx context.Context, r *Resolver, host string) ([]net.IPAddr, error) {
 	start := time.Now()
 	address, err := r.LookupIPAddr(ctx, host)
 	elapsed := time.Since(start) / time.Millisecond
@@ -155,9 +151,5 @@ func lookup(ctx context.Context, r *Resolver, host string, res chan *lookupResul
 	} else {
 		log.Tracef("successfully finish lookup for %s in %d milliseconds using %s. Result : %s", host, elapsed, r.resolverAddress, address)
 	}
-
-	res <- &lookupResult{
-		err:     err,
-		address: address,
-	}
+	return address, err
 }

@@ -77,9 +77,9 @@ func exchange(u Upstream, req *dns.Msg) (*dns.Msg, error) {
 	reply, err := u.Exchange(req)
 	elapsed := time.Since(start) / time.Millisecond
 	if err == nil {
-		log.Tracef("upstream %s succesfully finished exchangeAsync of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
+		log.Tracef("upstream %s succesfully finished exchange of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
 	} else {
-		log.Tracef("upstream %s failed to exchangeAsync %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
+		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
 	}
 	return reply, err
 }

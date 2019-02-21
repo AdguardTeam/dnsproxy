@@ -277,7 +277,7 @@ func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 		u := p.upstreamsWithRtt[0].upstream
 		p.rttLock.Unlock()
 
-		reply, _, err := exchangeByUpstream(u, req)
+		reply, _, err := exchangeWithUpstream(u, req)
 		return reply, u, err
 	}
 
@@ -291,7 +291,7 @@ func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 
 	errs := []error{}
 	for i, dnsUpstream := range clones {
-		reply, elapsed, err := exchangeByUpstream(dnsUpstream.upstream, req)
+		reply, elapsed, err := exchangeWithUpstream(dnsUpstream.upstream, req)
 
 		// set elapsed time for each upstream in original slice to sort them before next exchange
 		// initial rtt value for each upstream is 0, so unused servers will be at the top of the list after sorting
@@ -308,8 +308,8 @@ func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
 }
 
-// exchangeByUpstream returns result of Exchange with elapsed time
-func exchangeByUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, time.Duration, error) {
+// exchangeWithUpstream returns result of Exchange with elapsed time
+func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, time.Duration, error) {
 	startTime := time.Now()
 	reply, err := u.Exchange(req)
 	elapsed := time.Since(startTime)

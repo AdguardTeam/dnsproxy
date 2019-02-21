@@ -8,13 +8,13 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/hmage/golibs/log"
-	"github.com/jmcvetta/randutil"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
@@ -50,9 +50,8 @@ type Proxy struct {
 	httpsListen net.Listener // HTTPS listener
 	httpsServer *http.Server // HTTPS server instance
 
-	upstreamsRtt      []int             // Average upstreams RTT (milliseconds)
-	upstreamsWeighted []randutil.Choice // Weighted upstreams (depending on RTT)
-	rttLock           sync.Mutex        // Synchronizes access to the upstreamsRtt/upstreamsWeighted arrays
+	upstreamsWithRtt []upstreamWithRtt // Array of upstreams with their rtt
+	rttLock          sync.Mutex        // Synchronizes access to the upstreamsWithRtt array
 
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
@@ -95,8 +94,14 @@ type DNSContext struct {
 	HTTPRequest        *http.Request       // HTTP request (for DOH only)
 	HTTPResponseWriter http.ResponseWriter // HTTP response writer (for DOH only)
 	StartTime          time.Time           // processing start time
-	Upstream           upstream.Upstream   // upstream that was chosen
+	Upstream           upstream.Upstream   // upstream that resolved DNS request
 	UpstreamIdx        int                 // upstream index
+}
+
+// upstreamWithRtt is a wrapper for upstream and its rtt. Used to sort upstreams "from fast to slow"
+type upstreamWithRtt struct {
+	upstream upstream.Upstream
+	rtt      int
 }
 
 // Start initializes the proxy server and starts listening
@@ -115,10 +120,12 @@ func (p *Proxy) Start() error {
 		p.cache = &cache{}
 	}
 
-	p.upstreamsRtt = make([]int, len(p.Upstreams))
-	p.upstreamsWeighted = make([]randutil.Choice, len(p.Upstreams))
-	for idx := range p.Upstreams {
-		p.upstreamsWeighted[idx] = randutil.Choice{Weight: 1, Item: idx}
+	if !p.AllServers {
+		// set 0 as rtt initial value for each upstream to sort them after exchange
+		p.upstreamsWithRtt = []upstreamWithRtt{}
+		for _, u := range p.Upstreams {
+			p.upstreamsWithRtt = append(p.upstreamsWithRtt, upstreamWithRtt{upstream: u, rtt: 0})
+		}
 	}
 
 	err = p.startListeners()
@@ -223,37 +230,35 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		}
 	}
 
-	dnsUpstream := d.Upstream
-
 	// execute the DNS request
 	var reply *dns.Msg
 	var err error
+	var u upstream.Upstream
 	startTime := time.Now()
+
+	// use parallel exchange if "--all-servers" option was configured
+	// otherwise try to exchange the request with all upstreams one-by-one
 	if p.AllServers {
-		reply, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
+		reply, u, err = upstream.ExchangeParallel(p.Upstreams, d.Req)
 	} else {
-		reply, err = dnsUpstream.Exchange(d.Req)
+		reply, u, err = p.exchange(d.Req)
 	}
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Tracef("RTT: %d ms", rtt)
 
-	if !p.AllServers {
-		// Update the upstreams weight
-		if err != nil {
-			// If there was an error, consider RTT equal to the default timeout (this will make the upstream's weight lower)
-			rtt = int(defaultTimeout / time.Millisecond)
-		}
-		p.calculateUpstreamWeights(d.UpstreamIdx, rtt)
-	}
-
 	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
+		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
 	}
 
-	// Saving cached response
-	if p.cache != nil && reply != nil {
-		p.cache.Set(reply)
+	// set Upstream that resolved DNS request to DNSContext
+	if reply != nil {
+		d.Upstream = u
+
+		// Saving cached response
+		if p.cache != nil {
+			p.cache.Set(reply)
+		}
 	}
 
 	if reply == nil {
@@ -263,6 +268,66 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 
 	return err
+}
+
+// exchange tries to exchange the request with all upstreams one-by-one
+func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
+	p.rttLock.Lock()
+	if len(p.upstreamsWithRtt) == 1 {
+		u := p.upstreamsWithRtt[0].upstream
+		p.rttLock.Unlock()
+
+		reply, _, err := exchangeWithUpstream(u, req)
+		return reply, u, err
+	}
+
+	// clone upstreamsWithRtt to avoid race condition while upstreams iteration after slice sort
+	clones := make([]upstreamWithRtt, len(p.upstreamsWithRtt))
+	copy(clones, p.upstreamsWithRtt)
+	p.rttLock.Unlock()
+
+	// sort cloned upstreamsWithRtt by rtt "from fast to slow". idxMap is map of indexes in original and sorted slices
+	idxMap := sortUpstreamsWithRtt(clones)
+
+	errs := []error{}
+	for i, dnsUpstream := range clones {
+		reply, elapsed, err := exchangeWithUpstream(dnsUpstream.upstream, req)
+
+		// set elapsed time for each upstream in original slice to sort them before next exchange
+		// initial rtt value for each upstream is 0, so unused servers will be at the top of the list after sorting
+		if err == nil {
+			p.updateUpstreamRtt(idxMap[i], int(elapsed))
+			return reply, dnsUpstream.upstream, nil
+		}
+
+		errs = append(errs, err)
+		// if there was an error, consider upstream RTT equal to the default timeout (this will set upstream to the last place in upstreamsWithRtt array)
+		p.updateUpstreamRtt(idxMap[i], int(defaultTimeout / time.Millisecond))
+	}
+
+	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
+}
+
+// exchangeWithUpstream returns result of Exchange with elapsed time
+func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, time.Duration, error) {
+	startTime := time.Now()
+	reply, err := u.Exchange(req)
+	elapsed := time.Since(startTime)
+	if err != nil {
+		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
+	} else {
+		log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
+	}
+	return reply, elapsed, err
+}
+
+// updateUpstreamRtt updates rtt for upstream with i index
+func (p *Proxy) updateUpstreamRtt(i, rtt int) {
+	p.rttLock.Lock()
+	defer p.rttLock.Unlock()
+
+	// Set rtt by idx is important cause otherwise rtt will be setted to copy of upstreamWithRtt!
+	p.upstreamsWithRtt[i].rtt = (p.upstreamsWithRtt[i].rtt + rtt) / 2
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not
@@ -666,11 +731,9 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	var err error
 
 	if d.Res == nil {
-		// choose the DNS upstream
-		dnsUpstream, upstreamIdx := p.chooseUpstream()
-		d.Upstream = dnsUpstream
-		d.UpstreamIdx = upstreamIdx
-		log.Tracef("Upstream is %s (%d)", dnsUpstream.Address(), upstreamIdx)
+		if (len(p.upstreamsWithRtt) == 0 && !p.AllServers) || (len(p.Upstreams) == 0 && p.AllServers) {
+			panic("SHOULD NOT HAPPEN: no default upstreams specified")
+		}
 
 		// execute the DNS request
 		// if there is a custom middleware configured, use it
@@ -721,58 +784,24 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 }
 
-// re-calculates upstreams weights
-func (p *Proxy) calculateUpstreamWeights(upstreamIdx int, rtt int) {
-	p.rttLock.Lock()
-	defer p.rttLock.Unlock()
-
-	currentRtt := p.upstreamsRtt[upstreamIdx]
-	if currentRtt == 0 {
-		currentRtt = rtt
-	} else {
-		currentRtt = (currentRtt + rtt) / 2
+// sortUpstreamsWithRtt returns map of indexes in original and sorted slices
+func sortUpstreamsWithRtt(u []upstreamWithRtt) map[int]int {
+	idxMap := make(map[int]int, len(u))
+	for i := range u {
+		idxMap[i] = i
 	}
-	p.upstreamsRtt[upstreamIdx] = currentRtt
-
-	sum := 0
-	for _, rtt := range p.upstreamsRtt {
-		sum += rtt
-	}
-
-	for i, rtt := range p.upstreamsRtt {
-		// Weight must be greater than 0
-		weight := sum - rtt
-		if weight <= 0 {
-			weight = 1
+	sort.Slice(u, func(i, j int) bool {
+		if u[i].rtt < u[j].rtt {
+			lessRttIdx := idxMap[i]
+			greaterRttIdx := idxMap[j]
+			idxMap[i] = greaterRttIdx
+			idxMap[j] = lessRttIdx
+			return true
 		}
-		p.upstreamsWeighted[i].Weight = weight
-	}
-}
+		return false
+	})
 
-// Chooses an upstream using weighted random choice algorithm
-func (p *Proxy) chooseUpstream() (upstream.Upstream, int) {
-	upstreams := p.Upstreams
-	if len(upstreams) == 0 {
-		panic("SHOULD NOT HAPPEN: no default upstreams specified")
-	}
-	if len(upstreams) == 1 {
-		return upstreams[0], 0
-	}
-
-	// Use weighted random
-	p.rttLock.Lock()
-	c, err := randutil.WeightedChoice(p.upstreamsWeighted)
-	p.rttLock.Unlock()
-
-	if err != nil {
-		log.Fatalf("SHOULD NOT HAPPEN: Weighted random returned an error: %s", err)
-	}
-	idx, ok := c.Item.(int)
-	if !ok {
-		panic("SHOULD NOT HAPPEN: non-integer in the randutil.Choice item")
-	}
-
-	return upstreams[idx], idx
+	return idxMap
 }
 
 func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {

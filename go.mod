@@ -8,7 +8,6 @@ require (
 	github.com/go-test/deep v1.0.1
 	github.com/hmage/golibs v0.0.0-20190121112702-20153bd03c24
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/jmcvetta/randutil v0.0.0-20150817122601-2bb1b664bcff
 	github.com/joomcode/errorx v0.1.0
 	github.com/miekg/dns v1.1.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible

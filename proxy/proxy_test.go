@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -154,6 +155,111 @@ func TestUdpProxy(t *testing.T) {
 	}
 
 	sendTestMessages(t, conn)
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
+// TestProxyRace sends multiple parallel DNS requests to the
+// fully configured dnsproxy to check for race conditions
+func TestProxyRace(t *testing.T) {
+	// Prepare the proxy server
+	dnsProxy := createTestProxy(t, nil)
+
+	// Use the same upstream twice so that we could rotate them
+	dnsProxy.Upstreams = append(dnsProxy.Upstreams, dnsProxy.Upstreams[0])
+
+	// Start listening
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr(ProtoUDP)
+	conn, err := dns.Dial("udp", addr.String())
+	if err != nil {
+		t.Fatalf("cannot connect to the proxy: %s", err)
+	}
+
+	count := 30
+	g := &sync.WaitGroup{}
+	g.Add(count)
+
+	for i := 0; i < count; i++ {
+		go sendTestMessage(t, conn, g)
+	}
+
+	g.Wait()
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
+// TestOneByOneUpstreamsExchange tries to resolve DNS request
+// with one valid and two invalid upstreams
+func TestOneByOneUpstreamsExchange(t *testing.T) {
+	timeOut := 1 * time.Second
+	dnsProxy := createTestProxy(t, nil)
+
+	// invalid fallback to make sure that reply is not coming from fallback server
+	dnsProxy.Fallbacks = []upstream.Upstream{}
+	fallback := "1.2.3.4:567"
+	f, err := upstream.AddressToUpstream(fallback, []string{}, timeOut)
+	if err != nil {
+		t.Fatalf("cannot create fallback upstream %s cause %s", fallback, err)
+	}
+	dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
+
+	// add one valid and two invalid upstreams
+	upstreams := []string{"https://fake-dns.com/fake-dns-query", "tls://fake-dns.com", "1.1.1.1"}
+	dnsProxy.Upstreams = []upstream.Upstream{}
+	for _, line := range upstreams {
+		var u upstream.Upstream
+		u, err = upstream.AddressToUpstream(line, []string{"8.8.8.8:53"}, timeOut)
+		if err != nil {
+			t.Fatalf("cannot create upstream %s cause %s", line, err)
+		}
+
+		dnsProxy.Upstreams = append(dnsProxy.Upstreams, u)
+	}
+
+	err = dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// create a DNS-over-TCP client connection
+	addr := dnsProxy.Addr(ProtoTCP)
+	conn, err := dns.Dial("tcp", addr.String())
+	if err != nil {
+		t.Fatalf("cannot connect to the proxy: %s", err)
+	}
+
+	// make sure that the response is okay and resolved by valid upstream
+	req := createTestMessage()
+	err = conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	start := time.Now()
+	res, err := conn.ReadMsg()
+	if err != nil {
+		t.Fatalf("cannot read response to message: %s", err)
+	}
+	assertResponse(t, res)
+
+	elapsed := time.Since(start)
+	if elapsed > 3*timeOut {
+		t.Fatalf("the operation took much more time than the configured timeout")
+	}
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -395,6 +501,24 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	}
 	p.Upstreams = append(upstreams, dnsUpstream)
 	return &p
+}
+
+func sendTestMessage(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
+	defer func() {
+		g.Done()
+	}()
+
+	req := createTestMessage()
+	err := conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	res, err := conn.ReadMsg()
+	if err != nil {
+		t.Fatalf("cannot read response to message: %s", err)
+	}
+	assertResponse(t, res)
 }
 
 func sendTestMessages(t *testing.T, conn *dns.Conn) {

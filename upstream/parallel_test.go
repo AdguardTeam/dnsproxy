@@ -25,9 +25,13 @@ func TestExchangeParallel(t *testing.T) {
 
 	req := createTestMessage()
 	start := time.Now()
-	resp, err := ExchangeParallel(upstreams, req)
+	resp, u, err := ExchangeParallel(upstreams, req)
 	if err != nil {
 		t.Fatalf("no response from test upstreams: %s", err)
+	}
+
+	if u.Address() != "8.8.8.8:53" {
+		t.Fatalf("shouldn't happen. This upstream can't resolve DNS request: %s", u.Address())
 	}
 
 	assertResponse(t, resp)

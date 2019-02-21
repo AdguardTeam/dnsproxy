@@ -211,7 +211,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	// invalid fallback to make sure that reply is not coming from fallback server
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 	fallback := "1.2.3.4:567"
-	f, err := upstream.AddressToUpstream(fallback, []string{}, timeOut)
+	f, err := upstream.AddressToUpstream(fallback, upstream.Options{Timeout: timeOut})
 	if err != nil {
 		t.Fatalf("cannot create fallback upstream %s cause %s", fallback, err)
 	}
@@ -222,7 +222,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	dnsProxy.Upstreams = []upstream.Upstream{}
 	for _, line := range upstreams {
 		var u upstream.Upstream
-		u, err = upstream.AddressToUpstream(line, []string{"8.8.8.8:53"}, timeOut)
+		u, err = upstream.AddressToUpstream(line, upstream.Options{Bootstrap: []string{"8.8.8.8:53"}, Timeout: timeOut})
 		if err != nil {
 			t.Fatalf("cannot create upstream %s cause %s", line, err)
 		}

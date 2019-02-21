@@ -272,8 +272,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 // exchange tries to exchange the request with all upstreams one-by-one
 func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
-	errs := []error{}
-
 	p.rttLock.Lock()
 	if len(p.upstreamsWithRtt) == 1 {
 		u := p.upstreamsWithRtt[0].upstream
@@ -291,6 +289,7 @@ func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 	// sort cloned upstreamsWithRtt by rtt "from fast to slow". idxMap is map of indexes in original and sorted slices
 	idxMap := sortUpstreamsWithRtt(clones)
 
+	errs := []error{}
 	for i, dnsUpstream := range clones {
 		reply, elapsed, err := exchangeByUpstream(dnsUpstream.upstream, req)
 

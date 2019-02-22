@@ -63,37 +63,26 @@ type Options struct {
 
 	// If true, parallel queries to all configured upstream servers
 	AllServers bool `short:"s" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
-}
 
-// Commands represents console commands. If specified, options will not be parsed
-type Commands struct {
-	Version bool `long:"version"`
+	// Print DNSProxy version (just for the help)
+	Version bool `long:"version" description:"Prints the program version"`
 }
 
 // VersionString will be set through ldflags, contains current version
-var VersionString = "undefined"
+var VersionString = "undefined" // nolint:gochecknoglobals
 
 const defaultTimeout = 10 * time.Second
 
 func main() {
 	var options Options
-	var commands Commands
+	var parser = goFlags.NewParser(&options, goFlags.Default)
 
-	// parse commands first. Do not shut program down if no commands were specified
-	var commandParser = goFlags.NewParser(&commands, goFlags.IgnoreUnknown)
-	_, err := commandParser.Parse()
-	if err != nil {
-		os.Exit(1)
-	}
-
-	if commands.Version {
-		fmt.Printf("DNS proxy version: %s\n", VersionString)
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Printf("dnsproxy version: %s\n", VersionString)
 		os.Exit(0)
 	}
 
-	var parser = goFlags.NewParser(&options, goFlags.Default)
-
-	_, err = parser.Parse()
+	_, err := parser.Parse()
 	if err != nil {
 		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
 			os.Exit(0)

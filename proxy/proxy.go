@@ -95,7 +95,6 @@ type DNSContext struct {
 	HTTPResponseWriter http.ResponseWriter // HTTP response writer (for DOH only)
 	StartTime          time.Time           // processing start time
 	Upstream           upstream.Upstream   // upstream that resolved DNS request
-	UpstreamIdx        int                 // upstream index
 }
 
 // upstreamWithRtt is a wrapper for upstream and its rtt. Used to sort upstreams "from fast to slow"

@@ -302,7 +302,7 @@ func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 
 		errs = append(errs, err)
 		// if there was an error, consider upstream RTT equal to the default timeout (this will set upstream to the last place in upstreamsWithRtt array)
-		p.updateUpstreamRtt(idxMap[i], int(defaultTimeout / time.Millisecond))
+		p.updateUpstreamRtt(idxMap[i], int(defaultTimeout/time.Millisecond))
 	}
 
 	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
@@ -699,7 +699,7 @@ func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
 	}
 
 	ip := net.ParseIP(host)
-	if ip != nil {
+	if ip == nil {
 		return nil, fmt.Errorf("invalid IP: %s", host)
 	}
 

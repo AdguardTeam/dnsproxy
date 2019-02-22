@@ -23,9 +23,10 @@ import (
 )
 
 const (
-	listenIP      = "127.0.0.1"
-	upstreamAddr  = "8.8.8.8:53"
-	tlsServerName = "testdns.adguard.com"
+	listenIP          = "127.0.0.1"
+	upstreamAddr      = "8.8.8.8:53"
+	tlsServerName     = "testdns.adguard.com"
+	testMessagesCount = 10
 )
 
 func TestHttpsProxy(t *testing.T) {
@@ -185,15 +186,7 @@ func TestProxyRace(t *testing.T) {
 		t.Fatalf("cannot connect to the proxy: %s", err)
 	}
 
-	count := 30
-	g := &sync.WaitGroup{}
-	g.Add(count)
-
-	for i := 0; i < count; i++ {
-		go sendTestMessage(t, conn, g)
-	}
-
-	g.Wait()
+	sendTestMessagesAsync(t, conn)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -503,7 +496,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	return &p
 }
 
-func sendTestMessage(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
+func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	defer func() {
 		g.Done()
 	}()
@@ -519,6 +512,19 @@ func sendTestMessage(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
 	assertResponse(t, res)
+}
+
+// sendTestMessagesAsync sends messages in parallel
+// so that we could find race issues
+func sendTestMessagesAsync(t *testing.T, conn *dns.Conn) {
+	g := &sync.WaitGroup{}
+	g.Add(testMessagesCount)
+
+	for i := 0; i < testMessagesCount; i++ {
+		go sendTestMessageAsync(t, conn, g)
+	}
+
+	g.Wait()
 }
 
 func sendTestMessages(t *testing.T, conn *dns.Conn) {

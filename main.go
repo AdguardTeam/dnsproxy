@@ -63,9 +63,11 @@ type Options struct {
 
 	// If true, parallel queries to all configured upstream servers
 	AllServers bool `short:"s" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
+}
 
-	// Print DNSProxy version
-	Version bool `long:"version" description:"Print DNS proxy version"`
+// Commands represents console commands. If specified, options will not be parsed
+type Commands struct {
+	Version bool `long:"version"`
 }
 
 // VersionString will be set through ldflags, contains current version
@@ -75,20 +77,29 @@ const defaultTimeout = 10 * time.Second
 
 func main() {
 	var options Options
+	var commands Commands
+
+	// parse commands first. Do not shut program down if no commands were specified
+	var commandParser = goFlags.NewParser(&commands, goFlags.IgnoreUnknown)
+	_, err := commandParser.Parse()
+	if err != nil {
+		os.Exit(1)
+	}
+
+	if commands.Version {
+		fmt.Printf("DNS proxy version: %s\n", VersionString)
+		os.Exit(0)
+	}
+
 	var parser = goFlags.NewParser(&options, goFlags.Default)
 
-	_, err := parser.Parse()
+	_, err = parser.Parse()
 	if err != nil {
 		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
 			os.Exit(0)
 		} else {
 			os.Exit(1)
 		}
-	}
-
-	if options.Version {
-		fmt.Printf("DNS proxy version: %s\n", VersionString)
-		os.Exit(0)
 	}
 
 	log.Println("Starting the DNS proxy")

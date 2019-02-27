@@ -2,10 +2,9 @@ package mobile
 
 import (
 	"fmt"
-	stdlog "log"
 	"strings"
 
-	"github.com/hmage/golibs/log"
+	"github.com/AdguardTeam/golibs/log"
 )
 
 // LogWriter interface should be implemented inside project that will use dnsproxy mobile API to write dnsproxy log into mobile log
@@ -27,11 +26,13 @@ func (w *LogWriterAdapter) Write(p []byte) (n int, err error) {
 // ConfigureLogger function is called from mobile API to write dnsproxy log into mobile log
 // You need to create object that implements LogWriter interface and set it as argument of this function
 func ConfigureLogger(verbose bool, stderrRedirectPath string, w LogWriter) error {
-	log.Verbose = verbose
+	if verbose {
+		log.SetLevel(log.DEBUG)
+	}
 
 	if w != nil {
 		adapter := &LogWriterAdapter{lw: w}
-		stdlog.SetOutput(adapter)
+		log.SetOutput(adapter)
 	}
 
 	if stderrRedirectPath != "" {

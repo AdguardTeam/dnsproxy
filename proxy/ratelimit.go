@@ -6,7 +6,7 @@ import (
 	"time"
 
 	rate "github.com/beefsack/go-rate"
-	"github.com/hmage/golibs/log"
+	"github.com/AdguardTeam/golibs/log"
 	gocache "github.com/patrickmn/go-cache"
 )
 

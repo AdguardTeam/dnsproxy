@@ -1,12 +1,12 @@
 module github.com/AdguardTeam/dnsproxy
 
 require (
+	github.com/AdguardTeam/golibs v0.1
 	github.com/ameshkov/dnscrypt v1.0.6
 	github.com/ameshkov/dnsstamps v1.0.1
 	github.com/beefsack/go-rate v0.0.0-20180408011153-efa7637bb9b6
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-test/deep v1.0.1
-	github.com/hmage/golibs v0.0.0-20190121112702-20153bd03c24
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/joomcode/errorx v0.1.0
 	github.com/miekg/dns v1.1.1

@@ -5,7 +5,7 @@ import (
 	stdlog "log"
 	"strings"
 
-	"github.com/hmage/golibs/log"
+	"github.com/AdguardTeam/golibs/log"
 )
 
 // LogWriter interface should be implemented inside project that will use dnsproxy mobile API to write dnsproxy log into mobile log

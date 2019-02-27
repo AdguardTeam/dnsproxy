@@ -107,6 +107,7 @@ func run(options Options) {
 		log.SetOutput(file)
 	}
 
+	enableTLS13()
 	// Prepare the proxy server
 	config := createProxyConfig(options)
 	dnsProxy := proxy.Proxy{Config: config}
@@ -221,4 +222,12 @@ func loadX509KeyPair(certFile, keyFile string) (tls.Certificate, error) {
 		return tls.Certificate{}, err
 	}
 	return tls.X509KeyPair(certPEMBlock, keyPEMBlock)
+}
+
+// TODO after GO 1.13 release TLS 1.3 will be enabled by default. Remove this afterward
+func enableTLS13() {
+	err := os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")
+	if err != nil {
+		log.Fatalf("Failed to enable TLS 1.3: %s", err)
+	}
 }

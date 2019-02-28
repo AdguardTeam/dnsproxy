@@ -16,22 +16,16 @@ const defaultCacheSize = 64 * 1024 // in number of elements
 const defaultCacheTime = 30 * time.Minute
 
 type item struct {
-	m    *dns.Msg
-	when time.Time
+	m    *dns.Msg  // dns message
+	when time.Time // time when m was cached
 }
 
-type newCache struct {
-	items gcache.Cache
-	sync.RWMutex
+type cache struct {
+	items gcache.Cache // cache
+	sync.RWMutex       // lock
 }
 
-func newNCache() *newCache {
-	return &newCache{
-		items: gcache.New(defaultCacheSize).LRU().Expiration(defaultCacheTime).Build(),
-	}
-}
-
-func (c *newCache) Get(request *dns.Msg) (*dns.Msg, bool) {
+func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	ok, key := key(request)
 	if !ok {
 		log.Print("[DEBUG] Get(): key returned !ok")
@@ -39,6 +33,9 @@ func (c *newCache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	}
 	c.RWMutex.Lock()
 	defer c.RWMutex.Unlock()
+	if c.items == nil {
+		return nil, false
+	}
 	rawValue, err := c.items.Get(key)
 	if err == gcache.KeyNotFoundError {
 		// not a real error, just no key found
@@ -71,51 +68,9 @@ func (c *newCache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	return response, true
 }
 
-type cache struct {
-	items map[string]item
-
-	sync.RWMutex
-}
-
-func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
-	if request == nil {
-		return nil, false
-	}
-	ok, key := key(request)
-	if !ok {
-		log.Print("[DEBUG] Get(): key returned !ok")
-		return nil, false
-	}
-
-	c.RLock()
-	cacheItem, ok := c.items[key]
-	c.RUnlock()
-	if !ok {
-		return nil, false
-	}
-	// get item's TTL
-	ttl := findLowestTTL(cacheItem.m)
-	// zero TTL? delete and don't serve it
-	if ttl == 0 {
-		c.Lock()
-		delete(c.items, key)
-		c.Unlock()
-		return nil, false
-	}
-	// too much time has passed? delete and don't serve it
-	if time.Since(cacheItem.when) >= time.Duration(ttl)*time.Second {
-		c.Lock()
-		delete(c.items, key)
-		c.Unlock()
-		return nil, false
-	}
-	response := cacheItem.fromItem(request)
-	return response, true
-}
-
 func (c *cache) Set(m *dns.Msg) {
 	if m == nil {
-		return // no-op
+		return
 	}
 	if !isRequestCacheable(m) {
 		return
@@ -127,15 +82,18 @@ func (c *cache) Set(m *dns.Msg) {
 	if !ok {
 		return
 	}
-
 	i := toItem(m)
 
 	c.Lock()
+	defer c.Unlock()
 	if c.items == nil {
-		c.items = map[string]item{}
+		c.items = gcache.New(defaultCacheSize).LRU().Expiration(defaultCacheTime).Build()
 	}
-	c.items[key] = i
-	c.Unlock()
+
+	err := c.items.Set(key, i)
+	if err != nil {
+		log.Println("Couldn't set cache")
+	}
 }
 
 // check only request fields

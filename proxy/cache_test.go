@@ -10,7 +10,7 @@ import (
 )
 
 func TestCacheSanity(t *testing.T) {
-	testCache := newNCache()
+	testCache := &cache{}
 	request := dns.Msg{}
 	request.SetQuestion("google.com.", dns.TypeA)
 	_, ok := testCache.Get(&request)

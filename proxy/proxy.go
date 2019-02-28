@@ -295,7 +295,7 @@ func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 		// set elapsed time for each upstream in original slice to sort them before next exchange
 		// initial rtt value for each upstream is 0, so unused servers will be at the top of the list after sorting
 		if err == nil {
-			p.updateUpstreamRtt(idxMap[i], int(elapsed))
+			p.updateUpstreamRtt(idxMap[i], elapsed)
 			return reply, dnsUpstream.upstream, nil
 		}
 
@@ -308,10 +308,10 @@ func (p *Proxy) exchange(req *dns.Msg) (*dns.Msg, upstream.Upstream, error) {
 }
 
 // exchangeWithUpstream returns result of Exchange with elapsed time
-func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, time.Duration, error) {
+func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, error) {
 	startTime := time.Now()
 	reply, err := u.Exchange(req)
-	elapsed := time.Since(startTime)
+	elapsed := int(time.Since(startTime) / time.Millisecond)
 	if err != nil {
 		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
 	} else {

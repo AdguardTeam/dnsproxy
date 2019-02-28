@@ -57,7 +57,7 @@ type Proxy struct {
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
 	cache *cache // cache instance (nil if cache is disabled)
-
+	nCache *newCache
 	sync.RWMutex
 	Config
 }
@@ -117,6 +117,7 @@ func (p *Proxy) Start() error {
 	if p.CacheEnabled {
 		log.Printf("DNS cache is enabled")
 		p.cache = &cache{}
+		p.nCache = newNCache()
 	}
 
 	if !p.AllServers {

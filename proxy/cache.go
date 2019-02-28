@@ -7,13 +7,68 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bluele/gcache"
 	"github.com/hmage/golibs/log"
 	"github.com/miekg/dns"
 )
 
+const defaultCacheSize = 64 * 1024 // in number of elements
+const defaultCacheTime = 30 * time.Minute
+
 type item struct {
 	m    *dns.Msg
 	when time.Time
+}
+
+type newCache struct {
+	items gcache.Cache
+	sync.RWMutex
+}
+
+func newNCache() *newCache {
+	return &newCache{
+		items: gcache.New(defaultCacheSize).LRU().Expiration(defaultCacheTime).Build(),
+	}
+}
+
+func (c *newCache) Get(request *dns.Msg) (*dns.Msg, bool) {
+	ok, key := key(request)
+	if !ok {
+		log.Print("[DEBUG] Get(): key returned !ok")
+		return nil, false
+	}
+	c.RWMutex.Lock()
+	defer c.RWMutex.Unlock()
+	rawValue, err := c.items.Get(key)
+	if err == gcache.KeyNotFoundError {
+		// not a real error, just no key found
+		return nil, false
+	}
+
+	if err != nil {
+		// real error
+		// TODO add error to GET return signature
+		return nil, false
+	}
+
+	cachedValue, ok := rawValue.(item)
+	if !ok {
+		log.Println("Sholdn't happen: entry with invalid type")
+		return nil, false
+	}
+	ttl := findLowestTTL(cachedValue.m)
+	// zero TTL? delete and don't serve it
+	if ttl == 0 {
+		c.items.Remove(key)
+		return nil, false
+	}
+	// too much time has passed? delete and don't serve it
+	if time.Since(cachedValue.when) >= time.Duration(ttl)*time.Second {
+		c.items.Remove(key)
+		return nil, false
+	}
+	response := cachedValue.fromItem(request)
+	return response, true
 }
 
 type cache struct {

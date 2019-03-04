@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,35 +65,79 @@ func TestServeCached(t *testing.T) {
 	}
 }
 
-func TestExpiration(t *testing.T) {
-	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.CacheEnabled = true // j
+func TestCacheRace(t *testing.T) {
+	testCache := &cache{}
 
+	hosts := make(map[string]string)
+	hosts["yandex.com"] = "213.180.204.62"
+	hosts["google.com"] = "8.8.8.8"
+	hosts["www.google.com"] = "8.8.4.4"
+	hosts["youtube.com"] = "173.194.221.198"
+	hosts["car.ru"] = "37.220.161.35"
+	hosts["cat.ru"] = "192.56.231.67"
+
+	g := &sync.WaitGroup{}
+	g.Add(len(hosts))
+	for k, v := range hosts {
+		go setAndGetCache(t, testCache, g, k, v)
+	}
+
+	g.Wait()
+}
+
+func TestCacheExpiration(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	dnsProxy.CacheEnabled = true
+	dnsProxy.CacheSize = 2
 	err := dnsProxy.Start()
 	if err != nil {
 		t.Fatalf("cannot start the DNS proxy: %s", err)
 	}
 
-	// Create dns message with 1 second TTL
+	// Create dns messages with 1 second TTL
 	googleReply := dns.Msg{}
 	googleReply.SetQuestion("google.com.", dns.TypeA)
 	googleReply.Response = true
 	googleReply.Answer = []dns.RR{newRR("google.com. 1 IN A 8.8.8.8")}
-	dnsProxy.cache.Set(&googleReply)
 
-	// It should be still available
-	_, ok := dnsProxy.cache.Get(&googleReply)
-	if !ok {
-		t.Fatalf("No cache for %s", googleReply.Question[0].Name)
-	}
-
-	// Create dns message with 1 second TTL
 	yandexReply := dns.Msg{}
 	yandexReply.SetQuestion("yandex.com", dns.TypeA)
 	yandexReply.Response = true
 	yandexReply.Answer = []dns.RR{newRR("yandex.com. 1 IN A 213.180.204.62")}
+
+	youtubeReply := dns.Msg{}
+	youtubeReply.SetQuestion("youtube.com", dns.TypeA)
+	youtubeReply.Response = true
+	youtubeReply.Answer = []dns.RR{newRR("youtube.com 1 IN A 173.194.221.198")}
+
+	dnsProxy.cache.Set(&youtubeReply)
+	dnsProxy.cache.Set(&googleReply)
 	dnsProxy.cache.Set(&yandexReply)
-	time.Sleep(2 * time.Second)
+
+	// youtubeReply should be already removed from the cache cause cache size is 2
+	_, ok := dnsProxy.cache.Get(&youtubeReply)
+	if ok {
+		t.Fatalf("cache for %s was not removed from the cache", googleReply.Question[0].Name)
+	}
+
+	// yandexReply and googleReply should be still available
+	r, ok := dnsProxy.cache.Get(&googleReply)
+	if !ok {
+		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)
+	}
+	if diff := deepEqualMsg(r, &googleReply); diff != nil {
+		t.Error(diff)
+	}
+	r, ok = dnsProxy.cache.Get(&yandexReply)
+	if !ok {
+		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)
+	}
+	if diff := deepEqualMsg(r, &yandexReply); diff != nil {
+		t.Error(diff)
+	}
+
+	// Wait for cache items expiration
+	time.Sleep(1100 * time.Millisecond)
 
 	// Both messages should be already removed from the cache
 	_, ok = dnsProxy.cache.Get(&yandexReply)
@@ -166,7 +212,7 @@ func TestZeroTTL(t *testing.T) {
 
 func runTests(t *testing.T, tests testCases) {
 	t.Helper()
-	testCache := cache{}
+	testCache := cache{cacheSize: defaultCacheSize}
 	for _, tc := range tests.cache {
 		reply := dns.Msg{}
 		reply.SetQuestion(tc.q, tc.t)
@@ -244,4 +290,40 @@ func deepEqualMsg(left *dns.Msg, right *dns.Msg) []string {
 		right.Question[i].Name = strings.ToLower(right.Question[i].Name)
 	}
 	return deep.Equal(&temp, right)
+}
+
+func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) {
+	defer func() {
+		g.Done()
+	}()
+	dnsMsg := dns.Msg{}
+	dnsMsg.SetQuestion(host, dns.TypeA)
+	dnsMsg.Response = true
+	answer := fmt.Sprintf("%s 1 IN A %s", host, ip)
+	dnsMsg.Answer = []dns.RR{newRR(answer)}
+	c.Set(&dnsMsg)
+
+	r, ok := c.Get(&dnsMsg)
+	if !ok {
+		t.Fatalf("No cache found for %s", host)
+	}
+
+	if diff := deepEqualMsg(r, &dnsMsg); diff != nil {
+		t.Error(diff)
+	}
+
+	r, ok = c.Get(&dnsMsg)
+	if !ok {
+		t.Fatalf("No cache found for %s", host)
+	}
+
+	if diff := deepEqualMsg(r, &dnsMsg); diff != nil {
+		t.Error(diff)
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+	_, ok = c.Get(&dnsMsg)
+	if ok {
+		t.Fatalf("Cache for %s should be already removed", host)
+	}
 }

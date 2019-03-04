@@ -33,10 +33,11 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 	c.Lock()
-	defer c.Unlock()
 	if c.items == nil {
+		c.Unlock()
 		return nil, false
 	}
+	c.Unlock()
 	rawValue, err := c.items.Get(key)
 	if err == gcache.KeyNotFoundError {
 		// not a real error, just no key found
@@ -51,7 +52,7 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 
 	cachedValue, ok := rawValue.(item)
 	if !ok {
-		log.Println("Sholdn't happen: entry with invalid type")
+		log.Error("entry with invalid type in cache for %s", request.Question[0].Name)
 		return nil, false
 	}
 
@@ -76,8 +77,6 @@ func (c *cache) Set(m *dns.Msg) {
 	i := toItem(m)
 
 	c.Lock()
-	defer c.Unlock()
-
 	// lazy initialization for cache
 	if c.items == nil {
 		size := defaultCacheSize
@@ -86,6 +85,7 @@ func (c *cache) Set(m *dns.Msg) {
 		}
 		c.items = gcache.New(size).LRU().Build()
 	}
+	c.Unlock()
 
 	// set ttl as expiration time for item
 	ttl := time.Duration(findLowestTTL(m)) * time.Second

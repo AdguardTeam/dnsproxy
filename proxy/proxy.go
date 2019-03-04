@@ -57,6 +57,7 @@ type Proxy struct {
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
 	cache *cache // cache instance (nil if cache is disabled)
+
 	sync.RWMutex
 	Config
 }

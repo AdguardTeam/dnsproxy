@@ -10,7 +10,7 @@ import (
 )
 
 func TestCacheSanity(t *testing.T) {
-	testCache := &cache{}
+	testCache := cache{}
 	request := dns.Msg{}
 	request.SetQuestion("google.com.", dns.TypeA)
 	_, ok := testCache.Get(&request)
@@ -91,7 +91,7 @@ func TestExpiration(t *testing.T) {
 	yandexReply.Response = true
 	yandexReply.Answer = []dns.RR{newRR("yandex.com. 1 IN A 213.180.204.62")}
 	dnsProxy.cache.Set(&yandexReply)
-	time.Sleep(2*time.Second)
+	time.Sleep(2 * time.Second)
 
 	// Both messages should be already removed from the cache
 	_, ok = dnsProxy.cache.Get(&yandexReply)

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/bluele/gcache"
-	"github.com/hmage/golibs/log"
 	"github.com/miekg/dns"
 )
 
@@ -20,9 +20,9 @@ type item struct {
 }
 
 type cache struct {
-	items 	  gcache.Cache // cache
-	cacheSize int      	   // cache size
-	sync.RWMutex       	   // lock
+	items        gcache.Cache // cache
+	cacheSize    int          // cache size
+	sync.RWMutex              // lock
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
@@ -88,7 +88,7 @@ func (c *cache) Set(m *dns.Msg) {
 	}
 
 	// set ttl as expiration time for item
-	ttl := time.Duration(findLowestTTL(m))*time.Second
+	ttl := time.Duration(findLowestTTL(m)) * time.Second
 	err := c.items.SetWithExpire(key, i, ttl)
 	if err != nil {
 		log.Println("Couldn't set cache")

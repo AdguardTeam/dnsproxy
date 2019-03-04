@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt"
 	"github.com/ameshkov/dnsstamps"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 	"golang.org/x/net/http2"

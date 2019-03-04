@@ -161,7 +161,7 @@ func createProxyConfig(options Options) proxy.Config {
 		Upstreams:     upstreams,
 		Ratelimit:     options.Ratelimit,
 		CacheEnabled:  options.Cache,
-		CacheSize: 	   options.CacheSize,
+		CacheSize:     options.CacheSize,
 		RefuseAny:     options.RefuseAny,
 		AllServers:    options.AllServers,
 	}

@@ -212,7 +212,7 @@ func TestZeroTTL(t *testing.T) {
 
 func runTests(t *testing.T, tests testCases) {
 	t.Helper()
-	testCache := cache{cacheSize: defaultCacheSize}
+	testCache := cache{}
 	for _, tc := range tests.cache {
 		reply := dns.Msg{}
 		reply.SetQuestion(tc.q, tc.t)

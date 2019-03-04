@@ -36,6 +36,7 @@ Application Options:
   -b, --bootstrap=  Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
   -r, --ratelimit=  Ratelimit (requests per second) (default: 0)
   -z, --cache       If specified, DNS cache is enabled
+  -e  --cache-size= Maximum number of elements in the cache. Zero sets the default size: 2^16 (default: 0)
   -a, --refuse-any  If specified, refuse ANY requests
   -u, --upstream=   An upstream to be used (can be specified multiple times)
   -f, --fallback=   Fallback resolvers to use when regular ones are unavailable, can be specified multiple times

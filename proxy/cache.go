@@ -47,6 +47,7 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	if err != nil {
 		// real error
 		// TODO add error to GET return signature
+		log.Error("can't get response for %s from cache: %s", request.Question[0].Name, err)
 		return nil, false
 	}
 

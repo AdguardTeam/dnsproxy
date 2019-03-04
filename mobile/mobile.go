@@ -13,7 +13,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/hmage/golibs/log"
+	"github.com/AdguardTeam/golibs/log"
 )
 
 // DNSProxy represents a proxy with it's configuration

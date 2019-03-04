@@ -1,3 +1,5 @@
+github.com/AdguardTeam/golibs v0.1.0 h1:Mo1QNKC8eSbqczhxfdBXYCrUMwvgCyCwZFyWv+2Gdng=
+github.com/AdguardTeam/golibs v0.1.0/go.mod h1:zhi6xGwK4cMpjDocybhhLgvcGkstiSIjlpKbvyxC5Yc=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da h1:KjTM2ks9d14ZYCvmHS9iAKVt9AyzRSqNU1qabPih5BY=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da/go.mod h1:eHEWzANqSiWQsof+nXEI9bUVUyV6F53Fp89EuCh2EAA=
 github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635 h1:52m0LGchQBBVqJRyYYufQuIbVqRawmubW3OFGqK1ekw=
@@ -14,8 +16,6 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-test/deep v1.0.1 h1:UQhStjbkDClarlmv0am7OXXO4/GaPdCGiUiMTvi28sg=
 github.com/go-test/deep v1.0.1/go.mod h1:wGDj63lr65AM2AQyKZd/NYHGb0R+1RLqB8NKt3aSFNA=
-github.com/hmage/golibs v0.0.0-20190121112702-20153bd03c24 h1:yyDtaSMcAZdm1I6uL8YLghpWiJljfBHs8NC/P86PYQk=
-github.com/hmage/golibs v0.0.0-20190121112702-20153bd03c24/go.mod h1:H6Ev6svFxUVPFThxLtdnFfcE9e3GWufpfmcVFpqV6HM=
 github.com/jessevdk/go-flags v1.4.0 h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=
 github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJSGM75WSRxI=
 github.com/joomcode/errorx v0.1.0 h1:QmJMiI1DE1UFje2aI1ZWO/VMT5a32qBoXUclGOt8vsc=

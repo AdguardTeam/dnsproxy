@@ -63,6 +63,60 @@ func TestServeCached(t *testing.T) {
 	}
 }
 
+func TestExpiration(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	dnsProxy.CacheEnabled = true // j
+
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create dns message with 1 second TTL
+	googleReply := dns.Msg{}
+	googleReply.SetQuestion("google.com.", dns.TypeA)
+	googleReply.Response = true
+	googleReply.Answer = []dns.RR{newRR("google.com. 1 IN A 8.8.8.8")}
+	dnsProxy.cache.Set(&googleReply)
+
+	// It should be still available
+	_, ok := dnsProxy.cache.Get(&googleReply)
+	if !ok {
+		t.Fatalf("No cache for %s", googleReply.Question[0].Name)
+	}
+
+	// Create dns message with 1 second TTL
+	yandexReply := dns.Msg{}
+	yandexReply.SetQuestion("yandex.com", dns.TypeA)
+	yandexReply.Response = true
+	yandexReply.Answer = []dns.RR{newRR("yandex.com. 1 IN A 213.180.204.62")}
+	dnsProxy.cache.Set(&yandexReply)
+	time.Sleep(2*time.Second)
+
+	// Both messages should be already removed from the cache
+	_, ok = dnsProxy.cache.Get(&yandexReply)
+	if ok {
+		t.Fatalf("cache for %s was not removed from the cache", yandexReply.Question[0].Name)
+	}
+	_, ok = dnsProxy.cache.Get(&googleReply)
+	if ok {
+		t.Fatalf("cache for %s was not removed from the cache", googleReply.Question[0].Name)
+	}
+
+	// New answer with zero TTL
+	yandexReply.Answer = []dns.RR{newRR("yandex.com. 0 IN A 213.180.204.62")}
+	dnsProxy.cache.Set(&yandexReply)
+	_, ok = dnsProxy.cache.Get(&yandexReply)
+	if ok {
+		t.Fatalf("cache for %s with zero ttl was placed to the cache", yandexReply.Question[0].Name)
+	}
+
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
 func TestCache(t *testing.T) {
 	tests := testCases{
 		cache: []testEntry{

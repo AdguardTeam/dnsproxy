@@ -77,6 +77,7 @@ type Config struct {
 	AllServers bool // if true, parallel queries to all configured upstream servers are enabled
 
 	CacheEnabled bool // cache status
+	CacheSize    int  // number of cached elements
 
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
@@ -115,7 +116,7 @@ func (p *Proxy) Start() error {
 
 	if p.CacheEnabled {
 		log.Printf("DNS cache is enabled")
-		p.cache = &cache{}
+		p.cache = &cache{cacheSize: p.CacheSize}
 	}
 
 	if !p.AllServers {

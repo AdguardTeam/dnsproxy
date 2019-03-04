@@ -13,7 +13,6 @@ import (
 )
 
 const defaultCacheSize = 64 * 1024 // in number of elements
-const defaultCacheTime = 30 * time.Minute
 
 type item struct {
 	m    *dns.Msg  // dns message
@@ -21,18 +20,20 @@ type item struct {
 }
 
 type cache struct {
-	items gcache.Cache // cache
-	sync.RWMutex       // lock
+	items 	  gcache.Cache // cache
+	cacheSize int      	   // cache size
+	sync.RWMutex       	   // lock
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
+	// create key for request
 	ok, key := key(request)
 	if !ok {
-		log.Print("[DEBUG] Get(): key returned !ok")
+		log.Tracef("key returned !ok")
 		return nil, false
 	}
-	c.RWMutex.Lock()
-	defer c.RWMutex.Unlock()
+	c.Lock()
+	defer c.Unlock()
 	if c.items == nil {
 		return nil, false
 	}
@@ -53,24 +54,14 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		log.Println("Sholdn't happen: entry with invalid type")
 		return nil, false
 	}
-	ttl := findLowestTTL(cachedValue.m)
-	// zero TTL? delete and don't serve it
-	if ttl == 0 {
-		c.items.Remove(key)
-		return nil, false
-	}
-	// too much time has passed? delete and don't serve it
-	if time.Since(cachedValue.when) >= time.Duration(ttl)*time.Second {
-		c.items.Remove(key)
-		return nil, false
-	}
+
 	response := cachedValue.fromItem(request)
 	return response, true
 }
 
 func (c *cache) Set(m *dns.Msg) {
 	if m == nil {
-		return
+		return // no-op
 	}
 	if !isRequestCacheable(m) {
 		return
@@ -86,11 +77,19 @@ func (c *cache) Set(m *dns.Msg) {
 
 	c.Lock()
 	defer c.Unlock()
+
+	// lazy initialization for cache
 	if c.items == nil {
-		c.items = gcache.New(defaultCacheSize).LRU().Expiration(defaultCacheTime).Build()
+		size := defaultCacheSize
+		if c.cacheSize > 0 {
+			size = c.cacheSize
+		}
+		c.items = gcache.New(size).LRU().Build()
 	}
 
-	err := c.items.Set(key, i)
+	// set ttl as expiration time for item
+	ttl := time.Duration(findLowestTTL(m))*time.Second
+	err := c.items.SetWithExpire(key, i, ttl)
 	if err != nil {
 		log.Println("Couldn't set cache")
 	}

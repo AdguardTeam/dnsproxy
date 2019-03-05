@@ -26,6 +26,9 @@ type cache struct {
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
+	if request == nil {
+		return nil, false
+	}
 	// create key for request
 	ok, key := key(request)
 	if !ok {

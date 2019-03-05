@@ -117,7 +117,7 @@ func TestCacheExpiration(t *testing.T) {
 	// youtubeReply should be already removed from the cache cause cache size is 2
 	_, ok := dnsProxy.cache.Get(&youtubeReply)
 	if ok {
-		t.Fatalf("cache for %s was not removed from the cache", googleReply.Question[0].Name)
+		t.Fatalf("cache for %s was not removed from the cache", youtubeReply.Question[0].Name)
 	}
 
 	// yandexReply and googleReply should be still available
@@ -130,7 +130,7 @@ func TestCacheExpiration(t *testing.T) {
 	}
 	r, ok = dnsProxy.cache.Get(&yandexReply)
 	if !ok {
-		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)
+		t.Fatalf("No cache found for %s", yandexReply.Question[0].Name)
 	}
 	if diff := deepEqualMsg(r, &yandexReply); diff != nil {
 		t.Error(diff)

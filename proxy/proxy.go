@@ -78,7 +78,7 @@ type Config struct {
 	AllServers bool // if true, parallel queries to all configured upstream servers are enabled
 
 	CacheEnabled bool // cache status
-	CacheSize    int  // number of cached elements
+	CacheSize    int  // number of cached elements. Zero means default size: 2^16
 
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,6 +84,9 @@ type Config struct {
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 	Handler   Handler             // custom middleware (optional)
+
+	ReservedUpstreams       []upstream.Upstream           // list of dnsmasq upstreams
+	DomainReservedUpstreams map[string]*upstream.Upstream // map of reserved hosts and corresponding dnsmasq upstreams
 }
 
 // DNSContext represents a DNS request message context
@@ -102,6 +106,64 @@ type DNSContext struct {
 type upstreamWithRtt struct {
 	upstream upstream.Upstream
 	rtt      int
+}
+
+// ParseUpstreamsConfig returns the next structures:
+// -list of default upstreams
+// -list of reserved dnsmasq upstreams
+// -map of reserved hosts and pointers to corresponding upstreams
+// default upstream syntax: <upstreamString>
+// dnsmasq upstream syntax: [/domain1/../domainN/]<upstreamString>
+// More specific domains take priority over less specific domains,
+// To exclude more specific domains from dnsmasq querying you should use the following syntax: [/domain1/../domainN/]#
+// So the following config: ["[/google.com/]1.2.3.4", "[/www.google.com/]2.3.4.5", "[/maps.google.com/]#", "3.4.5.6"]
+// will send queries for *.google.com to 1.2.3.4, except for *www.google.com, which will go to 2.3.4.5 and *maps.google.com,
+// which will go to default server 3.4.5.6 with all other hosts
+func ParseUpstreamsConfig(u, bootstrapDNS []string, timeout time.Duration) (*[]upstream.Upstream, *[]upstream.Upstream, *map[string]*upstream.Upstream) {
+	upstreams := []upstream.Upstream{}
+	reservedUpstreams := []upstream.Upstream{}
+	domainReservedUpstreams := map[string]*upstream.Upstream{}
+
+	for i, u := range u {
+		hosts := []string{}
+		if strings.HasPrefix(u, "[/") {
+			domainsAndUpstream := strings.Split(strings.TrimPrefix(u, "[/"), "/]")
+			if len(domainsAndUpstream) != 2 {
+				log.Fatalf("wrong upstream specification: %s", u)
+			}
+
+			for _, host := range strings.Split(domainsAndUpstream[0], "/") {
+				if host != "" {
+					hosts = append(hosts, host+".")
+				}
+			}
+			u = domainsAndUpstream[1]
+		}
+
+		if u == "#" && len(hosts) > 0 {
+			for _, host := range hosts {
+				domainReservedUpstreams[host] = nil
+			}
+			continue
+		}
+
+		dnsUpstream, err := upstream.AddressToUpstream(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout})
+		if err != nil {
+			log.Fatalf("cannot prepare the upstream %s (%s): %s", u, bootstrapDNS, err)
+		}
+
+		if len(hosts) > 0 {
+			for _, host := range hosts {
+				domainReservedUpstreams[host] = &dnsUpstream
+			}
+			log.Printf("Upstream %d: %s is reserved for next domains: %s", i, dnsUpstream.Address(), strings.Join(hosts, ", "))
+			reservedUpstreams = append(reservedUpstreams, dnsUpstream)
+		} else {
+			log.Printf("Upstream %d: %s", i, dnsUpstream.Address())
+			upstreams = append(upstreams, dnsUpstream)
+		}
+	}
+	return &upstreams, &reservedUpstreams, &domainReservedUpstreams
 }
 
 // Start initializes the proxy server and starts listening
@@ -219,6 +281,32 @@ func (p *Proxy) Addr(proto string) net.Addr {
 	}
 }
 
+// getUpstreamForDomain looks for a domain in reserved domain map and returns pointer to corresponding upstream
+// and bool flag if domain was found. More specific domains take priority over less specific domains.
+// For example, map contains the following keys: google.com and www.google.com
+// If we are looking for domain mail.google.com, this method will return value of google.com key
+// If we are looking for domain www.google.com, this method will return value of www.google.com key
+// If more specific domain value is nil, it means that domain was excluded and should be exchanged with default upstreams
+func (p *Proxy) getUpstreamForDomain(host string) *upstream.Upstream {
+	if len(p.DomainReservedUpstreams) == 0 {
+		return nil
+	}
+
+	dotsCount := strings.Count(host, ".")
+	if dotsCount < 2 {
+		return nil
+	}
+
+	for i := 1; i <= dotsCount; i++ {
+		h := strings.SplitAfterN(host, ".", i)
+		if u, ok := p.DomainReservedUpstreams[h[i-1]]; ok {
+			return u
+		}
+	}
+
+	return nil
+}
+
 // Resolve is the default resolving method used by the DNS proxy to query upstreams
 func (p *Proxy) Resolve(d *DNSContext) error {
 	if p.cache != nil {
@@ -236,6 +324,19 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	var u upstream.Upstream
 	startTime := time.Now()
 
+	// check if host was reserved with any upstream
+	name := d.Req.Question[0].Name
+	reservedUpstream := p.getUpstreamForDomain(name)
+	if reservedUpstream != nil {
+		reply, err = (*reservedUpstream).Exchange(d.Req)
+
+		rtt := int(time.Since(startTime) / time.Millisecond)
+		log.Tracef("RTT: %d ms", rtt)
+
+		p.fillDNSContextAndCacheReply(d, reservedUpstream, reply)
+		return err
+	}
+
 	// use parallel exchange if "--all-servers" option was configured
 	// otherwise try to exchange the request with all upstreams one-by-one
 	if p.AllServers {
@@ -251,9 +352,13 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
 	}
 
-	// set Upstream that resolved DNS request to DNSContext
+	p.fillDNSContextAndCacheReply(d, &u, reply)
+	return err
+}
+
+func (p *Proxy) fillDNSContextAndCacheReply(d *DNSContext, u *upstream.Upstream, reply *dns.Msg) {
 	if reply != nil {
-		d.Upstream = u
+		d.Upstream = *u
 
 		// Saving cached response
 		if p.cache != nil {
@@ -266,8 +371,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	} else {
 		d.Res = reply
 	}
-
-	return err
 }
 
 // exchange tries to exchange the request with all upstreams one-by-one

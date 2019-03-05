@@ -143,27 +143,21 @@ func createProxyConfig(options Options) proxy.Config {
 	// Init listen addresses and upstreams
 	listenUDPAddr := &net.UDPAddr{Port: options.ListenPort, IP: listenIP}
 	listenTCPAddr := &net.TCPAddr{Port: options.ListenPort, IP: listenIP}
-	upstreams := make([]upstream.Upstream, 0)
 
-	for i, u := range options.Upstreams {
-		dnsUpstream, err := upstream.AddressToUpstream(u, upstream.Options{Bootstrap: options.BootstrapDNS, Timeout: defaultTimeout})
-		if err != nil {
-			log.Fatalf("cannot prepare the upstream %s (%s): %s", u, options.BootstrapDNS, err)
-		}
-		log.Printf("Upstream %d: %s", i, dnsUpstream.Address())
-		upstreams = append(upstreams, dnsUpstream)
-	}
+	upstreams, reservedUpstreams, domainReservedUpstreams := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
 
 	// Create the config
 	config := proxy.Config{
-		UDPListenAddr: listenUDPAddr,
-		TCPListenAddr: listenTCPAddr,
-		Upstreams:     upstreams,
-		Ratelimit:     options.Ratelimit,
-		CacheEnabled:  options.Cache,
-		CacheSize:     options.CacheSize,
-		RefuseAny:     options.RefuseAny,
-		AllServers:    options.AllServers,
+		UDPListenAddr:           listenUDPAddr,
+		TCPListenAddr:           listenTCPAddr,
+		Upstreams:               *upstreams,
+		ReservedUpstreams:       *reservedUpstreams,
+		DomainReservedUpstreams: *domainReservedUpstreams,
+		Ratelimit:               options.Ratelimit,
+		CacheEnabled:            options.Cache,
+		CacheSize:               options.CacheSize,
+		RefuseAny:               options.RefuseAny,
+		AllServers:              options.AllServers,
 	}
 
 	if options.Fallbacks != nil {

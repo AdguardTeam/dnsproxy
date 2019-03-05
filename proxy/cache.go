@@ -12,7 +12,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-const defaultCacheSize = 64 * 1024 // in number of elements
+const defaultCacheSize = 1000 // in number of elements
 
 type item struct {
 	m    *dns.Msg  // dns message

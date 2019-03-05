@@ -52,7 +52,7 @@ type Options struct {
 	Cache bool `short:"z" long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
 
 	// Cache size value
-	CacheSize int `short:"e" long:"cache-size" description:"Maximum number of elements in the cache. Zero sets the default size: 2^16" default:"0"`
+	CacheSize int `short:"e" long:"cache-size" description:"Maximum number of elements in the cache. Default size: 1000"`
 
 	// If true, refuse ANY requests
 	RefuseAny bool `short:"a" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`

@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	rate "github.com/beefsack/go-rate"
 	"github.com/AdguardTeam/golibs/log"
+	rate "github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
 )
 

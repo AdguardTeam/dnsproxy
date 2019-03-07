@@ -8,53 +8,58 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/bluele/gcache"
 	"github.com/miekg/dns"
 )
 
+const defaultCacheSize = 1000 // in number of elements
+
 type item struct {
-	m    *dns.Msg
-	when time.Time
+	m    *dns.Msg  // dns message
+	when time.Time // time when m was cached
 }
 
 type cache struct {
-	items map[string]item
-
-	sync.RWMutex
+	items        gcache.Cache // cache
+	cacheSize    int          // cache size
+	sync.RWMutex              // lock
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	if request == nil {
 		return nil, false
 	}
+	// create key for request
 	ok, key := key(request)
 	if !ok {
-		log.Print("[DEBUG] Get(): key returned !ok")
+		log.Tracef("key returned !ok")
+		return nil, false
+	}
+	c.Lock()
+	if c.items == nil {
+		c.Unlock()
+		return nil, false
+	}
+	c.Unlock()
+	rawValue, err := c.items.Get(key)
+	if err == gcache.KeyNotFoundError {
+		// not a real error, just no key found
 		return nil, false
 	}
 
-	c.RLock()
-	cacheItem, ok := c.items[key]
-	c.RUnlock()
+	if err != nil {
+		// real error
+		log.Error("can't get response for %s from cache: %s", request.Question[0].Name, err)
+		return nil, false
+	}
+
+	cachedValue, ok := rawValue.(item)
 	if !ok {
+		log.Error("entry with invalid type in cache for %s", request.Question[0].Name)
 		return nil, false
 	}
-	// get item's TTL
-	ttl := findLowestTTL(cacheItem.m)
-	// zero TTL? delete and don't serve it
-	if ttl == 0 {
-		c.Lock()
-		delete(c.items, key)
-		c.Unlock()
-		return nil, false
-	}
-	// too much time has passed? delete and don't serve it
-	if time.Since(cacheItem.when) >= time.Duration(ttl)*time.Second {
-		c.Lock()
-		delete(c.items, key)
-		c.Unlock()
-		return nil, false
-	}
-	response := cacheItem.fromItem(request)
+
+	response := cachedValue.fromItem(request)
 	return response, true
 }
 
@@ -72,15 +77,25 @@ func (c *cache) Set(m *dns.Msg) {
 	if !ok {
 		return
 	}
-
 	i := toItem(m)
 
 	c.Lock()
+	// lazy initialization for cache
 	if c.items == nil {
-		c.items = map[string]item{}
+		size := defaultCacheSize
+		if c.cacheSize > 0 {
+			size = c.cacheSize
+		}
+		c.items = gcache.New(size).LRU().Build()
 	}
-	c.items[key] = i
 	c.Unlock()
+
+	// set ttl as expiration time for item
+	ttl := time.Duration(findLowestTTL(m)) * time.Second
+	err := c.items.SetWithExpire(key, i, ttl)
+	if err != nil {
+		log.Println("Couldn't set cache")
+	}
 }
 
 // check only request fields

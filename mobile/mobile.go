@@ -33,6 +33,7 @@ type Config struct {
 	Fallbacks    string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
 	Upstreams    string // A list of upstream resolvers (each on a new line)
 	Timeout      int    // Default timeout for all resolvers (milliseconds)
+	CacheSize    int    // Maximum number of elements in the cache. Default size: 1000
 	AllServers   bool   // If true, parallel queries to all configured upstream servers are enabled
 }
 
@@ -132,6 +133,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		TCPListenAddr: listenTCPAddr,
 		Upstreams:     upstreams,
 		AllServers:    config.AllServers,
+		CacheSize:     config.CacheSize,
 	}
 
 	if config.Fallbacks != "" {

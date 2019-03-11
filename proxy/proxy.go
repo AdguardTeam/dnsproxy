@@ -35,6 +35,8 @@ const (
 	ProtoTLS = "tls"
 	// ProtoHTTPS is DNS-over-HTTPS
 	ProtoHTTPS = "https"
+	// UnqualifiedNames is reserved name for "unqualified names only", ie names without dots
+	UnqualifiedNames = "unqualified_names"
 )
 
 // Handler is an optional custom handler for DNS requests
@@ -134,7 +136,9 @@ func ParseUpstreamsConfig(u, bootstrapDNS []string, timeout time.Duration) (*[]u
 
 			for _, host := range strings.Split(domainsAndUpstream[0], "/") {
 				if host != "" {
-					hosts = append(hosts, host+".")
+					hosts = append(hosts, strings.ToLower(host+"."))
+				} else {
+					hosts = append(hosts, UnqualifiedNames)
 				}
 			}
 			u = domainsAndUpstream[1]
@@ -281,8 +285,8 @@ func (p *Proxy) Addr(proto string) net.Addr {
 	}
 }
 
-// getUpstreamForDomain looks for a domain in reserved domain map and returns pointer to corresponding upstream
-// and bool flag if domain was found. More specific domains take priority over less specific domains.
+// getUpstreamForDomain looks for a domain in reserved domain map and returns pointer to corresponding upstream.
+// returns nil if domain isn't found. More specific domains take priority over less specific domains.
 // For example, map contains the following keys: google.com and www.google.com
 // If we are looking for domain mail.google.com, this method will return value of google.com key
 // If we are looking for domain www.google.com, this method will return value of www.google.com key
@@ -294,12 +298,13 @@ func (p *Proxy) getUpstreamForDomain(host string) *upstream.Upstream {
 
 	dotsCount := strings.Count(host, ".")
 	if dotsCount < 2 {
-		return nil
+		return p.DomainReservedUpstreams[UnqualifiedNames]
 	}
 
 	for i := 1; i <= dotsCount; i++ {
 		h := strings.SplitAfterN(host, ".", i)
-		if u, ok := p.DomainReservedUpstreams[h[i-1]]; ok {
+		name := h[i-1]
+		if u, ok := p.DomainReservedUpstreams[strings.ToLower(name)]; ok {
 			return u
 		}
 	}
@@ -328,6 +333,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	name := d.Req.Question[0].Name
 	reservedUpstream := p.getUpstreamForDomain(name)
 	if reservedUpstream != nil {
+		log.Tracef("found upstream %s for host %s", (*reservedUpstream).Address(), name)
 		reply, err = (*reservedUpstream).Exchange(d.Req)
 
 		rtt := int(time.Since(startTime) / time.Millisecond)

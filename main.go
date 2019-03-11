@@ -58,7 +58,7 @@ type Options struct {
 	RefuseAny bool `short:"a" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
 
 	// DNS upstreams
-	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
+	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). If one or more optional domains are given, the server is used only for this domains. To specify domains per server use the following syntax: [/domain1/../domainN/]<upstreamString>. More specific domains take priority over less specific domains, to exclude more specific domains from querying you should use the following syntax: [/domain1/../domainN/]#. An empty domain specification [//]<upstreamString> has the special meaning 'unqualified names only', ie names without any dots in them." required:"true"`
 
 	// Fallback DNS resolver
 	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times"`

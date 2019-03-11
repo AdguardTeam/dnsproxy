@@ -38,7 +38,7 @@ Application Options:
   -z, --cache       If specified, DNS cache is enabled
   -e  --cache-size= Maximum number of elements in the cache. Default size: 1000
   -a, --refuse-any  If specified, refuse ANY requests
-  -u, --upstream=   An upstream to be used (can be specified multiple times)
+  -u, --upstream=   An upstream to be used (can be specified multiple times). If one or more optional domains are given, the server is used only for this domains. To specify domains per server use the following syntax: [/domain1/../domainN/]<upstreamString>. More specific domains take priority over less specific domains, to exclude more specific domains from querying you should use the following syntax: [/domain1/../domainN/]#. An empty domain specification [//]<upstreamString> has the special meaning 'unqualified names only', ie names without any dots in them.   
   -f, --fallback=   Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
   -s, --all-servers Use parallel queries to speed up resolving by querying all upstream servers simultaneously
 
@@ -115,6 +115,11 @@ Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `10 rps`, enabled DNS ca
 Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel queries to all configured upstream servers  
 ```
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53 -u tls://dns.adguard.com --all-servers
+```
+
+Runs a DNS proxy on `0.0.0.0:53` with the following configuration: queries for *.google.com will be sent to upstream 1.1.1.1:53 except for *.www.google.com, which will go to tls://dns.adguard.com and *.maps.google.com, which will go to default server 8.8.8.8:53 with all other hosts. Requests with unqualified names will go to tls://dns.adguard.com
+```
+./dnsproxy -u 8.8.8.8:53 -u [/google.com/]1.1.1.1:53 -u [/www.google.com//]tls://dns.adguard.com -u[/maps.google.com/]#
 ```
 
 ### TODO

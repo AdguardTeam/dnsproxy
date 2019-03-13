@@ -61,7 +61,7 @@ func TestHttpsProxy(t *testing.T) {
 		DialContext:        dialContext,
 	}
 
-	msg := createGoogleATestMessage()
+	msg := createTestMessage()
 	buf, err := msg.Pack()
 	if err != nil {
 		t.Fatalf("couldn't pack DNS request: %s", err)
@@ -98,7 +98,7 @@ func TestHttpsProxy(t *testing.T) {
 		t.Fatalf("invalid DNS response: %s", err)
 	}
 
-	assertGoogleAResponse(t, reply)
+	assertResponse(t, reply)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -195,41 +195,92 @@ func TestProxyRace(t *testing.T) {
 	}
 }
 
-func TestGetUpstreamForDomain(t *testing.T) {
+func TestGetUpstreamsForDomain(t *testing.T) {
 	dnsproxy := createTestProxy(t, nil)
-	upstreams := []string{"[/google.com/]4.3.2.1", "[/www.google.com/]1.2.3.4", "[/maps.google.com/]#"}
+	upstreams := []string{"[/google.com/]4.3.2.1", "[/www.google.com/]1.2.3.4", "[/maps.google.com/]#", "[/www.google.com/]tls://1.1.1.1"}
 
-	u, r, d := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second)
-	dnsproxy.Upstreams = *u
-	dnsproxy.ReservedUpstreams = *r
-	dnsproxy.DomainReservedUpstreams = *d
+	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second)
+	if err != nil {
+		t.Fatalf("Error while upstream config parsing: %s", err)
+	}
+	dnsproxy.Upstreams = config.Upstreams
+	dnsproxy.DomainsReservedUpstreams = config.DomainReservedUpstreams
 
-	up := dnsproxy.getUpstreamForDomain("www.google.com.")
-	if (*up).Address() != "1.2.3.4:53" {
+	up := dnsproxy.getUpstreamsForDomain("www.google.com.")
+	if up == nil {
+		t.Fatal("can not find reserved upstream for www.google.com")
+	}
+	if len(up) != 2 {
+		t.Fatalf("wring count of reserved upstream for www.google.com: %d", len(up))
+	}
+	if up[0].Address() != "1.2.3.4:53" {
 		t.Fatalf("wrong upstream reserved for www.google.com")
 	}
 
-	up = dnsproxy.getUpstreamForDomain("www2.google.com.")
-	if (*up).Address() != "4.3.2.1:53" {
+	up = dnsproxy.getUpstreamsForDomain("www2.google.com.")
+	if up[0].Address() != "4.3.2.1:53" {
 		t.Fatalf("wrong upstream reserved for www.google.com")
 	}
+	if up == nil {
+		t.Fatal("can not find reserved upstream for www.google.com")
+	}
+	if len(up) != 1 {
+		t.Fatalf("wring count of reserved upstream for www.google.com: %d", len(up))
+	}
 
-	up = dnsproxy.getUpstreamForDomain("maps.google.com.")
-	if up != nil {
+	up = dnsproxy.getUpstreamsForDomain("maps.google.com.")
+	if len(up) != 0 {
 		t.Fatalf("maps.google.com was excluded from upstreams reservation")
 	}
 }
 
-func TestExchangeWithReservedHosts(t *testing.T) {
+func TestUpstreamsSort(t *testing.T) {
+	testProxy := createTestProxy(t, nil)
+	upstreams := []upstream.Upstream{}
+	config := []string{"1.2.3.4", "2.3.4.5", "1.1.1.1"}
+	for _, u := range config {
+		up, err := upstream.AddressToUpstream(u, upstream.Options{Timeout: 1 * time.Second})
+		if err != nil {
+			t.Fatalf("Failed to create %s upstream: %s", u, err)
+		}
+		upstreams = append(upstreams, up)
+	}
+
+	size := len(upstreams)
+	rttMap := make(map[string]int, size)
+	for i, u := range upstreams {
+		rttMap[u.Address()] = size - i
+	}
+	testProxy.upstreamRttStats = rttMap
+
+	sortedUpstreams := testProxy.getSortedUpstreams(upstreams)
+
+	if sortedUpstreams[0].Address() != "1.1.1.1:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+
+	if sortedUpstreams[1].Address() != "2.3.4.5:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+
+	if sortedUpstreams[2].Address() != "1.2.3.4:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+}
+
+func TestExchangeWithReservedDomains(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 
 	// upstreams specification. Domains adguard.com and google.ru reserved with fake upstreams, maps.google.ru excluded from dnsmasq.
 	upstreams := []string{"[/adguard.com/]1.2.3.4", "[/google.ru/]2.3.4.5", "[/maps.google.ru/]#", "1.1.1.1"}
-	u, _, d := ParseUpstreamsConfig(upstreams, []string{"8.8.8.8"}, 1*time.Second)
-	dnsProxy.Upstreams = *u
-	dnsProxy.DomainReservedUpstreams = *d
+	config, err := ParseUpstreamsConfig(upstreams, []string{"8.8.8.8"}, 1*time.Second)
+	if err != nil {
+		t.Fatalf("Error while upstream config parsing: %s", err)
+	}
+	dnsProxy.Upstreams = config.Upstreams
+	dnsProxy.DomainsReservedUpstreams = config.DomainReservedUpstreams
 
-	err := dnsProxy.Start()
+	err = dnsProxy.Start()
 	if err != nil {
 		t.Fatalf("cannot start the DNS proxy: %s", err)
 	}
@@ -242,7 +293,7 @@ func TestExchangeWithReservedHosts(t *testing.T) {
 	}
 
 	// create google-a test message
-	req := createGoogleATestMessage()
+	req := createTestMessage()
 	err = conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -253,10 +304,10 @@ func TestExchangeWithReservedHosts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertGoogleAResponse(t, res)
+	assertResponse(t, res)
 
 	// create adguard.com test message
-	req = createTestMessage("adguard.com")
+	req = createHostTestMessage("adguard.com")
 	err = conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -269,7 +320,7 @@ func TestExchangeWithReservedHosts(t *testing.T) {
 	}
 
 	// create www.google.ru test message
-	req = createTestMessage("www.google.ru")
+	req = createHostTestMessage("www.google.ru")
 	err = conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -282,7 +333,7 @@ func TestExchangeWithReservedHosts(t *testing.T) {
 	}
 
 	// create maps.google.ru test message
-	req = createTestMessage("maps.google.ru")
+	req = createHostTestMessage("maps.google.ru")
 	err = conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -342,7 +393,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	}
 
 	// make sure that the response is okay and resolved by valid upstream
-	req := createGoogleATestMessage()
+	req := createTestMessage()
 	err = conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -353,7 +404,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertGoogleAResponse(t, res)
+	assertResponse(t, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeOut {
@@ -400,7 +451,7 @@ func TestFallback(t *testing.T) {
 	}
 
 	// Make sure that the response is okay and resolved by the fallback
-	req := createGoogleATestMessage()
+	req := createTestMessage()
 	err = conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -411,7 +462,7 @@ func TestFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertGoogleAResponse(t, res)
+	assertResponse(t, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeout {
@@ -458,7 +509,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	}
 
 	// Make sure that the response is okay and resolved by the fallback
-	req := createGoogleATestMessage()
+	req := createTestMessage()
 	err = conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -469,7 +520,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertGoogleAResponse(t, res)
+	assertResponse(t, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeout {
@@ -607,7 +658,7 @@ func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 		g.Done()
 	}()
 
-	req := createGoogleATestMessage()
+	req := createTestMessage()
 	err := conn.WriteMsg(req)
 	if err != nil {
 		t.Fatalf("cannot write message: %s", err)
@@ -617,7 +668,7 @@ func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertGoogleAResponse(t, res)
+	assertResponse(t, res)
 }
 
 // sendTestMessagesAsync sends messages in parallel
@@ -635,7 +686,7 @@ func sendTestMessagesAsync(t *testing.T, conn *dns.Conn) {
 
 func sendTestMessages(t *testing.T, conn *dns.Conn) {
 	for i := 0; i < 10; i++ {
-		req := createGoogleATestMessage()
+		req := createTestMessage()
 		err := conn.WriteMsg(req)
 		if err != nil {
 			t.Fatalf("cannot write message #%d: %s", i, err)
@@ -645,15 +696,15 @@ func sendTestMessages(t *testing.T, conn *dns.Conn) {
 		if err != nil {
 			t.Fatalf("cannot read response to message #%d: %s", i, err)
 		}
-		assertGoogleAResponse(t, res)
+		assertResponse(t, res)
 	}
 }
 
-func createGoogleATestMessage() *dns.Msg {
-	return createTestMessage("google-public-dns-a.google.com")
+func createTestMessage() *dns.Msg {
+	return createHostTestMessage("google-public-dns-a.google.com")
 }
 
-func createTestMessage(host string) *dns.Msg {
+func createHostTestMessage(host string) *dns.Msg {
 	req := dns.Msg{}
 	req.Id = dns.Id()
 	req.RecursionDesired = true
@@ -664,7 +715,7 @@ func createTestMessage(host string) *dns.Msg {
 	return &req
 }
 
-func assertGoogleAResponse(t *testing.T, reply *dns.Msg) {
+func assertResponse(t *testing.T, reply *dns.Msg) {
 	if len(reply.Answer) != 1 {
 		t.Fatalf("DNS upstream returned reply with wrong number of answers - %d", len(reply.Answer))
 	}

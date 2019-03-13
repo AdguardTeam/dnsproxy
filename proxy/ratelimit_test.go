@@ -24,16 +24,16 @@ func TestRatelimitingProxy(t *testing.T) {
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Send the first message (not blocked)
-	req := createGoogleATestMessage()
+	req := createTestMessage()
 
 	r, _, err := client.Exchange(req, addr.String())
 	if err != nil {
 		t.Fatalf("error in the first request: %s", err)
 	}
-	assertGoogleAResponse(t, r)
+	assertResponse(t, r)
 
 	// Send the second message (blocked)
-	req = createGoogleATestMessage()
+	req = createTestMessage()
 
 	_, _, err = client.Exchange(req, addr.String())
 	if err == nil {

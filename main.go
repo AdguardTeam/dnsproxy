@@ -58,7 +58,7 @@ type Options struct {
 	RefuseAny bool `short:"a" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
 
 	// DNS upstreams
-	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). If one or more optional domains are given, the server is used only for this domains." required:"true"`
+	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
 
 	// Fallback DNS resolver
 	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times"`

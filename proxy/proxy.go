@@ -326,7 +326,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		}
 	}
 
-	// check if host was reserved with any upstreams
+	// get upstreams for the specified hostname
 	upstreams := p.getUpstreamsForDomain(d.Req.Question[0].Name)
 
 	// execute the DNS request
@@ -388,25 +388,20 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 }
 
 func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {
-	// clone upstreamRttStats map and upstreams list to avoid race conditions
+	// clone upstreams list to avoid race conditions
 	p.rttLock.Lock()
-	rttClone := make(map[string]int, len(p.upstreamRttStats))
-	for k, v := range p.upstreamRttStats {
-		rttClone[k] = v
-	}
-	upstreamsClone := make([]upstream.Upstream, len(u))
-	copy(upstreamsClone, u)
-	p.rttLock.Unlock()
+	clone := make([]upstream.Upstream, len(u))
+	copy(clone, u)
 
-	// sort upstreams clone by rtt
-	sort.Slice(upstreamsClone, func(i, j int) bool {
-		if rttClone[u[i].Address()] < rttClone[u[j].Address()] {
+	sort.Slice(clone, func(i, j int) bool {
+		if p.upstreamRttStats[clone[i].Address()] < p.upstreamRttStats[clone[j].Address()] {
 			return true
 		}
 		return false
 	})
+	p.rttLock.Unlock()
 
-	return upstreamsClone
+	return clone
 }
 
 // exchangeWithUpstream returns result of Exchange with elapsed time

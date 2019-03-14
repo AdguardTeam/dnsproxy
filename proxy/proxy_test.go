@@ -197,7 +197,7 @@ func TestProxyRace(t *testing.T) {
 
 func TestGetUpstreamsForDomain(t *testing.T) {
 	dnsproxy := createTestProxy(t, nil)
-	upstreams := []string{"[/google.com/]4.3.2.1", "[/www.google.com/]1.2.3.4", "[/maps.google.com/]#", "[/www.google.com/]tls://1.1.1.1"}
+	upstreams := []string{"[/google.com/local/]4.3.2.1", "[/www.google.com//]1.2.3.4", "[/maps.google.com/]#", "[/www.google.com/]tls://1.1.1.1"}
 
 	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second)
 	if err != nil {
@@ -206,38 +206,19 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 	dnsproxy.Upstreams = config.Upstreams
 	dnsproxy.DomainsReservedUpstreams = config.DomainReservedUpstreams
 
-	up := dnsproxy.getUpstreamsForDomain("www.google.com.")
-	if up == nil {
-		t.Fatal("can not find reserved upstream for www.google.com")
-	}
-	if len(up) != 2 {
-		t.Fatalf("wring count of reserved upstream for www.google.com: %d", len(up))
-	}
-	if up[0].Address() != "1.2.3.4:53" {
-		t.Fatalf("wrong upstream reserved for www.google.com")
-	}
-
-	up = dnsproxy.getUpstreamsForDomain("www2.google.com.")
-	if up[0].Address() != "4.3.2.1:53" {
-		t.Fatalf("wrong upstream reserved for www.google.com")
-	}
-	if up == nil {
-		t.Fatal("can not find reserved upstream for www.google.com")
-	}
-	if len(up) != 1 {
-		t.Fatalf("wring count of reserved upstream for www.google.com: %d", len(up))
-	}
-
-	up = dnsproxy.getUpstreamsForDomain("maps.google.com.")
-	if len(up) != 0 {
-		t.Fatalf("maps.google.com was excluded from upstreams reservation")
-	}
+	assertUpstreamsForDomain(t, dnsproxy, 2, "www.google.com.", []string{"1.2.3.4:53", "1.1.1.1:853"})
+	assertUpstreamsForDomain(t, dnsproxy, 1, "www2.google.com.", []string{"4.3.2.1:53"})
+	assertUpstreamsForDomain(t, dnsproxy, 1, "internal.local.", []string{"4.3.2.1:53"})
+	assertUpstreamsForDomain(t, dnsproxy, 1, "google.", []string{"1.2.3.4:53"})
+	assertUpstreamsForDomain(t, dnsproxy, 0, "maps.google.com.", []string{})
 }
 
 func TestUpstreamsSort(t *testing.T) {
 	testProxy := createTestProxy(t, nil)
 	upstreams := []upstream.Upstream{}
-	config := []string{"1.2.3.4", "2.3.4.5", "1.1.1.1"}
+
+	// there are 4 upstreams in configuration
+	config := []string{"1.2.3.4", "1.1.1.1", "2.3.4.5", "8.8.8.8"}
 	for _, u := range config {
 		up, err := upstream.AddressToUpstream(u, upstream.Options{Timeout: 1 * time.Second})
 		if err != nil {
@@ -246,24 +227,30 @@ func TestUpstreamsSort(t *testing.T) {
 		upstreams = append(upstreams, up)
 	}
 
-	size := len(upstreams)
-	rttMap := make(map[string]int, size)
-	for i, u := range upstreams {
-		rttMap[u.Address()] = size - i
-	}
-	testProxy.upstreamRttStats = rttMap
+	// create upstreamRttStats for 3 upstreams
+	upstreamRttStats := map[string]int{}
+	upstreamRttStats["1.1.1.1:53"] = 10
+	upstreamRttStats["2.3.4.5:53"] = 20
+	upstreamRttStats["1.2.3.4:53"] = 30
+	testProxy.upstreamRttStats = upstreamRttStats
 
 	sortedUpstreams := testProxy.getSortedUpstreams(upstreams)
 
-	if sortedUpstreams[0].Address() != "1.1.1.1:53" {
+	// upstream without rtt stats means `zero rtt`; this upstream should be the first one after sorting
+	if sortedUpstreams[0].Address() != "8.8.8.8:53" {
 		t.Fatalf("wrong sort algorithm!")
 	}
 
-	if sortedUpstreams[1].Address() != "2.3.4.5:53" {
+	// upstreams with rtt stats should be sorted from fast to slow
+	if sortedUpstreams[1].Address() != "1.1.1.1:53" {
 		t.Fatalf("wrong sort algorithm!")
 	}
 
-	if sortedUpstreams[2].Address() != "1.2.3.4:53" {
+	if sortedUpstreams[2].Address() != "2.3.4.5:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+
+	if sortedUpstreams[3].Address() != "1.2.3.4:53" {
 		t.Fatalf("wrong sort algorithm!")
 	}
 }
@@ -725,6 +712,24 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 		}
 	} else {
 		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
+	}
+}
+
+// assertUpstreamsForDomain checks count and addresses of the specified domain upstreams
+func assertUpstreamsForDomain(t *testing.T, p *Proxy, count int, domain string, address []string) {
+	u := p.getUpstreamsForDomain(domain)
+	if len(u) != count {
+		t.Fatalf("wrong count of reserved upstream for %s: expected: %d, actual: %d", domain, count, len(u))
+	}
+
+	if len(address) != len(u) {
+		t.Fatalf("wrong assertion сondition")
+	}
+
+	for i, up := range u {
+		if up.Address() != address[i] {
+			t.Fatalf("wrong upstream was reserved for %s: %s", domain, up.Address())
+		}
 	}
 }
 

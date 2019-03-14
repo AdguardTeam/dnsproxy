@@ -16,6 +16,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/utils"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
@@ -114,8 +115,8 @@ type UpstreamConfig struct {
 // reserved upstream syntax: [/domain1/../domainN/]<upstreamString>
 // More specific domains take priority over less specific domains,
 // To exclude more specific domains from reserved upstreams querying you should use the following syntax: [/domain1/../domainN/]#
-// So the following config: ["[/google.com/]1.2.3.4", "[/www.google.com/]2.3.4.5", "[/maps.google.com/]#", "3.4.5.6"]
-// will send queries for *.google.com to 1.2.3.4, except for *.www.google.com, which will go to 2.3.4.5 and *.maps.google.com,
+// So the following config: ["[/host.com/]1.2.3.4", "[/www.host.com/]2.3.4.5", "[/maps.host.com/]#", "3.4.5.6"]
+// will send queries for *.host.com to 1.2.3.4, except for *.www.host.com, which will go to 2.3.4.5 and *.maps.host.com,
 // which will go to default server 3.4.5.6 with all other domains
 func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Duration) (UpstreamConfig, error) {
 	upstreams := []upstream.Upstream{}
@@ -133,9 +134,8 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 			// split domains list
 			for _, host := range strings.Split(domainsAndUpstream[0], "/") {
 				if host != "" {
-					// check if domain ends with dot and return error
-					if strings.HasSuffix(host, ".") {
-						return UpstreamConfig{}, fmt.Errorf("wrong %s domain specification. Domain should not ends with dot", host)
+					if err := utils.IsValidHostname(host); err != nil {
+						return UpstreamConfig{}, err
 					}
 					hosts = append(hosts, strings.ToLower(host+"."))
 				} else {
@@ -286,9 +286,9 @@ func (p *Proxy) Addr(proto string) net.Addr {
 
 // getUpstreamsForDomain looks for a domain in reserved domains map and returns a list of corresponding upstreams.
 // returns default upstreams list if domain isn't found. More specific domains take priority over less specific domains.
-// For example, map contains the following keys: google.com and www.google.com
-// If we are looking for domain mail.google.com, this method will return value of google.com key
-// If we are looking for domain www.google.com, this method will return value of www.google.com key
+// For example, map contains the following keys: host.com and www.host.com
+// If we are looking for domain mail.host.com, this method will return value of host.com key
+// If we are looking for domain www.host.com, this method will return value of www.host.com key
 // If more specific domain value is nil, it means that domain was excluded and should be exchanged with default upstreams
 func (p *Proxy) getUpstreamsForDomain(host string) []upstream.Upstream {
 	if len(p.DomainsReservedUpstreams) == 0 {
@@ -446,7 +446,10 @@ func (p *Proxy) validateConfig() error {
 	}
 
 	if len(p.Upstreams) == 0 {
-		return errors.New("no upstreams specified")
+		if len(p.DomainsReservedUpstreams) == 0 {
+			return errors.New("no upstreams specified")
+		}
+		return errors.New("no default upstreams specified")
 	}
 
 	if p.Ratelimit > 0 {

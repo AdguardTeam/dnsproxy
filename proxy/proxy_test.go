@@ -195,6 +195,150 @@ func TestProxyRace(t *testing.T) {
 	}
 }
 
+func TestGetUpstreamsForDomain(t *testing.T) {
+	dnsproxy := createTestProxy(t, nil)
+	upstreams := []string{"[/google.com/local/]4.3.2.1", "[/www.google.com//]1.2.3.4", "[/maps.google.com/]#", "[/www.google.com/]tls://1.1.1.1"}
+
+	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second)
+	if err != nil {
+		t.Fatalf("Error while upstream config parsing: %s", err)
+	}
+	dnsproxy.Upstreams = config.Upstreams
+	dnsproxy.DomainsReservedUpstreams = config.DomainReservedUpstreams
+
+	assertUpstreamsForDomain(t, dnsproxy, 2, "www.google.com.", []string{"1.2.3.4:53", "1.1.1.1:853"})
+	assertUpstreamsForDomain(t, dnsproxy, 1, "www2.google.com.", []string{"4.3.2.1:53"})
+	assertUpstreamsForDomain(t, dnsproxy, 1, "internal.local.", []string{"4.3.2.1:53"})
+	assertUpstreamsForDomain(t, dnsproxy, 1, "google.", []string{"1.2.3.4:53"})
+	assertUpstreamsForDomain(t, dnsproxy, 0, "maps.google.com.", []string{})
+}
+
+func TestUpstreamsSort(t *testing.T) {
+	testProxy := createTestProxy(t, nil)
+	upstreams := []upstream.Upstream{}
+
+	// there are 4 upstreams in configuration
+	config := []string{"1.2.3.4", "1.1.1.1", "2.3.4.5", "8.8.8.8"}
+	for _, u := range config {
+		up, err := upstream.AddressToUpstream(u, upstream.Options{Timeout: 1 * time.Second})
+		if err != nil {
+			t.Fatalf("Failed to create %s upstream: %s", u, err)
+		}
+		upstreams = append(upstreams, up)
+	}
+
+	// create upstreamRttStats for 3 upstreams
+	upstreamRttStats := map[string]int{}
+	upstreamRttStats["1.1.1.1:53"] = 10
+	upstreamRttStats["2.3.4.5:53"] = 20
+	upstreamRttStats["1.2.3.4:53"] = 30
+	testProxy.upstreamRttStats = upstreamRttStats
+
+	sortedUpstreams := testProxy.getSortedUpstreams(upstreams)
+
+	// upstream without rtt stats means `zero rtt`; this upstream should be the first one after sorting
+	if sortedUpstreams[0].Address() != "8.8.8.8:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+
+	// upstreams with rtt stats should be sorted from fast to slow
+	if sortedUpstreams[1].Address() != "1.1.1.1:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+
+	if sortedUpstreams[2].Address() != "2.3.4.5:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+
+	if sortedUpstreams[3].Address() != "1.2.3.4:53" {
+		t.Fatalf("wrong sort algorithm!")
+	}
+}
+
+func TestExchangeWithReservedDomains(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+
+	// upstreams specification. Domains adguard.com and google.ru reserved with fake upstreams, maps.google.ru excluded from dnsmasq.
+	upstreams := []string{"[/adguard.com/]1.2.3.4", "[/google.ru/]2.3.4.5", "[/maps.google.ru/]#", "1.1.1.1"}
+	config, err := ParseUpstreamsConfig(upstreams, []string{"8.8.8.8"}, 1*time.Second)
+	if err != nil {
+		t.Fatalf("Error while upstream config parsing: %s", err)
+	}
+	dnsProxy.Upstreams = config.Upstreams
+	dnsProxy.DomainsReservedUpstreams = config.DomainReservedUpstreams
+
+	err = dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// create a DNS-over-TCP client connection
+	addr := dnsProxy.Addr(ProtoTCP)
+	conn, err := dns.Dial("tcp", addr.String())
+	if err != nil {
+		t.Fatalf("cannot connect to the proxy: %s", err)
+	}
+
+	// create google-a test message
+	req := createTestMessage()
+	err = conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	// make sure if dnsproxy is working
+	res, err := conn.ReadMsg()
+	if err != nil {
+		t.Fatalf("cannot read response to message: %s", err)
+	}
+	assertResponse(t, res)
+
+	// create adguard.com test message
+	req = createHostTestMessage("adguard.com")
+	err = conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	// test message should not be resolved
+	res, _ = conn.ReadMsg()
+	if res.Answer != nil {
+		t.Fatal("adguard.com should not be resolved")
+	}
+
+	// create www.google.ru test message
+	req = createHostTestMessage("www.google.ru")
+	err = conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	// test message should not be resolved
+	res, _ = conn.ReadMsg()
+	if res.Answer != nil {
+		t.Fatal("www.google.ru should not be resolved")
+	}
+
+	// create maps.google.ru test message
+	req = createHostTestMessage("maps.google.ru")
+	err = conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	// test message should be resolved
+	res, _ = conn.ReadMsg()
+	if res.Answer == nil {
+		t.Fatal("maps.google.ru should be resolved")
+	}
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
 // TestOneByOneUpstreamsExchange tries to resolve DNS request
 // with one valid and two invalid upstreams
 func TestOneByOneUpstreamsExchange(t *testing.T) {
@@ -544,11 +688,16 @@ func sendTestMessages(t *testing.T, conn *dns.Conn) {
 }
 
 func createTestMessage() *dns.Msg {
+	return createHostTestMessage("google-public-dns-a.google.com")
+}
+
+func createHostTestMessage(host string) *dns.Msg {
 	req := dns.Msg{}
 	req.Id = dns.Id()
 	req.RecursionDesired = true
+	name := host + "."
 	req.Question = []dns.Question{
-		{Name: "google-public-dns-a.google.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET},
+		{Name: name, Qtype: dns.TypeA, Qclass: dns.ClassINET},
 	}
 	return &req
 }
@@ -563,6 +712,24 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 		}
 	} else {
 		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
+	}
+}
+
+// assertUpstreamsForDomain checks count and addresses of the specified domain upstreams
+func assertUpstreamsForDomain(t *testing.T, p *Proxy, count int, domain string, address []string) {
+	u := p.getUpstreamsForDomain(domain)
+	if len(u) != count {
+		t.Fatalf("wrong count of reserved upstream for %s: expected: %d, actual: %d", domain, count, len(u))
+	}
+
+	if len(address) != len(u) {
+		t.Fatalf("wrong assertion сondition")
+	}
+
+	for i, up := range u {
+		if up.Address() != address[i] {
+			t.Fatalf("wrong upstream was reserved for %s: %s", domain, up.Address())
+		}
 	}
 }
 

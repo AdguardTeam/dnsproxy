@@ -28,7 +28,7 @@ Application Options:
   -v, --verbose     Verbose output (optional)
   -o, --output=     Path to the log file. If not set, write to stdout.
   -l, --listen=     Listen address (default: 0.0.0.0)
-  -p, --port=       Listen port (default: 53)
+  -p, --port=       Listen port. Zero value disables TCP and UDP listeners (default: 53)
   -h, --https-port= Listen port for DNS-over-HTTPS (default: 0)
   -t, --tls-port=   Listen port for DNS-over-TLS (default: 0)
   -c, --tls-crt=    Path to a file with the certificate chain
@@ -97,12 +97,12 @@ DNS-over-TLS upstream with two fallback servers (to be used when the main upstre
 
 Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
 ```
-./dnsproxy -l 127.0.0.1 --tls-port=853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 
+./dnsproxy -l 127.0.0.1 --tls-port=853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0 
 ```
 
 Runs a DNS-over-HTTPS proxy on `127.0.0.1:443`.
 ```
-./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 
+./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0 
 ```
 
 ### Additional features

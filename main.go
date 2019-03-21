@@ -28,7 +28,7 @@ type Options struct {
 	ListenAddr string `short:"l" long:"listen" description:"Listen address" default:"0.0.0.0"`
 
 	// Server listen port
-	ListenPort int `short:"p" long:"port" description:"Listen port (default: 53)"`
+	ListenPort int `short:"p" long:"port" description:"Listen port. Zero value disables TCP and UDP listeners" default:"53"`
 
 	// HTTPS listen port (0 to disable DOH server)
 	HTTPSListenPort int `short:"h" long:"https-port" description:"Listen port for DNS-over-HTTPS" default:"0"`
@@ -74,9 +74,6 @@ type Options struct {
 var VersionString = "undefined" // nolint:gochecknoglobals
 
 const defaultTimeout = 10 * time.Second
-
-// We need to know if listen port was specified manually
-const defaultListenPort = 53
 
 func main() {
 	var options Options
@@ -190,11 +187,8 @@ func createProxyConfig(options Options) proxy.Config {
 		config.HTTPSListenAddr = &net.TCPAddr{Port: options.HTTPSListenPort, IP: listenIP}
 	}
 
-	// Init TCP and UDP listen addresses if listen port was specified manually or if there are no TLS or HTTPS listeners
-	if options.ListenPort > 0 || (config.TLSListenAddr == nil && config.HTTPSListenAddr == nil) {
-		if options.ListenPort == 0 {
-			options.ListenPort = defaultListenPort
-		}
+	// Init TCP and UDP listen addresses if listen port is not equal to zero
+	if options.ListenPort > 0 {
 		config.UDPListenAddr = &net.UDPAddr{Port: options.ListenPort, IP: listenIP}
 		config.TCPListenAddr = &net.TCPAddr{Port: options.ListenPort, IP: listenIP}
 	}

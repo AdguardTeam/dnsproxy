@@ -28,7 +28,7 @@ type Options struct {
 	ListenAddr string `short:"l" long:"listen" description:"Listen address" default:"0.0.0.0"`
 
 	// Server listen port
-	ListenPort int `short:"p" long:"port" description:"Listen port" default:"53"`
+	ListenPort int `short:"p" long:"port" description:"Listen port. Zero value disables TCP and UDP listeners" default:"53"`
 
 	// HTTPS listen port (0 to disable DOH server)
 	HTTPSListenPort int `short:"h" long:"https-port" description:"Listen port for DNS-over-HTTPS" default:"0"`
@@ -140,10 +140,7 @@ func createProxyConfig(options Options) proxy.Config {
 		log.Fatalf("cannot parse %s", options.ListenAddr)
 	}
 
-	// Init listen addresses and upstreams
-	listenUDPAddr := &net.UDPAddr{Port: options.ListenPort, IP: listenIP}
-	listenTCPAddr := &net.TCPAddr{Port: options.ListenPort, IP: listenIP}
-
+	// Init upstreams
 	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
@@ -151,8 +148,6 @@ func createProxyConfig(options Options) proxy.Config {
 
 	// Create the config
 	config := proxy.Config{
-		UDPListenAddr:            listenUDPAddr,
-		TCPListenAddr:            listenTCPAddr,
 		Upstreams:                upstreamConfig.Upstreams,
 		DomainsReservedUpstreams: upstreamConfig.DomainReservedUpstreams,
 		Ratelimit:                options.Ratelimit,
@@ -190,6 +185,12 @@ func createProxyConfig(options Options) proxy.Config {
 
 	if options.HTTPSListenPort > 0 && config.TLSConfig != nil {
 		config.HTTPSListenAddr = &net.TCPAddr{Port: options.HTTPSListenPort, IP: listenIP}
+	}
+
+	// Init TCP and UDP listen addresses if listen port is not equal to zero
+	if options.ListenPort > 0 {
+		config.UDPListenAddr = &net.UDPAddr{Port: options.ListenPort, IP: listenIP}
+		config.TCPListenAddr = &net.TCPAddr{Port: options.ListenPort, IP: listenIP}
 	}
 
 	return config

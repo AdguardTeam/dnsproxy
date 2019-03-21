@@ -623,13 +623,13 @@ func TestInvalidDNSRequest(t *testing.T) {
 func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	p := Proxy{}
 
-	p.UDPListenAddr = &net.UDPAddr{Port: 0, IP: net.ParseIP(listenIP)}
-	p.TCPListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
-
 	if tlsConfig != nil {
 		p.TLSListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
 		p.HTTPSListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
 		p.TLSConfig = tlsConfig
+	} else {
+		p.UDPListenAddr = &net.UDPAddr{Port: 0, IP: net.ParseIP(listenIP)}
+		p.TCPListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)}
 	}
 	upstreams := make([]upstream.Upstream, 0)
 	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, upstream.Options{Timeout: defaultTimeout})

@@ -61,7 +61,7 @@ type Options struct {
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
 
 	// DNS64 upstream
-	DNS64Upstreams []string `short:"d" long:"dns64-upstream" description:"DNS64 upstream server to be used (can be specified multiple times)"`
+	DNS64Upstreams []string `short:"d" long:"dns64-upstream" description:"DNS64 upstream server which prefix will be used in ipv6-only networks (can be specified multiple times)"`
 
 	// Fallback DNS resolver
 	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times"`
@@ -168,7 +168,7 @@ func createProxyConfig(options Options) proxy.Config {
 				log.Tracef("Failed to create dns64Upstream %s: %s", options.DNS64Upstreams, err)
 			}
 			dns64Upstreams = append(dns64Upstreams, dns64Upstream)
-			log.Printf("System server %d: %s", i, dns64Upstream.Address())
+			log.Printf("DNS64 Upstream %d: %s", i, dns64Upstream.Address())
 		}
 		config.DNS64Upstreams = dns64Upstreams
 	}

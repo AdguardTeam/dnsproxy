@@ -13,8 +13,8 @@ import (
 // Byte representation of IPv4 addresses we are looking for after NAT64 prefix while dns response parsing
 // It's two "well-known IPv4" addresses defined for Pref64::/n
 // https://tools.ietf.org/html/rfc7050#section-2.2
-var wellKnownIpv4First = []byte{192, 0, 0, 171}  //nolint
-var wellKnownIpv4Second = []byte{192, 0, 0, 170} //nolint
+var wellKnownIPv4First = []byte{192, 0, 0, 171}  //nolint
+var wellKnownIPv4Second = []byte{192, 0, 0, 170} //nolint
 
 // createIpv4ArpaMessage creates AAAA request for the "Well-Known IPv4-only Name"
 // this request should be exchanged with DNS64 upstreams.
@@ -32,8 +32,8 @@ func createIpv4ArpaMessage() *dns.Msg {
 // valid answer should contains the following AAAA record:
 //
 // - 16 bytes record
-// - first 12 bytes is ipv6 prefix
-// - last 4 bytes are required Ipv4: wellKnownIpv4First or wellKnownIpv4Second
+// - first 12 bytes is NAT64 prefix
+// - last 4 bytes are required IPv4: wellKnownIpv4First or wellKnownIpv4Second
 // we use simplified algorithm and consider the first matched record to be valid
 func getNAT64PrefixFromResponse(r *dns.Msg) ([]byte, error) {
 	var prefix []byte
@@ -51,22 +51,13 @@ func getNAT64PrefixFromResponse(r *dns.Msg) ([]byte, error) {
 			continue
 		}
 
-		// Compare bytes in IPv4 part to wellKnownIpv4First and wellKnownIpv4Second
-		valid := true
-		for i, b := range ipv4 {
-			// Compare
-			if b != wellKnownIpv4First[i] && b != wellKnownIpv4Second[i] {
-				valid = false
-				break
-			}
-		}
-
-		if !valid {
+		// Compare IPv4 part to wellKnownIPv4First and wellKnownIPv4Second
+		if !ipv4.Equal(wellKnownIPv4First) && !ipv4.Equal(wellKnownIPv4Second) {
 			continue
 		}
 
-		// Set NAT64 prefix and break loop
-		fmt.Printf("got prefix from response. answer is: %s\n", ip.String())
+		// Set NAT64 prefix and break the loop
+		log.Tracef("NAT64 prefix was obtained from response. Answer is: %s", ip.String())
 		prefix = ip[:12]
 		break
 	}
@@ -83,7 +74,7 @@ func (p *Proxy) isIpv6ResponseEmpty(resp, req *dns.Msg) bool {
 	return p.isNAT64PrefixAvailable() && req.Question[0].Qtype == dns.TypeAAAA && (resp == nil || len(resp.Answer) == 0)
 }
 
-// isNAT64PrefixAvailable returns true if nat64 prefix was calculated
+// isNAT64PrefixAvailable returns true if NAT64 prefix was calculated
 func (p *Proxy) isNAT64PrefixAvailable() bool {
 	p.nat64Lock.Lock()
 	prefixSize := len(p.nat64Prefix)
@@ -122,12 +113,12 @@ func getNAT64PrefixAsync(req *dns.Msg, u upstream.Upstream, ch chan nat64Result)
 func getNAT64PrefixWithUpstream(req *dns.Msg, u upstream.Upstream) nat64Result {
 	resp, err := u.Exchange(req)
 	if err != nil {
-		return nat64Result{upstream: u, err: err}
+		return nat64Result{err: err}
 	}
 
 	prefix, err := getNAT64PrefixFromResponse(resp)
 	if err != nil {
-		return nat64Result{upstream: u, err: err}
+		return nat64Result{err: err}
 	}
 
 	return nat64Result{prefix: prefix, upstream: u}
@@ -152,13 +143,10 @@ func (p *Proxy) getNAT64PrefixParallel() nat64Result {
 		case rep := <-ch:
 			if rep.err != nil {
 				errs = append(errs, rep.err)
-			}
-
-			if len(errs) == size {
-				return nat64Result{err: errorx.DecorateMany("Failed to get NAT64 prefix with all upstreams:", errs...)}
-			}
-
-			if len(rep.prefix) == 12 && rep.err == nil {
+				if len(errs) == size {
+					return nat64Result{err: errorx.DecorateMany("Failed to get NAT64 prefix with all upstreams:", errs...)}
+				}
+			} else {
 				return rep
 			}
 		}
@@ -203,6 +191,12 @@ func (p *Proxy) createDNS64MappedResponse(res, req *dns.Msg) (*dns.Msg, error) {
 		return nil, fmt.Errorf("no ipv4 answer")
 	}
 
+	// this bug occurs only ones
+	if req == nil {
+		return nil, fmt.Errorf("request is nil")
+	}
+
+	req.Answer = []dns.RR{}
 	// add NAT 64 prefix for each ipv4 answer
 	for _, ans := range res.Answer {
 		i, ok := ans.(*dns.A)
@@ -214,16 +208,9 @@ func (p *Proxy) createDNS64MappedResponse(res, req *dns.Msg) (*dns.Msg, error) {
 		mappedAddress := make(net.IP, net.IPv6len)
 
 		// add NAT 64 prefix and append ipv4 record
-		p.nat64Lock.Lock()
 		copy(mappedAddress, p.nat64Prefix)
-		p.nat64Lock.Unlock()
 		for index, b := range i.A {
 			mappedAddress[12+index] = b
-		}
-
-		// check if answer length not equals to IPv6len
-		if len(mappedAddress) != net.IPv6len {
-			return nil, fmt.Errorf("wrong count of bytes in the answer after DNS64 mapping: %d", len(mappedAddress))
 		}
 
 		// create new response and fill it

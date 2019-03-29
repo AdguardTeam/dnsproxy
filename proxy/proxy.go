@@ -87,11 +87,9 @@ type Config struct {
 	CacheEnabled bool // cache status
 	CacheSize    int  // number of cached elements. Default size: 1000
 
-	Upstreams      []upstream.Upstream // list of upstreams
-	Fallbacks      []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
-	DNS64Upstreams []upstream.Upstream // list of DNS 64 upstreams (system servers)
-
-	Handler Handler // custom middleware (optional)
+	Upstreams []upstream.Upstream // list of upstreams
+	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
+	Handler   Handler             // custom middleware (optional)
 
 	DomainsReservedUpstreams map[string][]upstream.Upstream // map of domains and lists of corresponding upstreams
 }
@@ -202,8 +200,6 @@ func (p *Proxy) Start() error {
 	if err != nil {
 		return err
 	}
-
-	go p.getNAT64Prefix()
 
 	p.started = true
 	return nil

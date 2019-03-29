@@ -6,67 +6,8 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
-
-// Byte representation of IPv4 addresses we are looking for after NAT64 prefix while dns response parsing
-// It's two "well-known IPv4" addresses defined for Pref64::/n
-// https://tools.ietf.org/html/rfc7050#section-2.2
-var wellKnownIPv4First = []byte{192, 0, 0, 171}  //nolint
-var wellKnownIPv4Second = []byte{192, 0, 0, 170} //nolint
-
-// createIpv4ArpaMessage creates AAAA request for the "Well-Known IPv4-only Name"
-// this request should be exchanged with DNS64 upstreams.
-func createIpv4ArpaMessage() *dns.Msg {
-	req := dns.Msg{}
-	req.Id = dns.Id()
-	req.RecursionDesired = true
-	req.Question = []dns.Question{
-		{Name: "ipv4only.arpa.", Qtype: dns.TypeAAAA, Qclass: dns.ClassINET},
-	}
-	return &req
-}
-
-// getNAT64PrefixFromResponse parses a response for NAT64 prefix
-// valid answer should contains the following AAAA record:
-//
-// - 16 bytes record
-// - first 12 bytes is NAT64 prefix
-// - last 4 bytes are required IPv4: wellKnownIpv4First or wellKnownIpv4Second
-// we use simplified algorithm and consider the first matched record to be valid
-func getNAT64PrefixFromResponse(r *dns.Msg) ([]byte, error) {
-	var prefix []byte
-	for _, reply := range r.Answer {
-		a, ok := reply.(*dns.AAAA)
-		if !ok {
-			log.Tracef("Answer is not AAAA record")
-			continue
-		}
-		ip := a.AAAA
-
-		// Let's separate IPv4 part from NAT64 prefix
-		ipv4 := ip[12:]
-		if len(ipv4) != net.IPv4len {
-			continue
-		}
-
-		// Compare IPv4 part to wellKnownIPv4First and wellKnownIPv4Second
-		if !ipv4.Equal(wellKnownIPv4First) && !ipv4.Equal(wellKnownIPv4Second) {
-			continue
-		}
-
-		// Set NAT64 prefix and break the loop
-		log.Tracef("NAT64 prefix was obtained from response. Answer is: %s", ip.String())
-		prefix = ip[:12]
-		break
-	}
-
-	if len(prefix) == 0 {
-		return nil, fmt.Errorf("no NAT64 prefix in answers")
-	}
-	return prefix, nil
-}
 
 // isIpv6ResponseEmpty checks AAAA answer to be empty
 // returns true if NAT64 prefix already calculated and there are no answers for AAAA question
@@ -82,6 +23,25 @@ func (p *Proxy) isNAT64PrefixAvailable() bool {
 	return prefixSize == 12
 }
 
+// SetNAT64Prefix sets NAT64 prefix
+func (p *Proxy) SetNAT64Prefix(prefix []byte) {
+	if len(prefix) != 12 {
+		return
+	}
+
+	// Check if proxy is started and has no prefix yet
+	p.nat64Lock.Lock()
+	if len(p.nat64Prefix) == 0 {
+		p.RLock()
+		if p.started {
+			p.nat64Prefix = prefix
+			log.Printf("NAT64 prefix: %v", prefix)
+		}
+		p.RUnlock()
+	}
+	p.nat64Lock.Unlock()
+}
+
 // createModifiedARequest returns modified question to make A DNS request
 func createModifiedARequest(d *dns.Msg) (*dns.Msg, error) {
 	if d.Question[0].Qtype != dns.TypeAAAA {
@@ -95,87 +55,6 @@ func createModifiedARequest(d *dns.Msg) (*dns.Msg, error) {
 		{Name: d.Question[0].Name, Qtype: dns.TypeA, Qclass: dns.ClassINET},
 	}
 	return &req, nil
-}
-
-// nat64Result is a result of NAT64 prefix calculation
-type nat64Result struct {
-	prefix   []byte
-	upstream upstream.Upstream
-	err      error
-}
-
-// getNAT64PrefixAsync sends result of getNAT64PrefixWithUpstream to the channel
-func getNAT64PrefixAsync(req *dns.Msg, u upstream.Upstream, ch chan nat64Result) {
-	ch <- getNAT64PrefixWithUpstream(req, u)
-}
-
-// getNAT64PrefixWithUpstream returns result of NAT64 prefix calculation with one upstream
-func getNAT64PrefixWithUpstream(req *dns.Msg, u upstream.Upstream) nat64Result {
-	resp, err := u.Exchange(req)
-	if err != nil {
-		return nat64Result{err: err}
-	}
-
-	prefix, err := getNAT64PrefixFromResponse(resp)
-	if err != nil {
-		return nat64Result{err: err}
-	}
-
-	return nat64Result{prefix: prefix, upstream: u}
-}
-
-// getNAT64PrefixParallel starts parallel NAT64 prefix calculation with all available upstreams
-func (p *Proxy) getNAT64PrefixParallel() nat64Result {
-	size := len(p.DNS64Upstreams)
-	req := createIpv4ArpaMessage()
-	if size == 1 {
-		return getNAT64PrefixWithUpstream(req, p.DNS64Upstreams[0])
-	}
-
-	errs := []error{}
-	ch := make(chan nat64Result, size)
-	for _, u := range p.DNS64Upstreams {
-		go getNAT64PrefixAsync(req, u, ch)
-	}
-
-	for {
-		select {
-		case rep := <-ch:
-			if rep.err != nil {
-				errs = append(errs, rep.err)
-				if len(errs) == size {
-					return nat64Result{err: errorx.DecorateMany("Failed to get NAT64 prefix with all upstreams:", errs...)}
-				}
-			} else {
-				return rep
-			}
-		}
-	}
-}
-
-// getNAT64Prefix exchanges ipv4 arpa request with DNS64 upstreams and sets NAT64 prefix to the proxy
-func (p *Proxy) getNAT64Prefix() {
-	// First check if no DNS64 upstreams specified
-	if len(p.DNS64Upstreams) == 0 {
-		log.Tracef("no DNS64 upstream specified")
-		return
-	}
-
-	// Do nothing if NAT64 prefix was not calculated
-	if p.isNAT64PrefixAvailable() {
-		return
-	}
-
-	res := p.getNAT64PrefixParallel()
-	if res.err != nil {
-		log.Tracef("Failed to calculate NAT64 prefix: %s", res.err)
-		return
-	}
-
-	log.Tracef("Use %s server NAT64 prefix", res.upstream.Address())
-	p.nat64Lock.Lock()
-	p.nat64Prefix = res.prefix
-	p.nat64Lock.Unlock()
 }
 
 // createDNS64MappedResponse adds NAT 64 mapped answer to the old message

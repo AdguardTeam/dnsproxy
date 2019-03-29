@@ -4,66 +4,28 @@ import (
 	"net"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/miekg/dns"
 )
 
-const dns64Upstream = "2001:67c:27e4:15::64"
 const ipv4OnlyHost = "and.ru"
-const dns64Timeout = time.Second
 
-// TestNAT64Prefix calculates nat64 prefix
-func TestNAT64Prefix(t *testing.T) {
-	arpa := createIpv4ArpaMessage()
-	u, err := upstream.AddressToUpstream(dns64Upstream, upstream.Options{Timeout: dns64Timeout})
-	if err != nil {
-		t.Fatalf("Failed to create upstream to %s", dns64Upstream)
-	}
-
-	resp, err := u.Exchange(arpa)
-	if err != nil {
-		t.Fatalf("Can not exchange ipv4Arpa message: %s", err)
-	}
-
-	prefix, err := getNAT64PrefixFromResponse(resp)
-	if err != nil {
-		t.Fatalf("Can not get NAT64 prefix from response")
-	}
-
-	if l := len(prefix); l != 12 {
-		t.Fatalf("Wrong prefix length: %d", l)
-	}
-}
+// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server
+var prefix = []byte{32, 1, 6, 124, 39, 228, 16, 100, 0, 0, 0, 0} //nolint
 
 func TestProxyWithDNS64(t *testing.T) {
-	d := createTestProxy(t, nil)
-	d.DNS64Upstreams = []upstream.Upstream{}
-	dns64 := []string{dns64Upstream}
-	for _, up := range dns64 {
-		u, err := upstream.AddressToUpstream(up, upstream.Options{Timeout: dns64Timeout})
-		if err != nil {
-			t.Fatalf("Failed to create upstream to %s", up)
-		}
+	// Create test proxy and manually set NAT64 prefix
+	dnsProxy := createTestProxy(t, nil)
+	dnsProxy.nat64Prefix = prefix
 
-		d.DNS64Upstreams = append(d.DNS64Upstreams, u)
-	}
-
-	err := d.Start()
+	err := dnsProxy.Start()
 	if err != nil {
 		t.Fatalf("Failed to start dns proxy")
 	}
 
-	// Wait for DNS64 upstream timeout. NAT64 prefix should be already calculated
-	time.Sleep(dns64Timeout)
-	if !d.isNAT64PrefixAvailable() {
-		t.Fatalf("Failed to calculate NAT64 prefix")
-	}
-
 	// Let's create test A request to ipv4OnlyHost and exchange it with test proxy
 	req := createHostTestMessage(ipv4OnlyHost)
-	resp, _, err := d.exchange(req, d.DNS64Upstreams)
+	resp, _, err := dnsProxy.exchange(req, dnsProxy.Upstreams)
 	if err != nil {
 		t.Fatalf("Can not exchange test message for %s cause: %s", ipv4OnlyHost, err)
 	}
@@ -75,16 +37,16 @@ func TestProxyWithDNS64(t *testing.T) {
 
 	// Let's manually add NAT64 prefix to IPv4 response
 	mappedIP := make(net.IP, net.IPv6len)
-	copy(mappedIP, d.nat64Prefix)
+	copy(mappedIP, dnsProxy.nat64Prefix)
 	for index, b := range a.A {
 		mappedIP[12+index] = b
 	}
 
 	// Create test context with AAAA request to ipv4OnlyHost and resolve it
 	testDNSContext := createTestDNSContext(ipv4OnlyHost)
-	err = d.Resolve(testDNSContext)
+	err = dnsProxy.Resolve(testDNSContext)
 	if err != nil {
-		t.Fatalf("Error whilr DNSContext resolve: %s", err)
+		t.Fatalf("Error while DNSContext resolve: %s", err)
 	}
 
 	// Response should be AAAA answer
@@ -103,7 +65,7 @@ func TestProxyWithDNS64(t *testing.T) {
 		t.Fatalf("Manually mapped IP %s not equlas to repsonse %s", mappedIP.String(), ans.AAAA.String())
 	}
 
-	err = d.Stop()
+	err = dnsProxy.Stop()
 	if err != nil {
 		t.Fatalf("Failed to stop dns proxy")
 	}
@@ -111,19 +73,7 @@ func TestProxyWithDNS64(t *testing.T) {
 
 func TestDNS64Race(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
-
-	// Add multiple DNS64 upstreams
-	dnsProxy.DNS64Upstreams = []upstream.Upstream{}
-	dns64 := []string{dns64Upstream, dns64Upstream, upstreamAddr, upstreamAddr}
-	for _, up := range dns64 {
-		u, err := upstream.AddressToUpstream(up, upstream.Options{Timeout: time.Second})
-		if err != nil {
-			t.Fatalf("Failed to create upstream to %s", up)
-		}
-
-		dnsProxy.DNS64Upstreams = append(dnsProxy.DNS64Upstreams, u)
-	}
-
+	dnsProxy.nat64Prefix = prefix
 	dnsProxy.Upstreams = append(dnsProxy.Upstreams, dnsProxy.Upstreams[0])
 
 	// Start listening
@@ -131,9 +81,6 @@ func TestDNS64Race(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot start the DNS proxy: %s", err)
 	}
-
-	// Wait for NAT64 prefix calculation
-	time.Sleep(dns64Timeout)
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr(ProtoUDP)

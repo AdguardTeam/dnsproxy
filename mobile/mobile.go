@@ -67,7 +67,6 @@ func (d *DNSProxy) Start() error {
 
 	// defer called here 'cause otherwise d.dnsProxy may be null
 	defer func() {
-		log.Tracef("CALL DEFER!")
 		d.Unlock()
 		go calculateNAT64Prefix(d.dnsProxy, d.Config.DNS64Upstream)
 	}()

@@ -65,14 +65,13 @@ func (d *DNSProxy) Start() error {
 	}
 	d.dnsProxy = &proxy.Proxy{Config: *c}
 
-	// defer called here 'cause otherwise d.dnsProxy may be null
-	defer func() {
-		d.Unlock()
-		go calculateNAT64Prefix(d.dnsProxy, d.Config.DNS64Upstream)
-	}()
-
 	// Start the proxy
-	return d.dnsProxy.Start()
+	err = d.dnsProxy.Start()
+	d.Unlock()
+	if err == nil {
+		go calculateNAT64Prefix(d.dnsProxy, d.Config.DNS64Upstream)
+	}
+	return err
 }
 
 // Stop stops the DNS proxy

@@ -32,12 +32,10 @@ func (p *Proxy) SetNAT64Prefix(prefix []byte) {
 	// Check if proxy is started and has no prefix yet
 	p.nat64Lock.Lock()
 	if len(p.nat64Prefix) == 0 {
-		p.RLock()
 		if p.started {
 			p.nat64Prefix = prefix
 			log.Printf("NAT64 prefix: %v", prefix)
 		}
-		p.RUnlock()
 	}
 	p.nat64Lock.Unlock()
 }

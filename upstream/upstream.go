@@ -138,19 +138,20 @@ func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, erro
 type dnsOverHTTPS struct {
 	boot bootstrapper
 
-	// transport is an http.Transport configured to use the bootstrapped IP address
-	// Transports should be reused instead of created as needed.
-	// Transports are safe for concurrent use by multiple goroutines.
-	transport    *http.Transport
+	// The Client's Transport typically has internal state (cached TCP
+	// connections), so Clients should be reused instead of created as
+	// needed. Clients are safe for concurrent use by multiple goroutines.
+	client *http.Client
+
 	sync.RWMutex // protects transport
 }
 
 func (p *dnsOverHTTPS) Address() string { return p.boot.address }
 
 func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	transport, err := p.getTransport()
+	client, err := p.getClient()
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't initialize HTTP transport")
+		return nil, errorx.Decorate(err, "couldn't initialize HTTP client or transport")
 	}
 
 	buf, err := m.Pack()
@@ -166,10 +167,6 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
 
-	client := http.Client{
-		Transport: transport,
-		Timeout:   p.boot.timeout,
-	}
 	resp, err := client.Do(req)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
@@ -193,15 +190,30 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	return &response, nil
 }
 
-// getTransport gets or lazily initializes an HTTP transport that will be used specifically for this DOH resolver
-// This HTTP transport ensures that the HTTP requests will be sent exactly to the IP address got from the bootstrap resolver
-func (p *dnsOverHTTPS) getTransport() (*http.Transport, error) {
+// getClient gets or lazily initializes an HTTP client (and transport) that will be used for this DOH resolver.
+func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
 	p.Lock()
 	defer p.Unlock()
-	if p.transport != nil {
-		return p.transport, nil
+	if p.client != nil {
+		return p.client, nil
 	}
 
+	transport, err := p.createTransport()
+	if err != nil {
+		return nil, errorx.Decorate(err, "couldn't initialize HTTP transport")
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   p.boot.timeout,
+	}
+	p.client = client
+	return p.client, nil
+}
+
+// createTransport initializes an HTTP transport that will be used specifically for this DOH resolver
+// This HTTP transport ensures that the HTTP requests will be sent exactly to the IP address got from the bootstrap resolver
+func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 	tlsConfig, dialContext, err := p.boot.get()
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't bootstrap %s", p.boot.address)
@@ -217,8 +229,6 @@ func (p *dnsOverHTTPS) getTransport() (*http.Transport, error) {
 	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11
 	http2.ConfigureTransport(transport) // nolint
 
-	// Save the transport for the future use
-	p.transport = transport
 	return transport, nil
 }
 

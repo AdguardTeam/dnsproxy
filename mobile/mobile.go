@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -30,9 +29,7 @@ func init() {
 
 	// Load a limited set of root CAs (in order to consume less memory)
 	upstream.RootCAs = loadSystemRootCAs()
-
 	upstream.DohMaxConnsPerHost = 1
-	runtime.GOMAXPROCS(1)
 
 	// TODO after GO 1.13 release TLS 1.3 will be enabled by default. Remove this afterward
 	os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")

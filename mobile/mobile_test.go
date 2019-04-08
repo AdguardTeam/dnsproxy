@@ -8,10 +8,9 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
-
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/shirou/gopsutil/process"
 
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
 

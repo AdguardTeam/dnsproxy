@@ -18,6 +18,12 @@ func TestPopularUpstreams(t *testing.T) {
 			address: "tls://dns-family.adguard.com",
 		},
 		{
+			address: "https://dns.adguard.com/dns-query",
+		},
+		{
+			address: "tls://dns.adguard.com",
+		},
+		{
 			address: "https://dns.google.com/experimental",
 		},
 		{

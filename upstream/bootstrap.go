@@ -20,12 +20,6 @@ import (
 // nolint
 var RootCAs *x509.CertPool
 
-// CipherSuites is the cipher suites used for TLS connections.
-// Redefining CipherSuites makes sense on iOS to overcome the 15MB memory limit.
-// It appears that RSA_WITH_AES are much more memory-efficient.
-// nolint
-var CipherSuites []uint16
-
 type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
 	resolvers      []*Resolver   // list of Resolvers to use to resolve hostname, if necessary
@@ -237,11 +231,6 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	return &tls.Config{
 		ServerName: host,
 		RootCAs:    RootCAs,
-
-		// Please note, that the sort order is very important here.
-		// The cipher suites located in the beginning of the list are more memory-efficient.
-		// See TestMobileApiMultipleQueries for details.
-		CipherSuites: CipherSuites,
-		MinVersion:   tls.VersionTLS12,
+		MinVersion: tls.VersionTLS12,
 	}
 }

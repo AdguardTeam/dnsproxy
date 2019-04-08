@@ -7,10 +7,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/proxy"
+
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/shirou/gopsutil/process"
-
-	"github.com/AdguardTeam/dnsproxy/proxy"
 
 	"github.com/miekg/dns"
 )
@@ -78,6 +78,59 @@ func TestMobileApi(t *testing.T) {
 	}
 }
 
+func TestMobileApiResolve(t *testing.T) {
+	upstreams := []string{
+		// It seems that CloudFlare chooses more complicated cipher suites.
+		// It leads to higher memory usage.
+		"tls://1.1.1.1",
+		"https://dns.cloudflare.com/dns-query",
+		"tls://dns.adguard.com",
+		"https://dns.adguard.com/dns-query",
+		"176.103.130.130",
+		// AdGuard DNS (DNSCrypt)
+		"sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
+	}
+	upstreamsStr := strings.Join(upstreams, "\n")
+
+	config := &Config{
+		ListenAddr:    "127.0.0.1",
+		ListenPort:    0, // Specify 0 to start listening on a random free port
+		BootstrapDNS:  "8.8.8.8:53\n1.1.1.1:53",
+		Fallbacks:     "8.8.8.8:53\n1.1.1.1:53",
+		Timeout:       5000,
+		Upstreams:     upstreamsStr,
+		MaxGoroutines: 3,
+		CacheSize:     0,
+	}
+
+	mobileDNSProxy := DNSProxy{Config: config}
+	err := mobileDNSProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the mobile proxy: %s", err)
+	}
+
+	for i := 0; i < testMessagesCount; i++ {
+		msg := createTestMessage()
+		bytes, _ := msg.Pack()
+		resBytes, err := mobileDNSProxy.Resolve(bytes)
+		if err != nil {
+			t.Fatalf("cannot resolve: %s", err)
+		}
+		res := new(dns.Msg)
+		err = res.Unpack(resBytes)
+		if err != nil {
+			t.Fatalf("cannot unpack response: %s", err)
+		}
+		assertResponse(t, res)
+	}
+
+	// Stop proxy
+	err = mobileDNSProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the mobile proxy: %s", err)
+	}
+}
+
 func TestMobileApiMultipleQueries(t *testing.T) {
 	start := getRSS()
 	log.Printf("RSS before init - %d kB\n", start/1024)
@@ -125,8 +178,6 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 	// Send test messages in parallel
 	sendTestMessagesAsync(t, conn)
 
-	//runtime.GC()
-	//debug.FreeOSMemory()
 	//f, err := os.Create("output.pprof")
 	//if err != nil {
 	//	log.Fatal("could not create memory profile: ", err)

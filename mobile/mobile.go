@@ -4,15 +4,19 @@ Package mobile contains a simple mobile API for github.com/AdguardTeam/dnsproxy
 package mobile
 
 import (
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/joomcode/errorx"
+
+	"github.com/miekg/dns"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -27,19 +31,11 @@ func init() {
 	// Load a limited set of root CAs (in order to consume less memory)
 	upstream.RootCAs = loadSystemRootCAs()
 
-	// Leave only memory-efficient cipher suites
-	upstream.CipherSuites = []uint16{
-		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
-		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
-		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-		tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
-	}
-
 	upstream.DohMaxConnsPerHost = 1
 	runtime.GOMAXPROCS(1)
+
+	// TODO after GO 1.13 release TLS 1.3 will be enabled by default. Remove this afterward
+	os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")
 }
 
 // DNSProxy represents a proxy with it's configuration
@@ -113,6 +109,36 @@ func (d *DNSProxy) Addr() string {
 	}
 
 	return addr.String()
+}
+
+// Resolve resolves the specified DNS request using the configured (and started) dns proxy
+// packet - DNS query bytes
+// returns response or error
+func (d *DNSProxy) Resolve(packet []byte) ([]byte, error) {
+	msg := &dns.Msg{}
+	err := msg.Unpack(packet)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := &proxy.DNSContext{
+		Proto: "udp",
+		Req:   msg,
+	}
+	err = d.dnsProxy.Resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ctx.Res == nil {
+		return nil, fmt.Errorf("got no response")
+	}
+
+	bytes, err := ctx.Res.Pack()
+	if err != nil {
+		return nil, errorx.Decorate(err, "couldn't convert message into wire format")
+	}
+
+	return bytes, nil
 }
 
 // createProxyConfig creates proxy.Config from mobile.Config values

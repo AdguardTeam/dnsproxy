@@ -95,7 +95,8 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 		Fallbacks:     "8.8.8.8:53\n1.1.1.1:53",
 		Timeout:       5000,
 		Upstreams:     upstreamsStr,
-		MaxGoroutines: 1,
+		MaxGoroutines: 5,
+		CacheSize:     0,
 	}
 
 	mobileDNSProxy := DNSProxy{Config: config}
@@ -116,6 +117,18 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 
 	// Send test messages in parallel
 	sendTestMessagesAsync(t, conn)
+
+	//runtime.GC()
+	//debug.FreeOSMemory()
+	//f, err := os.Create("output.pprof")
+	//if err != nil {
+	//	log.Fatal("could not create memory profile: ", err)
+	//}
+	//defer f.Close()
+	////runtime.GC() // get up-to-date statistics
+	//if err := pprof.WriteHeapProfile(f); err != nil {
+	//	log.Fatal("could not write memory profile: ", err)
+	//}
 
 	end := getRSS()
 	log.Printf("RSS in the end - %d kB (%d kB diff)\n", end/1024, (end-afterLoad)/1024)

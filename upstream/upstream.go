@@ -20,6 +20,10 @@ import (
 	"golang.org/x/net/http2"
 )
 
+// DohMaxConnsPerHost controls the maximum number of connections per host
+// nolint
+var DohMaxConnsPerHost = 0
+
 // Upstream is an interface for a DNS resolver
 type Upstream interface {
 	Exchange(m *dns.Msg) (*dns.Msg, error)
@@ -207,6 +211,7 @@ func (p *dnsOverHTTPS) getTransport() (*http.Transport, error) {
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
 		DialContext:        dialContext,
+		MaxConnsPerHost:    DohMaxConnsPerHost,
 	}
 	// It appears that this is important to explicitly configure transport to use HTTP2
 	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11

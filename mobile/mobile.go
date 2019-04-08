@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -20,8 +21,10 @@ import (
 //nolint
 func init() {
 	// https://github.com/golang/go/issues/21489
-	debug.SetGCPercent(10)
+	debug.SetGCPercent(5)
 	upstream.RootCAs = loadSystemRootCAs()
+	upstream.DohMaxConnsPerHost = 1
+	runtime.GOMAXPROCS(1)
 }
 
 // DNSProxy represents a proxy with it's configuration
@@ -143,6 +146,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		Upstreams:     upstreams,
 		AllServers:    config.AllServers,
 		CacheSize:     config.CacheSize,
+		CacheEnabled:  config.CacheSize > 0,
 		MaxGoroutines: config.MaxGoroutines,
 	}
 

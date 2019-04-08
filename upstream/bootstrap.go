@@ -142,8 +142,14 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	// if it's a hostname
 	//
 
-	ctx, cancel := context.WithTimeout(context.TODO(), n.timeout)
-	defer cancel() // important to avoid a resource leak
+	var ctx context.Context
+	if n.timeout > 0 {
+		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), n.timeout)
+		defer cancel() // important to avoid a resource leak
+		ctx = ctxWithTimeout
+	} else {
+		ctx = context.Background()
+	}
 
 	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {

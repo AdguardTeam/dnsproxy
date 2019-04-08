@@ -21,6 +21,7 @@ import (
 func init() {
 	// https://github.com/golang/go/issues/21489
 	debug.SetGCPercent(10)
+	upstream.RootCAs = loadSystemRootCAs()
 }
 
 // DNSProxy represents a proxy with it's configuration

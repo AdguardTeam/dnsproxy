@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/url"
@@ -13,6 +14,11 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
 )
+
+// RootCAs is the CertPool that must be used by all upstreams
+// Redefining RootCAs makes sense on iOS to overcome the 15MB memory limit of the NEPacketTunnelProvider
+// nolint
+var RootCAs *x509.CertPool
 
 type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
@@ -216,9 +222,5 @@ func (n *bootstrapper) getAddressHostPort() (string, string, error) {
 
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
-	rootCAs, err := loadRootCAs()
-	if err != nil {
-		log.Printf("error loading root CAs: %s", err)
-	}
-	return &tls.Config{ServerName: host, RootCAs: rootCAs}
+	return &tls.Config{ServerName: host, RootCAs: RootCAs}
 }

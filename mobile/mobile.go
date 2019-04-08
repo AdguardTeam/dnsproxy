@@ -148,6 +148,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		CacheSize:     config.CacheSize,
 		CacheEnabled:  config.CacheSize > 0,
 		MaxGoroutines: config.MaxGoroutines,
+		Ratelimit:     0,
 	}
 
 	if config.Fallbacks != "" {

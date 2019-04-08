@@ -85,6 +85,9 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 	upstreams := []string{
 		"tls://dns.adguard.com",
 		"https://dns.adguard.com/dns-query",
+		"176.103.130.130",
+		// AdGuard DNS (DNSCrypt)
+		"sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
 	}
 	upstreamsStr := strings.Join(upstreams, "\n")
 

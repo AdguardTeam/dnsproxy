@@ -27,14 +27,15 @@ type DNSProxy struct {
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
 // In Java API this structure becomes an object that needs to be configured and setted as field of DNSProxy
 type Config struct {
-	ListenAddr   string // IP address to listen to
-	ListenPort   int    // Port to listen to
-	BootstrapDNS string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
-	Fallbacks    string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
-	Upstreams    string // A list of upstream resolvers (each on a new line)
-	Timeout      int    // Default timeout for all resolvers (milliseconds)
-	CacheSize    int    // Maximum number of elements in the cache. Default size: 1000
-	AllServers   bool   // If true, parallel queries to all configured upstream servers are enabled
+	ListenAddr    string // IP address to listen to
+	ListenPort    int    // Port to listen to
+	BootstrapDNS  string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
+	Fallbacks     string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
+	Upstreams     string // A list of upstream resolvers (each on a new line)
+	Timeout       int    // Default timeout for all resolvers (milliseconds)
+	CacheSize     int    // Maximum number of elements in the cache. Default size: 1000
+	AllServers    bool   // If true, parallel queries to all configured upstream servers are enabled
+	MaxGoroutines int    // Maximum number of parallel goroutines that process the requests
 }
 
 // Start starts the DNS proxy
@@ -134,6 +135,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		Upstreams:     upstreams,
 		AllServers:    config.AllServers,
 		CacheSize:     config.CacheSize,
+		MaxGoroutines: config.MaxGoroutines,
 	}
 
 	if config.Fallbacks != "" {

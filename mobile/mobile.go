@@ -17,6 +17,7 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 )
 
+//nolint
 func init() {
 	// https://github.com/golang/go/issues/21489
 	debug.SetGCPercent(10)

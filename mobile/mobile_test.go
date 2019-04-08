@@ -2,11 +2,13 @@ package mobile
 
 import (
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/shirou/gopsutil/process"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 
@@ -77,13 +79,14 @@ func TestMobileApi(t *testing.T) {
 }
 
 func TestMobileApiMultipleQueries(t *testing.T) {
+	start := getRSS()
+	log.Printf("RSS before init - %d kB\n", start/1024)
+
 	upstreams := []string{
 		"tls://dns.adguard.com",
 		"https://dns.adguard.com/dns-query",
 	}
 	upstreamsStr := strings.Join(upstreams, "\n")
-
-	log.SetLevel(log.DEBUG)
 
 	config := &Config{
 		ListenAddr:    "127.0.0.1",
@@ -101,6 +104,9 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 		t.Fatalf("cannot start the mobile proxy: %s", err)
 	}
 
+	afterLoad := getRSS()
+	log.Printf("RSS after init - %d kB (%d kB diff)\n", afterLoad/1024, (afterLoad-start)/1024)
+
 	// Create a DNS-over-UDP client connection
 	addr := mobileDNSProxy.dnsProxy.Addr(proxy.ProtoUDP)
 	conn, err := dns.Dial("udp", addr.String())
@@ -110,6 +116,9 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 
 	// Send test messages in parallel
 	sendTestMessagesAsync(t, conn)
+
+	end := getRSS()
+	log.Printf("RSS in the end - %d kB (%d kB diff)\n", end/1024, (end-afterLoad)/1024)
 
 	// Stop proxy
 	err = mobileDNSProxy.Stop()
@@ -175,4 +184,16 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 	} else {
 		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
 	}
+}
+
+func getRSS() uint64 {
+	proc, err := process.NewProcess(int32(os.Getpid()))
+	if err != nil {
+		panic(err)
+	}
+	minfo, err := proc.MemoryInfo()
+	if err != nil {
+		panic(err)
+	}
+	return minfo.RSS
 }

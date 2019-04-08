@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,11 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 )
+
+func init() {
+	// https://github.com/golang/go/issues/21489
+	debug.SetGCPercent(10)
+}
 
 // DNSProxy represents a proxy with it's configuration
 type DNSProxy struct {

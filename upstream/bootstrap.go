@@ -121,7 +121,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 		dialContext := createDialContext([]string{resolverAddress}, n.timeout)
 		n.dialContext = dialContext
-		config := &tls.Config{ServerName: host}
+		config := n.createTLSConfig(host)
 		n.resolvedConfig = config
 		n.Unlock()
 		return config, n.dialContext, nil
@@ -163,7 +163,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 	dialContext := createDialContext(resolved, n.timeout)
 	n.dialContext = dialContext
-	n.resolvedConfig = &tls.Config{ServerName: host}
+	n.resolvedConfig = n.createTLSConfig(host)
 	return n.resolvedConfig, n.dialContext, nil
 }
 
@@ -212,4 +212,13 @@ func (n *bootstrapper) getAddressHostPort() (string, string, error) {
 
 	// get a host without port
 	return net.SplitHostPort(justHostPort)
+}
+
+// createTLSConfig creates a client TLS config
+func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
+	rootCAs, err := loadRootCAs()
+	if err != nil {
+		log.Printf("error loading root CAs: %s", err)
+	}
+	return &tls.Config{ServerName: host, RootCAs: rootCAs}
 }

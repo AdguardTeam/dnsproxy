@@ -4,6 +4,7 @@ Package mobile contains a simple mobile API for github.com/AdguardTeam/dnsproxy
 package mobile
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -22,7 +23,21 @@ import (
 func init() {
 	// https://github.com/golang/go/issues/21489
 	debug.SetGCPercent(5)
+
+	// Load a limited set of root CAs (in order to consume less memory)
 	upstream.RootCAs = loadSystemRootCAs()
+
+	// Leave only memory-efficient cipher suites
+	upstream.CipherSuites = []uint16{
+		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+	}
+
 	upstream.DohMaxConnsPerHost = 1
 	runtime.GOMAXPROCS(1)
 }

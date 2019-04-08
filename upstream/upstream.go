@@ -206,6 +206,7 @@ func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   p.boot.timeout,
+		Jar:       nil,
 	}
 	p.client = client
 	return p.client, nil

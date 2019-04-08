@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	testMessagesCount = 10
+	testMessagesCount = 20
 )
 
 func TestMobileApi(t *testing.T) {
@@ -83,6 +83,10 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 	log.Printf("RSS before init - %d kB\n", start/1024)
 
 	upstreams := []string{
+		// It seems that CloudFlare chooses more complicated cipher suites.
+		// It leads to higher memory usage.
+		"tls://1.1.1.1",
+		"https://dns.cloudflare.com/dns-query",
 		"tls://dns.adguard.com",
 		"https://dns.adguard.com/dns-query",
 		"176.103.130.130",

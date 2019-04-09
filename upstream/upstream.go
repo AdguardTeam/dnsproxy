@@ -164,7 +164,6 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't pack request msg")
 	}
-	//bb := bytes.NewBuffer(buf)
 
 	// It appears, that GET requests are more memory-efficient with Golang implementation of HTTP/2.
 	requestURL := p.boot.address + "?dns=" + base64.URLEncoding.EncodeToString(buf)
@@ -172,7 +171,6 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't create a HTTP request to %s", p.boot.address)
 	}
-	//req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
 
 	resp, err := client.Do(req)
@@ -225,7 +223,7 @@ func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
 	req.Id = dns.Id()
 	req.RecursionDesired = true
 	req.Question = []dns.Question{{Name: "ipv4only.arpa.", Qtype: dns.TypeA, Qclass: dns.ClassINET}}
-	_, _ = p.exchangeHTTPSClient(&req, client)
+	_, err = p.exchangeHTTPSClient(&req, client)
 	if err != nil {
 		return nil, err
 	}

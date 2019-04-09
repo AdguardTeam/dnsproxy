@@ -37,6 +37,9 @@ func TestMobileApi(t *testing.T) {
 		MaxGoroutines: 1,
 	}
 
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
 	mobileDNSProxy := DNSProxy{Config: config}
 	err := mobileDNSProxy.Start()
 	if err != nil {
@@ -71,6 +74,14 @@ func TestMobileApi(t *testing.T) {
 		t.Fatalf("DNS upstream %s returned wrong answer type instead of A: %v", addr, reply.Answer[0])
 	}
 
+	dnsRequestProcessedListenerGuard.Lock()
+	if len(listener.e) != 1 {
+		dnsRequestProcessedListenerGuard.Unlock()
+		t.Fatalf("Wrong number of events registered by the test listener")
+	}
+	dnsRequestProcessedListenerGuard.Unlock()
+
+	ConfigureDNSRequestProcessedListener(nil)
 	err = mobileDNSProxy.Stop()
 	if err != nil {
 		t.Fatalf("cannot stop the mobile proxy: %s", err)
@@ -266,4 +277,12 @@ func getRSS() uint64 {
 		panic(err)
 	}
 	return minfo.RSS
+}
+
+type testDNSRequestProcessedListener struct {
+	e []DNSRequestProcessedEvent
+}
+
+func (l *testDNSRequestProcessedListener) DNSRequestProcessed(e DNSRequestProcessedEvent) {
+	l.e = append(l.e, e)
 }

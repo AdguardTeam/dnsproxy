@@ -178,14 +178,15 @@ func createConfig(config *Config) (*proxy.Config, error) {
 
 	// Create the config
 	proxyConfig := proxy.Config{
-		UDPListenAddr: listenUDPAddr,
-		TCPListenAddr: listenTCPAddr,
-		Upstreams:     upstreams,
-		AllServers:    config.AllServers,
-		CacheSize:     config.CacheSize,
-		CacheEnabled:  config.CacheSize > 0,
-		MaxGoroutines: config.MaxGoroutines,
-		Ratelimit:     0,
+		UDPListenAddr:   listenUDPAddr,
+		TCPListenAddr:   listenTCPAddr,
+		Upstreams:       upstreams,
+		AllServers:      config.AllServers,
+		CacheSize:       config.CacheSize,
+		CacheEnabled:    config.CacheSize > 0,
+		MaxGoroutines:   config.MaxGoroutines,
+		Ratelimit:       0,
+		ResponseHandler: handleDNSResponse,
 	}
 
 	if config.Fallbacks != "" {

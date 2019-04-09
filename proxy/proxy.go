@@ -45,6 +45,11 @@ const (
 // See handler_test.go for examples
 type Handler func(p *Proxy, d *DNSContext) error
 
+// ResponseHandler is a callback method that is called when DNS query has been processed
+// d -- current DNS query context (contains response if it was successful)
+// err -- error (if any)
+type ResponseHandler func(d *DNSContext, err error)
+
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
 	started     bool         // Started flag
@@ -88,7 +93,9 @@ type Config struct {
 
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
-	Handler   Handler             // custom middleware (optional)
+
+	Handler         Handler         // custom middleware (optional)
+	ResponseHandler ResponseHandler // response callback
 
 	DomainsReservedUpstreams map[string][]upstream.Upstream // map of domains and lists of corresponding upstreams
 
@@ -886,6 +893,11 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	}
 
 	p.logDNSMessage(d.Res)
+
+	if p.ResponseHandler != nil {
+		p.ResponseHandler(d, err)
+	}
+
 	p.respond(d)
 	return err
 }

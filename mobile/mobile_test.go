@@ -89,6 +89,9 @@ func TestMobileApi(t *testing.T) {
 }
 
 func TestMobileApiResolve(t *testing.T) {
+	start := getRSS()
+	log.Printf("RSS before init - %d kB\n", start/1024)
+
 	upstreams := []string{
 		// It seems that CloudFlare chooses more complicated cipher suites.
 		// It leads to higher memory usage.
@@ -113,11 +116,17 @@ func TestMobileApiResolve(t *testing.T) {
 		CacheSize:     0,
 	}
 
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
 	mobileDNSProxy := DNSProxy{Config: config}
 	err := mobileDNSProxy.Start()
 	if err != nil {
 		t.Fatalf("cannot start the mobile proxy: %s", err)
 	}
+
+	afterLoad := getRSS()
+	log.Printf("RSS after init - %d kB (%d kB diff)\n", afterLoad/1024, (afterLoad-start)/1024)
 
 	for i := 0; i < testMessagesCount; i++ {
 		msg := createTestMessage()
@@ -133,6 +142,16 @@ func TestMobileApiResolve(t *testing.T) {
 		}
 		assertResponse(t, res)
 	}
+
+	end := getRSS()
+	log.Printf("RSS in the end - %d kB (%d kB diff)\n", end/1024, (end-afterLoad)/1024)
+
+	dnsRequestProcessedListenerGuard.Lock()
+	if len(listener.e) != testMessagesCount {
+		dnsRequestProcessedListenerGuard.Unlock()
+		t.Fatalf("Wrong number of events registered by the test listener")
+	}
+	dnsRequestProcessedListenerGuard.Unlock()
 
 	// Stop proxy
 	err = mobileDNSProxy.Stop()
@@ -188,6 +207,7 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 	// Send test messages in parallel
 	sendTestMessagesAsync(t, conn)
 
+	// Uncomment if pprof is needed
 	//f, err := os.Create("output.pprof")
 	//if err != nil {
 	//	log.Fatal("could not create memory profile: ", err)

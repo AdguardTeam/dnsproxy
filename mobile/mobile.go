@@ -117,6 +117,10 @@ func (d *DNSProxy) Resolve(packet []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	if len(msg.Question) != 1 {
+		return nil, fmt.Errorf("got invalid number of questions: %v", len(msg.Question))
+	}
+
 	ctx := &proxy.DNSContext{
 		Proto: "udp",
 		Req:   msg,

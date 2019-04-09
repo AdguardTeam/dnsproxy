@@ -166,7 +166,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	}
 
 	// It appears, that GET requests are more memory-efficient with Golang implementation of HTTP/2.
-	requestURL := p.boot.address + "?dns=" + base64.URLEncoding.EncodeToString(buf)
+	requestURL := p.boot.address + "?dns=" + base64.RawURLEncoding.EncodeToString(buf)
 	req, err := http.NewRequest("GET", requestURL, nil)
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't create a HTTP request to %s", p.boot.address)

@@ -378,6 +378,10 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		d.Res = reply
 	}
 
+	if p.ResponseHandler != nil {
+		p.ResponseHandler(d, err)
+	}
+
 	return err
 }
 
@@ -893,11 +897,6 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	}
 
 	p.logDNSMessage(d.Res)
-
-	if p.ResponseHandler != nil {
-		p.ResponseHandler(d, err)
-	}
-
 	p.respond(d)
 	return err
 }

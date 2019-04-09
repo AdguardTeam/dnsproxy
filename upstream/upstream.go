@@ -1,7 +1,7 @@
 package upstream
 
 import (
-	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -12,12 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
-	"golang.org/x/net/http2"
 )
 
 // DohMaxConnsPerHost controls the maximum number of connections per host
@@ -154,17 +155,24 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, errorx.Decorate(err, "couldn't initialize HTTP client or transport")
 	}
 
+	return p.exchangeHTTPSClient(m, client)
+}
+
+// exchangeHTTPSClient sends the DNS query to a DOH resolver using the specified http.Client instance
+func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dns.Msg, error) {
 	buf, err := m.Pack()
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't pack request msg")
 	}
-	bb := bytes.NewBuffer(buf)
+	//bb := bytes.NewBuffer(buf)
 
-	req, err := http.NewRequest("POST", p.boot.address, bb)
+	// It appears, that GET requests are more memory-efficient with Golang implementation of HTTP/2.
+	requestURL := p.boot.address + "?dns=" + base64.URLEncoding.EncodeToString(buf)
+	req, err := http.NewRequest("GET", requestURL, nil)
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't create a HTTP request to %s", p.boot.address)
 	}
-	req.Header.Set("Content-Type", "application/dns-message")
+	//req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
 
 	resp, err := client.Do(req)
@@ -208,6 +216,20 @@ func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
 		Timeout:   p.boot.timeout,
 		Jar:       nil,
 	}
+
+	// Warming up the HTTP client.
+	// This is actually important -- if there is no warmup, there's a race condition on the very first DNS query:
+	// http.Client will create numerous connections. During this warmup it'll create a new connection that will be used
+	// for processing further DNS queries.
+	req := dns.Msg{}
+	req.Id = dns.Id()
+	req.RecursionDesired = true
+	req.Question = []dns.Question{{Name: "ipv4only.arpa.", Qtype: dns.TypeA, Qclass: dns.ClassINET}}
+	_, _ = p.exchangeHTTPSClient(&req, client)
+	if err != nil {
+		return nil, err
+	}
+
 	p.client = client
 	return p.client, nil
 }
@@ -225,6 +247,7 @@ func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 		DisableCompression: true,
 		DialContext:        dialContext,
 		MaxConnsPerHost:    DohMaxConnsPerHost,
+		MaxIdleConns:       1,
 	}
 	// It appears that this is important to explicitly configure transport to use HTTP2
 	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11

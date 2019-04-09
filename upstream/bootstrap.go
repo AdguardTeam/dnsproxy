@@ -198,7 +198,7 @@ func createDialContext(addresses []string, timeout time.Duration) (dialContext d
 			elapsed := time.Since(start) / time.Millisecond
 
 			if err == nil {
-				log.Tracef("dialer successfully initialize connection to %s in %d milliseconds", resolverAddress, elapsed)
+				log.Tracef("dialer has successfully initialized connection to %s in %d milliseconds", resolverAddress, elapsed)
 				return con, err
 			}
 			errs = append(errs, err)

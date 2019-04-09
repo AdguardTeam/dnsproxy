@@ -283,6 +283,6 @@ type testDNSRequestProcessedListener struct {
 	e []DNSRequestProcessedEvent
 }
 
-func (l *testDNSRequestProcessedListener) DNSRequestProcessed(e DNSRequestProcessedEvent) {
-	l.e = append(l.e, e)
+func (l *testDNSRequestProcessedListener) DNSRequestProcessed(e *DNSRequestProcessedEvent) {
+	l.e = append(l.e, *e)
 }

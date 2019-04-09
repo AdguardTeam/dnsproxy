@@ -21,7 +21,7 @@ type DNSRequestProcessedEvent struct {
 
 // DNSRequestProcessedListener is a callback interface that can be configured from by the client library
 type DNSRequestProcessedListener interface {
-	DNSRequestProcessed(e DNSRequestProcessedEvent)
+	DNSRequestProcessed(e *DNSRequestProcessedEvent)
 }
 
 // Configures a global listener for the DNSRequestProcessedEvent events
@@ -54,5 +54,5 @@ func handleDNSResponse(d *proxy.DNSContext, err error) {
 		e.Error = err.Error()
 	}
 
-	dnsRequestProcessedListener.DNSRequestProcessed(e)
+	dnsRequestProcessedListener.DNSRequestProcessed(&e)
 }

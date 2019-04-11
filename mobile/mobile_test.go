@@ -245,7 +245,8 @@ func TestMobileApiDNS64(t *testing.T) {
 		Upstreams:    upstreamsStr,
 	}
 
-	config.DNS64Upstream = "2001:67c:27e4:15::64"
+	config.SystemResolvers = "2001:67c:27e4:15::64"
+	config.DetectDNS64Prefix = true
 	dnsProxy := DNSProxy{Config: config}
 	err := dnsProxy.Start()
 	if err != nil {

@@ -12,6 +12,7 @@ matrix:
 
       go:
         - 1.x
+        - 1.11
 
       script:
         # Run tests
@@ -104,7 +105,8 @@ matrix:
       osx_image: xcode10.1
 
       go:
-        - 1.x
+        # This is important for iOS version to use Go v1.11
+        - 1.11
 
       env:
         - GO111MODULE=on

@@ -45,6 +45,11 @@ const (
 // See handler_test.go for examples
 type Handler func(p *Proxy, d *DNSContext) error
 
+// ResponseHandler is a callback method that is called when DNS query has been processed
+// d -- current DNS query context (contains response if it was successful)
+// err -- error (if any)
+type ResponseHandler func(d *DNSContext, err error)
+
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
 	started     bool         // Started flag
@@ -65,8 +70,10 @@ type Proxy struct {
 
 	cache *cache // cache instance (nil if cache is disabled)
 
-	sync.RWMutex
-	Config
+	Config // proxy configuration
+
+	maxGoroutines chan bool // limits the number of parallel queries. if nil, there's no limit
+	sync.RWMutex            // protects parallel access to proxy structures
 }
 
 // Config contains all the fields necessary for proxy configuration
@@ -89,9 +96,13 @@ type Config struct {
 
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
-	Handler   Handler             // custom middleware (optional)
+
+	Handler         Handler         // custom middleware (optional)
+	ResponseHandler ResponseHandler // response callback
 
 	DomainsReservedUpstreams map[string][]upstream.Upstream // map of domains and lists of corresponding upstreams
+
+	MaxGoroutines int // maximum number of goroutines processing the DNS requests (important for mobile)
 }
 
 // DNSContext represents a DNS request message context
@@ -196,6 +207,13 @@ func (p *Proxy) Start() error {
 		p.cache = &cache{cacheSize: p.CacheSize}
 	}
 
+	if p.MaxGoroutines > 0 {
+		p.maxGoroutines = make(chan bool, p.MaxGoroutines)
+	} else {
+		// nil means there's no limit
+		p.maxGoroutines = nil
+	}
+
 	err = p.startListeners()
 	if err != nil {
 		return err
@@ -249,6 +267,10 @@ func (p *Proxy) Stop() error {
 		if err != nil {
 			return errorx.Decorate(err, "couldn't close HTTPS server")
 		}
+	}
+
+	if p.maxGoroutines != nil {
+		close(p.maxGoroutines)
 	}
 
 	p.started = false
@@ -361,6 +383,10 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		d.Res = p.genServerFailure(d.Req)
 	} else {
 		d.Res = reply
+	}
+
+	if p.ResponseHandler != nil {
+		p.ResponseHandler(d, err)
 	}
 
 	return err
@@ -557,7 +583,11 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 			// we need the contents to survive the call because we're handling them in goroutine
 			packet := make([]byte, n)
 			copy(packet, b)
-			go p.handleUDPPacket(packet, addr, conn) // ignore errors
+			p.guardMaxGoroutines()
+			go func() {
+				p.handleUDPPacket(packet, addr, conn) // ignore errors
+				p.freeMaxGoroutines()
+			}()
 		}
 		if err != nil {
 			if isConnClosed(err) {
@@ -629,7 +659,11 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 			}
 			log.Printf("got error when reading from TCP listen: %s", err)
 		} else {
-			go p.handleTCPConnection(clientConn, proto)
+			p.guardMaxGoroutines()
+			go func() {
+				p.handleTCPConnection(clientConn, proto)
+				p.freeMaxGoroutines()
+			}()
 		}
 	}
 }
@@ -811,6 +845,20 @@ func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
 	}
 
 	return &net.TCPAddr{IP: ip, Port: portValue}, nil
+}
+
+// guardMaxGoroutines makes sure that there are no more than p.MaxGoroutines parallel goroutines
+func (p *Proxy) guardMaxGoroutines() {
+	if p.maxGoroutines != nil {
+		p.maxGoroutines <- true
+	}
+}
+
+// freeMaxGoroutines allows other goroutines to do the job
+func (p *Proxy) freeMaxGoroutines() {
+	if p.maxGoroutines != nil {
+		<-p.maxGoroutines
+	}
 }
 
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.

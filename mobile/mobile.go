@@ -7,14 +7,32 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/joomcode/errorx"
+
+	"github.com/miekg/dns"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 )
+
+//nolint
+func init() {
+	// https://github.com/golang/go/issues/21489
+	debug.SetGCPercent(5)
+
+	// Load a limited set of root CAs (in order to consume less memory)
+	upstream.RootCAs = loadSystemRootCAs()
+	upstream.DohMaxConnsPerHost = 2
+
+	// TODO after GO 1.13 release TLS 1.3 will be enabled by default. Remove this afterward
+	//os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")
+}
 
 // DNSProxy represents a proxy with it's configuration
 type DNSProxy struct {
@@ -32,10 +50,11 @@ type Config struct {
 	BootstrapDNS  string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
 	Fallbacks     string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
 	Upstreams     string // A list of upstream resolvers (each on a new line)
-	DNS64Upstream string // A list of DNS64 upstreams for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of net.Resolver
 	Timeout       int    // Default timeout for all resolvers (milliseconds)
 	CacheSize     int    // Maximum number of elements in the cache. Default size: 1000
 	AllServers    bool   // If true, parallel queries to all configured upstream servers are enabled
+	MaxGoroutines int    // Maximum number of parallel goroutines that process the requests
+	DNS64Upstream string // A list of DNS64 upstreams for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of net.Resolver
 }
 
 // Start starts the DNS proxy
@@ -93,6 +112,40 @@ func (d *DNSProxy) Addr() string {
 	return addr.String()
 }
 
+// Resolve resolves the specified DNS request using the configured (and started) dns proxy
+// packet - DNS query bytes
+// returns response or error
+func (d *DNSProxy) Resolve(packet []byte) ([]byte, error) {
+	msg := &dns.Msg{}
+	err := msg.Unpack(packet)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(msg.Question) != 1 {
+		return nil, fmt.Errorf("got invalid number of questions: %v", len(msg.Question))
+	}
+
+	ctx := &proxy.DNSContext{
+		Proto: "udp",
+		Req:   msg,
+	}
+	err = d.dnsProxy.Resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ctx.Res == nil {
+		return nil, fmt.Errorf("got no response")
+	}
+
+	bytes, err := ctx.Res.Pack()
+	if err != nil {
+		return nil, errorx.Decorate(err, "couldn't convert message into wire format")
+	}
+
+	return bytes, nil
+}
+
 // createProxyConfig creates proxy.Config from mobile.Config values
 func createConfig(config *Config) (*proxy.Config, error) {
 	listenIP := net.ParseIP(config.ListenAddr)
@@ -134,11 +187,15 @@ func createConfig(config *Config) (*proxy.Config, error) {
 
 	// Create the config
 	proxyConfig := proxy.Config{
-		UDPListenAddr: listenUDPAddr,
-		TCPListenAddr: listenTCPAddr,
-		Upstreams:     upstreams,
-		AllServers:    config.AllServers,
-		CacheSize:     config.CacheSize,
+		UDPListenAddr:   listenUDPAddr,
+		TCPListenAddr:   listenTCPAddr,
+		Upstreams:       upstreams,
+		AllServers:      config.AllServers,
+		CacheSize:       config.CacheSize,
+		CacheEnabled:    config.CacheSize > 0,
+		MaxGoroutines:   config.MaxGoroutines,
+		Ratelimit:       0,
+		ResponseHandler: handleDNSResponse,
 	}
 
 	if config.Fallbacks != "" {

@@ -12,13 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joomcode/errorx"
-
-	"github.com/miekg/dns"
-
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/joomcode/errorx"
+	"github.com/miekg/dns"
 )
 
 //nolint
@@ -54,7 +52,7 @@ type Config struct {
 	CacheSize     int    // Maximum number of elements in the cache. Default size: 1000
 	AllServers    bool   // If true, parallel queries to all configured upstream servers are enabled
 	MaxGoroutines int    // Maximum number of parallel goroutines that process the requests
-	DNS64Upstream string // A list of DNS64 upstreams for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of net.Resolver
+	DNS64Upstream string // A list of DNS64 upstreams for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
 }
 
 // Start starts the DNS proxy

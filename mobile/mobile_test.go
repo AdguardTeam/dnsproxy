@@ -9,10 +9,9 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
-	"github.com/shirou/gopsutil/process"
-
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
+	"github.com/shirou/gopsutil/process"
 )
 
 const (
@@ -229,92 +228,28 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 	}
 }
 
-func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
-	defer func() {
-		g.Done()
-	}()
-
-	req := createTestMessage()
-	err := conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
-
-	res, err := conn.ReadMsg()
-	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
-	}
-	assertResponse(t, res)
-}
-
-// sendTestMessagesAsync sends messages in parallel
-// so that we could find race issues
-func sendTestMessagesAsync(t *testing.T, conn *dns.Conn) {
-	g := &sync.WaitGroup{}
-	g.Add(testMessagesCount)
-
-	for i := 0; i < testMessagesCount; i++ {
-		go sendTestMessageAsync(t, conn, g)
-	}
-
-	g.Wait()
-}
-
-func createTestMessage() *dns.Msg {
-	return createHostTestMessage("google-public-dns-a.google.com")
-}
-
-func createHostTestMessage(host string) *dns.Msg {
-	req := dns.Msg{}
-	req.Id = dns.Id()
-	req.RecursionDesired = true
-	name := host + "."
-	req.Question = []dns.Question{
-		{Name: name, Qtype: dns.TypeA, Qclass: dns.ClassINET},
-	}
-	return &req
-}
-
-func assertResponse(t *testing.T, reply *dns.Msg) {
-	if len(reply.Answer) != 1 {
-		t.Fatalf("DNS upstream returned reply with wrong number of answers - %d", len(reply.Answer))
-	}
-	if a, ok := reply.Answer[0].(*dns.A); ok {
-		if !net.IPv4(8, 8, 8, 8).Equal(a.A) {
-			t.Fatalf("DNS upstream returned wrong answer instead of 8.8.8.8: %v", a.A)
-		}
-	} else {
-		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
-	}
-}
-
-func getRSS() uint64 {
-	proc, err := process.NewProcess(int32(os.Getpid()))
-	if err != nil {
-		panic(err)
-	}
-	minfo, err := proc.MemoryInfo()
-	if err != nil {
-		panic(err)
-	}
-	return minfo.RSS
-}
-
-type testDNSRequestProcessedListener struct {
-	e []DNSRequestProcessedEvent
-}
-
-func (l *testDNSRequestProcessedListener) DNSRequestProcessed(e *DNSRequestProcessedEvent) {
-	l.e = append(l.e, *e)
-}
-
 func TestMobileApiDNS64(t *testing.T) {
-	config := createTestConfig()
+	upstreams := []string{
+		"tls://dns.adguard.com",
+		"https://dns.adguard.com/dns-query",
+		// AdGuard DNS (DNSCrypt)
+		"sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
+	}
+	upstreamsStr := strings.Join(upstreams, "\n")
+	config := &Config{
+		ListenAddr:   "127.0.0.1",
+		ListenPort:   0, // Specify 0 to start listening on a random free port
+		BootstrapDNS: "8.8.8.8:53\n1.1.1.1:53",
+		Fallbacks:    "8.8.8.8:53\n1.1.1.1:53",
+		Timeout:      5000,
+		Upstreams:    upstreamsStr,
+	}
+
 	config.DNS64Upstream = "2001:67c:27e4:15::64"
-	proxy := DNSProxy{Config: config}
-	err := proxy.Start()
+	dnsProxy := DNSProxy{Config: config}
+	err := dnsProxy.Start()
 	if err != nil {
-		t.Fatalf("cannot start the mobile proxy: %s", err)
+		t.Fatalf("cannot start the mobile dnsProxy: %s", err)
 	}
 
 	// Wait for NAT64 prefix calculation
@@ -325,8 +260,8 @@ func TestMobileApiDNS64(t *testing.T) {
 	//
 
 	// Create a test DNS message
-	req := createTestMessage("and.ru.", dns.TypeAAAA)
-	addr := proxy.Addr()
+	req := createHostTestMessageWithType("and.ru", dns.TypeAAAA)
+	addr := dnsProxy.Addr()
 	reply, err := dns.Exchange(req, addr)
 	if err != nil {
 		t.Fatalf("Couldn't talk to upstream %s: %s", addr, err)
@@ -343,9 +278,9 @@ func TestMobileApiDNS64(t *testing.T) {
 		t.Fatalf("DNS upstream %s returned wrong answer type instead of AAAA: %v", addr, reply.Answer[0])
 	}
 
-	err = proxy.Stop()
+	err = dnsProxy.Stop()
 	if err != nil {
-		t.Fatalf("cannot stop the mobile proxy: %s", err)
+		t.Fatalf("cannot stop the mobile dnsProxy: %s", err)
 	}
 }
 
@@ -389,30 +324,85 @@ func TestParallelExchange(t *testing.T) {
 	}
 }
 
-func createTestMessage(name string, dnsType uint16) *dns.Msg {
+func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
+	defer func() {
+		g.Done()
+	}()
+
+	req := createTestMessage()
+	err := conn.WriteMsg(req)
+	if err != nil {
+		t.Fatalf("cannot write message: %s", err)
+	}
+
+	res, err := conn.ReadMsg()
+	if err != nil {
+		t.Fatalf("cannot read response to message: %s", err)
+	}
+	assertResponse(t, res)
+}
+
+// sendTestMessagesAsync sends messages in parallel
+// so that we could find race issues
+func sendTestMessagesAsync(t *testing.T, conn *dns.Conn) {
+	g := &sync.WaitGroup{}
+	g.Add(testMessagesCount)
+
+	for i := 0; i < testMessagesCount; i++ {
+		go sendTestMessageAsync(t, conn, g)
+	}
+
+	g.Wait()
+}
+
+func createTestMessage() *dns.Msg {
+	return createHostTestMessage("google-public-dns-a.google.com")
+}
+
+func createHostTestMessage(host string) *dns.Msg {
+	return createHostTestMessageWithType(host, dns.TypeA)
+}
+
+func createHostTestMessageWithType(host string, dnsType uint16) *dns.Msg {
 	req := &dns.Msg{}
 	req.Id = dns.Id()
 	req.RecursionDesired = true
+	name := host + "."
 	req.Question = []dns.Question{
 		{Name: name, Qtype: dnsType, Qclass: dns.ClassINET},
 	}
 	return req
 }
 
-func createTestConfig() *Config {
-	upstreams := []string{
-		"tls://dns.adguard.com",
-		"https://dns.adguard.com/dns-query",
-		// AdGuard DNS (DNSCrypt)
-		"sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
+func assertResponse(t *testing.T, reply *dns.Msg) {
+	if len(reply.Answer) != 1 {
+		t.Fatalf("DNS upstream returned reply with wrong number of answers - %d", len(reply.Answer))
 	}
-	upstreamsStr := strings.Join(upstreams, "\n")
-	return &Config{
-		ListenAddr:   "127.0.0.1",
-		ListenPort:   0, // Specify 0 to start listening on a random free port
-		BootstrapDNS: "8.8.8.8:53\n1.1.1.1:53",
-		Fallbacks:    "8.8.8.8:53\n1.1.1.1:53",
-		Timeout:      5000,
-		Upstreams:    upstreamsStr,
+	if a, ok := reply.Answer[0].(*dns.A); ok {
+		if !net.IPv4(8, 8, 8, 8).Equal(a.A) {
+			t.Fatalf("DNS upstream returned wrong answer instead of 8.8.8.8: %v", a.A)
+		}
+	} else {
+		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
 	}
+}
+
+func getRSS() uint64 {
+	proc, err := process.NewProcess(int32(os.Getpid()))
+	if err != nil {
+		panic(err)
+	}
+	minfo, err := proc.MemoryInfo()
+	if err != nil {
+		panic(err)
+	}
+	return minfo.RSS
+}
+
+type testDNSRequestProcessedListener struct {
+	e []DNSRequestProcessedEvent
+}
+
+func (l *testDNSRequestProcessedListener) DNSRequestProcessed(e *DNSRequestProcessedEvent) {
+	l.e = append(l.e, *e)
 }

@@ -62,6 +62,9 @@ type Proxy struct {
 	upstreamRttStats map[string]int // Map of upstream addresses and their rtt. Used to sort upstreams "from fast to slow"
 	rttLock          sync.Mutex     // Synchronizes access to the upstreamRttStats map
 
+	nat64Prefix []byte     // NAT 64 prefix
+	nat64Lock   sync.Mutex // Prefix lock
+
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
@@ -354,6 +357,10 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// execute the DNS request
 	startTime := time.Now()
 	reply, u, err := p.exchange(d.Req, upstreams)
+	if p.isEmptyAAAAResponse(reply, d.Req) {
+		reply, u, err = p.checkDNS64(d.Req, reply, upstreams)
+	}
+
 	rtt := int(time.Since(startTime) / time.Millisecond)
 	log.Tracef("RTT: %d ms", rtt)
 

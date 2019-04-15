@@ -6,12 +6,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
-	"github.com/shirou/gopsutil/process"
-
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
+	"github.com/shirou/gopsutil/process"
 )
 
 const (
@@ -228,6 +228,103 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 	}
 }
 
+func TestMobileApiDNS64(t *testing.T) {
+	upstreams := []string{
+		"tls://dns.adguard.com",
+		"https://dns.adguard.com/dns-query",
+		// AdGuard DNS (DNSCrypt)
+		"sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
+	}
+	upstreamsStr := strings.Join(upstreams, "\n")
+	config := &Config{
+		ListenAddr:   "127.0.0.1",
+		ListenPort:   0, // Specify 0 to start listening on a random free port
+		BootstrapDNS: "8.8.8.8:53\n1.1.1.1:53",
+		Fallbacks:    "8.8.8.8:53\n1.1.1.1:53",
+		Timeout:      5000,
+		Upstreams:    upstreamsStr,
+	}
+
+	config.SystemResolvers = "2001:67c:27e4:15::64"
+	config.DetectDNS64Prefix = true
+	dnsProxy := DNSProxy{Config: config}
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the mobile dnsProxy: %s", err)
+	}
+
+	// Wait for NAT64 prefix calculation
+	time.Sleep(6 * time.Second)
+
+	//
+	// Test that it resolves IPv4 only host with AAAA request type
+	//
+
+	// Create a test DNS message
+	req := createHostTestMessageWithType("and.ru", dns.TypeAAAA)
+	addr := dnsProxy.Addr()
+	reply, err := dns.Exchange(req, addr)
+	if err != nil {
+		t.Fatalf("Couldn't talk to upstream %s: %s", addr, err)
+	}
+	if len(reply.Answer) != 1 {
+		t.Fatalf("DNS upstream %s returned reply with wrong number of answers - %d", addr, len(reply.Answer))
+	}
+
+	if len(reply.Answer) == 0 {
+		t.Fatalf("No answers")
+	}
+
+	if _, ok := reply.Answer[0].(*dns.AAAA); !ok {
+		t.Fatalf("DNS upstream %s returned wrong answer type instead of AAAA: %v", addr, reply.Answer[0])
+	}
+
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the mobile dnsProxy: %s", err)
+	}
+}
+
+func TestDNS64AddressValidation(t *testing.T) {
+	dns64 := "1.1.1.1\n1.1.1.1:53\nhttps://dns.adguard.com\n[2001:67c:27e4:15::64]:53\n2001:67c:27e4:15::64"
+	addresses := validateIPv6Addresses(dns64)
+	if len(addresses) != 2 {
+		t.Fatalf("Wrong count of addresses: %d", len(addresses))
+	}
+	if addresses[0] != addresses[1] {
+		t.Fatalf("Wrong addresses. Expected: [2001:67c:27e4:15::64]:53, actual: %s, %s", addresses[0], addresses[1])
+	}
+
+}
+
+func TestExchangeWithClient(t *testing.T) {
+	res := getNAT64PrefixWithClient("1.1.1.1:53")
+	if res.err == nil {
+		t.Fatalf("1.1.1.1:53 is not DNS64 server")
+	}
+
+	res = getNAT64PrefixWithClient("[2001:67c:27e4:15::64]:53")
+	if res.err != nil {
+		t.Fatalf("Error while ipv4only.arpa exchange: %s", res.err)
+	}
+
+	if len(res.prefix) != 12 {
+		t.Fatalf("Wrong prefix format: %v", res.prefix)
+	}
+}
+
+func TestParallelExchange(t *testing.T) {
+	dns64 := []string{"1.1.1.1:53", "[2001:67c:27e4:15::64]:53", "8.8.8.8"}
+	res := getNAT64PrefixParallel(dns64)
+	if res.err != nil {
+		t.Fatalf("Error while NAT64 prefix calculation: %s", res.err)
+	}
+
+	if len(res.prefix) != 12 {
+		t.Fatalf("Invalid prefix: %v", res.prefix)
+	}
+}
+
 func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	defer func() {
 		g.Done()
@@ -264,14 +361,18 @@ func createTestMessage() *dns.Msg {
 }
 
 func createHostTestMessage(host string) *dns.Msg {
-	req := dns.Msg{}
+	return createHostTestMessageWithType(host, dns.TypeA)
+}
+
+func createHostTestMessageWithType(host string, dnsType uint16) *dns.Msg {
+	req := &dns.Msg{}
 	req.Id = dns.Id()
 	req.RecursionDesired = true
 	name := host + "."
 	req.Question = []dns.Question{
-		{Name: name, Qtype: dns.TypeA, Qclass: dns.ClassINET},
+		{Name: name, Qtype: dnsType, Qclass: dns.ClassINET},
 	}
-	return &req
+	return req
 }
 
 func assertResponse(t *testing.T, reply *dns.Msg) {

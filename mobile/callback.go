@@ -13,7 +13,7 @@ import (
 var dnsRequestProcessedListener DNSRequestProcessedListener // nolint
 var dnsRequestProcessedListenerGuard sync.Mutex             // nolint
 
-// DNSRequestProcessedEvent
+// DNSRequestProcessedEvent represents DNS processed event
 type DNSRequestProcessedEvent struct {
 	Domain string // Queried domain name
 	Type   string // Query type
@@ -34,7 +34,7 @@ type DNSRequestProcessedListener interface {
 	DNSRequestProcessed(e *DNSRequestProcessedEvent)
 }
 
-// Configures a global listener for the DNSRequestProcessedEvent events
+// ConfigureDNSRequestProcessedListener configures a global listener for the DNSRequestProcessedEvent events
 func ConfigureDNSRequestProcessedListener(l DNSRequestProcessedListener) {
 	dnsRequestProcessedListenerGuard.Lock()
 	dnsRequestProcessedListener = l

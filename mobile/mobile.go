@@ -12,13 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joomcode/errorx"
-
-	"github.com/miekg/dns"
-
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/joomcode/errorx"
+	"github.com/miekg/dns"
 )
 
 //nolint
@@ -45,15 +43,17 @@ type DNSProxy struct {
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
 // In Java API this structure becomes an object that needs to be configured and setted as field of DNSProxy
 type Config struct {
-	ListenAddr    string // IP address to listen to
-	ListenPort    int    // Port to listen to
-	BootstrapDNS  string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
-	Fallbacks     string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
-	Upstreams     string // A list of upstream resolvers (each on a new line)
-	Timeout       int    // Default timeout for all resolvers (milliseconds)
-	CacheSize     int    // Maximum number of elements in the cache. Default size: 1000
-	AllServers    bool   // If true, parallel queries to all configured upstream servers are enabled
-	MaxGoroutines int    // Maximum number of parallel goroutines that process the requests
+	ListenAddr        string // IP address to listen to
+	ListenPort        int    // Port to listen to
+	BootstrapDNS      string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
+	Fallbacks         string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
+	Upstreams         string // A list of upstream resolvers (each on a new line)
+	Timeout           int    // Default timeout for all resolvers (milliseconds)
+	CacheSize         int    // Maximum number of elements in the cache. Default size: 1000
+	AllServers        bool   // If true, parallel queries to all configured upstream servers are enabled
+	MaxGoroutines     int    // Maximum number of parallel goroutines that process the requests
+	SystemResolvers   string // A list of system resolvers for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
+	DetectDNS64Prefix bool   // If true, DNS64 prefix detection is enabled
 }
 
 // Start starts the DNS proxy
@@ -72,7 +72,11 @@ func (d *DNSProxy) Start() error {
 	d.dnsProxy = &proxy.Proxy{Config: *c}
 
 	// Start the proxy
-	return d.dnsProxy.Start()
+	err = d.dnsProxy.Start()
+	if err == nil && d.Config.DetectDNS64Prefix {
+		go calculateNAT64Prefix(d.dnsProxy, d.Config.SystemResolvers)
+	}
+	return err
 }
 
 // Stop stops the DNS proxy

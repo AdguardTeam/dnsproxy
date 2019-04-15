@@ -357,7 +357,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// execute the DNS request
 	startTime := time.Now()
 	reply, u, err := p.exchange(d.Req, upstreams)
-	if p.isIpv6ResponseEmpty(reply, d.Req) {
+	if p.isEmptyAAAAResponse(reply, d.Req) {
 		reply, u, err = p.checkDNS64(d.Req, reply, upstreams)
 	}
 

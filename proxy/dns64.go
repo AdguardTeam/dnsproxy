@@ -9,9 +9,9 @@ import (
 	"github.com/miekg/dns"
 )
 
-// isIpv6ResponseEmpty checks AAAA answer to be empty
+// isEmptyAAAAResponse checks AAAA answer to be empty
 // returns true if NAT64 prefix already calculated and there are no answers for AAAA question
-func (p *Proxy) isIpv6ResponseEmpty(resp, req *dns.Msg) bool {
+func (p *Proxy) isEmptyAAAAResponse(resp, req *dns.Msg) bool {
 	return p.isNAT64PrefixAvailable() && req.Question[0].Qtype == dns.TypeAAAA && (resp == nil || len(resp.Answer) == 0)
 }
 
@@ -56,26 +56,21 @@ func createModifiedARequest(d *dns.Msg) (*dns.Msg, error) {
 }
 
 // createDNS64MappedResponse adds NAT 64 mapped answer to the old message
-// res is new A response. req is old AAAA request
-func (p *Proxy) createDNS64MappedResponse(res, req *dns.Msg) (*dns.Msg, error) {
+// newAResp is new A response. oldAAAAResp is old *dns.Msg with AAAA request and empty answer
+func (p *Proxy) createDNS64MappedResponse(newAResp, oldAAAAResp *dns.Msg) (*dns.Msg, error) {
 	// do nothing if prefix is not valid
 	if !p.isNAT64PrefixAvailable() {
 		return nil, fmt.Errorf("can not create DNS64 mapped response: NAT64 prefix was not calculated")
 	}
 
 	// check if there are no answers
-	if len(res.Answer) == 0 {
+	if len(newAResp.Answer) == 0 {
 		return nil, fmt.Errorf("no ipv4 answer")
 	}
 
-	// this bug occurs only ones
-	if req == nil {
-		return nil, fmt.Errorf("request is nil")
-	}
-
-	req.Answer = []dns.RR{}
+	oldAAAAResp.Answer = []dns.RR{}
 	// add NAT 64 prefix for each ipv4 answer
-	for _, ans := range res.Answer {
+	for _, ans := range newAResp.Answer {
 		i, ok := ans.(*dns.A)
 		if !ok {
 			continue
@@ -92,35 +87,44 @@ func (p *Proxy) createDNS64MappedResponse(res, req *dns.Msg) (*dns.Msg, error) {
 
 		// create new response and fill it
 		rr := new(dns.AAAA)
-		rr.Hdr = dns.RR_Header{Name: res.Question[0].Name, Rrtype: dns.TypeAAAA, Ttl: ans.Header().Ttl, Class: dns.ClassINET}
+		rr.Hdr = dns.RR_Header{Name: newAResp.Question[0].Name, Rrtype: dns.TypeAAAA, Ttl: ans.Header().Ttl, Class: dns.ClassINET}
 		rr.AAAA = mappedAddress
-		req.Answer = append(req.Answer, rr)
+		oldAAAAResp.Answer = append(oldAAAAResp.Answer, rr)
 	}
-	return req, nil
+	return oldAAAAResp, nil
 }
 
 // checkDNS64 is called when there is no answer for AAAA request and NAT64 prefix available.
-// this function creates modified A request, exchanges it and returns DNS64 mapped response
-func (p *Proxy) checkDNS64(oldReq, oldResp *dns.Msg, upstreams []upstream.Upstream) (*dns.Msg, upstream.Upstream, error) {
+// this function creates modified A request from oldAAAAReq, exchanges it and returns DNS64 mapped response
+// oldAAAAReq is message with AAAA Question. oldAAAAResp is response for oldAAAAReq with empty answer section
+func (p *Proxy) checkDNS64(oldAAAAReq, oldAAAAResp *dns.Msg, upstreams []upstream.Upstream) (*dns.Msg, upstream.Upstream, error) {
 	// Let's create A request to the same hostname
-	req, err := createModifiedARequest(oldReq)
+	modifiedAReq, err := createModifiedARequest(oldAAAAReq)
 	if err != nil {
 		log.Tracef("Failed to create DNS64 mapped request %s", err)
-		return oldReq, nil, err
+		return nil, nil, err
 	}
 
 	// Exchange new A request with selected upstreams
-	resp, u, err := p.exchange(req, upstreams)
+	newAResp, u, err := p.exchange(modifiedAReq, upstreams)
 	if err != nil {
 		log.Tracef("Failed to exchange DNS64 request: %s", err)
-		return oldReq, nil, err
+		return nil, nil, err
 	}
 
-	// A response should be mapped with NAT64 prefix
-	response, err := p.createDNS64MappedResponse(resp, oldResp)
+	// Check if oldAAAAResp is nil
+	if oldAAAAResp == nil {
+		oldAAAAResp = &dns.Msg{}
+		oldAAAAResp.Id = oldAAAAReq.Id
+		oldAAAAResp.RecursionDesired = oldAAAAReq.RecursionDesired
+		oldAAAAResp.Question = []dns.Question{oldAAAAReq.Question[0]}
+	}
+
+	// new A response should be mapped with NAT64 prefix
+	mappedAAAAResponse, err := p.createDNS64MappedResponse(newAResp, oldAAAAResp)
 	if err != nil {
 		log.Tracef("Failed to create DNS64 mapped request %s", err)
-		return oldReq, u, err
+		return nil, u, err
 	}
-	return response, u, nil
+	return mappedAAAAResponse, u, nil
 }

@@ -34,8 +34,9 @@ var allowedCAs = map[string]bool{
 	"CN=DigiCert High Assurance EV Root CA,OU=www.digicert.com,O=DigiCert Inc,C=US": true,
 	"CN=DigiCert Trusted Root G4,OU=www.digicert.com,O=DigiCert Inc,C=US":           true,
 
-	"CN=DST Root CA X3,O=Digital Signature Trust Co.": true,
-	"CN=DST Root CA X4,O=Digital Signature Trust Co.": true,
+	"CN=DST Root CA X3,O=Digital Signature Trust Co.":         true,
+	"CN=DST Root CA X4,O=Digital Signature Trust Co.":         true,
+	"CN=ISRG Root X1,O=Internet Security Research Group,C=US": true,
 
 	"CN=GlobalSign Root CA,OU=Root CA,O=GlobalSign nv-sa,C=BE":  true,
 	"CN=GlobalSign,OU=GlobalSign ECC Root CA - R4,O=GlobalSign": true,

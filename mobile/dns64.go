@@ -36,6 +36,9 @@ import (
 var wellKnownIPv4First = []byte{192, 0, 0, 171}  //nolint
 var wellKnownIPv4Second = []byte{192, 0, 0, 170} //nolint
 
+// this is necessary for tests only (see TestMobileApiDNS64)
+var allowDNS64IP4 = false //nolint
+
 const resolverTimeout = 5 * time.Second
 
 // getImportantError looks for errors that may occurs on network change: network is unreachable or client timeout
@@ -86,9 +89,11 @@ func validateIPv6Addresses(dns64 string) []string {
 		}
 
 		// ParseIP func may return IPv6 address with zero 12-bytes prefix
-		ip := net.ParseIP(host)
-		if len(ip) != net.IPv6len || ip.To4() != nil {
-			continue
+		if !allowDNS64IP4 {
+			ip := net.ParseIP(host)
+			if len(ip) != net.IPv6len || ip.To4() != nil {
+				continue
+			}
 		}
 
 		// Add address to slice after validation

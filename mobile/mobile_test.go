@@ -1,12 +1,17 @@
 package mobile
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/AdguardTeam/dnsproxy/upstream"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/golibs/log"
@@ -245,10 +250,16 @@ func TestMobileApiDNS64(t *testing.T) {
 		Upstreams:    upstreamsStr,
 	}
 
-	config.SystemResolvers = "2001:67c:27e4:15::64"
+	dns64Server := createDNS64Server(t)
+	err := dns64Server.Start()
+	assert.Nil(t, err)
+	defer dns64Server.Stop() // nolint
+
+	allowDNS64IP4 = true // otherwise, 127.0.0.1 server will be discarded
+	config.SystemResolvers = dns64Server.Addr(proxy.ProtoTCP).String()
 	config.DetectDNS64Prefix = true
 	dnsProxy := DNSProxy{Config: config}
-	err := dnsProxy.Start()
+	err = dnsProxy.Start()
 	if err != nil {
 		t.Fatalf("cannot start the mobile dnsProxy: %s", err)
 	}
@@ -294,16 +305,20 @@ func TestDNS64AddressValidation(t *testing.T) {
 	if addresses[0] != addresses[1] {
 		t.Fatalf("Wrong addresses. Expected: [2001:67c:27e4:15::64]:53, actual: %s, %s", addresses[0], addresses[1])
 	}
-
 }
 
 func TestExchangeWithClient(t *testing.T) {
+	p := createDNS64Server(t)
+	err := p.Start()
+	assert.Nil(t, err)
+	defer p.Stop() // nolint
+
 	res := getNAT64PrefixWithClient("1.1.1.1:53")
 	if res.err == nil {
 		t.Fatalf("1.1.1.1:53 is not DNS64 server")
 	}
 
-	res = getNAT64PrefixWithClient("[2001:67c:27e4:15::64]:53")
+	res = getNAT64PrefixWithClient(p.Addr(proxy.ProtoTCP).String())
 	if res.err != nil {
 		t.Fatalf("Error while ipv4only.arpa exchange: %s", res.err)
 	}
@@ -314,7 +329,12 @@ func TestExchangeWithClient(t *testing.T) {
 }
 
 func TestParallelExchange(t *testing.T) {
-	dns64 := []string{"1.1.1.1:53", "[2001:67c:27e4:15::64]:53", "8.8.8.8"}
+	p := createDNS64Server(t)
+	err := p.Start()
+	assert.Nil(t, err)
+	defer p.Stop() // nolint
+
+	dns64 := []string{"1.1.1.1:53", p.Addr(proxy.ProtoTCP).String(), "8.8.8.8"}
 	res := getNAT64PrefixParallel(dns64)
 	if res.err != nil {
 		t.Fatalf("Error while NAT64 prefix calculation: %s", res.err)
@@ -406,4 +426,32 @@ type testDNSRequestProcessedListener struct {
 
 func (l *testDNSRequestProcessedListener) DNSRequestProcessed(e *DNSRequestProcessedEvent) {
 	l.e = append(l.e, *e)
+}
+
+// createDNS64Server creates a DNS64 server mock for unit-tests
+func createDNS64Server(t *testing.T) *proxy.Proxy {
+	p := proxy.Proxy{}
+	p.UDPListenAddr = &net.UDPAddr{Port: 0, IP: net.ParseIP("127.0.0.1")}
+	p.TCPListenAddr = &net.TCPAddr{Port: 0, IP: net.ParseIP("127.0.0.1")}
+	dnsUpstream, err := upstream.AddressToUpstream("8.8.8.8:53", upstream.Options{})
+	assert.Nil(t, err)
+	p.Upstreams = []upstream.Upstream{dnsUpstream}
+	p.Handler = func(p *proxy.Proxy, d *proxy.DNSContext) error {
+		if d.Req.Question[0].Qtype != dns.TypeAAAA {
+			return nil
+		}
+
+		resp := dns.Msg{}
+		resp.SetReply(d.Req)
+
+		// Pref64 + "well-known IPv4"
+		// https://tools.ietf.org/html/rfc7050#section-2.2
+		ip := "2001:67c:27e4:1064::c000:ab"
+		answer, err := dns.NewRR(fmt.Sprintf("%s %d AAAA %s", d.Req.Question[0].Name, 100, ip))
+		assert.Nil(t, err)
+		resp.Answer = append(resp.Answer, answer)
+		d.Res = &resp
+		return nil
+	}
+	return &p
 }

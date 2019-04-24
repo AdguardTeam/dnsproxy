@@ -256,6 +256,7 @@ func TestMobileApiDNS64(t *testing.T) {
 	defer dns64Server.Stop() // nolint
 
 	allowDNS64IP4 = true // otherwise, 127.0.0.1 server will be discarded
+	defer func() { allowDNS64IP4 = false }()
 	config.SystemResolvers = dns64Server.Addr(proxy.ProtoTCP).String()
 	config.DetectDNS64Prefix = true
 	dnsProxy := DNSProxy{Config: config}

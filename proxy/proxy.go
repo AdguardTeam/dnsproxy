@@ -97,8 +97,7 @@ type Config struct {
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 
-	Handler         Handler         // custom middleware (optional)
-	ResponseHandler ResponseHandler // response callback
+	Handler Handler // custom middleware (optional)
 
 	DomainsReservedUpstreams map[string][]upstream.Upstream // map of domains and lists of corresponding upstreams
 
@@ -387,11 +386,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	} else {
 		d.Res = reply
 	}
-
-	if p.ResponseHandler != nil {
-		p.ResponseHandler(d, err)
-	}
-
 	return err
 }
 

@@ -81,6 +81,7 @@ func (d *DNSProxy) Start() error {
 		return fmt.Errorf("cannot start the DNS proxy: %s", err)
 	}
 
+	c.Handler = d.handleDNSRequest
 	d.dnsProxy = &proxy.Proxy{Config: *c}
 
 	// Start the proxy
@@ -175,6 +176,7 @@ func (d *DNSProxy) Resolve(packet []byte) ([]byte, error) {
 		Req:   msg,
 	}
 	err = d.dnsProxy.Resolve(ctx)
+	handleDNSResponse(ctx, nil, err)
 	if err != nil {
 		return nil, err
 	}
@@ -231,15 +233,14 @@ func createConfig(config *Config) (*proxy.Config, error) {
 
 	// Create the config
 	proxyConfig := proxy.Config{
-		UDPListenAddr:   listenUDPAddr,
-		TCPListenAddr:   listenTCPAddr,
-		Upstreams:       upstreams,
-		AllServers:      config.AllServers,
-		CacheSize:       config.CacheSize,
-		CacheEnabled:    config.CacheSize > 0,
-		MaxGoroutines:   config.MaxGoroutines,
-		Ratelimit:       0,
-		ResponseHandler: handleDNSResponse,
+		UDPListenAddr: listenUDPAddr,
+		TCPListenAddr: listenTCPAddr,
+		Upstreams:     upstreams,
+		AllServers:    config.AllServers,
+		CacheSize:     config.CacheSize,
+		CacheEnabled:  config.CacheSize > 0,
+		MaxGoroutines: config.MaxGoroutines,
+		Ratelimit:     0,
 	}
 
 	if config.Fallbacks != "" {

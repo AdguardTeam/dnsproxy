@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	testMessagesCount = 30
+	testMessagesCount = 10
 )
 
 func TestMobileApi(t *testing.T) {

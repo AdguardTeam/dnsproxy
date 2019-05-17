@@ -15,6 +15,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/urlfilter"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
@@ -38,22 +39,27 @@ type DNSProxy struct {
 
 	dnsProxy *proxy.Proxy
 	sync.RWMutex
+
+	dnsEngine    *urlfilter.DNSEngine    // Filtering Engine
+	rulesStorage *urlfilter.RulesStorage // serialized filtering rules rulesStorage
 }
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
-// In Java API this structure becomes an object that needs to be configured and setted as field of DNSProxy
+// In Java API this structure becomes an object that needs to be configured and set as field of DNSProxy
 type Config struct {
-	ListenAddr        string // IP address to listen to
-	ListenPort        int    // Port to listen to
-	BootstrapDNS      string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
-	Fallbacks         string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
-	Upstreams         string // A list of upstream resolvers (each on a new line)
-	Timeout           int    // Default timeout for all resolvers (milliseconds)
-	CacheSize         int    // Maximum number of elements in the cache. Default size: 1000
-	AllServers        bool   // If true, parallel queries to all configured upstream servers are enabled
-	MaxGoroutines     int    // Maximum number of parallel goroutines that process the requests
-	SystemResolvers   string // A list of system resolvers for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
-	DetectDNS64Prefix bool   // If true, DNS64 prefix detection is enabled
+	ListenAddr         string // IP address to listen to
+	ListenPort         int    // Port to listen to
+	BootstrapDNS       string // A list of bootstrap DNS (i.e. 8.8.8.8:53 each on a new line)
+	Fallbacks          string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
+	Upstreams          string // A list of upstream resolvers (each on a new line)
+	Timeout            int    // Default timeout for all resolvers (milliseconds)
+	CacheSize          int    // Maximum number of elements in the cache. Default size: 1000
+	AllServers         bool   // If true, parallel queries to all configured upstream servers are enabled
+	MaxGoroutines      int    // Maximum number of parallel goroutines that process the requests
+	SystemResolvers    string // A list of system resolvers for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
+	DetectDNS64Prefix  bool   // If true, DNS64 prefix detection is enabled
+	FilteringRulesJSON string // Filtering rules JSON (list of "id: filterListID, "content": "filtering rules one per line")
+	RulesStoragePath   string // Path to the temporary file on the disk to store serialized rules. Everything will be stored in memory if nothing is specified.
 }
 
 // Start starts the DNS proxy
@@ -69,6 +75,12 @@ func (d *DNSProxy) Start() error {
 	if err != nil {
 		return fmt.Errorf("cannot start the DNS proxy: %s", err)
 	}
+
+	err = d.createFilteringEngine(d.Config.FilteringRulesJSON, d.Config.RulesStoragePath)
+	if err != nil {
+		return fmt.Errorf("cannot start the DNS proxy: %s", err)
+	}
+
 	d.dnsProxy = &proxy.Proxy{Config: *c}
 
 	// Start the proxy
@@ -79,19 +91,52 @@ func (d *DNSProxy) Start() error {
 	return err
 }
 
+// createFilteringEngine create and set DNSEngine and RulesStorage
+func (d *DNSProxy) createFilteringEngine(filteringRulesJSON, rulesStoragePath string) error {
+	if len(filteringRulesJSON) > 0 {
+		rulesMap, err := decodeFilteringRulesMap(filteringRulesJSON)
+		if err != nil {
+			return fmt.Errorf("failed to initialize DNS Filtering Engine: %v", err)
+		}
+		rs, err := urlfilter.NewRuleStorage(rulesStoragePath)
+		if err != nil {
+			return fmt.Errorf("failed to initialize Rules Storage %s: %v", rulesStoragePath, err)
+		}
+		d.rulesStorage = rs
+		d.dnsEngine = urlfilter.NewDNSEngine(rulesMap, rs)
+		return nil
+	}
+	return nil
+}
+
 // Stop stops the DNS proxy
 func (d *DNSProxy) Stop() error {
 	d.Lock()
 	defer d.Unlock()
 
-	var err error
+	errs := []error{}
 
-	if d.dnsProxy != nil {
-		err = d.dnsProxy.Stop()
-		d.dnsProxy = nil
+	if d.rulesStorage != nil {
+		err := d.rulesStorage.Close()
+		d.rulesStorage = nil
+		if err != nil {
+			errs = append(errs, errorx.Decorate(err, "couldn't close filtering rules rulesStorage"))
+		}
 	}
 
-	return err
+	if d.dnsProxy != nil {
+		err := d.dnsProxy.Stop()
+		d.dnsProxy = nil
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) != 0 {
+		return errorx.DecorateMany("Failed to stop DNSProxy", errs...)
+	}
+
+	return nil
 }
 
 // Addr gets the address proxy is currently listening to

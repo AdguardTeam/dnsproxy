@@ -117,19 +117,19 @@ func (d *DNSProxy) Stop() error {
 
 	errs := []error{}
 
-	if d.rulesStorage != nil {
-		err := d.rulesStorage.Close()
-		d.rulesStorage = nil
-		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close filtering rules rulesStorage"))
-		}
-	}
-
 	if d.dnsProxy != nil {
 		err := d.dnsProxy.Stop()
 		d.dnsProxy = nil
 		if err != nil {
 			errs = append(errs, err)
+		}
+	}
+
+	if d.rulesStorage != nil {
+		err := d.rulesStorage.Close()
+		d.rulesStorage = nil
+		if err != nil {
+			errs = append(errs, errorx.Decorate(err, "couldn't close filtering rules rulesStorage"))
 		}
 	}
 

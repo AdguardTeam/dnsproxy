@@ -137,11 +137,8 @@ func genSOA(request *dns.Msg) []dns.RR {
 			Ttl:    10,
 			Class:  dns.ClassINET,
 		},
-		Mbox: "hostmaster.", // zone will be appended later if it's not empty or "."
 	}
-	if soa.Hdr.Ttl == 0 {
-		soa.Hdr.Ttl = 10
-	}
+	soa.Mbox = "hostmaster."
 	if len(zone) > 0 && zone[0] != '.' {
 		soa.Mbox += zone
 	}

@@ -234,38 +234,38 @@ func (p *Proxy) Stop() error {
 		return nil
 	}
 
-	var err error
+	errs := []error{}
 
 	if p.tcpListen != nil {
-		err = p.tcpListen.Close()
+		err := p.tcpListen.Close()
 		p.tcpListen = nil
 		if err != nil {
-			return errorx.Decorate(err, "couldn't close TCP listening socket")
+			errs = append(errs, errorx.Decorate(err, "couldn't close TCP listening socket"))
 		}
 	}
 
 	if p.udpListen != nil {
-		err = p.udpListen.Close()
+		err := p.udpListen.Close()
 		p.udpListen = nil
 		if err != nil {
-			return errorx.Decorate(err, "couldn't close UDP listening socket")
+			errs = append(errs, errorx.Decorate(err, "couldn't close UDP listening socket"))
 		}
 	}
 
 	if p.tlsListen != nil {
-		err = p.tlsListen.Close()
+		err := p.tlsListen.Close()
 		p.tlsListen = nil
 		if err != nil {
-			return errorx.Decorate(err, "couldn't close TLS listening socket")
+			errs = append(errs, errorx.Decorate(err, "couldn't close TLS listening socket"))
 		}
 	}
 
 	if p.httpsServer != nil {
-		err = p.httpsServer.Close()
+		err := p.httpsServer.Close()
 		p.httpsListen = nil
 		p.httpsServer = nil
 		if err != nil {
-			return errorx.Decorate(err, "couldn't close HTTPS server")
+			errs = append(errs, errorx.Decorate(err, "couldn't close HTTPS server"))
 		}
 	}
 
@@ -275,6 +275,9 @@ func (p *Proxy) Stop() error {
 
 	p.started = false
 	log.Println("Stopped the DNS proxy server")
+	if len(errs) != 0 {
+		return errorx.DecorateMany("Failed to stop DNS proxy server", errs...)
+	}
 	return nil
 }
 

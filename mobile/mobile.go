@@ -125,9 +125,12 @@ func (d *DNSProxy) Resolve(packet []byte) ([]byte, error) {
 		return nil, fmt.Errorf("got invalid number of questions: %v", len(msg.Question))
 	}
 
+	log.Tracef("IN: %s", msg)
+
 	ctx := &proxy.DNSContext{
-		Proto: "udp",
-		Req:   msg,
+		Proto:     "udp",
+		Req:       msg,
+		StartTime: time.Now(),
 	}
 	err = d.dnsProxy.Resolve(ctx)
 	if err != nil {
@@ -136,6 +139,8 @@ func (d *DNSProxy) Resolve(packet []byte) ([]byte, error) {
 	if ctx.Res == nil {
 		return nil, fmt.Errorf("got no response")
 	}
+
+	log.Tracef("OUT: %s", ctx.Res)
 
 	bytes, err := ctx.Res.Pack()
 	if err != nil {

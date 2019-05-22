@@ -149,7 +149,7 @@ func lookup(ctx context.Context, r *Resolver, host string) ([]net.IPAddr, error)
 	if err != nil {
 		log.Tracef("failed to lookup for %s in %d milliseconds using %s: %s", host, elapsed, r.resolverAddress, err)
 	} else {
-		log.Tracef("successfully finish lookup for %s in %d milliseconds using %s. Result : %s", host, elapsed, r.resolverAddress, address)
+		log.Tracef("successfully finished lookup for %s in %d milliseconds using %s. Result : %s", host, elapsed, r.resolverAddress, address)
 	}
 	return address, err
 }

@@ -21,6 +21,7 @@ type DNSRequestProcessedEvent struct {
 	StartTime    int64  // Time when dnsproxy started processing request (epoch in milliseconds)
 	Elapsed      int    // Time elapsed on processing
 	Answer       string // DNS Answers string representation
+	NS           string // DNS NS section
 	UpstreamAddr string // Address of the upstream used to resolve
 
 	BytesSent     int // Number of bytes sent
@@ -68,13 +69,12 @@ func handleDNSResponse(d *proxy.DNSContext, err error) {
 
 	// Set answer
 	if d.Res != nil && len(d.Res.Answer) > 0 {
-		s := ""
-		for i := 0; i < len(d.Res.Answer); i++ {
-			if d.Res.Answer[i] != nil {
-				s += d.Res.Answer[i].String() + "\n"
-			}
-		}
-		e.Answer = s
+		e.Answer = dnsRRListToString(d.Res.Answer)
+	}
+
+	// Set NS
+	if d.Res != nil && len(d.Res.Ns) > 0 {
+		e.NS = dnsRRListToString(d.Res.Ns)
 	}
 
 	// Upstream
@@ -88,4 +88,14 @@ func handleDNSResponse(d *proxy.DNSContext, err error) {
 	}
 
 	dnsRequestProcessedListener.DNSRequestProcessed(&e)
+}
+
+func dnsRRListToString(list []dns.RR) string {
+	s := ""
+	for i := 0; i < len(list); i++ {
+		if list[i] != nil {
+			s += list[i].String() + "\n"
+		}
+	}
+	return s
 }

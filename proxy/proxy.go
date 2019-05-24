@@ -40,10 +40,14 @@ const (
 	UnqualifiedNames = "unqualified_names"
 )
 
-// Handler is an optional custom handler for DNS requests
+// BeforeRequestHandler is an optional custom handler called before DNS requests
+// If it returns false, the request won't be processed at all
+type BeforeRequestHandler func(p *Proxy, d *DNSContext) (bool, error)
+
+// RequestHandler is an optional custom handler for DNS requests
 // It is called instead of the default method (Proxy.Resolve())
 // See handler_test.go for examples
-type Handler func(p *Proxy, d *DNSContext) error
+type RequestHandler func(p *Proxy, d *DNSContext) error
 
 // ResponseHandler is a callback method that is called when DNS query has been processed
 // d -- current DNS query context (contains response if it was successful)
@@ -97,8 +101,9 @@ type Config struct {
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 
-	Handler         Handler         // custom middleware (optional)
-	ResponseHandler ResponseHandler // response callback
+	BeforeRequestHandler BeforeRequestHandler // callback that is called before each request
+	RequestHandler       RequestHandler       // callback that can handle incoming DNS requests
+	ResponseHandler      ResponseHandler      // response callback
 
 	DomainsReservedUpstreams map[string][]upstream.Upstream // map of domains and lists of corresponding upstreams
 
@@ -748,7 +753,7 @@ func (p *Proxy) listenHTTPS() {
 	}
 }
 
-// ServeHTTP is the http.Handler implementation that handles DOH queries
+// ServeHTTP is the http.RequestHandler implementation that handles DOH queries
 // Here is what it returns:
 // http.StatusBadRequest - if there is no DNS request data
 // http.StatusUnsupportedMediaType - if request content type is not application/dns-message
@@ -866,6 +871,17 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	d.StartTime = time.Now()
 	p.logDNSMessage(d.Req)
 
+	if p.BeforeRequestHandler != nil {
+		ok, err := p.BeforeRequestHandler(p, d)
+		if err != nil {
+			log.Error("Error in the BeforeRequestHandler: %s", err)
+			d.Res = p.genServerFailure(d.Req)
+		}
+		if !ok {
+			return nil // do nothing, don't reply
+		}
+	}
+
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
 	if d.Proto == ProtoUDP && p.isRatelimited(d.Addr) {
 		log.Tracef("Ratelimiting %v based on IP only", d.Addr)
@@ -892,8 +908,8 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 
 		// execute the DNS request
 		// if there is a custom middleware configured, use it
-		if p.Handler != nil {
-			err = p.Handler(p, d)
+		if p.RequestHandler != nil {
+			err = p.RequestHandler(p, d)
 		} else {
 			err = p.Resolve(d)
 		}

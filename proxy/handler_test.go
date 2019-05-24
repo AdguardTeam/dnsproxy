@@ -15,7 +15,7 @@ func TestFilteringHandler(t *testing.T) {
 
 	// Prepare the proxy server
 	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.Handler = func(p *Proxy, d *DNSContext) error {
+	dnsProxy.RequestHandler = func(p *Proxy, d *DNSContext) error {
 		m.Lock()
 		defer m.Unlock()
 

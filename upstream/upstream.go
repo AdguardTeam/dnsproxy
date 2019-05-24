@@ -311,6 +311,10 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		reply, _, err = tcpClient.Exchange(m, serverInfo)
 	}
 
+	if err == nil && reply != nil && reply.Id != m.Id {
+		err = dns.ErrId
+	}
+
 	if os.IsTimeout(err) {
 		// If request times out, it is possible that the server configuration has been changed.
 		// It is safe to assume that the key was rotated (for instance, as it is described here: https://dnscrypt.pl/2017/02/26/how-key-rotation-is-automated/).

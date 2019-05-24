@@ -876,6 +876,8 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		if err != nil {
 			log.Error("Error in the BeforeRequestHandler: %s", err)
 			d.Res = p.genServerFailure(d.Req)
+			p.respond(d)
+			return nil
 		}
 		if !ok {
 			return nil // do nothing, don't reply

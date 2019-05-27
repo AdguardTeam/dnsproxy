@@ -437,7 +437,7 @@ func createDNS64Server(t *testing.T) *proxy.Proxy {
 	dnsUpstream, err := upstream.AddressToUpstream("8.8.8.8:53", upstream.Options{})
 	assert.Nil(t, err)
 	p.Upstreams = []upstream.Upstream{dnsUpstream}
-	p.Handler = func(p *proxy.Proxy, d *proxy.DNSContext) error {
+	p.RequestHandler = func(p *proxy.Proxy, d *proxy.DNSContext) error {
 		if d.Req.Question[0].Qtype != dns.TypeAAAA {
 			return nil
 		}

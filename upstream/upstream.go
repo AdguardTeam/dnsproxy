@@ -94,6 +94,8 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	reply, err := p.exchangeConn(poolConn, m)
 	if err != nil {
+		log.Tracef("The TLS connection is expired due to %s", err)
+
 		// The pooled connection might have been closed already (see https://github.com/AdguardTeam/dnsproxy/issues/3)
 		// So we're trying to re-connect right away here.
 		// We are forcing creation of a new connection instead of calling Get() again
@@ -129,6 +131,9 @@ func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, erro
 	if err != nil {
 		poolConn.Close()
 		return nil, errorx.Decorate(err, "Failed to read a request from %s", p.Address())
+	}
+	if err == nil && reply.Id != m.Id {
+		err = dns.ErrId
 	}
 	return reply, err
 }
@@ -193,7 +198,10 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't unpack DNS response from '%s': body is %s", p.boot.address, string(body))
 	}
-	return &response, nil
+	if err == nil && response.Id != m.Id {
+		err = dns.ErrId
+	}
+	return &response, err
 }
 
 // getClient gets or lazily initializes an HTTP client (and transport) that will be used for this DOH resolver.
@@ -301,6 +309,10 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
 		tcpClient := dnscrypt.Client{Timeout: p.boot.timeout, Proto: "tcp"}
 		reply, _, err = tcpClient.Exchange(m, serverInfo)
+	}
+
+	if err == nil && reply != nil && reply.Id != m.Id {
+		err = dns.ErrId
 	}
 
 	if os.IsTimeout(err) {

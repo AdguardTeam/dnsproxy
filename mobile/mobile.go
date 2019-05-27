@@ -178,8 +178,7 @@ func (d *DNSProxy) Resolve(packet []byte) ([]byte, error) {
 		Req:       msg,
 		StartTime: time.Now(),
 	}
-	err = d.dnsProxy.Resolve(ctx)
-	handleDNSResponse(ctx, nil, err)
+	err = d.handleDNSRequest(d.dnsProxy, ctx)
 	if err != nil {
 		return nil, err
 	}

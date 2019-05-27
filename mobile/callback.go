@@ -1,7 +1,6 @@
 package mobile
 
 import (
-	"strings"
 	"sync"
 	"time"
 

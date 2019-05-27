@@ -81,7 +81,7 @@ func (d *DNSProxy) Start() error {
 		return fmt.Errorf("cannot start the DNS proxy: %s", err)
 	}
 
-	c.Handler = d.handleDNSRequest
+	c.RequestHandler = d.handleDNSRequest
 	d.dnsProxy = &proxy.Proxy{Config: *c}
 
 	// Start the proxy

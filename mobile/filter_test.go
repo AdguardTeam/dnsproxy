@@ -79,8 +79,6 @@ func TestFilteringProxy(t *testing.T) {
 	// There are IPv4 Host filtering rules matched this hosts
 	testAHostFilteringRule(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
 	testAHostFilteringRule(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
-	testAHostFilteringRuleAAAARequest(t, conn, "google.com")
-	testAHostFilteringRuleAAAARequest(t, conn, "google.ru")
 
 	// There are IPv6 Host filtering rules, which matched this hosts
 	testAAAAHostFilteringRule(t, conn, "yandex.ru", net.ParseIP("2000::"))
@@ -89,7 +87,7 @@ func TestFilteringProxy(t *testing.T) {
 	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ua")
 
 	dnsRequestProcessedListenerGuard.Lock()
-	if len(listener.e) != 13 {
+	if len(listener.e) != 11 {
 		dnsRequestProcessedListenerGuard.Unlock()
 		t.Fatalf("Wrong number of events registered by the test listener %d", len(listener.e))
 	}
@@ -118,16 +116,26 @@ func TestFilteringProxyRace(t *testing.T) {
 	conn, err := dns.Dial("udp", addr)
 	assert.Nil(t, err)
 
+	// Requests which shouldn't be blocked
 	sendTestMessagesAsync(t, conn)
+
+	// Network filtering rules
 	testNetworkFilteringRulesAsync(t, conn, "example.com")
 	testNetworkFilteringRulesAsync(t, conn, "example.org")
+
+	// IPv4 rules and A requests
 	testHostFilteringRulesAsync(t, conn, "google.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
 	testHostFilteringRulesAsync(t, conn, "google.ru", dns.TypeA, net.IPv4(127, 0, 0, 1))
+
+	// IPv6 rules and AAAA requests
 	testHostFilteringRulesAsync(t, conn, "yandex.ru", dns.TypeAAAA, net.ParseIP("2000::"))
 	testHostFilteringRulesAsync(t, conn, "yandex.ua", dns.TypeAAAA, net.ParseIP("::1"))
 
+	// Zero IPv4 rule should also block AAAA requests with IPv6Zero answer
+	testHostFilteringRulesAsync(t, conn, "google.com", dns.TypeAAAA, net.IPv6zero)
+
 	dnsRequestProcessedListenerGuard.Lock()
-	if len(listener.e) != 90 {
+	if len(listener.e) != 100 {
 		dnsRequestProcessedListenerGuard.Unlock()
 		t.Fatalf("Wrong number of events registered by the test listener %d", len(listener.e))
 	}
@@ -265,21 +273,6 @@ func testAHostFilteringRule(t *testing.T, conn *dns.Conn, host string, ip net.IP
 	assert.Nil(t, err)
 
 	assertAResponse(t, res, ip)
-}
-
-// testAHostFilteringRuleAAAARequest is a test for the following case:
-// - There is IPv4 host filtering rule for the given host in the DNS Filtering filteringEngine
-// - AAAA request for this host should not be filtered
-func testAHostFilteringRuleAAAARequest(t *testing.T, conn *dns.Conn, host string) {
-	req := createAAAATestMessage(host)
-	err := conn.WriteMsg(req)
-	assert.Nil(t, err)
-
-	res, err := conn.ReadMsg()
-	assert.Nil(t, err)
-
-	assert.NotNil(t, res.Answer)
-	assert.Equal(t, res.Answer[0].Header().Rrtype, dns.TypeAAAA)
 }
 
 // testAHostFilteringRule is a test for the following case:

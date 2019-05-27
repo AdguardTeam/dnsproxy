@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -85,9 +86,20 @@ func (d *DNSProxy) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, e
 		} else if r, ok := rule.(*urlfilter.HostRule); ok {
 			// It's a host rule. Generate a host rule answer for it:
 			// - A request and IPv4 rule
-			// - AAAA request and IPv6 rule
-			if (r.IP.To4() != nil && reqType == dns.TypeA) || (r.IP.To4() == nil && reqType == dns.TypeAAAA) {
+			// - AAAA request and IPv6 rule or zero IPv4 rule
+			ip4 := r.IP.To4()
+			matchARequest := reqType == dns.TypeA && ip4 != nil
+			matchAAAARequest := reqType == dns.TypeAAAA && ip4 == nil
+			matchAAAARequestWithZeroIPv4Rule := reqType == dns.TypeAAAA && ip4 != nil && bytes.Equal(ip4, []byte{0, 0, 0, 0})
+
+			if matchARequest || matchAAAARequest || matchAAAARequestWithZeroIPv4Rule {
 				log.Tracef("Host filtering rule for %s was found: %s, ListId: %d", host, rule.Text(), rule.GetFilterListID())
+
+				// Let's replace zero IPv4 with IPv6Zero for AAAA request
+				if matchAAAARequestWithZeroIPv4Rule {
+					r.IP = net.IPv6zero
+				}
+
 				res, err := genHostRuleAnswer(ctx.Req, r.IP)
 				if err != nil {
 					err = fmt.Errorf("failed to filter request to %s with rule %s cause %v", host, r.RuleText, err)

@@ -79,12 +79,7 @@ func TestMobileApi(t *testing.T) {
 		t.Fatalf("DNS upstream %s returned wrong answer type instead of A: %v", addr, reply.Answer[0])
 	}
 
-	dnsRequestProcessedListenerGuard.Lock()
-	if len(listener.e) != 1 {
-		dnsRequestProcessedListenerGuard.Unlock()
-		t.Fatalf("Wrong number of events registered by the test listener")
-	}
-	dnsRequestProcessedListenerGuard.Unlock()
+	assertListenerEventsCount(t, listener, 1)
 
 	ConfigureDNSRequestProcessedListener(nil)
 	err = mobileDNSProxy.Stop()
@@ -151,12 +146,7 @@ func TestMobileApiResolve(t *testing.T) {
 	end := getRSS()
 	log.Printf("RSS in the end - %d kB (%d kB diff)\n", end/1024, (end-afterLoad)/1024)
 
-	dnsRequestProcessedListenerGuard.Lock()
-	if len(listener.e) != testMessagesCount {
-		dnsRequestProcessedListenerGuard.Unlock()
-		t.Fatalf("Wrong number of events registered by the test listener")
-	}
-	dnsRequestProcessedListenerGuard.Unlock()
+	assertListenerEventsCount(t, listener, testMessagesCount)
 
 	// Stop proxy
 	err = mobileDNSProxy.Stop()
@@ -427,6 +417,15 @@ type testDNSRequestProcessedListener struct {
 
 func (l *testDNSRequestProcessedListener) DNSRequestProcessed(e *DNSRequestProcessedEvent) {
 	l.e = append(l.e, *e)
+}
+
+func assertListenerEventsCount(t *testing.T, listener *testDNSRequestProcessedListener, count int) {
+	dnsRequestProcessedListenerGuard.Lock()
+	if len(listener.e) != count {
+		dnsRequestProcessedListenerGuard.Unlock()
+		t.Fatalf("Wrong number of events registered by the test listener. Expected: %d; Actual: %d", count, len(listener.e))
+	}
+	dnsRequestProcessedListenerGuard.Unlock()
 }
 
 // createDNS64Server creates a DNS64 server mock for unit-tests

@@ -86,12 +86,7 @@ func TestFilteringProxy(t *testing.T) {
 	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ru")
 	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ua")
 
-	dnsRequestProcessedListenerGuard.Lock()
-	if len(listener.e) != 11 {
-		dnsRequestProcessedListenerGuard.Unlock()
-		t.Fatalf("Wrong number of events registered by the test listener %d", len(listener.e))
-	}
-	dnsRequestProcessedListenerGuard.Unlock()
+	assertListenerEventsCount(t, listener, 11)
 
 	// unregister listener
 	ConfigureDNSRequestProcessedListener(nil)
@@ -134,12 +129,8 @@ func TestFilteringProxyRace(t *testing.T) {
 	// Zero IPv4 rule should also block AAAA requests with IPv6Zero answer
 	testHostFilteringRulesAsync(t, conn, "google.com", dns.TypeAAAA, net.IPv6zero)
 
-	dnsRequestProcessedListenerGuard.Lock()
-	if len(listener.e) != 100 {
-		dnsRequestProcessedListenerGuard.Unlock()
-		t.Fatalf("Wrong number of events registered by the test listener %d", len(listener.e))
-	}
-	dnsRequestProcessedListenerGuard.Unlock()
+	assertListenerEventsCount(t, listener, 100)
+
 	// unregister listener
 	ConfigureDNSRequestProcessedListener(nil)
 	// Stop the proxy
@@ -147,12 +138,117 @@ func TestFilteringProxyRace(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestDNSRequestProcessedEvents(t *testing.T) {
+	dnsProxy := createTestFilteringProxy()
+
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
+	// Start listening
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr()
+	conn, err := dns.Dial("udp", addr)
+	assert.Nil(t, err)
+
+	// Create, send and assert regular test message. Filtering proxy contains whitelist rule for google-public-dns-a.google.com
+	eventsCount := 1
+	sendAndAssertTestMessage(t, conn)
+	assertDNSRequestProcessedEventWithListener(t, listener, "google-public-dns-a.google.com", "A", "@@||google-public-dns-a.google.com^", 4, eventsCount, true)
+
+	// testAHostFilteringRule and testAAAAHostFilteringRule produce one event
+	// Let's check events one-by-one
+
+	// A request which blocked with IPv4 HostRule
+	eventsCount++
+	testAHostFilteringRule(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
+	assertDNSRequestProcessedEventWithListener(t, listener, "google.ru", "A", "127.0.0.1 google.ru", 2, eventsCount, false)
+
+	// A request which blocked with zero IPv4 HostRule
+	eventsCount++
+	testAHostFilteringRule(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
+	assertDNSRequestProcessedEventWithListener(t, listener, "google.com", "A", "0.0.0.0 google.com", 2, eventsCount, false)
+
+	// AAAA request which blocked with zero IPv4 HostRule
+	eventsCount++
+	testAAAAHostFilteringRule(t, conn, "google.com", net.IPv6zero)
+	assertDNSRequestProcessedEventWithListener(t, listener, "google.com", "AAAA", "0.0.0.0 google.com", 2, eventsCount, false)
+
+	// AAAA request which blocked with IPv6 HostRule
+	eventsCount++
+	testAAAAHostFilteringRule(t, conn, "yandex.ru", net.ParseIP("2000::"))
+	assertDNSRequestProcessedEventWithListener(t, listener, "yandex.ru", "AAAA", "2000:: yandex.ru", 3, eventsCount, false)
+
+	// AAAA request which blocked with IPv6 HostRule
+	eventsCount++
+	testAAAAHostFilteringRule(t, conn, "yandex.ua", net.ParseIP("::1"))
+	assertDNSRequestProcessedEventWithListener(t, listener, "yandex.ua", "AAAA", "::1 yandex.ua", 3, eventsCount, false)
+
+	// IPv4 rule for google.ru is not 0.0.0.0. It means that AAAA request for google.ru shouldn't be blocked
+	eventsCount++
+	res := sendAAAATestMessage(t, conn, "google.ru")
+	assert.NotNil(t, res.Answer[0])
+	assert.Equal(t, res.Answer[0].Header().Rrtype, dns.TypeAAAA)
+	assertDNSRequestProcessedEventWithListener(t, listener, "google.ru", "AAAA", "", 0, eventsCount, false)
+
+	// IPv6 rule for yandex.ru shouldn't block A request
+	eventsCount++
+	res = sendATestMessage(t, conn, "yandex.ru")
+	assert.NotNil(t, res.Answer[0])
+	assert.Equal(t, res.Answer[0].Header().Rrtype, dns.TypeA)
+	assertDNSRequestProcessedEventWithListener(t, listener, "yandex.ru", "A", "", 0, eventsCount, false)
+
+	// There are two events produced with testNetworkFilteringRule: A and AAAA requests
+	// We should check count of registered events and each event
+	eventsCount += 2
+	testNetworkFilteringRule(t, conn, "example.com")
+	assertListenerEventsCount(t, listener, eventsCount)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "example.com", "A", "||example.com^", 1, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "example.com", "AAAA", "||example.com^", 1, false)
+
+	eventsCount += 2
+	testNetworkFilteringRule(t, conn, "example.org")
+	assertListenerEventsCount(t, listener, eventsCount)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "example.org", "A", "||example.org^", 1, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "example.org", "AAAA", "||example.org^", 1, false)
+
+	// unregister listener
+	ConfigureDNSRequestProcessedListener(nil)
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	assert.Nil(t, err)
+}
+
+// assertDNSRequestProcessedEventWithListener asserts count of events in listener and the last event
+func assertDNSRequestProcessedEventWithListener(t *testing.T, listener *testDNSRequestProcessedListener, domain, reqType, filteringRule string, filterListID, count int, whitelist bool) {
+	assertListenerEventsCount(t, listener, count)
+	event := getDNSRequestProcessedEventByIdx(listener, count-1)
+	assertDNSRequestProcessedEvent(t, event, domain, reqType, filteringRule, filterListID, whitelist)
+}
+
+func assertDNSRequestProcessedEvent(t *testing.T, event DNSRequestProcessedEvent, domain, reqType, filteringRule string, filterListID int, whitelist bool) {
+	assert.Equal(t, event.Domain, domain)
+	assert.Equal(t, event.Type, reqType)
+	assert.Equal(t, event.FilteringRule, filteringRule)
+	assert.Equal(t, event.FilterListID, filterListID)
+	assert.Equal(t, event.Whitelist, whitelist)
+}
+
+func getDNSRequestProcessedEventByIdx(listener *testDNSRequestProcessedListener, idx int) DNSRequestProcessedEvent {
+	dnsRequestProcessedListenerGuard.Lock()
+	defer dnsRequestProcessedListenerGuard.Unlock()
+	return listener.e[idx]
+}
+
 func createTestFilteringProxy() *DNSProxy {
 	const filtersJSON = `
 	[
 		{"id": 1, "contents": "||example.com^\n||example.org^"},
 		{"id": 2, "contents": "0.0.0.0 google.com\n127.0.0.1 google.ru"},
-		{"id": 3, "contents": "2000:: yandex.ru\n::1 yandex.ua"}
+		{"id": 3, "contents": "2000:: yandex.ru\n::1 yandex.ua"},
+		{"id": 4, "contents": "@@||google-public-dns-a.google.com^"}
 	]`
 
 	upstreams := []string{
@@ -265,28 +361,34 @@ func testNetworkFilteringRule(t *testing.T, conn *dns.Conn, host string) {
 // - There is IPv4 filtering rule for the given host in the DNS Filtering filteringEngine
 // - A request for this host should be filtered and response must contain the given ip address
 func testAHostFilteringRule(t *testing.T, conn *dns.Conn, host string, ip net.IP) {
+	res := sendATestMessage(t, conn, host)
+	assertAResponse(t, res, ip)
+}
+
+func sendATestMessage(t *testing.T, conn *dns.Conn, host string) *dns.Msg {
 	req := createHostTestMessage(host)
 	err := conn.WriteMsg(req)
 	assert.Nil(t, err)
-
 	res, err := conn.ReadMsg()
 	assert.Nil(t, err)
-
-	assertAResponse(t, res, ip)
+	return res
 }
 
 // testAHostFilteringRule is a test for the following case:
 // - There is IPv6 filtering rule for the given host in the DNS Filtering filteringEngine
 // - AAAA request for this host should be filtered and response must contain the given ip address
 func testAAAAHostFilteringRule(t *testing.T, conn *dns.Conn, host string, ip net.IP) {
+	res := sendAAAATestMessage(t, conn, host)
+	assertAAAAResponse(t, res, ip)
+}
+
+func sendAAAATestMessage(t *testing.T, conn *dns.Conn, host string) *dns.Msg {
 	req := createAAAATestMessage(host)
 	err := conn.WriteMsg(req)
 	assert.Nil(t, err)
-
 	res, err := conn.ReadMsg()
 	assert.Nil(t, err)
-
-	assertAAAAResponse(t, res, ip)
+	return res
 }
 
 // testAAAAHostFilteringRuleARequest is a test for the following case:

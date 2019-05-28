@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -58,7 +59,7 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err er
 	e := DNSRequestProcessedEvent{}
 
 	// Query properties
-	e.Domain = d.Req.Question[0].Name
+	e.Domain = strings.TrimSuffix(d.Req.Question[0].Name, ".")
 	e.Type = dns.Type(d.Req.Question[0].Qtype).String()
 
 	// Set time/elapsed

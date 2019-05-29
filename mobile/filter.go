@@ -73,21 +73,24 @@ func (d *DNSProxy) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, e
 
 	// DNSEngine Match func returns array of filtering rules. Let's check their kind
 	for _, rule := range rules {
-		if r, ok := rule.(*urlfilter.NetworkRule); ok {
+		if netRule, ok := rule.(*urlfilter.NetworkRule); ok {
 			// It's a network rule. If it's not a whitelist rule - generate NXDomain
 			// Otherwise just set filtering rule to DNSContext and try to resolve it
 			log.Tracef("Network filtering rule for %s was found: %s, ListId: %d", host, rule.Text(), rule.GetFilterListID())
-			if !r.Whitelist {
+			if !netRule.Whitelist {
 				ctx.Res = genNXDomain(ctx.Req)
-				return r, true, nil
+				return netRule, true, nil
 			}
-			return r, false, nil
+			return netRule, false, nil
 
-		} else if r, ok := rule.(*urlfilter.HostRule); ok {
-			// It's a host rule. Generate a host rule answer for it:
+		} else if hostRule, ok := rule.(*urlfilter.HostRule); ok {
+			// It's a host rule. We should generate a host rule answer for it.
+			// Let's copy IP from the rule first. We need to do it cause hostRule is a pointer, and IP may be changed for AAAA request
+			ip := hostRule.IP
+
 			// - A request and IPv4 rule
 			// - AAAA request and IPv6 rule or zero IPv4 rule
-			ip4 := r.IP.To4()
+			ip4 := ip.To4()
 			matchARequest := reqType == dns.TypeA && ip4 != nil
 			matchAAAARequest := reqType == dns.TypeAAAA && ip4 == nil
 			matchAAAARequestWithZeroIPv4Rule := reqType == dns.TypeAAAA && ip4 != nil && bytes.Equal(ip4, []byte{0, 0, 0, 0})
@@ -97,19 +100,19 @@ func (d *DNSProxy) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, e
 
 				// Let's replace zero IPv4 with IPv6Zero for AAAA request
 				if matchAAAARequestWithZeroIPv4Rule {
-					r.IP = net.IPv6zero
+					ip = net.IPv6zero
 				}
 
-				res, err := genHostRuleAnswer(ctx.Req, r.IP)
+				res, err := genHostRuleAnswer(ctx.Req, ip)
 				if err != nil {
-					err = fmt.Errorf("failed to filter request to %s with rule %s cause %v", host, r.RuleText, err)
-					return r, false, err
+					err = fmt.Errorf("failed to filter request to %s with rule %s cause %v", host, hostRule.RuleText, err)
+					return hostRule, false, err
 				}
 				ctx.Res = res
-				return r, true, nil
+				return hostRule, true, nil
 			}
 
-			log.Tracef("Ignore host filtering rule %s for %s request type", r.RuleText, dns.Type(reqType).String())
+			log.Tracef("Ignore host filtering rule %s for %s request type", hostRule.RuleText, dns.Type(reqType).String())
 		}
 	}
 

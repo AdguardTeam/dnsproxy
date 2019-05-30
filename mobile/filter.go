@@ -40,15 +40,20 @@ func decodeFilteringRulesMap(filtersJSON string) (map[int]string, error) {
 
 // handleDNSRequest is a custom handler for proxy with filtering
 func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error {
-	rule, blocked, err := d.filterRequest(ctx)
-	if err != nil {
-		handleDNSResponse(ctx, rule, err)
-		return err
-	}
+	var rule urlfilter.Rule
+	var err error
+	var blocked bool
+	if d.filteringEngine != nil {
+		rule, blocked, err = d.filteringEngine.filterRequest(ctx)
+		if err != nil {
+			handleDNSResponse(ctx, rule, err)
+			return err
+		}
 
-	if blocked {
-		handleDNSResponse(ctx, rule, nil)
-		return nil
+		if blocked {
+			handleDNSResponse(ctx, rule, nil)
+			return nil
+		}
 	}
 
 	err = p.Resolve(ctx)
@@ -56,17 +61,35 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 	return err
 }
 
-// filterRequest filters DNSContext request and returns true if request was blocked
-func (d *DNSProxy) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, error) {
-	// filter request
-	if d.dnsEngine == nil {
-		return nil, false, nil
+// filteringEngine is a wrapper for urlfilter structures and filtering options
+type filteringEngine struct {
+	dnsEngine    *urlfilter.DNSEngine    // Filtering Engine
+	rulesStorage *urlfilter.RulesStorage // serialized filtering rules rulesStorage
+}
+
+// match returns result of DNSEngine Match() func
+func (e *filteringEngine) match(hostname string) ([]urlfilter.Rule, bool) {
+	return e.dnsEngine.Match(hostname)
+}
+
+// close and destroy rules storage if it exists
+func (e *filteringEngine) close() error {
+	if e.rulesStorage == nil {
+		return nil
 	}
 
+	err := e.rulesStorage.Close()
+	e.rulesStorage = nil
+	return err
+}
+
+// filterRequest filters DNSContext request and returns true if request was blocked
+func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, error) {
+	// filter request
 	reqType := ctx.Req.Question[0].Qtype
 	host := strings.TrimSuffix(ctx.Req.Question[0].Name, ".")
 
-	rules, ok := d.dnsEngine.Match(host)
+	rules, ok := e.match(host)
 	if !ok {
 		return nil, false, nil
 	}

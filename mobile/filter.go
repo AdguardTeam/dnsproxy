@@ -63,8 +63,9 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 
 // filteringEngine is a wrapper for urlfilter structures and filtering options
 type filteringEngine struct {
-	dnsEngine    *urlfilter.DNSEngine    // Filtering Engine
-	rulesStorage *urlfilter.RulesStorage // serialized filtering rules rulesStorage
+	dnsEngine         *urlfilter.DNSEngine    // Filtering Engine
+	rulesStorage      *urlfilter.RulesStorage // serialized filtering rules rulesStorage
+	blockWithNXDomain bool                    // If true requests which were filtered with network rules will be blocked with NXDomain message instead of undefined IP
 }
 
 // match returns result of DNSEngine Match() func
@@ -101,7 +102,26 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 			// Otherwise just set filtering rule to DNSContext and try to resolve it
 			log.Tracef("Network filtering rule for %s was found: %s, ListId: %d", host, rule.Text(), rule.GetFilterListID())
 			if !netRule.Whitelist {
-				ctx.Res = genNXDomain(ctx.Req)
+				var res *dns.Msg
+				var err error
+				if e.blockWithNXDomain {
+					// Generate NXDomain if request should be blocked with it
+					res = genNXDomain(ctx.Req)
+				} else {
+					// Otherwise generate undefined IP
+					ip := net.IPv4zero
+					if reqType == dns.TypeAAAA {
+						ip = net.IPv6zero
+					}
+
+					res, err = genHostRuleAnswer(ctx.Req, ip)
+					if err != nil {
+						err = fmt.Errorf("failed to filter request to %s with rule %s cause %v", host, netRule.RuleText, err)
+						return netRule, false, err
+					}
+				}
+
+				ctx.Res = res
 				return netRule, true, nil
 			}
 			return netRule, false, nil

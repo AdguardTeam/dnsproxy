@@ -59,6 +59,7 @@ type Config struct {
 	DetectDNS64Prefix  bool   // If true, DNS64 prefix detection is enabled
 	FilteringRulesJSON string // Filtering rules JSON (list of "id: filterListID, "content": "filtering rules one per line")
 	RulesStoragePath   string // Path to the temporary file on the disk to store serialized rules. Everything will be stored in memory if nothing is specified.
+	BlockWithNXDomain  bool   // If true filtered requests will be blocked with NXDomain message. Otherwise - with 0.0.0.0 for A requests or IPv6Zero for AAAA requests
 }
 
 // Start starts the DNS proxy
@@ -105,6 +106,7 @@ func (d *DNSProxy) createFilteringEngine(c *Config) error {
 		}
 		engine.rulesStorage = rs
 		engine.dnsEngine = urlfilter.NewDNSEngine(rulesMap, rs)
+		engine.blockWithNXDomain = c.BlockWithNXDomain
 		d.filteringEngine = engine
 		return nil
 	}

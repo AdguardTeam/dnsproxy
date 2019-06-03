@@ -1,12 +1,13 @@
 package mobile
 
 import (
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/miekg/dns"
-
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/urlfilter"
+	"github.com/miekg/dns"
 )
 
 //noinspection GoUnusedGlobalVariable
@@ -27,6 +28,10 @@ type DNSRequestProcessedEvent struct {
 	BytesSent     int // Number of bytes sent
 	BytesReceived int // Number of bytes received
 
+	FilteringRule string // Filtering rule text
+	FilterListID  int    // Filter list ID
+	Whitelist     bool   // True if filtering rule is whitelist
+
 	Error string // If not empty, contains the error text (occurred while processing the DNS query)
 }
 
@@ -42,9 +47,9 @@ func ConfigureDNSRequestProcessedListener(l DNSRequestProcessedListener) {
 	dnsRequestProcessedListenerGuard.Unlock()
 }
 
-// handleDNSResponse handles DNS response calls by the DNS proxy,
+// handleDNSResponse handles DNS response from the DNS proxy with filtering rule
 // transforms them to a DNSRequestProcessedEvent instance and notifies the client code about processed messages.
-func handleDNSResponse(d *proxy.DNSContext, err error) {
+func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err error) {
 	dnsRequestProcessedListenerGuard.Lock()
 	defer dnsRequestProcessedListenerGuard.Unlock()
 	if dnsRequestProcessedListener == nil {
@@ -54,7 +59,7 @@ func handleDNSResponse(d *proxy.DNSContext, err error) {
 	e := DNSRequestProcessedEvent{}
 
 	// Query properties
-	e.Domain = d.Req.Question[0].Name
+	e.Domain = strings.TrimSuffix(d.Req.Question[0].Name, ".")
 	e.Type = dns.Type(d.Req.Question[0].Qtype).String()
 
 	// Set time/elapsed
@@ -75,6 +80,15 @@ func handleDNSResponse(d *proxy.DNSContext, err error) {
 	// Set NS
 	if d.Res != nil && len(d.Res.Ns) > 0 {
 		e.NS = dnsRRListToString(d.Res.Ns)
+	}
+
+	// Filtering rule
+	if filteringRule != nil {
+		e.FilterListID = filteringRule.GetFilterListID()
+		e.FilteringRule = filteringRule.Text()
+		if networkRule, ok := filteringRule.(*urlfilter.NetworkRule); ok {
+			e.Whitelist = networkRule.Whitelist
+		}
 	}
 
 	// Upstream

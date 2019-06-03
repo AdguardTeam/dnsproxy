@@ -124,12 +124,12 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		// Upgrade lock to protect n.resolved
 		resolverAddress := net.JoinHostPort(host, port)
 		n.Lock()
+		defer n.Unlock()
 
 		dialContext := createDialContext([]string{resolverAddress}, n.timeout)
 		n.dialContext = dialContext
 		config := n.createTLSConfig(host)
 		n.resolvedConfig = config
-		n.Unlock()
 		return config, n.dialContext, nil
 	}
 

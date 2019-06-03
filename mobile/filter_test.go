@@ -268,6 +268,7 @@ func createTestFilteringProxy() *DNSProxy {
 		Upstreams:          upstreamsStr,
 		MaxGoroutines:      1,
 		FilteringRulesJSON: filtersJSON,
+		BlockWithNXDomain:  true,
 	}
 
 	mobileDNSProxy := DNSProxy{Config: config}

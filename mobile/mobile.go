@@ -40,8 +40,7 @@ type DNSProxy struct {
 	dnsProxy *proxy.Proxy
 	sync.RWMutex
 
-	dnsEngine    *urlfilter.DNSEngine    // Filtering Engine
-	rulesStorage *urlfilter.RulesStorage // serialized filtering rules rulesStorage
+	filteringEngine *filteringEngine // Filtering structures and properties
 }
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
@@ -60,6 +59,7 @@ type Config struct {
 	DetectDNS64Prefix  bool   // If true, DNS64 prefix detection is enabled
 	FilteringRulesJSON string // Filtering rules JSON (list of "id: filterListID, "content": "filtering rules one per line")
 	RulesStoragePath   string // Path to the temporary file on the disk to store serialized rules. Everything will be stored in memory if nothing is specified.
+	BlockWithNXDomain  bool   // If true filtered requests will be blocked with NXDomain message. Otherwise - with 0.0.0.0 for A requests or IPv6Zero for AAAA requests
 }
 
 // Start starts the DNS proxy
@@ -76,7 +76,7 @@ func (d *DNSProxy) Start() error {
 		return fmt.Errorf("cannot start the DNS proxy: %s", err)
 	}
 
-	err = d.createFilteringEngine(d.Config.FilteringRulesJSON, d.Config.RulesStoragePath)
+	err = d.createFilteringEngine(d.Config)
 	if err != nil {
 		return fmt.Errorf("cannot start the DNS proxy: %s", err)
 	}
@@ -92,19 +92,22 @@ func (d *DNSProxy) Start() error {
 	return err
 }
 
-// createFilteringEngine create and set DNSEngine and RulesStorage
-func (d *DNSProxy) createFilteringEngine(filteringRulesJSON, rulesStoragePath string) error {
-	if len(filteringRulesJSON) > 0 {
-		rulesMap, err := decodeFilteringRulesMap(filteringRulesJSON)
+// createFilteringEngine create and set filteringEngine
+func (d *DNSProxy) createFilteringEngine(c *Config) error {
+	if len(c.FilteringRulesJSON) > 0 {
+		engine := &filteringEngine{}
+		rulesMap, err := decodeFilteringRulesMap(c.FilteringRulesJSON)
 		if err != nil {
 			return fmt.Errorf("failed to initialize DNS Filtering Engine: %v", err)
 		}
-		rs, err := urlfilter.NewRuleStorage(rulesStoragePath)
+		rs, err := urlfilter.NewRuleStorage(c.RulesStoragePath)
 		if err != nil {
-			return fmt.Errorf("failed to initialize Rules Storage %s: %v", rulesStoragePath, err)
+			return fmt.Errorf("failed to initialize Rules Storage %s: %v", c.RulesStoragePath, err)
 		}
-		d.rulesStorage = rs
-		d.dnsEngine = urlfilter.NewDNSEngine(rulesMap, rs)
+		engine.rulesStorage = rs
+		engine.dnsEngine = urlfilter.NewDNSEngine(rulesMap, rs)
+		engine.blockWithNXDomain = c.BlockWithNXDomain
+		d.filteringEngine = engine
 		return nil
 	}
 	return nil
@@ -125,9 +128,8 @@ func (d *DNSProxy) Stop() error {
 		}
 	}
 
-	if d.rulesStorage != nil {
-		err := d.rulesStorage.Close()
-		d.rulesStorage = nil
+	if d.filteringEngine != nil {
+		err := d.filteringEngine.close()
 		if err != nil {
 			errs = append(errs, errorx.Decorate(err, "couldn't close filtering rules rulesStorage"))
 		}

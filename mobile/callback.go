@@ -24,6 +24,7 @@ type DNSRequestProcessedEvent struct {
 	Answer       string // DNS Answers string representation
 	NS           string // DNS NS section
 	UpstreamAddr string // Address of the upstream used to resolve
+	RCode        string // Response RCode
 
 	BytesSent     int // Number of bytes sent
 	BytesReceived int // Number of bytes received
@@ -72,14 +73,19 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err er
 		e.BytesReceived = d.Res.Len()
 	}
 
-	// Set answer
-	if d.Res != nil && len(d.Res.Answer) > 0 {
-		e.Answer = dnsRRListToString(d.Res.Answer)
-	}
+	if d.Res != nil {
+		// Set answer
+		if len(d.Res.Answer) > 0 {
+			e.Answer = dnsRRListToString(d.Res.Answer)
+		}
 
-	// Set NS
-	if d.Res != nil && len(d.Res.Ns) > 0 {
-		e.NS = dnsRRListToString(d.Res.Ns)
+		// Set NS
+		if len(d.Res.Ns) > 0 {
+			e.NS = dnsRRListToString(d.Res.Ns)
+		}
+
+		// Set RCode
+		e.RCode = dns.RcodeToString[d.Res.Rcode]
 	}
 
 	// Filtering rule

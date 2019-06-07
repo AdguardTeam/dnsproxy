@@ -13,6 +13,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
+	"github.com/miekg/dns"
 )
 
 // RootCAs is the CertPool that must be used by all upstreams
@@ -33,6 +34,7 @@ type bootstrapper struct {
 type Resolver struct {
 	resolver        *net.Resolver // net.Resolver
 	resolverAddress string        // Resolver's address
+	upstream        Upstream
 }
 
 // NewResolver creates an instance of Resolver structure with defined net.Resolver and it's address
@@ -48,19 +50,101 @@ func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
 	}
 
 	r.resolverAddress = resolverAddress
-	r.resolver = &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			d := net.Dialer{Timeout: timeout}
-			return d.DialContext(ctx, network, resolverAddress)
-		},
+	opts := Options{
+		Timeout: timeout,
+	}
+	var err error
+	r.upstream, err = AddressToUpstream(resolverAddress, opts)
+	if err != nil {
+		log.Error("AddressToUpstream: %s", err)
+		return r
+	}
+	if _, ok := r.upstream.(*plainDNS); !ok {
+		r.upstream = nil
+		log.Error("Not a plain DNS resolver: %s", resolverAddress)
+		return r
 	}
 	return r
 }
 
+type resultError struct {
+	resp *dns.Msg
+	err  error
+}
+
+func (r *Resolver) resolve(host string, qtype uint16, ch chan *resultError) {
+	req := dns.Msg{}
+	req.Id = dns.Id()
+	req.RecursionDesired = true
+	req.Question = []dns.Question{
+		{
+			Name:   host,
+			Qtype:  qtype,
+			Qclass: dns.ClassINET,
+		},
+	}
+	resp, err := r.upstream.Exchange(&req)
+	ch <- &resultError{resp, err}
+}
+
+func setIPAddresses(ipAddrs *[]net.IPAddr, answers []dns.RR) {
+	for _, ans := range answers {
+
+		if a, ok := ans.(*dns.A); ok {
+			ip := net.IPAddr{IP: a.A}
+			*ipAddrs = append(*ipAddrs, ip)
+
+		} else if a, ok := ans.(*dns.AAAA); ok {
+			ip := net.IPAddr{IP: a.AAAA}
+			*ipAddrs = append(*ipAddrs, ip)
+		}
+	}
+}
+
 // LookupIPAddr returns result of LookupIPAddr method of Resolver's net.Resolver
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
-	return r.resolver.LookupIPAddr(ctx, host)
+	if r.resolver != nil {
+		// use system resolver
+		return r.resolver.LookupIPAddr(ctx, host)
+	}
+
+	if r.upstream == nil || len(host) == 0 {
+		return []net.IPAddr{}, nil
+	}
+
+	if host[:1] != "." {
+		host += "."
+	}
+
+	ch := make(chan *resultError)
+	go r.resolve(host, dns.TypeA, ch)
+	go r.resolve(host, dns.TypeAAAA, ch)
+
+	var ipAddrs []net.IPAddr
+	var errs []error
+	n := 0
+wait:
+	for {
+		var re *resultError
+		select {
+		case re = <-ch:
+			if re.err != nil {
+				errs = append(errs, re.err)
+			} else {
+				setIPAddresses(&ipAddrs, re.resp.Answer)
+			}
+			n++
+			if n == 2 {
+				break wait
+			}
+		}
+	}
+
+	if len(ipAddrs) == 0 && len(errs) != 0 {
+		return []net.IPAddr{}, errs[0]
+	}
+
+	return ipAddrs, nil
 }
 
 func toBoot(address string, bootstrapAddr []string, timeout time.Duration) bootstrapper {

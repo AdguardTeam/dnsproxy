@@ -2,7 +2,6 @@ package mobile
 
 import (
 	"net"
-	"strings"
 	"sync"
 	"testing"
 
@@ -251,24 +250,7 @@ func createTestFilteringProxy() *DNSProxy {
 		{"id": 4, "contents": "@@||google-public-dns-a.google.com^"}
 	]`
 
-	upstreams := []string{
-		"tls://dns.adguard.com",
-		"https://dns.adguard.com/dns-query",
-		// AdGuard DNS (DNSCrypt)
-		"sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
-	}
-	upstreamsStr := strings.Join(upstreams, "\n")
-
-	config := &Config{
-		ListenAddr:    "127.0.0.1",
-		ListenPort:    0, // Specify 0 to start listening on a random free port
-		BootstrapDNS:  "8.8.8.8:53\n1.1.1.1:53",
-		Fallbacks:     "8.8.8.8:53\n1.1.1.1:53",
-		Timeout:       5000,
-		Upstreams:     upstreamsStr,
-		MaxGoroutines: 1,
-	}
-
+	config := createDefaultConfig()
 	filteringConfig := &FilteringConfig{
 		FilteringRulesJSON: filtersJSON,
 		BlockWithNXDomain:  true,

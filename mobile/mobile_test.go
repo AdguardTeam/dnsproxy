@@ -336,6 +336,43 @@ func TestParallelExchange(t *testing.T) {
 	}
 }
 
+func TestDNSProxyRestartRace(t *testing.T) {
+	mobileDNSProxy := createTestFilteringProxy()
+	err := mobileDNSProxy.Start()
+	assert.Nil(t, err)
+	g := &sync.WaitGroup{}
+	g.Add(testMessagesCount)
+	for i := 0; i < testMessagesCount; i++ {
+		go testDNSProxyRestartAsync(t, mobileDNSProxy, g)
+	}
+
+	g.Wait()
+	err = mobileDNSProxy.Stop()
+	assert.Nil(t, err)
+}
+
+// testDNSProxyRestartAsync restarts DNSProxy in separate goroutine
+// And asserts thar dnsproxy and filtering engine are not nil nor before nor after the restart
+func testDNSProxyRestartAsync(t *testing.T, d *DNSProxy, g *sync.WaitGroup) {
+	defer func() {
+		g.Done()
+	}()
+
+	d.Lock()
+	assert.NotNil(t, d.dnsProxy)
+	assert.NotNil(t, d.filteringEngine)
+	d.Unlock()
+
+	err := d.Restart(createDefaultConfig())
+
+	d.Lock()
+	assert.NotNil(t, d.dnsProxy)
+	assert.NotNil(t, d.filteringEngine)
+	d.Unlock()
+
+	assert.Nil(t, err)
+}
+
 func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	defer func() {
 		g.Done()
@@ -454,4 +491,24 @@ func createDNS64Server(t *testing.T) *proxy.Proxy {
 		return nil
 	}
 	return &p
+}
+
+func createDefaultConfig() *Config {
+	upstreams := []string{
+		"tls://dns.adguard.com",
+		"https://dns.adguard.com/dns-query",
+		// AdGuard DNS (DNSCrypt)
+		"sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
+	}
+	upstreamsStr := strings.Join(upstreams, "\n")
+
+	return &Config{
+		ListenAddr:    "127.0.0.1",
+		ListenPort:    0, // Specify 0 to start listening on a random free port
+		BootstrapDNS:  "8.8.8.8:53\n1.1.1.1:53",
+		Fallbacks:     "8.8.8.8:53\n1.1.1.1:53",
+		Timeout:       5000,
+		Upstreams:     upstreamsStr,
+		MaxGoroutines: 1,
+	}
 }

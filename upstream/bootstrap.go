@@ -37,6 +37,60 @@ type Resolver struct {
 	upstream        Upstream
 }
 
+// toBootResolved creates a new bootstrapper that already contains resolved config.
+// This can be done only in the case when we already know the resolver IP address.
+// timeout is also used for establishing TCP connections
+func toBootResolved(address string, serverIP net.IP, timeout time.Duration) (*bootstrapper, error) {
+	// get a host without port
+	host, port, err := getAddressHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrapper requires port in address %s", address)
+	}
+
+	// Upgrade lock to protect n.resolved
+	resolverAddress := net.JoinHostPort(serverIP.String(), port)
+
+	return &bootstrapper{
+		address:        address,
+		dialContext:    createDialContext([]string{resolverAddress}, timeout),
+		resolvedConfig: createTLSConfig(host),
+		timeout:        timeout,
+	}, nil
+}
+
+// toBoot initializes a new bootstrapper instance
+// address -- original resolver address string (i.e. tls://one.one.one.one:853)
+// bootstrapAddr -- a list of bootstrap DNS resolvers' addresses
+// timeout -- DNS query timeout
+func toBoot(address string, bootstrapAddr []string, timeout time.Duration) *bootstrapper {
+	resolvers := []*Resolver{}
+	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
+		for idx, adr := range bootstrapAddr {
+			_, _, err := net.SplitHostPort(adr)
+			if err != nil {
+				// Add the default port for bootstrap DNS address if no port is defined
+				adr = net.JoinHostPort(adr, "53")
+				bootstrapAddr[idx] = adr
+			}
+		}
+
+		// Create list of resolvers for parallel lookup
+		for _, boot := range bootstrapAddr {
+			r := NewResolver(boot, timeout)
+			resolvers = append(resolvers, r)
+		}
+	} else {
+		// nil resolver if the default one
+		resolvers = append(resolvers, NewResolver("", timeout))
+	}
+
+	return &bootstrapper{
+		address:   address,
+		resolvers: resolvers,
+		timeout:   timeout,
+	}
+}
+
 // NewResolver creates an instance of Resolver structure with defined net.Resolver and it's address
 // resolverAddress is address of net.Resolver
 // The host in the address parameter of Dial func will always be a literal IP address (from documentation)
@@ -147,35 +201,6 @@ wait:
 	return ipAddrs, nil
 }
 
-func toBoot(address string, bootstrapAddr []string, timeout time.Duration) bootstrapper {
-	resolvers := []*Resolver{}
-	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
-		for idx, adr := range bootstrapAddr {
-			_, _, err := net.SplitHostPort(adr)
-			if err != nil {
-				// Add the default port for bootstrap DNS address if no port is defined
-				adr = net.JoinHostPort(adr, "53")
-				bootstrapAddr[idx] = adr
-			}
-		}
-
-		// Create list of resolvers for parallel lookup
-		for _, boot := range bootstrapAddr {
-			r := NewResolver(boot, timeout)
-			resolvers = append(resolvers, r)
-		}
-	} else {
-		// nil resolver if the default one
-		resolvers = append(resolvers, NewResolver("", timeout))
-	}
-
-	return bootstrapper{
-		address:   address,
-		resolvers: resolvers,
-		timeout:   timeout,
-	}
-}
-
 // dialHandler specifies the dial function for creating unencrypted TCP connections.
 type dialHandler func(ctx context.Context, network, addr string) (net.Conn, error)
 
@@ -183,9 +208,9 @@ type dialHandler func(ctx context.Context, network, addr string) (net.Conn, erro
 func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	n.RLock()
 	if n.dialContext != nil && n.resolvedConfig != nil { // fast path
-		tlsconfig, dialContext := n.resolvedConfig, n.dialContext
+		tlsConfig, dialContext := n.resolvedConfig, n.dialContext
 		n.RUnlock()
-		return tlsconfig, dialContext, nil
+		return tlsConfig, dialContext, nil
 	}
 
 	//
@@ -193,7 +218,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	//
 
 	// get a host without port
-	host, port, err := n.getAddressHostPort()
+	host, port, err := getAddressHostPort(n.address)
 	if err != nil {
 		addr := n.address
 		n.RUnlock()
@@ -212,7 +237,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 		dialContext := createDialContext([]string{resolverAddress}, n.timeout)
 		n.dialContext = dialContext
-		config := n.createTLSConfig(host)
+		config := createTLSConfig(host)
 		n.resolvedConfig = config
 		return config, n.dialContext, nil
 	}
@@ -259,7 +284,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 	dialContext := createDialContext(resolved, n.timeout)
 	n.dialContext = dialContext
-	n.resolvedConfig = n.createTLSConfig(host)
+	n.resolvedConfig = createTLSConfig(host)
 	return n.resolvedConfig, n.dialContext, nil
 }
 
@@ -293,12 +318,23 @@ func createDialContext(addresses []string, timeout time.Duration) (dialContext d
 	return
 }
 
-func (n *bootstrapper) getAddressHostPort() (string, string, error) {
-	justHostPort := n.address
-	if strings.Contains(n.address, "://") {
-		parsedURL, err := url.Parse(n.address)
+// createTLSConfig creates a client TLS config
+func createTLSConfig(host string) *tls.Config {
+	return &tls.Config{
+		ServerName: host,
+		RootCAs:    RootCAs,
+		MinVersion: tls.VersionTLS12,
+	}
+}
+
+// getAddressHostPort splits resolver address into host and port
+// returns host, port
+func getAddressHostPort(address string) (string, string, error) {
+	justHostPort := address
+	if strings.Contains(address, "://") {
+		parsedURL, err := url.Parse(address)
 		if err != nil {
-			return "", "", errorx.Decorate(err, "failed to parse %s", n.address)
+			return "", "", errorx.Decorate(err, "failed to parse %s", address)
 		}
 
 		justHostPort = parsedURL.Host
@@ -308,13 +344,4 @@ func (n *bootstrapper) getAddressHostPort() (string, string, error) {
 
 	// get a host without port
 	return net.SplitHostPort(justHostPort)
-}
-
-// createTLSConfig creates a client TLS config
-func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
-	return &tls.Config{
-		ServerName: host,
-		RootCAs:    RootCAs,
-		MinVersion: tls.VersionTLS12,
-	}
 }

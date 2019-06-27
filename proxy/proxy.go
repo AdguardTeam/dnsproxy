@@ -138,6 +138,16 @@ type UpstreamConfig struct {
 // will send queries for *.host.com to 1.2.3.4, except for *.www.host.com, which will go to 2.3.4.5 and *.maps.host.com,
 // which will go to default server 3.4.5.6 with all other domains
 func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Duration) (UpstreamConfig, error) {
+	return ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS, timeout, func(address string, opts upstream.Options) (upstream.Upstream, error) {
+		return upstream.AddressToUpstream(address, opts)
+	})
+}
+
+// AddressToUpstreamFunction is a type for a callback function which creates an upstream object
+type AddressToUpstreamFunction func(address string, opts upstream.Options) (upstream.Upstream, error)
+
+// ParseUpstreamsConfigEx is an extended version of ParseUpstreamsConfig() which has a custom callback function which creates an upstream object
+func ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS []string, timeout time.Duration, addressToUpstreamFunction AddressToUpstreamFunction) (UpstreamConfig, error) {
 	upstreams := []upstream.Upstream{}
 	domainReservedUpstreams := map[string][]upstream.Upstream{}
 
@@ -174,7 +184,7 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 		}
 
 		// create an upstream
-		dnsUpstream, err := upstream.AddressToUpstream(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout})
+		dnsUpstream, err := addressToUpstreamFunction(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout})
 		if err != nil {
 			return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", u, bootstrapDNS, err)
 		}

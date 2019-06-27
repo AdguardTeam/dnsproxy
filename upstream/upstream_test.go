@@ -434,6 +434,50 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	}
 }
 
+func TestUpstreamsWithServerIP(t *testing.T) {
+	// use invalid bootstrap to make sure it fails if tries to use it
+	invalidBootstrap := []string{"1.2.3.4:55"}
+
+	upstreams := []struct {
+		address   string
+		bootstrap []string
+		serverIP  string
+	}{
+		{
+			address:   "tls://dns.adguard.com",
+			bootstrap: invalidBootstrap,
+			serverIP:  "176.103.130.130",
+		},
+		{
+			address:   "https://dns.adguard.com/dns-query",
+			bootstrap: invalidBootstrap,
+			serverIP:  "176.103.130.130",
+		},
+		{
+			// AdGuard DNS DOH with the IP address specified
+			address:   "sdns://AgcAAAAAAAAADzE3Ni4xMDMuMTMwLjEzMAAPZG5zLmFkZ3VhcmQuY29tCi9kbnMtcXVlcnk",
+			bootstrap: invalidBootstrap,
+		},
+		{
+			// AdGuard DNS DOT with the IP address specified
+			address:   "sdns://AwAAAAAAAAAAEzE3Ni4xMDMuMTMwLjEzMDo4NTMAD2Rucy5hZGd1YXJkLmNvbQ",
+			bootstrap: invalidBootstrap,
+		},
+	}
+
+	for _, test := range upstreams {
+		t.Run(test.address, func(t *testing.T) {
+			opts := Options{Bootstrap: test.bootstrap, Timeout: timeout, ServerIP: net.ParseIP(test.serverIP)}
+			u, err := AddressToUpstream(test.address, opts)
+			if err != nil {
+				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
+			}
+
+			checkUpstream(t, u, test.address)
+		})
+	}
+}
+
 func checkUpstream(t *testing.T, u Upstream, addr string) {
 	t.Helper()
 

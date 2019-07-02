@@ -3,8 +3,8 @@ module github.com/AdguardTeam/dnsproxy
 go 1.12
 
 require (
-	github.com/AdguardTeam/golibs v0.1.2
-	github.com/AdguardTeam/urlfilter v0.3.0
+	github.com/AdguardTeam/golibs v0.1.3
+	github.com/AdguardTeam/urlfilter v0.4.0
 	github.com/ameshkov/dnscrypt v1.0.7
 	github.com/ameshkov/dnsstamps v1.0.1
 	github.com/beefsack/go-rate v0.0.0-20180408011153-efa7637bb9b6
@@ -12,7 +12,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-test/deep v1.0.1
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/joomcode/errorx v0.1.0
+	github.com/joomcode/errorx v0.8.0
 	github.com/miekg/dns v1.1.8
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/shirou/gopsutil v2.18.12+incompatible

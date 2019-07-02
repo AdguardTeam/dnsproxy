@@ -62,9 +62,9 @@ type Config struct {
 
 // FilteringConfig is the filteringEngine configuration
 type FilteringConfig struct {
-	FilteringRulesJSON string // Filtering rules JSON (list of "id: filterListID, "content": "filtering rules one per line")
-	RulesStoragePath   string // Path to the temporary file on the disk to store serialized rules. Everything will be stored in memory if nothing is specified.
-	BlockWithNXDomain  bool   // If true filtered requests will be blocked with NXDomain message. Otherwise - with 0.0.0.0 for A requests or IPv6Zero for AAAA requests
+	FilteringRulesFilesJSON   string // Filtering rules files JSON (list of "id": filterListID, "path": "path/to/filter")
+	FilteringRulesStringsJSON string // Filtering rules string JSON (list of "id": filterListID, "content": "filtering rules one per line")
+	BlockWithNXDomain         bool   // If true filtered requests will be blocked with NXDomain message. Otherwise - with 0.0.0.0 for A requests or IPv6Zero for AAAA requests
 }
 
 // Start starts the DNS proxy
@@ -88,18 +88,26 @@ func (d *DNSProxy) Start() error {
 
 // createFilteringEngine create and set filteringEngine
 func (d *DNSProxy) createFilteringEngine(f *FilteringConfig) error {
-	if f != nil && len(f.FilteringRulesJSON) > 0 {
+	if f != nil && (len(f.FilteringRulesStringsJSON) > 0 || len(f.FilteringRulesFilesJSON) > 0) {
 		engine := &filteringEngine{}
-		rulesMap, err := decodeFilteringRulesMap(f.FilteringRulesJSON)
+		ruleLists := []urlfilter.RuleList{}
+		err := addFileRuleLists(f.FilteringRulesFilesJSON, &ruleLists)
 		if err != nil {
 			return fmt.Errorf("failed to initialize DNS Filtering Engine: %v", err)
 		}
-		rs, err := urlfilter.NewRuleStorage(f.RulesStoragePath)
+
+		err = addStringRuleLists(f.FilteringRulesStringsJSON, &ruleLists)
 		if err != nil {
-			return fmt.Errorf("failed to initialize Rules Storage %s: %v", f.RulesStoragePath, err)
+			return fmt.Errorf("failed to initialize DNS Filtering Engine: %v", err)
 		}
+
+		rs, err := urlfilter.NewRuleStorage(ruleLists)
+		if err != nil {
+			return fmt.Errorf("failed to initialize Rules Storage: %v", err)
+		}
+
 		engine.rulesStorage = rs
-		engine.dnsEngine = urlfilter.NewDNSEngine(rulesMap, rs)
+		engine.dnsEngine = urlfilter.NewDNSEngine(rs)
 		engine.blockWithNXDomain = f.BlockWithNXDomain
 		d.filteringEngine = engine
 		return nil

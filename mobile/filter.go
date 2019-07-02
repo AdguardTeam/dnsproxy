@@ -16,26 +16,71 @@ import (
 	"github.com/miekg/dns"
 )
 
-// filtersListJSON represents filters list with list id
-type filtersListJSON struct {
+// stringRuleListJSON represents filters list with list id
+type stringRuleListJSON struct {
 	ListID         int    `json:"id"`
 	FilteringRules string `json:"contents"`
 }
 
-// decodeFilteringRulesMap decodes filtersJSON and returns filters map
-func decodeFilteringRulesMap(filtersJSON string) (map[int]string, error) {
-	var filters []filtersListJSON
-	err := json.NewDecoder(strings.NewReader(filtersJSON)).Decode(&filters)
+// fileRuleListJSON represents filters list path with list id
+type fileRuleListJSON struct {
+	ListID int    `json:"id"`
+	Path   string `json:"path"`
+}
+
+// addStringRuleLists parses filtersJSON and adds StringRuleLists to ruleList slice
+func addStringRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
+	// do nothing if empty string was passed
+	if len(listJSON) == 0 {
+		return nil
+	}
+
+	// decode JSON to stringRuleListJSON
+	var filterLists []stringRuleListJSON
+	err := json.NewDecoder(strings.NewReader(listJSON)).Decode(&filterLists)
 	if err != nil {
-		return nil, errorx.Decorate(err, "failed to decode filters json")
+		return errorx.Decorate(err, "Failed to decode string rule lists json")
 	}
 
-	filtersMap := map[int]string{}
-	for _, filter := range filters {
-		filtersMap[filter.ListID] = filter.FilteringRules
+	// Add each StringRuleList to ruleList
+	for _, filterList := range filterLists {
+		list := &urlfilter.StringRuleList{
+			ID:             filterList.ListID,
+			RulesText:      filterList.FilteringRules,
+			IgnoreCosmetic: false,
+		}
+
+		*ruleList = append(*ruleList, list)
 	}
 
-	return filtersMap, err
+	return nil
+}
+
+// addFileRuleLists parses listJSON and adds FileRuleLists to ruleList slice
+func addFileRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
+	// do nothing if empty string was passed
+	if len(listJSON) == 0 {
+		return nil
+	}
+
+	// decode JSON to fileRuleListJSON
+	var filterLists []fileRuleListJSON
+	err := json.NewDecoder(strings.NewReader(listJSON)).Decode(&filterLists)
+	if err != nil {
+		return errorx.Decorate(err, "Failed to decode file rule lists json")
+	}
+
+	// Add each FileRuleList to ruleList
+	for _, filterList := range filterLists {
+		list, err := urlfilter.NewFileRuleList(filterList.ListID, filterList.Path, false)
+		if err != nil {
+			return errorx.Decorate(err, "Failed to init FileRuleList with ID %d from %s", filterList.ListID, filterList.Path)
+		}
+
+		*ruleList = append(*ruleList, list)
+	}
+
+	return nil
 }
 
 // handleDNSRequest is a custom handler for proxy with filtering
@@ -63,9 +108,9 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 
 // filteringEngine is a wrapper for urlfilter structures and filtering options
 type filteringEngine struct {
-	dnsEngine         *urlfilter.DNSEngine    // Filtering Engine
-	rulesStorage      *urlfilter.RulesStorage // serialized filtering rules rulesStorage
-	blockWithNXDomain bool                    // If true requests which were filtered with network rules will be blocked with NXDomain message instead of undefined IP
+	dnsEngine         *urlfilter.DNSEngine   // Filtering Engine
+	rulesStorage      *urlfilter.RuleStorage // Serialized filtering rules storage
+	blockWithNXDomain bool                   // If true requests which were filtered with network rules will be blocked with NXDomain message instead of undefined IP
 }
 
 // match returns result of DNSEngine Match() func

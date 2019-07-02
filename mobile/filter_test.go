@@ -11,22 +11,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDecodeFilteringRules(t *testing.T) {
-	const filtersJSON = `
+const filesJSON = `
+	[
+		{"id": 1111, "path": "test_filters/network_filter.txt"},
+		{"id": 11111, "path": "test_filters/hosts_filter.txt"}
+	]`
+
+func TestDecodeStringFilterRuleLists(t *testing.T) {
+	const rulesJSON = `
 	[
 		{"id": 1, "contents": "||google.com^\n||google.ru^\n||google.ua^\n"},
 		{"id": 11, "contents": "0.0.0.0 yandex.ru\n0.0.0.0 yandex.ua\n0.0.0.0 bing.com"},
 		{"id": 111, "contents": "2000:: bing.com\n::1 yahoo.com"}
 	]`
 
-	filters, err := decodeFilteringRulesMap(filtersJSON)
+	filters := []urlfilter.RuleList{}
+	err := addStringRuleLists(rulesJSON, &filters)
 	assert.Nil(t, err)
 	assert.Equal(t, len(filters), 3)
 
-	rs, err := urlfilter.NewRuleStorage("")
+	err = addFileRuleLists(filesJSON, &filters)
 	assert.Nil(t, err)
-	engine := urlfilter.NewDNSEngine(filters, rs)
-	assert.Equal(t, engine.RulesCount, 8)
+	assert.Equal(t, len(filters), 5)
+
+	rs, err := urlfilter.NewRuleStorage(filters)
+	assert.Nil(t, err)
+	engine := urlfilter.NewDNSEngine(rs)
+	assert.Equal(t, engine.RulesCount, 16)
 
 	rules, ok := engine.Match("bing.com")
 	assert.True(t, ok)
@@ -44,6 +55,16 @@ func TestDecodeFilteringRules(t *testing.T) {
 
 	_, ok = engine.Match("example.org")
 	assert.False(t, ok)
+
+	rules, ok = engine.Match("a24help.ru")
+	assert.True(t, ok)
+	assert.Equal(t, len(rules), 1)
+	assert.Equal(t, rules[0].GetFilterListID(), 1111)
+
+	rules, ok = engine.Match("events.appsflyer.com")
+	assert.True(t, ok)
+	assert.Equal(t, len(rules), 1)
+	assert.Equal(t, rules[0].GetFilterListID(), 11111)
 
 	err = rs.Close()
 	assert.Nil(t, err)
@@ -74,8 +95,11 @@ func TestFilteringProxy(t *testing.T) {
 	// There are Network filtering rules, which matched this hosts
 	testNetworkFilteringRule(t, conn, "example.com")
 	testNetworkFilteringRule(t, conn, "example.org")
+	testNetworkFilteringRule(t, conn, "a24help.ru")
+	testNetworkFilteringRule(t, conn, "a.sdska.ru")
 
 	// There are IPv4 Host filtering rules matched this hosts
+	testAHostFilteringRule(t, conn, "events.appsflyer.com", net.IPv4(0, 0, 0, 0))
 	testAHostFilteringRule(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
 	testAHostFilteringRule(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
 
@@ -85,7 +109,7 @@ func TestFilteringProxy(t *testing.T) {
 	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ru")
 	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ua")
 
-	assertListenerEventsCount(t, listener, 11)
+	assertListenerEventsCount(t, listener, 16)
 
 	// unregister listener
 	ConfigureDNSRequestProcessedListener(nil)
@@ -116,8 +140,11 @@ func TestFilteringProxyRace(t *testing.T) {
 	// Network filtering rules
 	testNetworkFilteringRulesAsync(t, conn, "example.com")
 	testNetworkFilteringRulesAsync(t, conn, "example.org")
+	testNetworkFilteringRulesAsync(t, conn, "a24help.ru")
+	testNetworkFilteringRulesAsync(t, conn, "a.ruporn.me")
 
 	// IPv4 rules and A requests
+	testHostFilteringRulesAsync(t, conn, "events.appsflyer.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
 	testHostFilteringRulesAsync(t, conn, "google.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
 	testHostFilteringRulesAsync(t, conn, "google.ru", dns.TypeA, net.IPv4(127, 0, 0, 1))
 
@@ -128,7 +155,7 @@ func TestFilteringProxyRace(t *testing.T) {
 	// Zero IPv4 rule should also block AAAA requests with IPv6Zero answer
 	testHostFilteringRulesAsync(t, conn, "google.com", dns.TypeAAAA, net.IPv6zero)
 
-	assertListenerEventsCount(t, listener, 100)
+	assertListenerEventsCount(t, listener, 150)
 
 	// unregister listener
 	ConfigureDNSRequestProcessedListener(nil)
@@ -242,7 +269,7 @@ func getDNSRequestProcessedEventByIdx(listener *testDNSRequestProcessedListener,
 }
 
 func createTestFilteringProxy() *DNSProxy {
-	const filtersJSON = `
+	const rulesJSON = `
 	[
 		{"id": 1, "contents": "||example.com^\n||example.org^"},
 		{"id": 2, "contents": "0.0.0.0 google.com\n127.0.0.1 google.ru"},
@@ -252,8 +279,9 @@ func createTestFilteringProxy() *DNSProxy {
 
 	config := createDefaultConfig()
 	filteringConfig := &FilteringConfig{
-		FilteringRulesJSON: filtersJSON,
-		BlockWithNXDomain:  true,
+		FilteringRulesFilesJSON:   filesJSON,
+		FilteringRulesStringsJSON: rulesJSON,
+		BlockWithNXDomain:         true,
 	}
 
 	mobileDNSProxy := DNSProxy{Config: config, FilteringConfig: filteringConfig}

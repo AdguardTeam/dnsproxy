@@ -64,7 +64,7 @@ type Config struct {
 type FilteringConfig struct {
 	FilteringRulesFilesJSON   string // Filtering rules files JSON (list of "id": filterListID, "path": "path/to/filter")
 	FilteringRulesStringsJSON string // Filtering rules string JSON (list of "id": filterListID, "content": "filtering rules one per line")
-	BlockWithNXDomain         bool   // If true filtered requests will be blocked with NXDomain message. Otherwise - with 0.0.0.0 for A requests or IPv6Zero for AAAA requests
+	BlockType                 int    // Block type for filtering rules
 }
 
 // Start starts the DNS proxy
@@ -89,6 +89,10 @@ func (d *DNSProxy) Start() error {
 // createFilteringEngine create and set filteringEngine
 func (d *DNSProxy) createFilteringEngine(f *FilteringConfig) error {
 	if f != nil && (len(f.FilteringRulesStringsJSON) > 0 || len(f.FilteringRulesFilesJSON) > 0) {
+		if f.BlockType != BlockTypeIP && f.BlockType != BlockTypeRule && f.BlockType != BlockTypeNXDomain {
+			return fmt.Errorf("unknown block type %d", f.BlockType)
+		}
+
 		engine := &filteringEngine{}
 		ruleLists := []urlfilter.RuleList{}
 		err := addFileRuleLists(f.FilteringRulesFilesJSON, &ruleLists)
@@ -108,7 +112,7 @@ func (d *DNSProxy) createFilteringEngine(f *FilteringConfig) error {
 
 		engine.rulesStorage = rs
 		engine.dnsEngine = urlfilter.NewDNSEngine(rs)
-		engine.blockWithNXDomain = f.BlockWithNXDomain
+		engine.blockType = f.BlockType
 		d.filteringEngine = engine
 		return nil
 	}

@@ -337,7 +337,7 @@ func TestParallelExchange(t *testing.T) {
 }
 
 func TestDNSProxyRestartRace(t *testing.T) {
-	mobileDNSProxy := createTestFilteringProxy()
+	mobileDNSProxy := createTestFilteringProxy(BlockTypeRule)
 	err := mobileDNSProxy.Start()
 	assert.Nil(t, err)
 	g := &sync.WaitGroup{}

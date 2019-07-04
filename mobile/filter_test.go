@@ -17,7 +17,8 @@ const filesJSON = `
 		{"id": 11111, "path": "test_filters/hosts_filter.txt"}
 	]`
 
-func TestDecodeStringFilterRuleLists(t *testing.T) {
+// TestDecodeFilterRuleLists tests filtering configuration decode for String and File RuleLists
+func TestDecodeFilterRuleLists(t *testing.T) {
 	const rulesJSON = `
 	[
 		{"id": 1, "contents": "||google.com^\n||google.ru^\n||google.ua^\n"},
@@ -26,19 +27,24 @@ func TestDecodeStringFilterRuleLists(t *testing.T) {
 	]`
 
 	filters := []urlfilter.RuleList{}
+
+	// Let's add string rules and check lists count
 	err := addStringRuleLists(rulesJSON, &filters)
 	assert.Nil(t, err)
 	assert.Equal(t, len(filters), 3)
 
+	// Let's add file rules and check lists count
 	err = addFileRuleLists(filesJSON, &filters)
 	assert.Nil(t, err)
 	assert.Equal(t, len(filters), 5)
 
+	// Init rules storage and check rules count
 	rs, err := urlfilter.NewRuleStorage(filters)
 	assert.Nil(t, err)
 	engine := urlfilter.NewDNSEngine(rs)
 	assert.Equal(t, engine.RulesCount, 16)
 
+	// Examine filtering engine
 	rules, ok := engine.Match("bing.com")
 	assert.True(t, ok)
 	assert.Equal(t, len(rules), 2)
@@ -66,16 +72,18 @@ func TestDecodeStringFilterRuleLists(t *testing.T) {
 	assert.Equal(t, len(rules), 1)
 	assert.Equal(t, rules[0].GetFilterListID(), 11111)
 
+	// Close rules storage
 	err = rs.Close()
 	assert.Nil(t, err)
 }
 
 // TestFilteringProxy test all kinds of DNS filtering rules:
+// blockType equals BlockTypeRule
 // Network filtering rules should block request for any kind of request
 // IPv4 Host filtering rules should block only A requests
 // IPv6 Host filtering rules should block only AAAA requests
-func TestFilteringProxy(t *testing.T) {
-	mobileDNSProxy := createTestFilteringProxy()
+func TestFilteringProxyRuleBlock(t *testing.T) {
+	mobileDNSProxy := createTestFilteringProxy(BlockTypeRule)
 
 	listener := &testDNSRequestProcessedListener{}
 	ConfigureDNSRequestProcessedListener(listener)
@@ -93,19 +101,19 @@ func TestFilteringProxy(t *testing.T) {
 	sendAndAssertTestMessage(t, conn)
 
 	// There are Network filtering rules, which matched this hosts
-	testNetworkFilteringRule(t, conn, "example.com")
-	testNetworkFilteringRule(t, conn, "example.org")
-	testNetworkFilteringRule(t, conn, "a24help.ru")
-	testNetworkFilteringRule(t, conn, "a.sdska.ru")
+	testFilteringRuleNXDomainBlock(t, conn, "example.com")
+	testFilteringRuleNXDomainBlock(t, conn, "example.org")
+	testFilteringRuleNXDomainBlock(t, conn, "a24help.ru")
+	testFilteringRuleNXDomainBlock(t, conn, "a.sdska.ru")
 
 	// There are IPv4 Host filtering rules matched this hosts
-	testAHostFilteringRule(t, conn, "events.appsflyer.com", net.IPv4(0, 0, 0, 0))
-	testAHostFilteringRule(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
-	testAHostFilteringRule(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
-
-	// There are IPv6 Host filtering rules, which matched this hosts
-	testAAAAHostFilteringRule(t, conn, "yandex.ru", net.ParseIP("2000::"))
-	testAAAAHostFilteringRule(t, conn, "yandex.ua", net.ParseIP("::1"))
+	testFilteringRuleARequestIPBlock(t, conn, "events.appsflyer.com", net.IPv4(0, 0, 0, 0))
+	testFilteringRuleARequestIPBlock(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
+	testFilteringRuleARequestIPBlock(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
+	//
+	//// There are IPv6 Host filtering rules, which matched this hosts
+	testFilteringRuleAAAARequestIPBlock(t, conn, "yandex.ru", net.ParseIP("2000::"))
+	testFilteringRuleAAAARequestIPBlock(t, conn, "yandex.ua", net.ParseIP("::1"))
 	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ru")
 	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ua")
 
@@ -118,9 +126,142 @@ func TestFilteringProxy(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-// TestFilteringProxyRace sends multiple parallel DNS requests, which should be blocked
-func TestFilteringProxyRace(t *testing.T) {
-	dnsProxy := createTestFilteringProxy()
+// TestFilteringProxyNXDomainBlock tests all kinds of DNS filtering rules:
+// blockType equals BlockTypeNXDomain
+// Network filtering rules should block both A and AAAA requests
+// IPv4 Host filtering rules should block A and AAAA requests if it's IPv4Zero rule
+// IPv6 Host filtering rules should block only AAAA requests
+// All requests should be blocked with NXDomain
+func TestFilteringProxyNXDomainBlock(t *testing.T) {
+	dnsProxy := createTestFilteringProxy(BlockTypeNXDomain)
+
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
+	// Start listening
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.dnsProxy.Addr(proxy.ProtoUDP)
+	conn, err := dns.Dial("udp", addr.String())
+	assert.Nil(t, err)
+
+	// Create, send and assert regular test message
+	sendAndAssertTestMessage(t, conn)
+
+	// There are Network filtering rules, which matched this hosts
+	testFilteringRuleNXDomainBlock(t, conn, "example.com")
+	testFilteringRuleNXDomainBlock(t, conn, "example.org")
+	testFilteringRuleNXDomainBlock(t, conn, "a24help.ru")
+	testFilteringRuleNXDomainBlock(t, conn, "a.sdska.ru")
+
+	// Let's ensure that hosts which matched to Host filtering rules are blocked with NXDomain too
+	testFilteringRuleNXDomainBlock(t, conn, "google.com")
+	testFilteringRuleNXDomainBlock(t, conn, "events.appsflyer.com")
+
+	assertListenerEventsCount(t, listener, 13)
+
+	// unregister listener
+	ConfigureDNSRequestProcessedListener(nil)
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	assert.Nil(t, err)
+}
+
+// TestFilteringProxyIPBlock tests all kinds of DNS filtering rules:
+// blockType equals BlockTypeIP
+// Network filtering rules should block both A and AAAA requests
+// IPv4 Host filtering rules should block A and AAAA requests if it's IPv4Zero rule
+// IPv6 Host filtering rules should block only AAAA requests
+// All requests should be blocked with IP
+func TestFilteringProxyIPBlock(t *testing.T) {
+	mobileDNSProxy := createTestFilteringProxy(BlockTypeIP)
+
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
+	// Start listening
+	err := mobileDNSProxy.Start()
+	assert.Nil(t, err)
+
+	// Create a DNS-over-UDP client connection
+	addr := mobileDNSProxy.dnsProxy.Addr(proxy.ProtoUDP)
+	conn, err := dns.Dial("udp", addr.String())
+	assert.Nil(t, err)
+
+	// Create, send and assert regular test message which shouldn't be blocked
+	sendAndAssertTestMessage(t, conn)
+
+	// There are IPv4 Host filtering rules which matched this hosts
+	testFilteringRuleARequestIPBlock(t, conn, "events.appsflyer.com", net.IPv4(0, 0, 0, 0))
+	testFilteringRuleARequestIPBlock(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
+	testFilteringRuleARequestIPBlock(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
+
+	// There are Network filtering rules which matched this hosts
+	testFilteringRuleARequestIPBlock(t, conn, "example.com", net.IPv4(0, 0, 0, 0))
+	testFilteringRuleARequestIPBlock(t, conn, "example.org", net.IPv4(0, 0, 0, 0))
+
+	// There are IPv6 Host filtering rules, which matched this hosts
+	testFilteringRuleAAAARequestIPBlock(t, conn, "yandex.ru", net.ParseIP("2000::"))
+	testFilteringRuleAAAARequestIPBlock(t, conn, "yandex.ua", net.ParseIP("::1"))
+	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ru")
+	testAAAAHostFilteringRuleARequest(t, conn, "yandex.ua")
+
+	// Let's ensure that AAAA requests for hosts matched Network filtering rules are blocked with net.IPv6zero
+	testFilteringRuleAAAARequestIPBlock(t, conn, "example.com", net.IPv6zero)
+	testFilteringRuleAAAARequestIPBlock(t, conn, "example.org", net.IPv6zero)
+
+	assertListenerEventsCount(t, listener, 12)
+
+	// unregister listener
+	ConfigureDNSRequestProcessedListener(nil)
+	// Stop the proxy
+	err = mobileDNSProxy.Stop()
+	assert.Nil(t, err)
+
+}
+
+// TestFilteringProxyRaceNXDomainBlock sends multiple parallel DNS requests, which should be blocked with NXDomain
+func TestFilteringProxyRaceNXDomainBlock(t *testing.T) {
+	dnsProxy := createTestFilteringProxy(BlockTypeNXDomain)
+
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
+	// Start listening
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr()
+	conn, err := dns.Dial("udp", addr)
+	assert.Nil(t, err)
+
+	// Network filtering rules
+	testFilteringRulesNXDomainBlockAsync(t, conn, "example.com")
+	testFilteringRulesNXDomainBlockAsync(t, conn, "example.org")
+	testFilteringRulesNXDomainBlockAsync(t, conn, "a24help.ru")
+	testFilteringRulesNXDomainBlockAsync(t, conn, "a.ruporn.me")
+
+	// IPv4Zero Host filtering rules
+	testFilteringRulesNXDomainBlockAsync(t, conn, "google.com")
+	testFilteringRulesNXDomainBlockAsync(t, conn, "events.appsflyer.com")
+	testFilteringRulesNXDomainBlockAsync(t, conn, "datacollect.vmall.com")
+
+	assertListenerEventsCount(t, listener, 140)
+
+	// unregister listener
+	ConfigureDNSRequestProcessedListener(nil)
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	assert.Nil(t, err)
+}
+
+// TestFilteringProxyRace sends multiple parallel DNS requests, which should be blocked with IP
+func TestFilteringProxyRaceIPBlock(t *testing.T) {
+	dnsProxy := createTestFilteringProxy(BlockTypeIP)
 
 	listener := &testDNSRequestProcessedListener{}
 	ConfigureDNSRequestProcessedListener(listener)
@@ -138,24 +279,27 @@ func TestFilteringProxyRace(t *testing.T) {
 	sendTestMessagesAsync(t, conn)
 
 	// Network filtering rules
-	testNetworkFilteringRulesAsync(t, conn, "example.com")
-	testNetworkFilteringRulesAsync(t, conn, "example.org")
-	testNetworkFilteringRulesAsync(t, conn, "a24help.ru")
-	testNetworkFilteringRulesAsync(t, conn, "a.ruporn.me")
+	testFilteringRulesIPBlockAsync(t, conn, "example.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
+	testFilteringRulesIPBlockAsync(t, conn, "example.org", dns.TypeA, net.IPv4(0, 0, 0, 0))
+	testFilteringRulesIPBlockAsync(t, conn, "a24help.ru", dns.TypeA, net.IPv4(0, 0, 0, 0))
+	testFilteringRulesIPBlockAsync(t, conn, "a.ruporn.me", dns.TypeA, net.IPv4(0, 0, 0, 0))
+
+	testFilteringRulesIPBlockAsync(t, conn, "a.ruporn.me", dns.TypeAAAA, net.IPv6zero)
+	testFilteringRulesIPBlockAsync(t, conn, "a24help.ru", dns.TypeAAAA, net.IPv6zero)
 
 	// IPv4 rules and A requests
-	testHostFilteringRulesAsync(t, conn, "events.appsflyer.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
-	testHostFilteringRulesAsync(t, conn, "google.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
-	testHostFilteringRulesAsync(t, conn, "google.ru", dns.TypeA, net.IPv4(127, 0, 0, 1))
+	testFilteringRulesIPBlockAsync(t, conn, "events.appsflyer.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
+	testFilteringRulesIPBlockAsync(t, conn, "google.com", dns.TypeA, net.IPv4(0, 0, 0, 0))
+	testFilteringRulesIPBlockAsync(t, conn, "google.ru", dns.TypeA, net.IPv4(127, 0, 0, 1))
 
 	// IPv6 rules and AAAA requests
-	testHostFilteringRulesAsync(t, conn, "yandex.ru", dns.TypeAAAA, net.ParseIP("2000::"))
-	testHostFilteringRulesAsync(t, conn, "yandex.ua", dns.TypeAAAA, net.ParseIP("::1"))
+	testFilteringRulesIPBlockAsync(t, conn, "yandex.ru", dns.TypeAAAA, net.ParseIP("2000::"))
+	testFilteringRulesIPBlockAsync(t, conn, "yandex.ua", dns.TypeAAAA, net.ParseIP("::1"))
 
 	// Zero IPv4 rule should also block AAAA requests with IPv6Zero answer
-	testHostFilteringRulesAsync(t, conn, "google.com", dns.TypeAAAA, net.IPv6zero)
+	testFilteringRulesIPBlockAsync(t, conn, "google.com", dns.TypeAAAA, net.IPv6zero)
 
-	assertListenerEventsCount(t, listener, 150)
+	assertListenerEventsCount(t, listener, 130)
 
 	// unregister listener
 	ConfigureDNSRequestProcessedListener(nil)
@@ -164,8 +308,9 @@ func TestFilteringProxyRace(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestDNSRequestProcessedEvents(t *testing.T) {
-	dnsProxy := createTestFilteringProxy()
+// TestDNSRequestProcessedEventsIPBlock tests DNSRequest processed events produced with filtering engine
+func TestDNSRequestProcessedEventsIPBlock(t *testing.T) {
+	dnsProxy := createTestFilteringProxy(BlockTypeIP)
 
 	listener := &testDNSRequestProcessedListener{}
 	ConfigureDNSRequestProcessedListener(listener)
@@ -184,32 +329,32 @@ func TestDNSRequestProcessedEvents(t *testing.T) {
 	sendAndAssertTestMessage(t, conn)
 	assertDNSRequestProcessedEventWithListener(t, listener, "google-public-dns-a.google.com", "A", "@@||google-public-dns-a.google.com^", 4, eventsCount, true)
 
-	// testAHostFilteringRule and testAAAAHostFilteringRule produce one event
+	// testFilteringRuleARequestIPBlock and testFilteringRuleAAAARequestIPBlock produce one event
 	// Let's check events one-by-one
 
 	// A request which blocked with IPv4 HostRule
 	eventsCount++
-	testAHostFilteringRule(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
+	testFilteringRuleARequestIPBlock(t, conn, "google.ru", net.IPv4(127, 0, 0, 1))
 	assertDNSRequestProcessedEventWithListener(t, listener, "google.ru", "A", "127.0.0.1 google.ru", 2, eventsCount, false)
 
 	// A request which blocked with zero IPv4 HostRule
 	eventsCount++
-	testAHostFilteringRule(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
+	testFilteringRuleARequestIPBlock(t, conn, "google.com", net.IPv4(0, 0, 0, 0))
 	assertDNSRequestProcessedEventWithListener(t, listener, "google.com", "A", "0.0.0.0 google.com", 2, eventsCount, false)
 
 	// AAAA request which blocked with zero IPv4 HostRule
 	eventsCount++
-	testAAAAHostFilteringRule(t, conn, "google.com", net.IPv6zero)
+	testFilteringRuleAAAARequestIPBlock(t, conn, "google.com", net.IPv6zero)
 	assertDNSRequestProcessedEventWithListener(t, listener, "google.com", "AAAA", "0.0.0.0 google.com", 2, eventsCount, false)
 
 	// AAAA request which blocked with IPv6 HostRule
 	eventsCount++
-	testAAAAHostFilteringRule(t, conn, "yandex.ru", net.ParseIP("2000::"))
+	testFilteringRuleAAAARequestIPBlock(t, conn, "yandex.ru", net.ParseIP("2000::"))
 	assertDNSRequestProcessedEventWithListener(t, listener, "yandex.ru", "AAAA", "2000:: yandex.ru", 3, eventsCount, false)
 
 	// AAAA request which blocked with IPv6 HostRule
 	eventsCount++
-	testAAAAHostFilteringRule(t, conn, "yandex.ua", net.ParseIP("::1"))
+	testFilteringRuleAAAARequestIPBlock(t, conn, "yandex.ua", net.ParseIP("::1"))
 	assertDNSRequestProcessedEventWithListener(t, listener, "yandex.ua", "AAAA", "::1 yandex.ua", 3, eventsCount, false)
 
 	// IPv4 rule for google.ru is not 0.0.0.0. It means that AAAA request for google.ru shouldn't be blocked
@@ -226,25 +371,55 @@ func TestDNSRequestProcessedEvents(t *testing.T) {
 	assert.Equal(t, res.Answer[0].Header().Rrtype, dns.TypeA)
 	assertDNSRequestProcessedEventWithListener(t, listener, "yandex.ru", "A", "", 0, eventsCount, false)
 
-	// There are two events produced with testNetworkFilteringRule: A and AAAA requests
-	// We should check count of registered events and each event
-	eventsCount += 2
-	testNetworkFilteringRule(t, conn, "example.com")
-	assertListenerEventsCount(t, listener, eventsCount)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "example.com", "A", "||example.com^", 1, false)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "example.com", "AAAA", "||example.com^", 1, false)
-
-	eventsCount += 2
-	testNetworkFilteringRule(t, conn, "example.org")
-	assertListenerEventsCount(t, listener, eventsCount)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "example.org", "A", "||example.org^", 1, false)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "example.org", "AAAA", "||example.org^", 1, false)
+	// AAAA request which blocked with Network filtering rule
+	eventsCount++
+	testFilteringRuleAAAARequestIPBlock(t, conn, "a.ruporn.me", net.IPv6zero)
+	assertDNSRequestProcessedEventWithListener(t, listener, "a.ruporn.me", "AAAA", "||a.ruporn.me^", 1111, eventsCount, false)
 
 	// unregister listener
 	ConfigureDNSRequestProcessedListener(nil)
 	// Stop the proxy
 	err = dnsProxy.Stop()
 	assert.Nil(t, err)
+}
+
+// TestDNSRequestProcessedEventsNXDomainBlock tests DNSRequest processed events produced with filtering engine
+func TestDNSRequestProcessedEventsNXDomainBlock(t *testing.T) {
+	dnsProxy := createTestFilteringProxy(BlockTypeNXDomain)
+
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
+	// Start listening
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr()
+	conn, err := dns.Dial("udp", addr)
+	assert.Nil(t, err)
+
+	// There are two events produced with testFilteringRuleNXDomainBlock: A and AAAA requests
+	// We should check count of registered events and each event
+	// example.com and example.org should be blocked with Network filtering rules
+	eventsCount := 2
+	testFilteringRuleNXDomainBlock(t, conn, "example.com")
+	assertListenerEventsCount(t, listener, eventsCount)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "example.com", "A", "||example.com^", 1, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "example.com", "AAAA", "||example.com^", 1, false)
+
+	eventsCount += 2
+	testFilteringRuleNXDomainBlock(t, conn, "example.org")
+	assertListenerEventsCount(t, listener, eventsCount)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "example.org", "A", "||example.org^", 1, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "example.org", "AAAA", "||example.org^", 1, false)
+
+	// events.appsflyer.com should be blocked with Host filtering rule
+	eventsCount += 2
+	testFilteringRuleNXDomainBlock(t, conn, "events.appsflyer.com")
+	assertListenerEventsCount(t, listener, eventsCount)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "events.appsflyer.com", "A", "0.0.0.0 events.appsflyer.com", 11111, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "events.appsflyer.com", "AAAA", "0.0.0.0 events.appsflyer.com", 11111, false)
 }
 
 // assertDNSRequestProcessedEventWithListener asserts count of events in listener and the last event
@@ -254,6 +429,7 @@ func assertDNSRequestProcessedEventWithListener(t *testing.T, listener *testDNSR
 	assertDNSRequestProcessedEvent(t, event, domain, reqType, filteringRule, filterListID, whitelist)
 }
 
+// assertDNSRequestProcessedEvent examine event
 func assertDNSRequestProcessedEvent(t *testing.T, event DNSRequestProcessedEvent, domain, reqType, filteringRule string, filterListID int, whitelist bool) {
 	assert.Equal(t, event.Domain, domain)
 	assert.Equal(t, event.Type, reqType)
@@ -262,13 +438,15 @@ func assertDNSRequestProcessedEvent(t *testing.T, event DNSRequestProcessedEvent
 	assert.Equal(t, event.Whitelist, whitelist)
 }
 
+// getDNSRequestProcessedEventByIdx returns DNSRequestProcessedEvent from listener
 func getDNSRequestProcessedEventByIdx(listener *testDNSRequestProcessedListener, idx int) DNSRequestProcessedEvent {
 	dnsRequestProcessedListenerGuard.Lock()
 	defer dnsRequestProcessedListenerGuard.Unlock()
 	return listener.e[idx]
 }
 
-func createTestFilteringProxy() *DNSProxy {
+// createTestFilteringProxy returns configured DNSProxy with given blockType
+func createTestFilteringProxy(blockType int) *DNSProxy {
 	const rulesJSON = `
 	[
 		{"id": 1, "contents": "||example.com^\n||example.org^"},
@@ -281,54 +459,54 @@ func createTestFilteringProxy() *DNSProxy {
 	filteringConfig := &FilteringConfig{
 		FilteringRulesFilesJSON:   filesJSON,
 		FilteringRulesStringsJSON: rulesJSON,
-		BlockWithNXDomain:         true,
+		BlockType:                 blockType,
 	}
 
 	mobileDNSProxy := DNSProxy{Config: config, FilteringConfig: filteringConfig}
 	return &mobileDNSProxy
 }
 
-// testNetworkFilteringRulesAsync sends requests, which should be blocked with network rules, in parallel
-func testNetworkFilteringRulesAsync(t *testing.T, conn *dns.Conn, host string) {
+// testFilteringRulesNXDomainBlockAsync sends requests, which should be blocked with NXDomain, in parallel
+func testFilteringRulesNXDomainBlockAsync(t *testing.T, conn *dns.Conn, host string) {
 	g := &sync.WaitGroup{}
 	g.Add(testMessagesCount)
 
 	for i := 0; i < testMessagesCount; i++ {
-		go testNetworkFilteringRuleAsync(t, conn, host, g)
+		go testFilteringRuleNXDomainBlockAsync(t, conn, host, g)
 	}
 
 	g.Wait()
 }
 
-func testNetworkFilteringRuleAsync(t *testing.T, conn *dns.Conn, host string, g *sync.WaitGroup) {
+func testFilteringRuleNXDomainBlockAsync(t *testing.T, conn *dns.Conn, host string, g *sync.WaitGroup) {
 	defer func() {
 		g.Done()
 	}()
 
-	testNetworkFilteringRule(t, conn, host)
+	testFilteringRuleNXDomainBlock(t, conn, host)
 }
 
-// testHostFilteringRulesAsync sends requests, which should be blocked with host rules, in parallel
-func testHostFilteringRulesAsync(t *testing.T, conn *dns.Conn, host string, reqType uint16, ip net.IP) {
+// testFilteringRulesIPBlockAsync sends requests, which should be blocked with IP, in parallel
+func testFilteringRulesIPBlockAsync(t *testing.T, conn *dns.Conn, host string, reqType uint16, ip net.IP) {
 	g := &sync.WaitGroup{}
 	g.Add(testMessagesCount)
 
 	for i := 0; i < testMessagesCount; i++ {
-		go testHostFilteringRuleAsync(t, conn, host, ip, reqType, g)
+		go testFilteringRuleIPBlockAsync(t, conn, host, ip, reqType, g)
 	}
 
 	g.Wait()
 }
 
-func testHostFilteringRuleAsync(t *testing.T, conn *dns.Conn, host string, ip net.IP, reqType uint16, g *sync.WaitGroup) {
+func testFilteringRuleIPBlockAsync(t *testing.T, conn *dns.Conn, host string, ip net.IP, reqType uint16, g *sync.WaitGroup) {
 	defer func() {
 		g.Done()
 	}()
 
 	if reqType == dns.TypeA {
-		testAHostFilteringRule(t, conn, host, ip)
+		testFilteringRuleARequestIPBlock(t, conn, host, ip)
 	} else if reqType == dns.TypeAAAA {
-		testAAAAHostFilteringRule(t, conn, host, ip)
+		testFilteringRuleAAAARequestIPBlock(t, conn, host, ip)
 	}
 }
 
@@ -343,11 +521,11 @@ func sendAndAssertTestMessage(t *testing.T, conn *dns.Conn) {
 	assertResponse(t, res)
 }
 
-// testNetworkFilteringRule is a test for network filtering rules:
-// - There is network filtering rules in the DNS Filtering filteringEngine
+// testFilteringRuleNXDomainBlock is a test for all kind of filtering rules:
+// - There is a filtering rule which matched given host in the filteringEngine.
 // - Both A and AAAA requests for this host should be filtered with NXDomain RCode
 // If you'd like to test mobile event handler, note that this method will create two events
-func testNetworkFilteringRule(t *testing.T, conn *dns.Conn, host string) {
+func testFilteringRuleNXDomainBlock(t *testing.T, conn *dns.Conn, host string) {
 	req := createHostTestMessage(host)
 	err := conn.WriteMsg(req)
 	assert.Nil(t, err)
@@ -371,10 +549,10 @@ func testNetworkFilteringRule(t *testing.T, conn *dns.Conn, host string) {
 	assert.Equal(t, res.Rcode, dns.RcodeNameError)
 }
 
-// testAHostFilteringRule is a test for the following case:
-// - There is IPv4 filtering rule for the given host in the DNS Filtering filteringEngine
+// testFilteringRuleARequestIPBlock is a test for the following case:
+// - There is a filtering rule for the given host in the DNS Filtering filteringEngine
 // - A request for this host should be filtered and response must contain the given ip address
-func testAHostFilteringRule(t *testing.T, conn *dns.Conn, host string, ip net.IP) {
+func testFilteringRuleARequestIPBlock(t *testing.T, conn *dns.Conn, host string, ip net.IP) {
 	res := sendATestMessage(t, conn, host)
 	assertAResponse(t, res, ip)
 }
@@ -388,10 +566,10 @@ func sendATestMessage(t *testing.T, conn *dns.Conn, host string) *dns.Msg {
 	return res
 }
 
-// testAHostFilteringRule is a test for the following case:
-// - There is IPv6 filtering rule for the given host in the DNS Filtering filteringEngine
+// testFilteringRuleARequestIPBlock is a test for the following case:
+// - There is a filtering rule for the given host in the DNS Filtering filteringEngine
 // - AAAA request for this host should be filtered and response must contain the given ip address
-func testAAAAHostFilteringRule(t *testing.T, conn *dns.Conn, host string, ip net.IP) {
+func testFilteringRuleAAAARequestIPBlock(t *testing.T, conn *dns.Conn, host string, ip net.IP) {
 	res := sendAAAATestMessage(t, conn, host)
 	assertAAAAResponse(t, res, ip)
 }

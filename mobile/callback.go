@@ -22,9 +22,7 @@ type DNSRequestProcessedEvent struct {
 	StartTime    int64  // Time when dnsproxy started processing request (epoch in milliseconds)
 	Elapsed      int    // Time elapsed on processing
 	Answer       string // DNS Answers string representation
-	NS           string // DNS NS section
 	UpstreamAddr string // Address of the upstream used to resolve
-	RCode        string // Response RCode
 
 	BytesSent     int // Number of bytes sent
 	BytesReceived int // Number of bytes received
@@ -76,16 +74,10 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err er
 	if d.Res != nil {
 		// Set answer
 		if len(d.Res.Answer) > 0 {
-			e.Answer = dnsRRListToString(d.Res.Answer)
+			e.Answer = dnsAnswerListToString(d.Res.Answer)
+		} else {
+			e.Answer = dns.RcodeToString[d.Res.Rcode]
 		}
-
-		// Set NS
-		if len(d.Res.Ns) > 0 {
-			e.NS = dnsRRListToString(d.Res.Ns)
-		}
-
-		// Set RCode
-		e.RCode = dns.RcodeToString[d.Res.Rcode]
 	}
 
 	// Filtering rule
@@ -110,12 +102,39 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err er
 	dnsRequestProcessedListener.DNSRequestProcessed(&e)
 }
 
-func dnsRRListToString(list []dns.RR) string {
-	s := ""
-	for i := 0; i < len(list); i++ {
-		if list[i] != nil {
-			s += list[i].String() + "\n"
+func dnsAnswerListToString(list []dns.RR) string {
+	// Separate cname and A/AAAA string builders to be sure of the display order
+	sb := strings.Builder{}
+	cnameSB := strings.Builder{}
+	for _, rr := range list {
+		// Let's check what kind of response we have
+		rrCNAME, okCNAME := rr.(*dns.CNAME)
+		rrAAAA, okAAAA := rr.(*dns.AAAA)
+		rrA, okA := rr.(*dns.A)
+
+		if !okA && !okAAAA && !okCNAME {
+			continue
 		}
+
+		rType := dns.Type(rr.Header().Rrtype).String() + ", "
+
+		if okCNAME {
+			cnameSB.WriteString(rType)
+			cnameSB.WriteString(rrCNAME.Target)
+			cnameSB.WriteRune('\n')
+			continue
+		}
+
+		sb.WriteString(rType)
+		if okA {
+			sb.WriteString(rrA.A.String())
+		} else {
+			sb.WriteRune('[')
+			sb.WriteString(rrAAAA.AAAA.String())
+			sb.WriteRune(']')
+		}
+
+		sb.WriteRune('\n')
 	}
-	return s
+	return sb.String() + cnameSB.String()
 }

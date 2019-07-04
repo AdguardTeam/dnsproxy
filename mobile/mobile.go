@@ -89,7 +89,7 @@ func (d *DNSProxy) Start() error {
 // createFilteringEngine create and set filteringEngine
 func (d *DNSProxy) createFilteringEngine(f *FilteringConfig) error {
 	if f != nil && (len(f.FilteringRulesStringsJSON) > 0 || len(f.FilteringRulesFilesJSON) > 0) {
-		if f.BlockType != BlockTypeIP && f.BlockType != BlockTypeRule && f.BlockType != BlockTypeNXDomain {
+		if f.BlockType != BlockTypeUnspecifiedIP && f.BlockType != BlockTypeRule && f.BlockType != BlockTypeNXDomain {
 			return fmt.Errorf("unknown block type %d", f.BlockType)
 		}
 

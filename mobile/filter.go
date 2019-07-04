@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	BlockTypeRule     = iota // Block requests with NXDomain for network filtering rules and with IP for Host rules
-	BlockTypeNXDomain = iota // Block requests with NXDomain for all kind of rules
-	BlockTypeIP       = iota // Block requests with IP for all kind of rules
+	BlockTypeRule          = iota // Respond with NXDomain for Network filtering rules and with IP for Host rules
+	BlockTypeNXDomain      = iota // Respond with NXDomain for all kind of filtering rules
+	BlockTypeUnspecifiedIP = iota // Respond with Unspecified IP for Network filtering rules
 )
 
 // stringRuleListJSON represents filters list with list id
@@ -155,7 +155,7 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 			if !netRule.Whitelist {
 				var res *dns.Msg
 				var err error
-				if e.blockType != BlockTypeIP {
+				if e.blockType != BlockTypeUnspecifiedIP {
 					// Generate NXDomain if request should be blocked with it
 					res = genNXDomain(ctx.Req)
 				} else {

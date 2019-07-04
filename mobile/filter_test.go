@@ -171,13 +171,13 @@ func TestFilteringProxyNXDomainBlock(t *testing.T) {
 }
 
 // TestFilteringProxyIPBlock tests all kinds of DNS filtering rules:
-// blockType equals BlockTypeIP
+// blockType equals BlockTypeUnspecifiedIP
 // Network filtering rules should block both A and AAAA requests
 // IPv4 Host filtering rules should block A and AAAA requests if it's IPv4Zero rule
 // IPv6 Host filtering rules should block only AAAA requests
 // All requests should be blocked with IP
 func TestFilteringProxyIPBlock(t *testing.T) {
-	mobileDNSProxy := createTestFilteringProxy(BlockTypeIP)
+	mobileDNSProxy := createTestFilteringProxy(BlockTypeUnspecifiedIP)
 
 	listener := &testDNSRequestProcessedListener{}
 	ConfigureDNSRequestProcessedListener(listener)
@@ -261,7 +261,7 @@ func TestFilteringProxyRaceNXDomainBlock(t *testing.T) {
 
 // TestFilteringProxyRace sends multiple parallel DNS requests, which should be blocked with IP
 func TestFilteringProxyRaceIPBlock(t *testing.T) {
-	dnsProxy := createTestFilteringProxy(BlockTypeIP)
+	dnsProxy := createTestFilteringProxy(BlockTypeUnspecifiedIP)
 
 	listener := &testDNSRequestProcessedListener{}
 	ConfigureDNSRequestProcessedListener(listener)
@@ -310,7 +310,7 @@ func TestFilteringProxyRaceIPBlock(t *testing.T) {
 
 // TestDNSRequestProcessedEventsIPBlock tests DNSRequest processed events produced with filtering engine
 func TestDNSRequestProcessedEventsIPBlock(t *testing.T) {
-	dnsProxy := createTestFilteringProxy(BlockTypeIP)
+	dnsProxy := createTestFilteringProxy(BlockTypeUnspecifiedIP)
 
 	listener := &testDNSRequestProcessedListener{}
 	ConfigureDNSRequestProcessedListener(listener)

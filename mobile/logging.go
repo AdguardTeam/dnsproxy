@@ -26,10 +26,7 @@ func (w *LogWriterAdapter) Write(p []byte) (n int, err error) {
 // ConfigureLogger function is called from mobile API to write dnsproxy log into mobile log
 // You need to create object that implements LogWriter interface and set it as argument of this function
 func ConfigureLogger(verbose bool, stderrRedirectPath string, w LogWriter) error {
-	if verbose {
-		log.SetLevel(log.DEBUG)
-	}
-
+	SetLogLevel(verbose)
 	if w != nil {
 		adapter := &LogWriterAdapter{lw: w}
 		log.SetOutput(adapter)
@@ -43,4 +40,17 @@ func ConfigureLogger(verbose bool, stderrRedirectPath string, w LogWriter) error
 	}
 
 	return nil
+}
+
+// SetLogLevel function is called from mobile API and changes log level without LogWriter and srderrRedirect reconfiguration
+func SetLogLevel(verbose bool) {
+	if (log.GetLevel() == log.DEBUG && verbose) || (log.GetLevel() == log.INFO && !verbose) {
+		return
+	}
+
+	if verbose {
+		log.SetLevel(log.DEBUG)
+	} else {
+		log.SetLevel(log.INFO)
+	}
 }

@@ -16,6 +16,12 @@ import (
 	"github.com/miekg/dns"
 )
 
+const (
+	BlockTypeRule          = iota // Respond with NXDomain for Network filtering rules and with IP for Host rules
+	BlockTypeNXDomain      = iota // Respond with NXDomain for all kind of filtering rules
+	BlockTypeUnspecifiedIP = iota // Respond with Unspecified IP for Network filtering rules
+)
+
 // stringRuleListJSON represents filters list with list id
 type stringRuleListJSON struct {
 	ListID         int    `json:"id"`
@@ -108,9 +114,9 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 
 // filteringEngine is a wrapper for urlfilter structures and filtering options
 type filteringEngine struct {
-	dnsEngine         *urlfilter.DNSEngine   // Filtering Engine
-	rulesStorage      *urlfilter.RuleStorage // Serialized filtering rules storage
-	blockWithNXDomain bool                   // If true requests which were filtered with network rules will be blocked with NXDomain message instead of undefined IP
+	dnsEngine    *urlfilter.DNSEngine   // Filtering Engine
+	rulesStorage *urlfilter.RuleStorage // Serialized filtering rules storage
+	blockType    int                    // Block type
 }
 
 // match returns result of DNSEngine Match() func
@@ -149,7 +155,7 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 			if !netRule.Whitelist {
 				var res *dns.Msg
 				var err error
-				if e.blockWithNXDomain {
+				if e.blockType != BlockTypeUnspecifiedIP {
 					// Generate NXDomain if request should be blocked with it
 					res = genNXDomain(ctx.Req)
 				} else {
@@ -185,6 +191,12 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 
 			if matchARequest || matchAAAARequest || matchAAAARequestWithZeroIPv4Rule {
 				log.Tracef("Host filtering rule for %s was found: %s, ListId: %d", host, rule.Text(), rule.GetFilterListID())
+
+				if e.blockType == BlockTypeNXDomain {
+					// Generate NXDomain if request should be blocked with it
+					ctx.Res = genNXDomain(ctx.Req)
+					return hostRule, true, nil
+				}
 
 				// Let's replace zero IPv4 with IPv6Zero for AAAA request
 				if matchAAAARequestWithZeroIPv4Rule {

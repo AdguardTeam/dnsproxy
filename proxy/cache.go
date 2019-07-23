@@ -1,28 +1,31 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/bluele/gcache"
+	"github.com/VictoriaMetrics/fastcache"
 	"github.com/miekg/dns"
 )
 
-const defaultCacheSize = 1000 // in number of elements
+const defaultCacheSize = 64 * 1024 // in bytes
 
 type item struct {
-	m    *dns.Msg  // dns message
-	when time.Time // time when m was cached
+	Msg  []byte    // dns message
+	When time.Time // time when m was cached
+	TTL  time.Duration
 }
 
 type cache struct {
-	items        gcache.Cache // cache
-	cacheSize    int          // cache size
-	sync.RWMutex              // lock
+	items        *fastcache.Cache // cache
+	cacheSize    int              // cache size
+	sync.RWMutex                  // lock
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
@@ -41,21 +44,23 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 	c.Unlock()
-	rawValue, err := c.items.Get(key)
-	if err == gcache.KeyNotFoundError {
-		// not a real error, just no key found
-		return nil, false
-	}
 
+	rawValue := c.items.Get(nil, []byte(key))
+	var buf bytes.Buffer
+	buf.Write(rawValue)
+	dec := gob.NewDecoder(&buf)
+	cachedValue := item{}
+	err := dec.Decode(&cachedValue)
 	if err != nil {
-		// real error
-		log.Error("can't get response for %s from cache: %s", request.Question[0].Name, err)
+		log.Debug("gob.Decode(): %s", err)
 		return nil, false
 	}
 
-	cachedValue, ok := rawValue.(item)
-	if !ok {
-		log.Error("entry with invalid type in cache for %s", request.Question[0].Name)
+	if cachedValue.When.Unix()+int64(cachedValue.TTL.Seconds()) <= time.Now().Unix() {
+		// Note that we can accidentally delete a fresh element here
+		//  (when another thread removes this element and then re-adds a new element with the same host name)
+		//  but hopefully this is a very rare case.
+		c.items.Del([]byte(key))
 		return nil, false
 	}
 
@@ -86,16 +91,21 @@ func (c *cache) Set(m *dns.Msg) {
 		if c.cacheSize > 0 {
 			size = c.cacheSize
 		}
-		c.items = gcache.New(size).LRU().Build()
+		c.items = fastcache.New(size)
 	}
 	c.Unlock()
 
 	// set ttl as expiration time for item
 	ttl := time.Duration(findLowestTTL(m)) * time.Second
-	err := c.items.SetWithExpire(key, i, ttl)
+	i.TTL = ttl
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(i)
 	if err != nil {
-		log.Println("Couldn't set cache")
+		log.Debug("enc.Encode: %s", err)
+		return
 	}
+	c.items.Set([]byte(key), buf.Bytes())
 }
 
 // check only request fields
@@ -193,38 +203,42 @@ func key(m *dns.Msg) (bool, string) {
 }
 
 func toItem(m *dns.Msg) item {
-	return item{
-		m:    m,
-		when: time.Now(),
+	i := item{
+		When: time.Now(),
 	}
+	i.Msg, _ = m.Pack()
+	return i
 }
 
 func (i *item) fromItem(request *dns.Msg) *dns.Msg {
 	response := &dns.Msg{}
 	response.SetReply(request)
 
-	response.Authoritative = false
-	response.AuthenticatedData = i.m.AuthenticatedData
-	response.RecursionAvailable = i.m.RecursionAvailable
-	response.Rcode = i.m.Rcode
+	m := dns.Msg{}
+	m.Unpack(i.Msg)
 
-	ttl := findLowestTTL(i.m)
-	timeleft := math.Round(float64(ttl) - time.Since(i.when).Seconds())
+	response.Authoritative = false
+	response.AuthenticatedData = m.AuthenticatedData
+	response.RecursionAvailable = m.RecursionAvailable
+	response.Rcode = m.Rcode
+
+	ttl := findLowestTTL(&m)
+	timeleft := math.Round(float64(ttl) - time.Since(i.When).Seconds())
 	var newttl uint32
 	if timeleft > 0 {
 		newttl = uint32(timeleft)
 	}
-	for _, r := range i.m.Answer {
+	for _, r := range m.Answer {
 		answer := dns.Copy(r)
 		answer.Header().Ttl = newttl
 		response.Answer = append(response.Answer, answer)
 	}
-	for _, r := range i.m.Ns {
+	for _, r := range m.Ns {
 		ns := dns.Copy(r)
 		ns.Header().Ttl = newttl
 		response.Ns = append(response.Ns, ns)
 	}
-	for _, r := range i.m.Extra {
+	for _, r := range m.Extra {
 		// don't return OPT records as these are hop-by-hop
 		if r.Header().Rrtype == dns.TypeOPT {
 			continue

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBootstrapTimeout(t *testing.T) {
@@ -507,4 +508,17 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 	} else {
 		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
 	}
+}
+
+func TestUpstreamRecursive(t *testing.T) {
+	u := recursiveDNS{}
+	req := dns.Msg{}
+	req.Id = dns.Id()
+	req.Question = []dns.Question{
+		{Name: "www.example.org.", Qtype: dns.TypeA, Qclass: dns.ClassINET},
+	}
+	resp, err := u.Exchange(&req)
+	assert.True(t, err == nil)
+	a := resp.Answer[0].(*dns.A)
+	assert.True(t, a.A.String() == "93.184.216.34")
 }

@@ -76,7 +76,7 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err er
 		if len(d.Res.Answer) > 0 {
 			e.Answer = dnsAnswerListToString(d.Res.Answer)
 		} else {
-			e.Answer = dns.RcodeToString[d.Res.Rcode]
+			e.Answer = dns.Type(d.Req.Question[0].Qtype).String() + ", " + dns.RcodeToString[d.Res.Rcode]
 		}
 	}
 

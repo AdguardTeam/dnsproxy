@@ -24,7 +24,7 @@ func TestPopularUpstreams(t *testing.T) {
 			address: "tls://dns.adguard.com",
 		},
 		{
-			address: "https://dns.google.com/experimental",
+			address: "https://dns.google/dns-query",
 		},
 		{
 			address: "tls://dns.google",

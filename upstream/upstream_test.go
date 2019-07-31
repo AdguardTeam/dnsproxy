@@ -324,7 +324,7 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
-			address:   "https://dns.google.com/experimental",
+			address:   "https://dns.google/dns-query",
 			bootstrap: []string{},
 		},
 		{
@@ -345,11 +345,6 @@ func TestUpstreams(t *testing.T) {
 		{
 			// Cloudflare DNS (DoH)
 			address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
-			bootstrap: []string{"8.8.8.8:53"},
-		},
-		{
-			// Google (DNS-over-HTTPS)
-			address:   "sdns://AgUAAAAAAAAAACAe9iTP_15r07rd8_3b_epWVGfjdymdx-5mdRZvMAzBuQ5kbnMuZ29vZ2xlLmNvbQ0vZXhwZXJpbWVudGFs",
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{

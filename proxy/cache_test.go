@@ -69,12 +69,12 @@ func TestCacheRace(t *testing.T) {
 	testCache := &cache{}
 
 	hosts := make(map[string]string)
-	hosts["yandex.com"] = "213.180.204.62"
-	hosts["google.com"] = "8.8.8.8"
-	hosts["www.google.com"] = "8.8.4.4"
-	hosts["youtube.com"] = "173.194.221.198"
-	hosts["car.ru"] = "37.220.161.35"
-	hosts["cat.ru"] = "192.56.231.67"
+	hosts["yandex.com."] = "213.180.204.62"
+	hosts["google.com."] = "8.8.8.8"
+	hosts["www.google.com."] = "8.8.4.4"
+	hosts["youtube.com."] = "173.194.221.198"
+	hosts["car.ru."] = "37.220.161.35"
+	hosts["cat.ru."] = "192.56.231.67"
 
 	g := &sync.WaitGroup{}
 	g.Add(len(hosts))

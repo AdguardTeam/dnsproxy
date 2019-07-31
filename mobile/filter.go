@@ -135,6 +135,35 @@ func (e *filteringEngine) close() error {
 	return err
 }
 
+// setBlockingResponse sets proxy.DNSContext.Res to the proper blocking response
+// depending on the "blockType" it can be either NXDOMAIN or the IP (0.0.0.0 or ::)
+func (e *filteringEngine) setBlockingResponse(ctx *proxy.DNSContext, netRule *urlfilter.NetworkRule) error {
+	reqType := ctx.Req.Question[0].Qtype
+	host := strings.TrimSuffix(ctx.Req.Question[0].Name, ".")
+
+	var res *dns.Msg
+	var err error
+	if e.blockType != BlockTypeUnspecifiedIP {
+		// Generate NXDomain if request should be blocked with it
+		res = genNXDomain(ctx.Req)
+	} else {
+		// Otherwise generate undefined IP
+		ip := net.IPv4zero
+		if reqType == dns.TypeAAAA {
+			ip = net.IPv6zero
+		}
+
+		res, err = genHostRuleAnswer(ctx.Req, ip)
+		if err != nil {
+			err = fmt.Errorf("failed to filter request to %s with rule %s cause %v", host, netRule.RuleText, err)
+			return err
+		}
+	}
+
+	ctx.Res = res
+	return nil
+}
+
 // filterRequest filters DNSContext request and returns true if request was blocked
 func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, error) {
 	// filter request
@@ -153,27 +182,8 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 			// Otherwise just set filtering rule to DNSContext and try to resolve it
 			log.Tracef("Network filtering rule for %s was found: %s, ListId: %d", host, rule.Text(), rule.GetFilterListID())
 			if !netRule.Whitelist {
-				var res *dns.Msg
-				var err error
-				if e.blockType != BlockTypeUnspecifiedIP {
-					// Generate NXDomain if request should be blocked with it
-					res = genNXDomain(ctx.Req)
-				} else {
-					// Otherwise generate undefined IP
-					ip := net.IPv4zero
-					if reqType == dns.TypeAAAA {
-						ip = net.IPv6zero
-					}
-
-					res, err = genHostRuleAnswer(ctx.Req, ip)
-					if err != nil {
-						err = fmt.Errorf("failed to filter request to %s with rule %s cause %v", host, netRule.RuleText, err)
-						return netRule, false, err
-					}
-				}
-
-				ctx.Res = res
-				return netRule, true, nil
+				err := e.setBlockingResponse(ctx, netRule)
+				return netRule, err == nil, err
 			}
 			return netRule, false, nil
 

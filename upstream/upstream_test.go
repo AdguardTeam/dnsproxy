@@ -215,7 +215,9 @@ func TestDNSTruncated(t *testing.T) {
 // See the details here: https://github.com/AdguardTeam/AdGuardHome/issues/524
 func TestDNSCryptTruncated(t *testing.T) {
 	// AdGuard DNS (DNSCrypt)
-	address := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
+	// address := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
+	// Cisco OpenDNS (DNSCrypt)
+	address := "sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ"
 	u, err := AddressToUpstream(address, Options{Timeout: timeout})
 
 	if err != nil {
@@ -232,7 +234,7 @@ func TestDNSCryptTruncated(t *testing.T) {
 	}
 
 	if res.Truncated {
-		t.Fatalf("response must NOT be truncated")
+		t.Fatalf("response must NOT be truncated: %s", res)
 	}
 }
 

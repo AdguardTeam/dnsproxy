@@ -52,7 +52,7 @@ type Options struct {
 	Cache bool `short:"z" long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
 
 	// Cache size value
-	CacheSize int `short:"e" long:"cache-size" description:"Maximum number of elements in the cache. Default size: 1000"`
+	CacheSizeBytes int `short:"e" long:"cache-size" description:"Cache size (in bytes). Default: 64k"`
 
 	// If true, refuse ANY requests
 	RefuseAny bool `short:"a" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
@@ -152,7 +152,7 @@ func createProxyConfig(options Options) proxy.Config {
 		DomainsReservedUpstreams: upstreamConfig.DomainReservedUpstreams,
 		Ratelimit:                options.Ratelimit,
 		CacheEnabled:             options.Cache,
-		CacheSize:                options.CacheSize,
+		CacheSizeBytes:           options.CacheSizeBytes,
 		RefuseAny:                options.RefuseAny,
 		AllServers:               options.AllServers,
 	}

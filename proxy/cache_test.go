@@ -88,7 +88,6 @@ func TestCacheRace(t *testing.T) {
 func TestCacheExpiration(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 	dnsProxy.CacheEnabled = true
-	dnsProxy.CacheSize = 2
 	err := dnsProxy.Start()
 	if err != nil {
 		t.Fatalf("cannot start the DNS proxy: %s", err)
@@ -101,12 +100,12 @@ func TestCacheExpiration(t *testing.T) {
 	googleReply.Answer = []dns.RR{newRR("google.com. 1 IN A 8.8.8.8")}
 
 	yandexReply := dns.Msg{}
-	yandexReply.SetQuestion("yandex.com", dns.TypeA)
+	yandexReply.SetQuestion("yandex.com.", dns.TypeA)
 	yandexReply.Response = true
 	yandexReply.Answer = []dns.RR{newRR("yandex.com. 1 IN A 213.180.204.62")}
 
 	youtubeReply := dns.Msg{}
-	youtubeReply.SetQuestion("youtube.com", dns.TypeA)
+	youtubeReply.SetQuestion("youtube.com.", dns.TypeA)
 	youtubeReply.Response = true
 	youtubeReply.Answer = []dns.RR{newRR("youtube.com 1 IN A 173.194.221.198")}
 
@@ -114,20 +113,22 @@ func TestCacheExpiration(t *testing.T) {
 	dnsProxy.cache.Set(&googleReply)
 	dnsProxy.cache.Set(&yandexReply)
 
-	// youtubeReply should be already removed from the cache cause cache size is 2
-	_, ok := dnsProxy.cache.Get(&youtubeReply)
-	if ok {
-		t.Fatalf("cache for %s was not removed from the cache", youtubeReply.Question[0].Name)
+	r, ok := dnsProxy.cache.Get(&youtubeReply)
+	if !ok {
+		t.Fatalf("No cache found for %s", youtubeReply.Question[0].Name)
+	}
+	if diff := deepEqualMsg(r, &youtubeReply); diff != nil {
+		t.Error(diff)
 	}
 
-	// yandexReply and googleReply should be still available
-	r, ok := dnsProxy.cache.Get(&googleReply)
+	r, ok = dnsProxy.cache.Get(&googleReply)
 	if !ok {
 		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)
 	}
 	if diff := deepEqualMsg(r, &googleReply); diff != nil {
 		t.Error(diff)
 	}
+
 	r, ok = dnsProxy.cache.Get(&yandexReply)
 	if !ok {
 		t.Fatalf("No cache found for %s", yandexReply.Question[0].Name)

@@ -106,14 +106,14 @@ func TestMobileApiResolve(t *testing.T) {
 	upstreamsStr := strings.Join(upstreams, "\n")
 
 	config := &Config{
-		ListenAddr:    "127.0.0.1",
-		ListenPort:    0, // Specify 0 to start listening on a random free port
-		BootstrapDNS:  "8.8.8.8:53\n1.1.1.1:53",
-		Fallbacks:     "8.8.8.8:53\n1.1.1.1:53",
-		Timeout:       5000,
-		Upstreams:     upstreamsStr,
-		MaxGoroutines: 3,
-		CacheSize:     0,
+		ListenAddr:     "127.0.0.1",
+		ListenPort:     0, // Specify 0 to start listening on a random free port
+		BootstrapDNS:   "8.8.8.8:53\n1.1.1.1:53",
+		Fallbacks:      "8.8.8.8:53\n1.1.1.1:53",
+		Timeout:        5000,
+		Upstreams:      upstreamsStr,
+		MaxGoroutines:  3,
+		CacheSizeBytes: 0,
 	}
 
 	listener := &testDNSRequestProcessedListener{}
@@ -173,14 +173,14 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 	upstreamsStr := strings.Join(upstreams, "\n")
 
 	config := &Config{
-		ListenAddr:    "127.0.0.1",
-		ListenPort:    0, // Specify 0 to start listening on a random free port
-		BootstrapDNS:  "8.8.8.8:53\n1.1.1.1:53",
-		Fallbacks:     "8.8.8.8:53\n1.1.1.1:53",
-		Timeout:       5000,
-		Upstreams:     upstreamsStr,
-		MaxGoroutines: 5,
-		CacheSize:     0,
+		ListenAddr:     "127.0.0.1",
+		ListenPort:     0, // Specify 0 to start listening on a random free port
+		BootstrapDNS:   "8.8.8.8:53\n1.1.1.1:53",
+		Fallbacks:      "8.8.8.8:53\n1.1.1.1:53",
+		Timeout:        5000,
+		Upstreams:      upstreamsStr,
+		MaxGoroutines:  5,
+		CacheSizeBytes: 0,
 	}
 
 	mobileDNSProxy := DNSProxy{Config: config}

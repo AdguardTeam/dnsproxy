@@ -39,6 +39,11 @@ type Options struct {
 // * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
 // * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
 func AddressToUpstream(address string, opts Options) (Upstream, error) {
+
+	if address == "recursive" {
+		return &recursiveDNS{}, nil
+	}
+
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)
 		if err != nil {

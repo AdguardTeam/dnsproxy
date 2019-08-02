@@ -5,7 +5,7 @@ default: build
 
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 mkfile_dir := $(patsubst %/,%,$(dir $(mkfile_path)))
-GOPATH := $(mkfile_dir)/build/gopath
+GOPATH := $(mkfile_dir)/build
 ANDROID_HOME := $(ANDROID_HOME)
 ANDROID_NDK := $(ANDROID_HOME)/ndk-bundle
 
@@ -20,11 +20,15 @@ cleanfast:
 gopath:
 	mkdir -p $(GOPATH)/src/github.com/AdguardTeam/dnsproxy
 	if [ ! -h $(GOPATH)/src/github.com/AdguardTeam/dnsproxy ]; then rm -rf $(GOPATH)/src/github.com/AdguardTeam/dnsproxy && ln -fs $(mkfile_dir)/.. $(GOPATH)/src/github.com/AdguardTeam/dnsproxy; fi
-	GOPATH=$(GOPATH) GO111MODULE=off go get -v -d .
+	cp -r $(GOPATH)/../../vendor/github.com/* $(GOPATH)/src/github.com/
+	cp -r $(GOPATH)/../../vendor/golang.org/* $(GOPATH)/src/golang.org/
 	GOPATH=$(GOPATH) GO111MODULE=off go get -v golang.org/x/mobile/cmd/gomobile
 	# Temporary -- reset gomobile to the commit that we use with the NDK r19
 	cd $(GOPATH)/src/golang.org/x/mobile/cmd/gomobile && git reset --hard a42111704963f4f0d1266674e1e97489aa8dcca0
 	GOPATH=$(GOPATH) GO111MODULE=off go get -v golang.org/x/mobile/cmd/gomobile
+    # Fix imports for gomobile
+	sed -i '' 's/xxhash\/v[[:digit:]]/xxhash/g' $(GOPATH)/src/github.com/VictoriaMetrics/fastcache/fastcache.go
+	sed -i '' 's/xxhash\/v[[:digit:]]/xxhash/g' $(GOPATH)/src/github.com/VictoriaMetrics/fastcache/bigcache.go
 
 android: check-env-android gopath
 	GOPATH=$(GOPATH) GO111MODULE=off PATH=$(GOPATH)/bin:$(PATH) gomobile init -ndk $(ANDROID_NDK)

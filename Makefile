@@ -16,7 +16,7 @@ endif
 default: build
 
 build: clean test
-	go build
+	go build -mod=vendor
 
 release: check-env-release
 	mkdir -p $(BUILDDIR)

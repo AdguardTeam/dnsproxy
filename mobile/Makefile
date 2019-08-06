@@ -20,13 +20,13 @@ cleanfast:
 gopath:
 	mkdir -p $(GOPATH)/src/github.com/AdguardTeam/dnsproxy
 	if [ ! -h $(GOPATH)/src/github.com/AdguardTeam/dnsproxy ]; then rm -rf $(GOPATH)/src/github.com/AdguardTeam/dnsproxy && ln -fs $(mkfile_dir)/.. $(GOPATH)/src/github.com/AdguardTeam/dnsproxy; fi
-	cp -r $(GOPATH)/../../vendor/github.com/* $(GOPATH)/src/github.com/
-	cp -r $(GOPATH)/../../vendor/golang.org/* $(GOPATH)/src/golang.org/
+	cp -rf $(GOPATH)/../../vendor/github.com/* $(GOPATH)/src/github.com/
+	cp -rf $(GOPATH)/../../vendor/golang.org/* $(GOPATH)/src/golang.org/
 	GOPATH=$(GOPATH) GO111MODULE=off go get -v golang.org/x/mobile/cmd/gomobile
 	# Temporary -- reset gomobile to the commit that we use with the NDK r19
 	cd $(GOPATH)/src/golang.org/x/mobile/cmd/gomobile && git reset --hard a42111704963f4f0d1266674e1e97489aa8dcca0
 	GOPATH=$(GOPATH) GO111MODULE=off go get -v golang.org/x/mobile/cmd/gomobile
-    # Fix imports for gomobile
+    # Fix imports for gomobile: It needs imports of the kind 'github.com/user/repo' instead of 'github.com/user/repo/v[project_version]' which are given in fastcache lib
 	sed -i '' 's/xxhash\/v[[:digit:]]/xxhash/g' $(GOPATH)/src/github.com/VictoriaMetrics/fastcache/fastcache.go
 	sed -i '' 's/xxhash\/v[[:digit:]]/xxhash/g' $(GOPATH)/src/github.com/VictoriaMetrics/fastcache/bigcache.go
 

@@ -16,7 +16,7 @@ matrix:
 
       script:
         # Run tests
-        - go test -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+        - go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
         # Windows-386 build
         - GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
         # Windows-amd64 build

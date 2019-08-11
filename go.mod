@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/AdguardTeam/golibs v0.1.4
-	github.com/AdguardTeam/urlfilter v0.4.0
+	github.com/AdguardTeam/urlfilter v0.5.0
 	github.com/VictoriaMetrics/fastcache v1.5.1
 	github.com/ameshkov/dnscrypt v1.0.7
 	github.com/ameshkov/dnsstamps v1.0.1

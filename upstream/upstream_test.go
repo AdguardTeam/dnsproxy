@@ -190,8 +190,10 @@ func TestTLSPoolDeadLine(t *testing.T) {
 }
 
 func TestDNSTruncated(t *testing.T) {
+	// AdGuard DNS
+	address := "176.103.130.130:53"
 	// Google DNS
-	address := "8.8.8.8:53"
+	// address := "8.8.8.8:53"
 	u, err := AddressToUpstream(address, Options{Timeout: timeout})
 
 	if err != nil {
@@ -215,9 +217,9 @@ func TestDNSTruncated(t *testing.T) {
 // See the details here: https://github.com/AdguardTeam/AdGuardHome/issues/524
 func TestDNSCryptTruncated(t *testing.T) {
 	// AdGuard DNS (DNSCrypt)
-	// address := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
+	address := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
 	// Cisco OpenDNS (DNSCrypt)
-	address := "sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ"
+	// address := "sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ"
 	u, err := AddressToUpstream(address, Options{Timeout: timeout})
 
 	if err != nil {
@@ -320,7 +322,7 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{"8.8.8.8"},
 		},
 		{
-			address:   "https://cloudflare-dns.com/dns-query",
+			address:   "https://dns.cloudflare.com/dns-query",
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
@@ -401,7 +403,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			bootstrap: []string{"1.0.0.1", "8.8.8.8:535"},
 		},
 		{
-			address:   "https://cloudflare-dns.com/dns-query",
+			address:   "https://dns.cloudflare.com/dns-query",
 			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 		},
 		{

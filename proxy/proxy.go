@@ -648,7 +648,7 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 
 	bytes, err := resp.Pack()
 	if err != nil {
-		return errorx.Decorate(err, "couldn't convert message into wire format")
+		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
 	}
 	n, err := conn.WriteTo(bytes, d.Addr)
 	if n == 0 && isConnClosed(err) {
@@ -733,7 +733,7 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 
 	bytes, err := resp.Pack()
 	if err != nil {
-		return errorx.Decorate(err, "couldn't convert message into wire format")
+		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
 	}
 
 	bytes, err = prefixWithSize(bytes)
@@ -837,7 +837,7 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 	bytes, err := resp.Pack()
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return errorx.Decorate(err, "couldn't convert message into wire format")
+		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
 	}
 
 	w.Header().Set("Server", "AdGuard DNS")

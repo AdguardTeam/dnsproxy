@@ -5,10 +5,11 @@ go 1.12
 require (
 	github.com/AdguardTeam/golibs v0.1.4
 	github.com/AdguardTeam/urlfilter v0.5.0
-	github.com/VictoriaMetrics/fastcache v1.5.1
 	github.com/ameshkov/dnscrypt v1.0.7
 	github.com/ameshkov/dnsstamps v1.0.1
 	github.com/beefsack/go-rate v0.0.0-20180408011153-efa7637bb9b6
+	github.com/bluele/gcache v0.0.0-20190518031135-bc40bd653833
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-test/deep v1.0.1
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/joomcode/errorx v0.8.0

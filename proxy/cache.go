@@ -22,8 +22,6 @@ type item struct {
 	TTL  time.Duration
 }
 
-// TODO: Change contract -- Set and Get should return error
-
 type cache struct {
 	items        *fastcache.Cache // cache
 	cacheSize    int              // cache size
@@ -84,10 +82,7 @@ func (c *cache) Set(m *dns.Msg) {
 	if !ok {
 		return
 	}
-	i, err := toItem(m)
-	if err != nil {
-		return
-	}
+	i := toItem(m)
 
 	c.Lock()
 	// lazy initialization for cache
@@ -105,7 +100,7 @@ func (c *cache) Set(m *dns.Msg) {
 	i.TTL = ttl
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
-	err = enc.Encode(i)
+	err := enc.Encode(i)
 	if err != nil {
 		log.Debug("enc.Encode: %s", err)
 		return
@@ -207,13 +202,12 @@ func key(m *dns.Msg) (bool, string) {
 	return true, bb.String()
 }
 
-func toItem(m *dns.Msg) (item, error) {
+func toItem(m *dns.Msg) item {
 	i := item{
 		When: time.Now(),
 	}
-	var err error
-	i.Msg, err = m.Pack()
-	return i, err
+	i.Msg, _ = m.Pack()
+	return i
 }
 
 func (i *item) fromItem(request *dns.Msg) *dns.Msg {
@@ -221,7 +215,7 @@ func (i *item) fromItem(request *dns.Msg) *dns.Msg {
 	response.SetReply(request)
 
 	m := dns.Msg{}
-	_ = m.Unpack(i.Msg)
+	m.Unpack(i.Msg)
 
 	response.Authoritative = false
 	response.AuthenticatedData = m.AuthenticatedData

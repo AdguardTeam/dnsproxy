@@ -129,3 +129,6 @@ matrix:
           tags: true
         file_glob: true
         skip_cleanup: true
+
+      notifications:
+        slack: $SLACK_TOKEN

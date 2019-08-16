@@ -46,6 +46,11 @@ type Request struct {
 	RequestType RequestType // request type
 	ThirdParty  bool        // true if request is third-party
 
+	// IsHostnameRequest means that the request is for a given Hostname,
+	//  and not for a URL, and we don't really know what protocol it is.
+	// This can be true for DNS requests, or for HTTP CONNECT, or SNI matching.
+	IsHostnameRequest bool
+
 	URL          string // Request URL
 	URLLowerCase string // Request URL in lower case
 	Hostname     string // Request hostname
@@ -94,11 +99,12 @@ func NewRequest(url string, sourceURL string, requestType RequestType) *Request 
 // It uses "http://" as a protocol and TypeDocument as a request type.
 func NewRequestForHostname(hostname string) *Request {
 	r := Request{
-		RequestType:  TypeDocument,
-		URL:          "http://" + hostname,
-		URLLowerCase: "http://" + hostname,
-		Hostname:     hostname,
-		ThirdParty:   false,
+		RequestType:       TypeDocument,
+		URL:               "http://" + hostname,
+		URLLowerCase:      "http://" + hostname,
+		Hostname:          hostname,
+		ThirdParty:        false,
+		IsHostnameRequest: true,
 	}
 
 	domain, err := publicsuffix.EffectiveTLDPlusOne(r.Hostname)

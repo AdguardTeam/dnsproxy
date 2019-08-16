@@ -38,5 +38,5 @@ func matchHostname(re *regexp.Regexp, hostname string) error {
 
 // compileHostnameRegexp returns a Regexp object that can be used to match against hostname
 func compileHostnameRegexp() (*regexp.Regexp, error) {
-	return regexp.Compile("^([a-zA-Z0-9]+|[a-zA-Z0-9][a-zA-Z0-9-]*)+[a-zA-Z0-9]$")
+	return regexp.Compile("^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])$")
 }

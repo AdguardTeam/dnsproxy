@@ -1,33 +1,28 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/VictoriaMetrics/fastcache"
+	"github.com/bluele/gcache"
 	"github.com/miekg/dns"
 )
 
-const defaultCacheSize = 64 * 1024 // in bytes
+const defaultCacheSize = 1000 // in number of elements
 
 type item struct {
-	Msg  []byte    // dns message
-	When time.Time // time when m was cached
-	TTL  time.Duration
+	m    *dns.Msg  // dns message
+	when time.Time // time when m was cached
 }
 
-// TODO: Change contract -- Set and Get should return error
-
 type cache struct {
-	items        *fastcache.Cache // cache
-	cacheSize    int              // cache size
-	sync.RWMutex                  // lock
+	items        gcache.Cache // cache
+	cacheSize    int          // cache size
+	sync.RWMutex              // lock
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
@@ -46,23 +41,21 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 	c.Unlock()
-
-	rawValue := c.items.Get(nil, []byte(key))
-	var buf bytes.Buffer
-	buf.Write(rawValue)
-	dec := gob.NewDecoder(&buf)
-	cachedValue := item{}
-	err := dec.Decode(&cachedValue)
-	if err != nil {
-		log.Debug("gob.Decode(): %s", err)
+	rawValue, err := c.items.Get(key)
+	if err == gcache.KeyNotFoundError {
+		// not a real error, just no key found
 		return nil, false
 	}
 
-	if cachedValue.When.Unix()+int64(cachedValue.TTL.Seconds()) <= time.Now().Unix() {
-		// Note that we can accidentally delete a fresh element here
-		//  (when another thread removes this element and then re-adds a new element with the same host name)
-		//  but hopefully this is a very rare case.
-		c.items.Del([]byte(key))
+	if err != nil {
+		// real error
+		log.Error("can't get response for %s from cache: %s", request.Question[0].Name, err)
+		return nil, false
+	}
+
+	cachedValue, ok := rawValue.(item)
+	if !ok {
+		log.Error("entry with invalid type in cache for %s", request.Question[0].Name)
 		return nil, false
 	}
 
@@ -84,10 +77,7 @@ func (c *cache) Set(m *dns.Msg) {
 	if !ok {
 		return
 	}
-	i, err := toItem(m)
-	if err != nil {
-		return
-	}
+	i := toItem(m)
 
 	c.Lock()
 	// lazy initialization for cache
@@ -96,21 +86,16 @@ func (c *cache) Set(m *dns.Msg) {
 		if c.cacheSize > 0 {
 			size = c.cacheSize
 		}
-		c.items = fastcache.New(size)
+		c.items = gcache.New(size).LRU().Build()
 	}
 	c.Unlock()
 
 	// set ttl as expiration time for item
 	ttl := time.Duration(findLowestTTL(m)) * time.Second
-	i.TTL = ttl
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err = enc.Encode(i)
+	err := c.items.SetWithExpire(key, i, ttl)
 	if err != nil {
-		log.Debug("enc.Encode: %s", err)
-		return
+		log.Println("Couldn't set cache")
 	}
-	c.items.Set([]byte(key), buf.Bytes())
 }
 
 // check only request fields
@@ -207,44 +192,39 @@ func key(m *dns.Msg) (bool, string) {
 	return true, bb.String()
 }
 
-func toItem(m *dns.Msg) (item, error) {
-	i := item{
-		When: time.Now(),
+func toItem(m *dns.Msg) item {
+	return item{
+		m:    m,
+		when: time.Now(),
 	}
-	var err error
-	i.Msg, err = m.Pack()
-	return i, err
 }
 
 func (i *item) fromItem(request *dns.Msg) *dns.Msg {
 	response := &dns.Msg{}
 	response.SetReply(request)
 
-	m := dns.Msg{}
-	_ = m.Unpack(i.Msg)
-
 	response.Authoritative = false
-	response.AuthenticatedData = m.AuthenticatedData
-	response.RecursionAvailable = m.RecursionAvailable
-	response.Rcode = m.Rcode
+	response.AuthenticatedData = i.m.AuthenticatedData
+	response.RecursionAvailable = i.m.RecursionAvailable
+	response.Rcode = i.m.Rcode
 
-	ttl := findLowestTTL(&m)
-	timeleft := math.Round(float64(ttl) - time.Since(i.When).Seconds())
+	ttl := findLowestTTL(i.m)
+	timeleft := math.Round(float64(ttl) - time.Since(i.when).Seconds())
 	var newttl uint32
 	if timeleft > 0 {
 		newttl = uint32(timeleft)
 	}
-	for _, r := range m.Answer {
+	for _, r := range i.m.Answer {
 		answer := dns.Copy(r)
 		answer.Header().Ttl = newttl
 		response.Answer = append(response.Answer, answer)
 	}
-	for _, r := range m.Ns {
+	for _, r := range i.m.Ns {
 		ns := dns.Copy(r)
 		ns.Header().Ttl = newttl
 		response.Ns = append(response.Ns, ns)
 	}
-	for _, r := range m.Extra {
+	for _, r := range i.m.Extra {
 		// don't return OPT records as these are hop-by-hop
 		if r.Header().Rrtype == dns.TypeOPT {
 			continue

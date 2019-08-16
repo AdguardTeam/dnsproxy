@@ -38,6 +38,7 @@ You can learn more about AdGuard filtering rules syntax from [this article](http
     * [ ] $replace
     * [ ] $csp
     * [ ] $cookie
+    * [ ] $redirect
     
 #### How to use
 

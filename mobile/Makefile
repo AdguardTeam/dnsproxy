@@ -26,9 +26,6 @@ gopath:
 	# Temporary -- reset gomobile to the commit that we use with the NDK r19
 	cd $(GOPATH)/src/golang.org/x/mobile/cmd/gomobile && git reset --hard a42111704963f4f0d1266674e1e97489aa8dcca0
 	GOPATH=$(GOPATH) GO111MODULE=off go get -v golang.org/x/mobile/cmd/gomobile
-    # Fix imports for gomobile: It needs imports of the kind 'github.com/user/repo' instead of 'github.com/user/repo/v[project_version]' which are given in fastcache lib
-	sed -i '' 's/xxhash\/v[[:digit:]]/xxhash/g' $(GOPATH)/src/github.com/VictoriaMetrics/fastcache/fastcache.go
-	sed -i '' 's/xxhash\/v[[:digit:]]/xxhash/g' $(GOPATH)/src/github.com/VictoriaMetrics/fastcache/bigcache.go
 
 android: check-env-android gopath
 	GOPATH=$(GOPATH) GO111MODULE=off PATH=$(GOPATH)/bin:$(PATH) gomobile init -ndk $(ANDROID_NDK)

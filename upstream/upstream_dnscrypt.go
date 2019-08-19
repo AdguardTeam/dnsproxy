@@ -38,7 +38,7 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		p.Lock()
 
 		// Using "udp" for DNSCrypt upstreams by default
-		client = &dnscrypt.Client{Timeout: p.boot.timeout, AdjustPayloadSize: true}
+		client = &dnscrypt.Client{Timeout: p.boot.timeout, AdjustPayloadSize: false}
 		si, _, err := client.Dial(p.boot.address)
 
 		if err != nil {

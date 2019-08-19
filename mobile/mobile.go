@@ -138,6 +138,7 @@ func (d *DNSProxy) Stop() error {
 		if err != nil {
 			errs = append(errs, errorx.Decorate(err, "couldn't close filtering rules rulesStorage"))
 		}
+		d.filteringEngine = nil
 	}
 
 	if len(errs) != 0 {

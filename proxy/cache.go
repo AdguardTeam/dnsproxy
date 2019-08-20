@@ -59,18 +59,15 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 
-	response := cachedValue.fromItem(request)
-	return response, true
+	res := cachedValue.fromItem(request)
+	return res, true
 }
 
 func (c *cache) Set(m *dns.Msg) {
 	if m == nil {
 		return // no-op
 	}
-	if !isRequestCacheable(m) {
-		return
-	}
-	if !isResponseCacheable(m) {
+	if !isCacheable(m) {
 		return
 	}
 	ok, key := key(m)
@@ -98,8 +95,8 @@ func (c *cache) Set(m *dns.Msg) {
 	}
 }
 
-// check only request fields
-func isRequestCacheable(m *dns.Msg) bool {
+// check if message is cacheable
+func isCacheable(m *dns.Msg) bool {
 	// truncated messages aren't valid
 	if m.Truncated {
 		log.Tracef("Refusing to cache truncated message")
@@ -112,24 +109,37 @@ func isRequestCacheable(m *dns.Msg) bool {
 		return false
 	}
 
-	// only OK or NXdomain replies are cached
-	switch m.Rcode {
-	case dns.RcodeSuccess:
-	case dns.RcodeNameError: // that's an NXDomain
-	case dns.RcodeServerFailure:
-		return false // quietly refuse, don't log
-	default:
-		log.Tracef("%s: Refusing to cache message with rcode: %s", m.Question[0].Name, dns.RcodeToString[m.Rcode])
+	qName := m.Question[0].Name
+	qType := m.Question[0].Qtype
+
+	ttl := findLowestTTL(m)
+	if ttl <= 0 {
 		return false
 	}
 
-	return true
-}
+	if m.Rcode != dns.RcodeSuccess && m.Rcode != dns.RcodeNameError {
+		log.Tracef("%s: refusing to cache message with response type %s", qName, dns.RcodeToString[m.Rcode])
+	}
 
-func isResponseCacheable(m *dns.Msg) bool {
-	ttl := findLowestTTL(m)
-	if ttl == 0 {
-		return false
+	if m.Rcode == dns.RcodeSuccess && (qType == dns.TypeA || qType == dns.TypeAAAA) {
+		// Now verify that it contains at least one A or AAAA record
+		if len(m.Answer) == 0 {
+			log.Tracef("%s: refusing to cache a NOERROR response with no answers", qName)
+			return false
+		}
+
+		found := false
+		for _, rr := range m.Answer {
+			if rr.Header().Rrtype == dns.TypeA || rr.Header().Rrtype == dns.TypeAAAA {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			log.Tracef("%s: refusing to cache a response with no A and AAAA answers", qName)
+			return false
+		}
 	}
 
 	return true
@@ -200,29 +210,29 @@ func toItem(m *dns.Msg) item {
 }
 
 func (i *item) fromItem(request *dns.Msg) *dns.Msg {
-	response := &dns.Msg{}
-	response.SetReply(request)
+	res := &dns.Msg{}
+	res.SetReply(request)
 
-	response.Authoritative = false
-	response.AuthenticatedData = i.m.AuthenticatedData
-	response.RecursionAvailable = i.m.RecursionAvailable
-	response.Rcode = i.m.Rcode
+	res.Authoritative = false
+	res.AuthenticatedData = i.m.AuthenticatedData
+	res.RecursionAvailable = i.m.RecursionAvailable
+	res.Rcode = i.m.Rcode
 
 	ttl := findLowestTTL(i.m)
-	timeleft := math.Round(float64(ttl) - time.Since(i.when).Seconds())
-	var newttl uint32
-	if timeleft > 0 {
-		newttl = uint32(timeleft)
+	timeLeft := math.Round(float64(ttl) - time.Since(i.when).Seconds())
+	var newTTL uint32
+	if timeLeft > 0 {
+		newTTL = uint32(timeLeft)
 	}
 	for _, r := range i.m.Answer {
 		answer := dns.Copy(r)
-		answer.Header().Ttl = newttl
-		response.Answer = append(response.Answer, answer)
+		answer.Header().Ttl = newTTL
+		res.Answer = append(res.Answer, answer)
 	}
 	for _, r := range i.m.Ns {
 		ns := dns.Copy(r)
-		ns.Header().Ttl = newttl
-		response.Ns = append(response.Ns, ns)
+		ns.Header().Ttl = newTTL
+		res.Ns = append(res.Ns, ns)
 	}
 	for _, r := range i.m.Extra {
 		// don't return OPT records as these are hop-by-hop
@@ -230,8 +240,8 @@ func (i *item) fromItem(request *dns.Msg) *dns.Msg {
 			continue
 		}
 		extra := dns.Copy(r)
-		extra.Header().Ttl = newttl
-		response.Extra = append(response.Extra, extra)
+		extra.Header().Ttl = newTTL
+		res.Extra = append(res.Extra, extra)
 	}
-	return response
+	return res
 }

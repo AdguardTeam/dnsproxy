@@ -119,6 +119,7 @@ func isCacheable(m *dns.Msg) bool {
 
 	if m.Rcode != dns.RcodeSuccess && m.Rcode != dns.RcodeNameError {
 		log.Tracef("%s: refusing to cache message with response type %s", qName, dns.RcodeToString[m.Rcode])
+		return false
 	}
 
 	if m.Rcode == dns.RcodeSuccess && (qType == dns.TypeA || qType == dns.TypeAAAA) {

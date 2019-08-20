@@ -108,6 +108,28 @@ func TestCacheCNAME(t *testing.T) {
 	assert.True(t, ok)
 }
 
+func TestCacheSERVFAIL(t *testing.T) {
+	testCache := &cache{}
+
+	// Fill the cache
+	reply := dns.Msg{}
+	reply.SetQuestion("google.com.", dns.TypeA)
+	reply.Response = true
+	reply.Rcode = dns.RcodeServerFailure
+
+	// Create a DNS request
+	request := dns.Msg{}
+	request.Id = dns.Id()
+	request.RecursionDesired = true
+	request.SetQuestion("google.com.", dns.TypeA)
+
+	// We are testing that SERVFAIL responses aren't cached
+	testCache.Set(&reply)
+	r, ok := testCache.Get(&request)
+	assert.Nil(t, r)
+	assert.False(t, ok)
+}
+
 func TestCacheRace(t *testing.T) {
 	testCache := &cache{}
 

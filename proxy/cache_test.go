@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/go-test/deep"
 	"github.com/miekg/dns"
 )
@@ -63,6 +65,69 @@ func TestServeCached(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot stop the DNS proxy: %s", err)
 	}
+}
+
+func TestCacheCNAME(t *testing.T) {
+	testCache := &cache{}
+
+	// Fill the cache
+	reply := dns.Msg{}
+	reply.SetQuestion("google.com.", dns.TypeA)
+	reply.Response = true
+	reply.Answer = []dns.RR{
+		newRR("google.com. 3600 IN CNAME test.google.com."),
+	}
+
+	// Create a DNS request
+	request := dns.Msg{}
+	request.Id = dns.Id()
+	request.RecursionDesired = true
+	request.SetQuestion("google.com.", dns.TypeA)
+
+	// We are testing that CNAME response with no A records is not cached
+	testCache.Set(&reply)
+	r, ok := testCache.Get(&request)
+	assert.Nil(t, r)
+	assert.False(t, ok)
+
+	// Now let's test a proper CNAME response
+
+	// Fill the cache
+	reply = dns.Msg{}
+	reply.SetQuestion("google.com.", dns.TypeA)
+	reply.Response = true
+	reply.Answer = []dns.RR{
+		newRR("google.com. 3600 IN CNAME test.google.com."),
+		newRR("google.com. 3600 IN A 8.8.8.8"),
+	}
+
+	// We are testing that a proper CNAME response gets cached
+	testCache.Set(&reply)
+	r, ok = testCache.Get(&request)
+	assert.NotNil(t, r)
+	assert.True(t, ok)
+}
+
+func TestCacheSERVFAIL(t *testing.T) {
+	testCache := &cache{}
+
+	// Fill the cache
+	reply := dns.Msg{}
+	reply.SetQuestion("google.com.", dns.TypeA)
+	reply.Response = true
+	reply.Rcode = dns.RcodeServerFailure
+
+	// Create a DNS request
+	request := dns.Msg{}
+	request.Id = dns.Id()
+	request.RecursionDesired = true
+	request.SetQuestion("google.com.", dns.TypeA)
+
+	// We are testing that SERVFAIL responses aren't cached
+	testCache.Set(&reply)
+	r, ok := testCache.Get(&request)
+	assert.Nil(t, r)
+	assert.False(t, ok)
 }
 
 func TestCacheRace(t *testing.T) {

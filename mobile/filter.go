@@ -94,8 +94,16 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 	var rule urlfilter.Rule
 	var err error
 	var blocked bool
+	d.RLock()
+	// Synchronize access to d.filteringEngine so it won't be suddenly uninitialized while in use.
+	// This could happen after proxy server has been stopped, but its workers are not yet exited.
+	//
+	// A better approach is for proxy.Stop() to wait until all its workers exit,
+	//  but this would require the Upstream interface to have Close() function
+	//  (to prevent from hanging while waiting for unresponsive DNS server to respond).
 	if d.filteringEngine != nil {
 		rule, blocked, err = d.filteringEngine.filterRequest(ctx)
+		d.RUnlock()
 		if err != nil {
 			handleDNSResponse(ctx, rule, err)
 			return err
@@ -105,6 +113,8 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 			handleDNSResponse(ctx, rule, nil)
 			return nil
 		}
+	} else {
+		d.RUnlock()
 	}
 
 	err = p.Resolve(ctx)

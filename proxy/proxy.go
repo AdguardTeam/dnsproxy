@@ -966,7 +966,12 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 
 	if err != nil {
-		log.Printf("error while responding to a DNS request: %s", err)
+		if strings.HasSuffix(err.Error(), "use of closed network connection") {
+			// This case may happen while we're restarting DNS server
+			log.Debug("error while responding to a DNS request: %s", err)
+		} else {
+			log.Printf("error while responding to a DNS request: %s", err)
+		}
 	}
 }
 

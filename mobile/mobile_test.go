@@ -113,7 +113,6 @@ func TestMobileApiResolve(t *testing.T) {
 		Timeout:       5000,
 		Upstreams:     upstreamsStr,
 		MaxGoroutines: 3,
-		CacheSize:     0,
 	}
 
 	listener := &testDNSRequestProcessedListener{}
@@ -180,7 +179,6 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 		Timeout:       5000,
 		Upstreams:     upstreamsStr,
 		MaxGoroutines: 5,
-		CacheSize:     0,
 	}
 
 	mobileDNSProxy := DNSProxy{Config: config}

@@ -53,7 +53,7 @@ type Config struct {
 	Fallbacks         string // A list of fallback resolvers that will be used if the main one is not available (i.e. 1.1.1.1:53 each on a new line)
 	Upstreams         string // A list of upstream resolvers (each on a new line)
 	Timeout           int    // Default timeout for all resolvers (milliseconds)
-	CacheSize         int    // Maximum number of elements in the cache. Default size: 1000
+	CacheSizeBytes    int    // Cache size (in bytes). Default: 64k
 	AllServers        bool   // If true, parallel queries to all configured upstream servers are enabled
 	MaxGoroutines     int    // Maximum number of parallel goroutines that process the requests
 	SystemResolvers   string // A list of system resolvers for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
@@ -298,14 +298,14 @@ func createConfig(config *Config) (*proxy.Config, error) {
 
 	// Create the config
 	proxyConfig := proxy.Config{
-		UDPListenAddr: listenUDPAddr,
-		TCPListenAddr: listenTCPAddr,
-		Upstreams:     upstreams,
-		AllServers:    config.AllServers,
-		CacheSize:     config.CacheSize,
-		CacheEnabled:  config.CacheSize > 0,
-		MaxGoroutines: config.MaxGoroutines,
-		Ratelimit:     0,
+		UDPListenAddr:  listenUDPAddr,
+		TCPListenAddr:  listenTCPAddr,
+		Upstreams:      upstreams,
+		AllServers:     config.AllServers,
+		CacheSizeBytes: config.CacheSizeBytes,
+		CacheEnabled:   config.CacheSizeBytes > 0,
+		MaxGoroutines:  config.MaxGoroutines,
+		Ratelimit:      0,
 	}
 
 	if config.Fallbacks != "" {

@@ -1,28 +1,31 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
+	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/bluele/gcache"
 	"github.com/miekg/dns"
 )
 
-const defaultCacheSize = 1000 // in number of elements
+const defaultCacheSize = 64 * 1024 // in bytes
 
 type item struct {
-	m    *dns.Msg  // dns message
-	when time.Time // time when m was cached
+	Msg  []byte    // dns message
+	When time.Time // time when m was cached
+	TTL  time.Duration
 }
 
 type cache struct {
-	items        gcache.Cache // cache
-	cacheSize    int          // cache size
-	sync.RWMutex              // lock
+	items        glcache.Cache // cache
+	cacheSize    int           // cache size (in bytes)
+	sync.RWMutex               // lock
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
@@ -41,21 +44,23 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 	c.Unlock()
-	rawValue, err := c.items.Get(key)
-	if err == gcache.KeyNotFoundError {
-		// not a real error, just no key found
+	rawValue := c.items.Get([]byte(key))
+	if rawValue == nil {
 		return nil, false
 	}
 
+	var buf bytes.Buffer
+	buf.Write(rawValue)
+	dec := gob.NewDecoder(&buf)
+	cachedValue := item{}
+	err := dec.Decode(&cachedValue)
 	if err != nil {
-		// real error
-		log.Error("can't get response for %s from cache: %s", request.Question[0].Name, err)
+		log.Error("gob.Decode: %s", err)
 		return nil, false
 	}
 
-	cachedValue, ok := rawValue.(item)
-	if !ok {
-		log.Error("entry with invalid type in cache for %s", request.Question[0].Name)
+	if cachedValue.When.Unix()+int64(cachedValue.TTL.Seconds()) <= time.Now().Unix() {
+		c.items.Del([]byte(key))
 		return nil, false
 	}
 
@@ -74,25 +79,33 @@ func (c *cache) Set(m *dns.Msg) {
 	if !ok {
 		return
 	}
-	i := toItem(m)
 
 	c.Lock()
 	// lazy initialization for cache
 	if c.items == nil {
-		size := defaultCacheSize
-		if c.cacheSize > 0 {
-			size = c.cacheSize
+		conf := glcache.Config{
+			MaxSize:   defaultCacheSize,
+			EnableLRU: true,
 		}
-		c.items = gcache.New(size).LRU().Build()
+		if c.cacheSize > 0 {
+			conf.MaxSize = uint(c.cacheSize)
+		}
+		c.items = glcache.New(conf)
 	}
 	c.Unlock()
 
-	// set ttl as expiration time for item
+	i := toItem(m)
 	ttl := time.Duration(findLowestTTL(m)) * time.Second
-	err := c.items.SetWithExpire(key, i, ttl)
+	i.TTL = ttl
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(i)
 	if err != nil {
-		log.Println("Couldn't set cache")
+		log.Debug("gob.Encode: %s", err)
+		return
 	}
+
+	_ = c.items.Set([]byte(key), buf.Bytes())
 }
 
 // check if message is cacheable
@@ -204,38 +217,42 @@ func key(m *dns.Msg) (bool, string) {
 }
 
 func toItem(m *dns.Msg) item {
-	return item{
-		m:    m,
-		when: time.Now(),
+	i := item{
+		When: time.Now(),
 	}
+	i.Msg, _ = m.Pack()
+	return i
 }
 
 func (i *item) fromItem(request *dns.Msg) *dns.Msg {
 	res := &dns.Msg{}
 	res.SetReply(request)
 
-	res.Authoritative = false
-	res.AuthenticatedData = i.m.AuthenticatedData
-	res.RecursionAvailable = i.m.RecursionAvailable
-	res.Rcode = i.m.Rcode
+	m := dns.Msg{}
+	m.Unpack(i.Msg)
 
-	ttl := findLowestTTL(i.m)
-	timeLeft := math.Round(float64(ttl) - time.Since(i.when).Seconds())
+	res.Authoritative = false
+	res.AuthenticatedData = m.AuthenticatedData
+	res.RecursionAvailable = m.RecursionAvailable
+	res.Rcode = m.Rcode
+
+	ttl := findLowestTTL(&m)
+	timeLeft := math.Round(float64(ttl) - time.Since(i.When).Seconds())
 	var newTTL uint32
 	if timeLeft > 0 {
 		newTTL = uint32(timeLeft)
 	}
-	for _, r := range i.m.Answer {
+	for _, r := range m.Answer {
 		answer := dns.Copy(r)
 		answer.Header().Ttl = newTTL
 		res.Answer = append(res.Answer, answer)
 	}
-	for _, r := range i.m.Ns {
+	for _, r := range m.Ns {
 		ns := dns.Copy(r)
 		ns.Header().Ttl = newTTL
 		res.Ns = append(res.Ns, ns)
 	}
-	for _, r := range i.m.Extra {
+	for _, r := range m.Extra {
 		// don't return OPT records as these are hop-by-hop
 		if r.Header().Rrtype == dns.TypeOPT {
 			continue

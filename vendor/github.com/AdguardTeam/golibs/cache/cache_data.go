@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"math"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -34,16 +33,18 @@ type item struct {
 	used  listItem
 }
 
+const maxUint = (1 << (unsafe.Sizeof(uint(0)) * 8)) - 1
+
 func newCache(conf Config) *cache {
 	c := cache{}
 	c.items = make(map[string]*item)
 	listInit(&c.usage)
 	c.conf = conf
 	if c.conf.MaxSize == 0 {
-		c.conf.MaxSize = math.MaxUint64
+		c.conf.MaxSize = maxUint
 	}
 	if c.conf.MaxCount == 0 {
-		c.conf.MaxCount = math.MaxUint64
+		c.conf.MaxCount = maxUint
 	}
 	if c.conf.MaxElementSize == 0 {
 		c.conf.MaxElementSize = c.conf.MaxSize

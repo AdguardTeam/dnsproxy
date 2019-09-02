@@ -1,4 +1,4 @@
-# github.com/AdguardTeam/golibs v0.2.0
+# github.com/AdguardTeam/golibs v0.2.1
 github.com/AdguardTeam/golibs/log
 github.com/AdguardTeam/golibs/cache
 github.com/AdguardTeam/golibs/utils

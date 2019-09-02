@@ -1,9 +1,7 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"math"
 	"strings"
 	"sync"
@@ -15,12 +13,6 @@ import (
 )
 
 const defaultCacheSize = 64 * 1024 // in bytes
-
-type item struct {
-	Msg  []byte    // dns message
-	When time.Time // time when m was cached
-	TTL  time.Duration
-}
 
 type cache struct {
 	items        glcache.Cache // cache
@@ -44,27 +36,16 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 	c.Unlock()
-	rawValue := c.items.Get([]byte(key))
-	if rawValue == nil {
+	data := c.items.Get([]byte(key))
+	if data == nil {
 		return nil, false
 	}
 
-	var buf bytes.Buffer
-	buf.Write(rawValue)
-	dec := gob.NewDecoder(&buf)
-	cachedValue := item{}
-	err := dec.Decode(&cachedValue)
-	if err != nil {
-		log.Error("gob.Decode: %s", err)
-		return nil, false
-	}
-
-	if cachedValue.When.Unix()+int64(cachedValue.TTL.Seconds()) <= time.Now().Unix() {
+	res := unpackResponse(data, request)
+	if res == nil {
 		c.items.Del([]byte(key))
 		return nil, false
 	}
-
-	res := cachedValue.fromItem(request)
 	return res, true
 }
 
@@ -94,18 +75,8 @@ func (c *cache) Set(m *dns.Msg) {
 	}
 	c.Unlock()
 
-	i := toItem(m)
-	ttl := time.Duration(findLowestTTL(m)) * time.Second
-	i.TTL = ttl
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(i)
-	if err != nil {
-		log.Debug("gob.Encode: %s", err)
-		return
-	}
-
-	_ = c.items.Set([]byte(key), buf.Bytes())
+	data := packResponse(m)
+	_ = c.items.Set([]byte(key), data)
 }
 
 // check if message is cacheable
@@ -216,40 +187,47 @@ func key(m *dns.Msg) (bool, string) {
 	return true, bb.String()
 }
 
-func toItem(m *dns.Msg) item {
-	i := item{
-		When: time.Now(),
-	}
-	i.Msg, _ = m.Pack()
-	return i
+/*
+expire [4]byte
+dns_message []byte
+*/
+func packResponse(m *dns.Msg) []byte {
+	pm, _ := m.Pack()
+	expire := uint32(time.Now().Unix()) + findLowestTTL(m)
+	var d []byte
+	d = make([]byte, 4+len(pm))
+	binary.BigEndian.PutUint32(d, expire)
+	copy(d[4:], pm)
+	return d
 }
 
-func (i *item) fromItem(request *dns.Msg) *dns.Msg {
-	res := &dns.Msg{}
-	res.SetReply(request)
+// Return nil if response has expired
+func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
+	now := time.Now().Unix()
+	expire := binary.BigEndian.Uint32(data[:4])
+	if int64(expire) <= now {
+		return nil
+	}
+	ttl := expire - uint32(now)
 
 	m := dns.Msg{}
-	m.Unpack(i.Msg)
+	m.Unpack(data[4:])
 
+	res := dns.Msg{}
+	res.SetReply(request)
 	res.Authoritative = false
 	res.AuthenticatedData = m.AuthenticatedData
 	res.RecursionAvailable = m.RecursionAvailable
 	res.Rcode = m.Rcode
 
-	ttl := findLowestTTL(&m)
-	timeLeft := math.Round(float64(ttl) - time.Since(i.When).Seconds())
-	var newTTL uint32
-	if timeLeft > 0 {
-		newTTL = uint32(timeLeft)
-	}
 	for _, r := range m.Answer {
 		answer := dns.Copy(r)
-		answer.Header().Ttl = newTTL
+		answer.Header().Ttl = ttl
 		res.Answer = append(res.Answer, answer)
 	}
 	for _, r := range m.Ns {
 		ns := dns.Copy(r)
-		ns.Header().Ttl = newTTL
+		ns.Header().Ttl = ttl
 		res.Ns = append(res.Ns, ns)
 	}
 	for _, r := range m.Extra {
@@ -258,8 +236,8 @@ func (i *item) fromItem(request *dns.Msg) *dns.Msg {
 			continue
 		}
 		extra := dns.Copy(r)
-		extra.Header().Ttl = newTTL
+		extra.Header().Ttl = ttl
 		res.Extra = append(res.Extra, extra)
 	}
-	return res
+	return &res
 }

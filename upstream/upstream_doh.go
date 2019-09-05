@@ -127,6 +127,7 @@ func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 	}
 
 	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
 		DialContext:        dialContext,

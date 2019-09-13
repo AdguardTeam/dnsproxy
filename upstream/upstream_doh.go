@@ -96,7 +96,7 @@ func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
 	// Timeout can be exceeded while waiting for the lock
 	// This happens quite often on mobile devices
 	elapsed := time.Since(startTime)
-	if elapsed > p.boot.timeout {
+	if p.boot.timeout > 0 && elapsed > p.boot.timeout {
 		return nil, fmt.Errorf("timeout exceeded: %d ms", int(elapsed/time.Millisecond))
 	}
 

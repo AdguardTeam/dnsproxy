@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -84,10 +85,19 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 
 // getClient gets or lazily initializes an HTTP client (and transport) that will be used for this DOH resolver.
 func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
+	startTime := time.Now()
+
 	p.Lock()
 	defer p.Unlock()
 	if p.client != nil {
 		return p.client, nil
+	}
+
+	// Timeout can be exceeded while waiting for the lock
+	// This happens quite often on mobile devices
+	elapsed := time.Since(startTime)
+	if elapsed > p.boot.timeout {
+		return nil, fmt.Errorf("timeout exceeded: %d ms", int(elapsed/time.Millisecond))
 	}
 
 	transport, err := p.createTransport()

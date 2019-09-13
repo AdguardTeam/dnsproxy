@@ -95,7 +95,8 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 	var err error
 	var blocked bool
 
-	if ctx.Req.Question[0].Name == "use-application-dns.net." {
+	if (ctx.Req.Question[0].Qtype == dns.TypeA || ctx.Req.Question[0].Qtype == dns.TypeAAAA) &&
+		ctx.Req.Question[0].Name == "use-application-dns.net." {
 		ctx.Res = genNXDomain(ctx.Req)
 		return nil
 	}

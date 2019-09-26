@@ -39,7 +39,15 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, errorx.Decorate(err, "couldn't initialize HTTP client or transport")
 	}
 
-	return p.exchangeHTTPSClient(m, client)
+	r, err := p.exchangeHTTPSClient(m, client)
+	if err != nil {
+		p.Lock()
+		if client == p.client {
+			p.client = nil // this connection is no longer usable
+		}
+		p.Unlock()
+	}
+	return r, err
 }
 
 // exchangeHTTPSClient sends the DNS query to a DOH resolver using the specified http.Client instance

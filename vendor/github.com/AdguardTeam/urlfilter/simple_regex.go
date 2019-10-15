@@ -65,6 +65,11 @@ func patternToRegexp(pattern string) string {
 		return pattern[1 : len(pattern)-1]
 	}
 
+	// example.org/* -> example.org^
+	if strings.HasSuffix(pattern, "/*") {
+		pattern = pattern[:len(pattern)-len("/*")] + "^"
+	}
+
 	// Escape special characters except of * | ^
 	regex := reSpecialCharacters.ReplaceAllString(pattern, "\\$0")
 

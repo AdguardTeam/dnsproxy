@@ -16,6 +16,7 @@ You can learn more about AdGuard filtering rules syntax from [this article](http
     * [X] Core blocking syntax
     * [X] Basic engine
     * [X] Basic rules validation (don't match everything, unexpected modifiers, etc)
+    * [ ] Domain modifier semantics: https://github.com/AdguardTeam/AdguardBrowserExtension/issues/1474
 * [X] Benchmark basic rules matching
 * [X] Hosts matching rules
     * [X] /etc/hosts matching
@@ -27,18 +28,29 @@ You can learn more about AdGuard filtering rules syntax from [this article](http
     * [ ] ExtCSS rules
     * [ ] Scriptlet rules
     * [ ] JS rules
-* [ ] Basic filtering engine implementation
-    * [ ] Handling cosmetic modifiers $elemhide, $generichide, $jsinject
-    * [ ] Advanced modifiers part 1
-        * [X] $important
-        * [ ] $badfilter
-    * [ ] mitm proxy example
+* [ ] Proxy implementation
+    * [X] Simple MITM proxy example
+    * [X] Add cosmetic filters to the proxy example
+    * [X] Handling cosmetic modifiers $elemhide, $generichide, $jsinject
+    * [ ] (!) Server certificate verification - it should pass badssl.com/dashboard/
+    * [ ] Unit tests coverage
+    * [ ] Proxy - handle CSP (including <meta> tags with CSP)
+    * [ ] Proxy - proper blocking page code
+    * [ ] Proxy - unblocking via a temporary cookie
+    * [ ] Proxy - content script caching
+    * [ ] Content script - babel plugin
+    * [ ] Content script - apply ExtCSS rules
+    * [ ] Content script - styles protection
+    * [ ] Content script - JS unit tests
+    * [ ] Content script - GO unit tests
 * [ ] HTML filtering rules
-* [ ] Advanced modifiers part 2
+* [ ] Advanced modifiers
+    * [X] $important
     * [ ] $replace
     * [ ] $csp
     * [ ] $cookie
     * [ ] $redirect
+    * [X] $badfilter
     
 #### How to use
 

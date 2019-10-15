@@ -1,13 +1,17 @@
 package urlfilter
 
 import (
+	"mime"
+	"net/http"
+	"net/url"
+	"path"
 	"strings"
 
 	"golang.org/x/net/publicsuffix"
 )
 
 // RequestType is the request types enumeration
-type RequestType int
+type RequestType uint32
 
 const (
 	// TypeDocument (main frame)
@@ -24,8 +28,6 @@ const (
 	TypeImage
 	// TypeXmlhttprequest (ajax/fetch) $xmlhttprequest
 	TypeXmlhttprequest
-	// TypeObjectSubrequest - a request sent from inside of an object (flash) $object-subrequest
-	TypeObjectSubrequest
 	// TypeMedia (video/music) $media
 	TypeMedia
 	// TypeFont (any custom font) $font
@@ -34,12 +36,25 @@ const (
 	TypeWebsocket
 	// TypeOther - any other request type
 	TypeOther
-
-	// TypeAllRequestTypes combines all other request type flags
-	TypeAllRequestTypes = TypeDocument | TypeSubdocument | TypeScript | TypeStylesheet |
-		TypeObject | TypeImage | TypeXmlhttprequest | TypeObjectSubrequest | TypeMedia |
-		TypeFont | TypeWebsocket | TypeOther
 )
+
+// Count returns count of the enabled flags
+func (t RequestType) Count() int {
+	if t == 0 {
+		return 0
+	}
+
+	flags := uint32(t)
+	count := 0
+	var i uint
+	for i = 0; i < 32; i++ {
+		mask := uint32(1 << i)
+		if (flags & mask) == mask {
+			count++
+		}
+	}
+	return count
+}
 
 // Request represents a web request with all it's necessary properties
 type Request struct {
@@ -100,8 +115,8 @@ func NewRequest(url string, sourceURL string, requestType RequestType) *Request 
 func NewRequestForHostname(hostname string) *Request {
 	r := Request{
 		RequestType:       TypeDocument,
-		URL:               "http://" + hostname,
-		URLLowerCase:      "http://" + hostname,
+		URL:               "http://" + hostname + "/",
+		URLLowerCase:      "http://" + hostname + "/",
 		Hostname:          hostname,
 		ThirdParty:        false,
 		IsHostnameRequest: true,
@@ -154,4 +169,137 @@ func extractHostname(url string) string {
 	}
 
 	return url[firstIdx:nextIdx]
+}
+
+// assumeRequestType assumes request type from what we know at this point.
+// req -- HTTP request
+// res -- HTTP response or null if we don't know it at the moment
+func assumeRequestType(req *http.Request, res *http.Response) RequestType {
+	if res != nil {
+		contentType := res.Header.Get("Content-Type")
+		mediaType, _, _ := mime.ParseMediaType(contentType)
+		return assumeRequestTypeFromMediaType(mediaType)
+	}
+
+	acceptHeader := req.Header.Get("Accept")
+	requestType := assumeRequestTypeFromMediaType(acceptHeader)
+
+	if requestType == TypeOther {
+		// Try to get it from the URL
+		requestType = assumeRequestTypeFromURL(req.URL)
+	}
+
+	return requestType
+}
+
+// assumeRequestTypeFromMediaType tries to detect the content type from the specified media type
+func assumeRequestTypeFromMediaType(mediaType string) RequestType {
+	switch {
+	// $document
+	case strings.Index(mediaType, "application/xhtml") == 0:
+		return TypeDocument
+	// We should recognize m3u file as html (in terms of filtering), because m3u play list can contains refs to video ads.
+	// So if we recognize it as html we can filter it and in particular apply replace rules
+	// for more details see https://github.com/AdguardTeam/AdguardForWindows/issues/1428
+	// TODO: Change this -- save media type to session parameters
+	case strings.Index(mediaType, "audio/x-mpegURL") == 0:
+		return TypeDocument
+	case strings.Index(mediaType, "text/html") == 0:
+		return TypeDocument
+	// $stylesheet
+	case strings.Index(mediaType, "text/css") == 0:
+		return TypeStylesheet
+	// $script
+	case strings.Index(mediaType, "application/javascript") == 0:
+		return TypeScript
+	case strings.Index(mediaType, "application/x-javascript") == 0:
+		return TypeScript
+	case strings.Index(mediaType, "text/javascript") == 0:
+		return TypeScript
+	// $image
+	case strings.Index(mediaType, "image/") == 0:
+		return TypeImage
+	// $object
+	case strings.Index(mediaType, "application/x-shockwave-flash") == 0:
+		return TypeObject
+	// $font
+	case strings.Index(mediaType, "application/font") == 0:
+		return TypeFont
+	case strings.Index(mediaType, "application/vnd.ms-fontobject") == 0:
+		return TypeFont
+	case strings.Index(mediaType, "application/x-font-") == 0:
+		return TypeFont
+	case strings.Index(mediaType, "font/") == 0:
+		return TypeFont
+	// $media
+	case strings.Index(mediaType, "audio/") == 0:
+		return TypeMedia
+	case strings.Index(mediaType, "video/") == 0:
+		return TypeMedia
+	// $json
+	case strings.Index(mediaType, "application/json") == 0:
+		return TypeXmlhttprequest
+	}
+
+	return TypeOther
+}
+
+var fileExtensions = map[string]RequestType{
+	// $script
+	".js":     TypeScript,
+	".vbs":    TypeScript,
+	".coffee": TypeScript,
+	// $image
+	".jpg":  TypeImage,
+	".jpeg": TypeImage,
+	".gif":  TypeImage,
+	".png":  TypeImage,
+	".tiff": TypeImage,
+	".psd":  TypeImage,
+	".ico":  TypeImage,
+	// $stylesheet
+	".css":  TypeStylesheet,
+	".less": TypeStylesheet,
+	// $object
+	".jar": TypeObject,
+	".swf": TypeObject,
+	// $media
+	".wav":   TypeMedia,
+	".mp3":   TypeMedia,
+	".mp4":   TypeMedia,
+	".avi":   TypeMedia,
+	".flv":   TypeMedia,
+	".m3u":   TypeMedia,
+	".webm":  TypeMedia,
+	".mpeg":  TypeMedia,
+	".3gp":   TypeMedia,
+	".3g2":   TypeMedia,
+	".3gpp":  TypeMedia,
+	".3gpp2": TypeMedia,
+	".ogg":   TypeMedia,
+	".mov":   TypeMedia,
+	".qt":    TypeMedia,
+	".vbm":   TypeMedia,
+	".mkv":   TypeMedia,
+	".gifv":  TypeMedia,
+	// $font
+	".ttf":   TypeFont,
+	".otf":   TypeFont,
+	".woff":  TypeFont,
+	".woff2": TypeFont,
+	".eot":   TypeFont,
+	// $xmlhttprequest
+	".json": TypeXmlhttprequest,
+}
+
+// assumeRequestTypeFromURL assumes the request type from the file extension
+func assumeRequestTypeFromURL(url *url.URL) RequestType {
+	ext := path.Ext(url.Path)
+
+	requestType, ok := fileExtensions[ext]
+	if !ok {
+		return TypeOther
+	}
+
+	return requestType
 }

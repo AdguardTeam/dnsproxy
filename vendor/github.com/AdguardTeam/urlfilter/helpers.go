@@ -67,6 +67,21 @@ func getSubdomains(hostname string) []string {
 	return subdomains
 }
 
+// stringArraysEquals checks if arrays are equal
+func stringArraysEquals(l []string, r []string) bool {
+	if len(l) != len(r) {
+		return false
+	}
+
+	for i := 0; i < len(l); i++ {
+		if l[i] != r[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
 // sort.Interface
 type byLength []string
 

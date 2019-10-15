@@ -47,7 +47,8 @@ func NewHostRule(ruleText string, filterListID int) (*HostRule, error) {
 				hostnames = append(hostnames, part)
 			}
 		}
-	} else if len(parts) == 1 && govalidator.IsDNSName(parts[0]) {
+	} else if len(parts) == 1 &&
+		isDomainName(parts[0]) {
 		hostnames = append(hostnames, parts[0])
 		ip = net.IPv4(0, 0, 0, 0)
 	} else {
@@ -88,4 +89,13 @@ func (f *HostRule) Match(hostname string) bool {
 	}
 
 	return false
+}
+
+func isDomainName(line string) bool {
+	if strings.IndexByte(line, '.') == -1 ||
+		line[len(line)-1] == '.' {
+		return false
+	}
+
+	return govalidator.IsDNSName(line)
 }

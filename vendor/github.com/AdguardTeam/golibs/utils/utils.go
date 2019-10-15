@@ -6,19 +6,24 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var hostnameRegexp *regexp.Regexp
+var hostnameRegexpLock sync.Mutex // to silence Go race detector
 
 // IsValidHostname returns an error if hostname is invalid
 func IsValidHostname(hostname string) error {
+	hostnameRegexpLock.Lock()
 	if hostnameRegexp == nil {
 		re, err := compileHostnameRegexp()
 		if err != nil {
+			hostnameRegexpLock.Unlock()
 			return fmt.Errorf("wrong regexp for hostname validation: %s", err)
 		}
 		hostnameRegexp = re
 	}
+	hostnameRegexpLock.Unlock()
 
 	return matchHostname(hostnameRegexp, hostname)
 }

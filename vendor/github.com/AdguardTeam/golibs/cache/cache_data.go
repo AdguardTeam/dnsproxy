@@ -52,9 +52,6 @@ func newCache(conf Config) *cache {
 	if c.conf.MaxElementSize > c.conf.MaxSize {
 		c.conf.MaxElementSize = c.conf.MaxSize
 	}
-	if c.conf.OnDelete == nil {
-		c.conf.OnDelete = onDelete
-	}
 	return &c
 }
 
@@ -66,9 +63,6 @@ func (c *cache) Clear() {
 	c.lock.Unlock()
 	atomic.StoreInt32(&c.hit, 0)
 	atomic.StoreInt32(&c.miss, 0)
-}
-
-func onDelete(key []byte, val []byte) {
 }
 
 // Set value
@@ -97,9 +91,11 @@ func (c *cache) Set(key []byte, val []byte) bool {
 		listUnlink(first)
 		delete(c.items, string(it.key))
 
-		c.lock.Unlock()
-		c.conf.OnDelete(it.key, it.value)
-		c.lock.Lock()
+		if c.conf.OnDelete != nil {
+			c.lock.Unlock()
+			c.conf.OnDelete(it.key, it.value)
+			c.lock.Lock()
+		}
 	}
 
 	if c.conf.EnableLRU {
@@ -144,6 +140,7 @@ func (c *cache) Del(key []byte) {
 		return
 	}
 	listUnlink(&it.used)
+	c.size -= uint(len(it.key) + len(it.value))
 	delete(c.items, string(key))
 	c.lock.Unlock()
 }

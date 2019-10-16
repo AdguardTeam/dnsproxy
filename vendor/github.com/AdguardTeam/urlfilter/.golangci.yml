@@ -39,6 +39,8 @@ linters:
     - prealloc
     - maligned
     - nakedret
+    - godox
+    - funlen
     - goconst # disabled until it's possible to configure
   fast: true
 
@@ -51,6 +53,7 @@ issues:
     # errcheck
     - Error return value of .s.closeConn. is not checked
     - Error return value of ..*.Shutdown.
+    - Error return value of ..*.Close. is not checked
     # gosec (Duplicated errcheck checks)
     - G104
 

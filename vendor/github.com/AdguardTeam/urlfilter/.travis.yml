@@ -8,7 +8,7 @@ env:
   - GO111MODULE=on
 
 go:
-  - 1.x
+  - 1.13.x
 
 script:
   # Run tests
@@ -16,3 +16,6 @@ script:
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
+
+notifications:
+  slack: performix:yXTihlSzsLFSZiqbXMNzvTSX

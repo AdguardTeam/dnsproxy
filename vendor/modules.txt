@@ -1,8 +1,8 @@
-# github.com/AdguardTeam/golibs v0.2.1
-github.com/AdguardTeam/golibs/log
+# github.com/AdguardTeam/golibs v0.2.3
 github.com/AdguardTeam/golibs/cache
+github.com/AdguardTeam/golibs/log
 github.com/AdguardTeam/golibs/utils
-# github.com/AdguardTeam/urlfilter v0.5.0
+# github.com/AdguardTeam/urlfilter v0.6.2
 github.com/AdguardTeam/urlfilter
 # github.com/StackExchange/wmi v0.0.0-20181212234831-e0a55b97c705
 github.com/StackExchange/wmi

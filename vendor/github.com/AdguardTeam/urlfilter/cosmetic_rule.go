@@ -14,7 +14,9 @@ const (
 	CosmeticElementHiding CosmeticRuleType = iota // ## rules (https://kb.adguard.com/en/general/how-to-create-your-own-ad-filters#cosmetic-elemhide-rules)
 	CosmeticCSS                                   // #$# rules (https://kb.adguard.com/en/general/how-to-create-your-own-ad-filters#cosmetic-css-rules)
 	CosmeticJS                                    // #%# rules (https://kb.adguard.com/en/general/how-to-create-your-own-ad-filters#javascript-rules)
-	CosmeticHTML                                  // $$ rules (https://kb.adguard.com/en/general/how-to-create-your-own-ad-filters#html-filtering-rules)
+
+	// TODO: Move HTML filtering rules to a different file/structure
+	CosmeticHTML // $$ rules (https://kb.adguard.com/en/general/how-to-create-your-own-ad-filters#html-filtering-rules)
 )
 
 // cosmeticRuleMarker is a special marker that defines what type of cosmetic rule we are dealing with
@@ -31,8 +33,8 @@ const (
 	// https://kb.adguard.com/en/general/how-to-create-your-own-ad-filters#cosmetic-css-rules
 	markerCSS                cosmeticRuleMarker = "#$#"
 	markerCSSException       cosmeticRuleMarker = "#@$#"
-	markerCSSExtCSS          cosmeticRuleMarker = "#?$#"
-	markerCSSExtCSSException cosmeticRuleMarker = "#@?$"
+	markerCSSExtCSS          cosmeticRuleMarker = "#$?#"
+	markerCSSExtCSSException cosmeticRuleMarker = "#@$?#"
 
 	// https://kb.adguard.com/en/general/how-to-create-your-own-ad-filters#javascript-rules
 	markerJS          cosmeticRuleMarker = "#%#"
@@ -53,11 +55,11 @@ var cosmeticRulesMarkers = []string{
 	string(markerHTML), string(markerHTMLException),
 }
 
-// necessary for findRuleMarker function. Initialized in the init() function
+// necessary for findCosmeticRuleMarker function. Initialized in the init() function
 var cosmeticRuleMarkersFirstChars []byte
 
 func init() {
-	// This is important for "findRuleMarker" function to sort markers in this order
+	// This is important for "findCosmeticRuleMarker" function to sort markers in this order
 	sort.Sort(sort.Reverse(byLength(cosmeticRulesMarkers)))
 
 	for _, marker := range cosmeticRulesMarkers {
@@ -104,6 +106,8 @@ func NewCosmeticRule(ruleText string, filterListID int) (*CosmeticRule, error) {
 	}
 
 	if index > 0 {
+		// This means that the marker is preceded by the list of domains
+		// Now it's a good time to parse them.
 		domains := ruleText[:index]
 		permitted, restricted, err := loadDomains(domains, ",")
 		if err != nil {
@@ -118,9 +122,6 @@ func NewCosmeticRule(ruleText string, filterListID int) (*CosmeticRule, error) {
 		return nil, &RuleSyntaxError{msg: "empty rule content", ruleText: ruleText}
 	}
 
-	// TODO: validate content
-	// TODO: detect ExtCSS pseudo-classes
-
 	switch cosmeticRuleMarker(m) {
 	case markerElementHiding:
 		f.Type = CosmeticElementHiding
@@ -130,6 +131,13 @@ func NewCosmeticRule(ruleText string, filterListID int) (*CosmeticRule, error) {
 	default:
 		return nil, ErrUnsupportedRule
 	}
+
+	if f.Whitelist && len(f.permittedDomains) == 0 {
+		return nil, &RuleSyntaxError{msg: "whitelist rule must have at least one domain specified", ruleText: ruleText}
+	}
+
+	// TODO: validate content
+	// TODO: detect ExtCSS pseudo-classes
 
 	return &f, nil
 }
@@ -198,6 +206,10 @@ func findCosmeticRuleMarker(ruleText string) (int, string) {
 			continue
 		}
 
+		// Handling false positives while looking for cosmetic rules in host files.
+		//
+		// For instance, it could look like this:
+		// 0.0.0.0 jackbootedroom.com  ## phishing
 		if startIndex > 0 && ruleText[startIndex-1] == ' ' {
 			continue
 		}

@@ -12,7 +12,7 @@ Moreover, it can work as a `DNS-over-HTTPS` and/or `DNS-over-TLS` server.
 
 ## How to build
 
-You will need go v1.11 or later.
+You will need go v1.13 or later.
 
 ```
 $ go build

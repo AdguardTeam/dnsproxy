@@ -104,10 +104,6 @@ matrix:
 
       osx_image: xcode10.1
 
-      go:
-        # This is important for iOS version to use Go v1.11
-        - 1.11
-
       env:
         - GO111MODULE=on
         - GIMME_GO_VERSION=1.x

@@ -402,6 +402,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	} else {
 		d.Res = reply
 	}
+	d.Res.Compress = true // some devices require DNS message compression
 
 	if p.ResponseHandler != nil {
 		p.ResponseHandler(d, err)

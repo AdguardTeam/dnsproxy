@@ -211,7 +211,10 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 	ttl := expire - uint32(now)
 
 	m := dns.Msg{}
-	m.Unpack(data[4:])
+	err := m.Unpack(data[4:])
+	if err != nil {
+		return nil
+	}
 
 	res := dns.Msg{}
 	res.SetReply(request)

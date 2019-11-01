@@ -22,6 +22,7 @@ linters:
     - maligned
     - unparam
     - gosimple
+    - funlen
 
 issues:
   # List of regexps of issue texts to exclude, empty list by default.

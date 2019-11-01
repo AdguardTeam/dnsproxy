@@ -143,11 +143,9 @@ func (r *Resolver) resolve(host string, qtype uint16, ch chan *resultError) {
 
 func setIPAddresses(ipAddrs *[]net.IPAddr, answers []dns.RR) {
 	for _, ans := range answers {
-
 		if a, ok := ans.(*dns.A); ok {
 			ip := net.IPAddr{IP: a.A}
 			*ipAddrs = append(*ipAddrs, ip)
-
 		} else if a, ok := ans.(*dns.AAAA); ok {
 			ip := net.IPAddr{IP: a.AAAA}
 			*ipAddrs = append(*ipAddrs, ip)

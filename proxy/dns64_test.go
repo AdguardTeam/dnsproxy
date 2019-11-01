@@ -62,7 +62,7 @@ func TestProxyWithDNS64(t *testing.T) {
 
 	// Compare manually mapped IP with IP that was resolved by dnsproxy with calculated NAT64 prefix
 	if !ans.AAAA.Equal(mappedIP) {
-		t.Fatalf("Manually mapped IP %s not equlas to repsonse %s", mappedIP.String(), ans.AAAA.String())
+		t.Fatalf("Manually mapped IP %s not equlas to response %s", mappedIP.String(), ans.AAAA.String())
 	}
 
 	err = dnsProxy.Stop()

@@ -133,7 +133,6 @@ func run(options Options) {
 
 // createProxyConfig creates proxy.Config from the command line arguments
 func createProxyConfig(options Options) proxy.Config {
-
 	listenIP := net.ParseIP(options.ListenAddr)
 	if listenIP == nil {
 		log.Fatalf("cannot parse %s", options.ListenAddr)

@@ -203,7 +203,6 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 				return netRule, err == nil, err
 			}
 			return netRule, false, nil
-
 		} else if hostRule, ok := rule.(*urlfilter.HostRule); ok {
 			// It's a host rule. We should generate a host rule answer for it.
 			// Let's copy IP from the rule first. We need to do it cause hostRule is a pointer, and IP may be changed for AAAA request

@@ -220,7 +220,6 @@ func TestFilteringProxyIPBlock(t *testing.T) {
 	// Stop the proxy
 	err = mobileDNSProxy.Stop()
 	assert.Nil(t, err)
-
 }
 
 // TestFilteringProxyRaceNXDomainBlock sends multiple parallel DNS requests, which should be blocked with NXDomain

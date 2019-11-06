@@ -1,3 +1,4 @@
+// Package upstream implements DNS clients for all known DNS encryption protocols
 package upstream
 
 import (

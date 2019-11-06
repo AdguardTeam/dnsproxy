@@ -1,6 +1,4 @@
-/*
-Package mobile contains a simple mobile API for github.com/AdguardTeam/dnsproxy
-*/
+// Package mobile contains a simple mobile API for github.com/AdguardTeam/dnsproxy
 package mobile
 
 import (

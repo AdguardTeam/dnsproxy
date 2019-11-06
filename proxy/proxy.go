@@ -1,3 +1,4 @@
+// Package proxy implements a DNS proxy that supports all known DNS encryption protocols
 package proxy
 
 import (

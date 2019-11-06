@@ -17,9 +17,14 @@ import (
 )
 
 const (
-	BlockTypeRule          = iota // Respond with NXDomain for Network filtering rules and with IP for Host rules
-	BlockTypeNXDomain      = iota // Respond with NXDomain for all kind of filtering rules
-	BlockTypeUnspecifiedIP = iota // Respond with Unspecified IP for Network filtering rules
+	// BlockTypeRule - respond with NXDomain for Network filtering rules and with IP for Host rules
+	BlockTypeRule = iota
+
+	// BlockTypeNXDomain - respond with NXDomain for all kind of filtering rules
+	BlockTypeNXDomain = iota
+
+	// BlockTypeUnspecifiedIP - respond with Unspecified IP for Network filtering rules
+	BlockTypeUnspecifiedIP = iota
 )
 
 // stringRuleListJSON represents filters list with list id

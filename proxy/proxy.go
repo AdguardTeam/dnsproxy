@@ -121,6 +121,10 @@ type DNSContext struct {
 	HTTPResponseWriter http.ResponseWriter // HTTP response writer (for DOH only)
 	StartTime          time.Time           // processing start time
 	Upstream           upstream.Upstream   // upstream that resolved DNS request
+
+	// Upstream servers to use for this request
+	// If set, Resolve() uses it instead of default servers
+	Upstreams []upstream.Upstream
 }
 
 // UpstreamConfig is a wrapper for list of default upstreams and map of reserved domains and corresponding upstreams
@@ -369,8 +373,11 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		}
 	}
 
-	// get upstreams for the specified hostname
-	upstreams := p.getUpstreamsForDomain(d.Req.Question[0].Name)
+	upstreams := d.Upstreams
+	if len(upstreams) == 0 {
+		// get upstreams for the specified hostname
+		upstreams = p.getUpstreamsForDomain(d.Req.Question[0].Name)
+	}
 
 	// execute the DNS request
 	startTime := time.Now()

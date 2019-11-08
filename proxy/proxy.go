@@ -416,7 +416,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dns.Msg, u upstream.Upstream, err error) {
 	if p.IPv6Disabled && req.Question[0].Qtype == dns.TypeAAAA {
 		log.Debug("IPv6 is disabled. Answer with zero IPv6 to %s AAAA request", req.Question[0].Name)
-		reply, u, err = createEmptyAAAAResponse(req), nil, nil
+		reply, u, err = genNXDomain(req), nil, nil
 		return
 	}
 
@@ -447,18 +447,45 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
 }
 
-func createEmptyAAAAResponse(req *dns.Msg) *dns.Msg {
-	res := dns.Msg{}
-	res.Question = []dns.Question{}
-	res.Question = append(res.Question, req.Question[0])
-	res.Answer = []dns.RR{}
-	res.Id = req.Id
-	res.RecursionAvailable = false
-	rr := new(dns.AAAA)
-	rr.Hdr = dns.RR_Header{Name: req.Question[0].Name, Rrtype: dns.TypeAAAA, Ttl: 3600, Class: dns.ClassINET}
-	rr.AAAA = net.IPv6zero
-	res.Answer = append(res.Answer, rr)
-	return &res
+// genNXDomain returns NXDomain response
+func genNXDomain(request *dns.Msg) *dns.Msg {
+	resp := dns.Msg{}
+	resp.SetRcode(request, dns.RcodeNameError)
+	resp.RecursionAvailable = true
+	resp.Ns = genSOA(request)
+	return &resp
+}
+
+// genSOA returns SOA for an authority section
+func genSOA(request *dns.Msg) []dns.RR {
+	zone := ""
+	if len(request.Question) > 0 {
+		zone = request.Question[0].Name
+	}
+
+	soa := dns.SOA{
+		// values copied from verisign's nonexistent .com domain
+		// their exact values are not important in our use case because they are used for domain transfers between primary/secondary DNS servers
+		Refresh: 1800,
+		Retry:   900,
+		Expire:  604800,
+		Minttl:  86400,
+		// copied from AdGuard DNS
+		Ns:     "fake-for-negative-caching.adguard.com.",
+		Serial: 100500,
+		// rest is request-specific
+		Hdr: dns.RR_Header{
+			Name:   zone,
+			Rrtype: dns.TypeSOA,
+			Ttl:    10,
+			Class:  dns.ClassINET,
+		},
+	}
+	soa.Mbox = "hostmaster."
+	if len(zone) > 0 && zone[0] != '.' {
+		soa.Mbox += zone
+	}
+	return []dns.RR{&soa}
 }
 
 func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {

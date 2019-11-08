@@ -25,22 +25,23 @@ Usage:
   dnsproxy [OPTIONS]
 
 Application Options:
-  -v, --verbose     Verbose output (optional)
-  -o, --output=     Path to the log file. If not set, write to stdout.
-  -l, --listen=     Listen address (default: 0.0.0.0)
-  -p, --port=       Listen port. Zero value disables TCP and UDP listeners (default: 53)
-  -h, --https-port= Listen port for DNS-over-HTTPS (default: 0)
-  -t, --tls-port=   Listen port for DNS-over-TLS (default: 0)
-  -c, --tls-crt=    Path to a file with the certificate chain
-  -k, --tls-key=    Path to a file with the private key
-  -b, --bootstrap=  Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
-  -r, --ratelimit=  Ratelimit (requests per second) (default: 0)
-  -z, --cache       If specified, DNS cache is enabled
-  -e  --cache-size= Cache size (in bytes). Default: 65536
-  -a, --refuse-any  If specified, refuse ANY requests
-  -u, --upstream=   An upstream to be used (can be specified multiple times)
-  -f, --fallback=   Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
-  -s, --all-servers Use parallel queries to speed up resolving by querying all upstream servers simultaneously
+  -v, --verbose       Verbose output (optional)
+  -o, --output=       Path to the log file. If not set, write to stdout.
+  -l, --listen=       Listen address (default: 0.0.0.0)
+  -p, --port=         Listen port. Zero value disables TCP and UDP listeners (default: 53)
+  -h, --https-port=   Listen port for DNS-over-HTTPS (default: 0)
+  -t, --tls-port=     Listen port for DNS-over-TLS (default: 0)
+  -c, --tls-crt=      Path to a file with the certificate chain
+  -k, --tls-key=      Path to a file with the private key
+  -b, --bootstrap=    Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
+  -r, --ratelimit=    Ratelimit (requests per second) (default: 0)
+  -z, --cache         If specified, DNS cache is enabled
+  -e  --cache-size=   Cache size (in bytes). Default: 65536
+  -a, --refuse-any    If specified, refuse ANY requests
+  -u, --upstream=     An upstream to be used (can be specified multiple times)
+  -f, --fallback=     Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
+  -s, --all-servers   Use parallel queries to speed up resolving by querying all upstream servers simultaneously
+  -d, --ipv6-disabled Disable IPv6. All AAAA requests will be answered with zero IPv6
 
 Help Options:
   -h, --help        Show this help message

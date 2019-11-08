@@ -93,8 +93,9 @@ type Config struct {
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
 
-	RefuseAny  bool // if true, refuse ANY requests
-	AllServers bool // if true, parallel queries to all configured upstream servers are enabled
+	RefuseAny    bool // if true, refuse ANY requests
+	AllServers   bool // if true, parallel queries to all configured upstream servers are enabled
+	IPv6Disabled bool // If true, all IPv6 requests will be answered with zero IPv6
 
 	CacheEnabled   bool // cache status
 	CacheSizeBytes int  // Cache size (in bytes). Default: 64k
@@ -413,6 +414,12 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 }
 
 func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dns.Msg, u upstream.Upstream, err error) {
+	if p.IPv6Disabled && req.Question[0].Qtype == dns.TypeAAAA {
+		log.Debug("IPv6 is disabled. Answer with zero IPv6 to %s AAAA request", req.Question[0].Name)
+		reply, u, err = createEmptyAAAAResponse(req), nil, nil
+		return
+	}
+
 	if p.AllServers {
 		reply, u, err = upstream.ExchangeParallel(upstreams, req)
 		return
@@ -438,6 +445,20 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 		p.updateRtt(dnsUpstream.Address(), int(defaultTimeout/time.Millisecond))
 	}
 	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
+}
+
+func createEmptyAAAAResponse(req *dns.Msg) *dns.Msg {
+	res := dns.Msg{}
+	res.Question = []dns.Question{}
+	res.Question = append(res.Question, req.Question[0])
+	res.Answer = []dns.RR{}
+	res.Id = req.Id
+	res.RecursionAvailable = false
+	rr := new(dns.AAAA)
+	rr.Hdr = dns.RR_Header{Name: req.Question[0].Name, Rrtype: dns.TypeAAAA, Ttl: 3600, Class: dns.ClassINET}
+	rr.AAAA = net.IPv6zero
+	res.Answer = append(res.Answer, rr)
+	return &res
 }
 
 func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {

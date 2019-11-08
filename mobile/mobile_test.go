@@ -358,7 +358,7 @@ func TestDNSProxyDisabledIPv6(t *testing.T) {
 	req := createAAAATestMessage("google.com")
 	reply, err := dns.Exchange(req, mobileDNSProxy.Addr())
 	assert.Nil(t, err)
-	assertAAAAResponse(t, reply, net.IPv6zero)
+	assert.Equal(t, reply.Rcode, dns.RcodeNameError)
 
 	assert.Nil(t, mobileDNSProxy.Stop())
 }

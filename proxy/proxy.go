@@ -95,7 +95,7 @@ type Config struct {
 
 	RefuseAny    bool // if true, refuse ANY requests
 	AllServers   bool // if true, parallel queries to all configured upstream servers are enabled
-	IPv6Disabled bool // If true, all IPv6 requests will be answered with zero IPv6
+	IPv6Disabled bool // If true, all AAAA requests will be answered with zero IPv6
 
 	CacheEnabled   bool // cache status
 	CacheSizeBytes int  // Cache size (in bytes). Default: 64k

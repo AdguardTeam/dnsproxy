@@ -66,8 +66,8 @@ type Options struct {
 	// If true, parallel queries to all configured upstream servers
 	AllServers bool `short:"s" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
 
-	// If true, all IPv6 requests will be answered with zero IPv6
-	IPv6Disabled bool `short:"d" long:"ipv6-disabled" description:"If specified, all IPv6 requests will be answered with zero IPv6" optional:"yes" optional-value:"true"`
+	// If true, all AAAA requests will be answered with zero IPv6
+	IPv6Disabled bool `short:"d" long:"ipv6-disabled" description:"If specified, all AAAA requests will be answered with zero IPv6" optional:"yes" optional-value:"true"`
 
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`

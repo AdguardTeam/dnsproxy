@@ -53,7 +53,7 @@ type Config struct {
 	MaxGoroutines     int    // Maximum number of parallel goroutines that process the requests
 	SystemResolvers   string // A list of system resolvers for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
 	DetectDNS64Prefix bool   // If true, DNS64 prefix detection is enabled
-	IPv6Disabled      bool   // If true, all AAAA requests will be answered with zero IPv6
+	IPv6Disabled      bool   // If true, all AAAA requests will be answered with NXDomain
 }
 
 // FilteringConfig is the filteringEngine configuration

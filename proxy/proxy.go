@@ -95,7 +95,7 @@ type Config struct {
 
 	RefuseAny    bool // if true, refuse ANY requests
 	AllServers   bool // if true, parallel queries to all configured upstream servers are enabled
-	IPv6Disabled bool // If true, all AAAA requests will be answered with zero IPv6
+	IPv6Disabled bool // If true, all AAAA requests will be answered with NXDomain
 
 	CacheEnabled   bool // cache status
 	CacheSizeBytes int  // Cache size (in bytes). Default: 64k
@@ -415,7 +415,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dns.Msg, u upstream.Upstream, err error) {
 	if p.IPv6Disabled && req.Question[0].Qtype == dns.TypeAAAA {
-		log.Debug("IPv6 is disabled. Answer with zero IPv6 to %s AAAA request", req.Question[0].Name)
+		log.Debug("IPv6 is disabled. Answer with NXDomain to %s AAAA request", req.Question[0].Name)
 		reply, u, err = genNXDomain(req), nil, nil
 		return
 	}

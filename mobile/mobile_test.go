@@ -349,6 +349,20 @@ func TestDNSProxyRestartRace(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestDNSProxyDisabledIPv6(t *testing.T) {
+	config := createDefaultConfig()
+	config.IPv6Disabled = true
+	mobileDNSProxy := DNSProxy{Config: config}
+	assert.Nil(t, mobileDNSProxy.Start())
+
+	req := createAAAATestMessage("google.com")
+	reply, err := dns.Exchange(req, mobileDNSProxy.Addr())
+	assert.Nil(t, err)
+	assert.Equal(t, reply.Rcode, dns.RcodeNameError)
+
+	assert.Nil(t, mobileDNSProxy.Stop())
+}
+
 // testDNSProxyRestartAsync restarts DNSProxy in separate goroutine
 // And asserts thar dnsproxy and filtering engine are not nil nor before nor after the restart
 func testDNSProxyRestartAsync(t *testing.T, d *DNSProxy, g *sync.WaitGroup) {

@@ -53,6 +53,7 @@ type Config struct {
 	MaxGoroutines     int    // Maximum number of parallel goroutines that process the requests
 	SystemResolvers   string // A list of system resolvers for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
 	DetectDNS64Prefix bool   // If true, DNS64 prefix detection is enabled
+	IPv6Disabled      bool   // If true, all IPv6 requests will be answered with zero IPv6
 }
 
 // FilteringConfig is the filteringEngine configuration
@@ -297,6 +298,7 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		TCPListenAddr:  listenTCPAddr,
 		Upstreams:      upstreams,
 		AllServers:     config.AllServers,
+		IPv6Disabled:   config.IPv6Disabled,
 		CacheSizeBytes: config.CacheSizeBytes,
 		CacheEnabled:   config.CacheSizeBytes > 0,
 		MaxGoroutines:  config.MaxGoroutines,

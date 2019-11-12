@@ -37,6 +37,7 @@ type DNSProxy struct {
 	sync.RWMutex
 
 	filteringEngine *filteringEngine // Filtering structures and properties
+	ipv6Disabled    bool             // All AAAA requests will be replied with NoError RCode and empty answer
 }
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
@@ -53,7 +54,7 @@ type Config struct {
 	MaxGoroutines     int    // Maximum number of parallel goroutines that process the requests
 	SystemResolvers   string // A list of system resolvers for ipv6-only network (each on new line). We need to specify it to use dns.Client instead of default net.Resolver
 	DetectDNS64Prefix bool   // If true, DNS64 prefix detection is enabled
-	IPv6Disabled      bool   // If true, all AAAA requests will be answered with NXDomain
+	IPv6Disabled      bool   // If true, all AAAA requests will be replied with NoError RCode and empty answer
 }
 
 // FilteringConfig is the filteringEngine configuration
@@ -188,6 +189,7 @@ func (d *DNSProxy) startProxy() error {
 
 	c.RequestHandler = d.handleDNSRequest
 	d.dnsProxy = &proxy.Proxy{Config: *c}
+	d.ipv6Disabled = d.Config.IPv6Disabled
 
 	// Start the proxy
 	err = d.dnsProxy.Start()
@@ -298,7 +300,6 @@ func createConfig(config *Config) (*proxy.Config, error) {
 		TCPListenAddr:  listenTCPAddr,
 		Upstreams:      upstreams,
 		AllServers:     config.AllServers,
-		IPv6Disabled:   config.IPv6Disabled,
 		CacheSizeBytes: config.CacheSizeBytes,
 		CacheEnabled:   config.CacheSizeBytes > 0,
 		MaxGoroutines:  config.MaxGoroutines,

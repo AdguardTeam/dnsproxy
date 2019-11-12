@@ -93,9 +93,8 @@ type Config struct {
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
 
-	RefuseAny    bool // if true, refuse ANY requests
-	AllServers   bool // if true, parallel queries to all configured upstream servers are enabled
-	IPv6Disabled bool // If true, all AAAA requests will be answered with NXDomain
+	RefuseAny  bool // if true, refuse ANY requests
+	AllServers bool // if true, parallel queries to all configured upstream servers are enabled
 
 	CacheEnabled   bool // cache status
 	CacheSizeBytes int  // Cache size (in bytes). Default: 64k
@@ -414,12 +413,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 }
 
 func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dns.Msg, u upstream.Upstream, err error) {
-	if p.IPv6Disabled && req.Question[0].Qtype == dns.TypeAAAA {
-		log.Debug("IPv6 is disabled. Answer with NXDomain to %s AAAA request", req.Question[0].Name)
-		reply, u, err = genNXDomain(req), nil, nil
-		return
-	}
-
 	if p.AllServers {
 		reply, u, err = upstream.ExchangeParallel(upstreams, req)
 		return
@@ -445,47 +438,6 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 		p.updateRtt(dnsUpstream.Address(), int(defaultTimeout/time.Millisecond))
 	}
 	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
-}
-
-// genNXDomain returns NXDomain response
-func genNXDomain(request *dns.Msg) *dns.Msg {
-	resp := dns.Msg{}
-	resp.SetRcode(request, dns.RcodeNameError)
-	resp.RecursionAvailable = true
-	resp.Ns = genSOA(request)
-	return &resp
-}
-
-// genSOA returns SOA for an authority section
-func genSOA(request *dns.Msg) []dns.RR {
-	zone := ""
-	if len(request.Question) > 0 {
-		zone = request.Question[0].Name
-	}
-
-	soa := dns.SOA{
-		// values copied from verisign's nonexistent .com domain
-		// their exact values are not important in our use case because they are used for domain transfers between primary/secondary DNS servers
-		Refresh: 1800,
-		Retry:   900,
-		Expire:  604800,
-		Minttl:  86400,
-		// copied from AdGuard DNS
-		Ns:     "fake-for-negative-caching.adguard.com.",
-		Serial: 100500,
-		// rest is request-specific
-		Hdr: dns.RR_Header{
-			Name:   zone,
-			Rrtype: dns.TypeSOA,
-			Ttl:    10,
-			Class:  dns.ClassINET,
-		},
-	}
-	soa.Mbox = "hostmaster."
-	if len(zone) > 0 && zone[0] != '.' {
-		soa.Mbox += zone
-	}
-	return []dns.RR{&soa}
 }
 
 func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {

@@ -25,6 +25,9 @@ const (
 
 	// BlockTypeUnspecifiedIP - respond with Unspecified IP for Network filtering rules
 	BlockTypeUnspecifiedIP = iota
+
+	// Retry time for NXDomain SOA
+	retryNXDomain = 900
 )
 
 // stringRuleListJSON represents filters list with list id
@@ -100,6 +103,12 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 	var err error
 	var blocked bool
 
+	// Block AAAA requests if needed
+	if proxy.CheckDisabledAAAARequest(ctx, d.Config.IPv6Disabled) {
+		return nil
+	}
+
+	// Block 'use-application-dns.net.' to disable Mozilla DoH
 	if (ctx.Req.Question[0].Qtype == dns.TypeA || ctx.Req.Question[0].Qtype == dns.TypeAAAA) &&
 		ctx.Req.Question[0].Name == "use-application-dns.net." {
 		ctx.Res = genNXDomain(ctx.Req)
@@ -252,43 +261,7 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 
 // genNXDomain returns NXDomain response
 func genNXDomain(request *dns.Msg) *dns.Msg {
-	resp := dns.Msg{}
-	resp.SetRcode(request, dns.RcodeNameError)
-	resp.RecursionAvailable = true
-	resp.Ns = genSOA(request)
-	return &resp
-}
-
-// genSOA returns SOA for an authority section
-func genSOA(request *dns.Msg) []dns.RR {
-	zone := ""
-	if len(request.Question) > 0 {
-		zone = request.Question[0].Name
-	}
-
-	soa := dns.SOA{
-		// values copied from verisign's nonexistent .com domain
-		// their exact values are not important in our use case because they are used for domain transfers between primary/secondary DNS servers
-		Refresh: 1800,
-		Retry:   900,
-		Expire:  604800,
-		Minttl:  86400,
-		// copied from AdGuard DNS
-		Ns:     "fake-for-negative-caching.adguard.com.",
-		Serial: 100500,
-		// rest is request-specific
-		Hdr: dns.RR_Header{
-			Name:   zone,
-			Rrtype: dns.TypeSOA,
-			Ttl:    10,
-			Class:  dns.ClassINET,
-		},
-	}
-	soa.Mbox = "hostmaster."
-	if len(zone) > 0 && zone[0] != '.' {
-		soa.Mbox += zone
-	}
-	return []dns.RR{&soa}
+	return proxy.GenEmptyMessage(request, dns.RcodeNameError, retryNXDomain)
 }
 
 // genHostRuleAnswer returns answer based on ip from urlfilter.HostRule

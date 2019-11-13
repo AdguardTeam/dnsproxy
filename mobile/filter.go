@@ -104,7 +104,7 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 	var blocked bool
 
 	// Block AAAA requests if needed
-	if proxy.CheckDisabledAAAARequest(ctx, d.ipv6Disabled) {
+	if proxy.CheckDisabledAAAARequest(ctx, d.Config.IPv6Disabled) {
 		return nil
 	}
 

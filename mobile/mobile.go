@@ -37,7 +37,6 @@ type DNSProxy struct {
 	sync.RWMutex
 
 	filteringEngine *filteringEngine // Filtering structures and properties
-	ipv6Disabled    bool             // All AAAA requests will be replied with NoError RCode and empty answer
 }
 
 // Config is the DNS proxy configuration which uses only the subset of types that is supported by gomobile
@@ -189,7 +188,6 @@ func (d *DNSProxy) startProxy() error {
 
 	c.RequestHandler = d.handleDNSRequest
 	d.dnsProxy = &proxy.Proxy{Config: *c}
-	d.ipv6Disabled = d.Config.IPv6Disabled
 
 	// Start the proxy
 	err = d.dnsProxy.Start()

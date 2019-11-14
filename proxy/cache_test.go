@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -391,4 +392,58 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 	if ok {
 		t.Fatalf("Cache for %s should be already removed", host)
 	}
+}
+
+func TestSubnet(t *testing.T) {
+	c := &cacheSubnet{}
+	var a *dns.A
+
+	// search - not found
+	req := dns.Msg{}
+	req.SetQuestion("example.com.", dns.TypeA)
+	resp, _ := c.GetWithSubnet(&req, net.IP{1, 2, 3, 4}, 24)
+	assert.True(t, resp == nil)
+
+	// add a response entry with subnet
+	resp = &dns.Msg{}
+	resp.Response = true
+	resp.SetQuestion("example.com.", dns.TypeA)
+	resp.Answer = []dns.RR{newRR("example.com. 1 IN A 1.1.1.1")}
+	c.SetWithSubnet(resp, net.IP{1, 2, 3, 4}, 16)
+
+	// search for the entry (with another client IP) - not found
+	resp, _ = c.GetWithSubnet(&req, net.IP{2, 2, 3, 4}, 24)
+	assert.True(t, resp == nil)
+
+	// add a response entry with subnet #2
+	resp = &dns.Msg{}
+	resp.Response = true
+	resp.SetQuestion("example.com.", dns.TypeA)
+	resp.Answer = []dns.RR{newRR("example.com. 1 IN A 2.2.2.2")}
+	c.SetWithSubnet(resp, net.IP{2, 2, 3, 4}, 16)
+
+	// add a response entry without subnet
+	resp = &dns.Msg{}
+	resp.Response = true
+	resp.SetQuestion("example.com.", dns.TypeA)
+	resp.Answer = []dns.RR{newRR("example.com. 1 IN A 3.3.3.3")}
+	c.SetWithSubnet(resp, net.IP{}, 0)
+
+	// get the entry (with the client IP #1)
+	resp, _ = c.GetWithSubnet(&req, net.IP{1, 2, 3, 4}, 24)
+	assert.True(t, resp != nil)
+	a = resp.Answer[0].(*dns.A)
+	assert.True(t, a.A.String() == "1.1.1.1")
+
+	// get the entry (with the client IP #2)
+	resp, _ = c.GetWithSubnet(&req, net.IP{2, 2, 3, 4}, 24)
+	assert.True(t, resp != nil)
+	a = resp.Answer[0].(*dns.A)
+	assert.True(t, a.A.String() == "2.2.2.2")
+
+	// get the entry (with the client IP #3)
+	resp, _ = c.GetWithSubnet(&req, net.IP{3, 2, 3, 4}, 24)
+	assert.True(t, resp != nil)
+	a = resp.Answer[0].(*dns.A)
+	assert.True(t, a.A.String() == "3.3.3.3")
 }

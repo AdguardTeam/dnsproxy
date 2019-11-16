@@ -28,7 +28,11 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	client := dns.Client{Timeout: p.timeout, UDPSize: dns.MaxMsgSize}
 	reply, _, err := client.Exchange(m, p.address)
-	if reply != nil && reply.Truncated {
+	if reply == nil {
+		log.Tracef("DNS Client failed over UDP, retrying over TCP, question: %s", m.Question[0].String())
+		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
+		reply, _, err = tcpClient.Exchange(m, p.address)
+	} else if reply.Truncated {
 		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
 		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
 		reply, _, err = tcpClient.Exchange(m, p.address)

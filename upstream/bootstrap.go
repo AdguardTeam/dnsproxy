@@ -65,16 +65,7 @@ func toBootResolved(address string, serverIP net.IP, timeout time.Duration) (*bo
 func toBoot(address string, bootstrapAddr []string, timeout time.Duration) *bootstrapper {
 	resolvers := []*Resolver{}
 	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
-		for idx, adr := range bootstrapAddr {
-			_, _, err := net.SplitHostPort(adr)
-			if err != nil {
-				// Add the default port for bootstrap DNS address if no port is defined
-				adr = net.JoinHostPort(adr, "53")
-				bootstrapAddr[idx] = adr
-			}
-		}
-
-		// Create list of resolvers for parallel lookup
+		// Create a list of resolvers for parallel lookup
 		for _, boot := range bootstrapAddr {
 			r := NewResolver(boot, timeout)
 			resolvers = append(resolvers, r)
@@ -113,12 +104,50 @@ func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
 		log.Error("AddressToUpstream: %s", err)
 		return r
 	}
-	if _, ok := r.upstream.(*plainDNS); !ok {
+
+	// Validate the bootstrap resolver. It must be either a plain DNS resolver.
+	// Or a DOT/DOH resolver with an IP address (not a hostname).
+	if !isResolverValidBootstrap(r.upstream) {
 		r.upstream = nil
-		log.Error("Not a plain DNS resolver: %s", resolverAddress)
-		return r
+		log.Error("Resolver %s is not eligible to be a bootstrap DNS server", resolverAddress)
 	}
+
 	return r
+}
+
+// isResolverValidBootstrap checks if the upstream is eligible to be a bootstrap DNS server
+// DNSCrypt and plain DNS resolvers are okay
+// DOH and DOT are okay only in the case if an IP address is used in the IP address
+func isResolverValidBootstrap(upstream Upstream) bool {
+	if u, ok := upstream.(*dnsOverTLS); ok {
+		host, _, err := net.SplitHostPort(u.Address())
+		if err != nil {
+			return false
+		}
+
+		if ip := net.ParseIP(host); ip != nil {
+			return true
+		}
+		return false
+	}
+
+	if u, ok := upstream.(*dnsOverHTTPS); ok {
+		urlAddr, err := url.Parse(u.Address())
+		if err != nil {
+			return false
+		}
+		host, _, err := net.SplitHostPort(urlAddr.Host)
+		if err != nil {
+			host = urlAddr.Host
+		}
+
+		if ip := net.ParseIP(host); ip != nil {
+			return true
+		}
+		return false
+	}
+
+	return true
 }
 
 type resultError struct {

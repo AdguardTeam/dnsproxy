@@ -66,8 +66,8 @@ type Options struct {
 	// If true, parallel queries to all configured upstream servers
 	AllServers bool `short:"s" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
 
-	// If true, all AAAA requests will be answered with NXDomain
-	IPv6Disabled bool `short:"d" long:"ipv6-disabled" description:"If specified, all AAAA requests will be answered with NXDomain" optional:"yes" optional-value:"true"`
+	// If true, all AAAA requests will be replied with NoError RCode and empty answer
+	IPv6Disabled bool `short:"d" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
@@ -117,6 +117,12 @@ func run(options Options) {
 	config := createProxyConfig(options)
 	dnsProxy := proxy.Proxy{Config: config}
 
+	// Add extra handler if needed
+	if options.IPv6Disabled {
+		ipv6Configuration := ipv6Configuration{ipv6Disabled: options.IPv6Disabled}
+		dnsProxy.RequestHandler = ipv6Configuration.handleDNSRequest
+	}
+
 	// Start the proxy
 	err := dnsProxy.Start()
 	if err != nil {
@@ -156,7 +162,6 @@ func createProxyConfig(options Options) proxy.Config {
 		CacheSizeBytes:           options.CacheSizeBytes,
 		RefuseAny:                options.RefuseAny,
 		AllServers:               options.AllServers,
-		IPv6Disabled:             options.IPv6Disabled,
 	}
 
 	if options.Fallbacks != nil {
@@ -196,6 +201,20 @@ func createProxyConfig(options Options) proxy.Config {
 	}
 
 	return config
+}
+
+// IPv6 configuration
+type ipv6Configuration struct {
+	ipv6Disabled bool // If true, all AAAA requests will be replied with NoError RCode and empty answer
+}
+
+// handleDNSRequest checks IPv6 configuration for current session before resolve
+func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error {
+	if proxy.CheckDisabledAAAARequest(ctx, c.ipv6Disabled) {
+		return nil
+	}
+
+	return p.Resolve(ctx)
 }
 
 // NewTLSConfig returns a TLS config that includes a certificate

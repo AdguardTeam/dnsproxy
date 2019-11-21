@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/AdguardTeam/dnsproxy.svg?branch=master)](https://travis-ci.org/AdguardTeam/dnsproxy)
+[![Build Status](https://travis-ci.com/AdguardTeam/dnsproxy.svg?branch=master)](https://travis-ci.com/AdguardTeam/dnsproxy)
 [![Code Coverage](https://img.shields.io/codecov/c/github/AdguardTeam/dnsproxy/master.svg)](https://codecov.io/github/AdguardTeam/dnsproxy?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AdguardTeam/dnsproxy)](https://goreportcard.com/report/AdguardTeam/dnsproxy)
 [![GolangCI](https://golangci.com/badges/github.com/AdguardTeam/dnsproxy.svg)](https://golangci.com/r/github.com/AdguardTeam/dnsproxy)

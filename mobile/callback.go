@@ -48,7 +48,7 @@ func ConfigureDNSRequestProcessedListener(l DNSRequestProcessedListener) {
 
 // handleDNSResponse handles DNS response from the DNS proxy with filtering rule
 // transforms them to a DNSRequestProcessedEvent instance and notifies the client code about processed messages.
-func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err error) {
+func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err error, bytesReceived int) {
 	dnsRequestProcessedListenerGuard.Lock()
 	defer dnsRequestProcessedListenerGuard.Unlock()
 	if dnsRequestProcessedListener == nil {
@@ -67,7 +67,9 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err er
 
 	// Send/received
 	e.BytesSent = d.Req.Len()
-	if d.Res != nil {
+	if bytesReceived > 0 {
+		e.BytesReceived = bytesReceived
+	} else if d.Res != nil {
 		e.BytesReceived = d.Res.Len()
 	}
 

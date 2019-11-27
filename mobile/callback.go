@@ -5,8 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/urlfilter/rules"
+
 	"github.com/AdguardTeam/dnsproxy/proxy"
-	"github.com/AdguardTeam/urlfilter"
 	"github.com/miekg/dns"
 )
 
@@ -48,7 +49,7 @@ func ConfigureDNSRequestProcessedListener(l DNSRequestProcessedListener) {
 
 // handleDNSResponse handles DNS response from the DNS proxy with filtering rule
 // transforms them to a DNSRequestProcessedEvent instance and notifies the client code about processed messages.
-func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err error, bytesReceived int) {
+func handleDNSResponse(d *proxy.DNSContext, filteringRule rules.Rule, err error, bytesReceived int) {
 	dnsRequestProcessedListenerGuard.Lock()
 	defer dnsRequestProcessedListenerGuard.Unlock()
 	if dnsRequestProcessedListener == nil {
@@ -86,7 +87,7 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule urlfilter.Rule, err er
 	if filteringRule != nil {
 		e.FilterListID = filteringRule.GetFilterListID()
 		e.FilteringRule = filteringRule.Text()
-		if networkRule, ok := filteringRule.(*urlfilter.NetworkRule); ok {
+		if networkRule, ok := filteringRule.(*rules.NetworkRule); ok {
 			e.Whitelist = networkRule.Whitelist
 		}
 	}

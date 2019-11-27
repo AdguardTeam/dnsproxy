@@ -1,5 +1,10 @@
 package urlfilter
 
+import (
+	"github.com/AdguardTeam/urlfilter/filterlist"
+	"github.com/AdguardTeam/urlfilter/rules"
+)
+
 // DNSEngine combines host rules and network rules and is supposed to quickly find
 // matching rules for hostnames.
 // First, it looks over network rules and returns first rule found.
@@ -8,21 +13,21 @@ type DNSEngine struct {
 	RulesCount    int                // count of rules loaded to the engine
 	networkEngine *NetworkEngine     // networkEngine is constructed from the network rules
 	lookupTable   map[uint32][]int64 // map for hosts hashes mapped to the list of rule indexes
-	rulesStorage  *RuleStorage
+	rulesStorage  *filterlist.RuleStorage
 }
 
 // NewDNSEngine parses the specified filter lists and returns a DNSEngine built from them.
 // key of the map is the filter list ID, value is the raw content of the filter list.
-func NewDNSEngine(s *RuleStorage) *DNSEngine {
+func NewDNSEngine(s *filterlist.RuleStorage) *DNSEngine {
 	// At first, we count rules in the rule storage so that we could pre-allocate lookup tables
 	// Surprisingly, this helps us save a lot on allocations
 	var hostRulesCount, networkRulesCount int
 	scan := s.NewRuleStorageScanner()
 	for scan.Scan() {
 		f, _ := scan.Rule()
-		if hostRule, ok := f.(*HostRule); ok {
+		if hostRule, ok := f.(*rules.HostRule); ok {
 			hostRulesCount += len(hostRule.Hostnames)
-		} else if _, ok := f.(*NetworkRule); ok {
+		} else if _, ok := f.(*rules.NetworkRule); ok {
 			networkRulesCount++
 		}
 	}
@@ -46,10 +51,10 @@ func NewDNSEngine(s *RuleStorage) *DNSEngine {
 	for scanner.Scan() {
 		f, idx := scanner.Rule()
 
-		if hostRule, ok := f.(*HostRule); ok {
+		if hostRule, ok := f.(*rules.HostRule); ok {
 			d.addRule(hostRule, idx)
-		} else if networkRule, ok := f.(*NetworkRule); ok {
-			if isHostLevelNetworkRule(networkRule) {
+		} else if networkRule, ok := f.(*rules.NetworkRule); ok {
+			if networkRule.IsHostLevelNetworkRule() {
 				networkEngine.addRule(networkRule, idx)
 			}
 		}
@@ -66,30 +71,30 @@ func NewDNSEngine(s *RuleStorage) *DNSEngine {
 // For instance:
 // 192.168.0.1 example.local
 // 2000::1 example.local
-func (d *DNSEngine) Match(hostname string) ([]Rule, bool) {
+func (d *DNSEngine) Match(hostname string) ([]rules.Rule, bool) {
 	if hostname == "" {
 		return nil, false
 	}
 
-	r := NewRequestForHostname(hostname)
+	r := rules.NewRequestForHostname(hostname)
 	networkRule, ok := d.networkEngine.Match(r)
 	if ok {
 		// Network rules always have higher priority
-		return []Rule{networkRule}, true
+		return []rules.Rule{networkRule}, true
 	}
 
 	return d.matchLookupTable(hostname)
 }
 
 // matchLookupTable looks for matching rules in the d.lookupTable
-func (d *DNSEngine) matchLookupTable(hostname string) ([]Rule, bool) {
+func (d *DNSEngine) matchLookupTable(hostname string) ([]rules.Rule, bool) {
 	hash := fastHash(hostname)
 	rulesIndexes, ok := d.lookupTable[hash]
 	if !ok {
 		return nil, false
 	}
 
-	var rules []Rule
+	var rules []rules.Rule
 	for _, idx := range rulesIndexes {
 		rule := d.rulesStorage.RetrieveHostRule(idx)
 		if rule != nil && rule.Match(hostname) {
@@ -101,7 +106,7 @@ func (d *DNSEngine) matchLookupTable(hostname string) ([]Rule, bool) {
 }
 
 // addRule adds rule to the index
-func (d *DNSEngine) addRule(hostRule *HostRule, storageIdx int64) {
+func (d *DNSEngine) addRule(hostRule *rules.HostRule, storageIdx int64) {
 	for _, hostname := range hostRule.Hostnames {
 		hash := fastHash(hostname)
 		rulesIndexes, _ := d.lookupTable[hash]
@@ -109,22 +114,4 @@ func (d *DNSEngine) addRule(hostRule *HostRule, storageIdx int64) {
 	}
 
 	d.RulesCount++
-}
-
-// isHostLevelNetworkRule checks if this rule can be used for hosts-level blocking
-func isHostLevelNetworkRule(r *NetworkRule) bool {
-	if len(r.permittedDomains) > 0 || len(r.restrictedDomains) > 0 {
-		return false
-	}
-
-	if r.permittedRequestTypes != 0 && r.restrictedRequestTypes != 0 {
-		return false
-	}
-
-	// The only allowed option is $important
-	if r.enabledOptions != 0 && r.enabledOptions != OptionImportant {
-		return false
-	}
-
-	return true
 }

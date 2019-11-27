@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/AdguardTeam/urlfilter/filterlist"
+
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/urlfilter"
@@ -53,7 +55,7 @@ func TestDecodeFilterRuleLists(t *testing.T) {
 		{"id": 111, "contents": "2000:: bing.com\n::1 yahoo.com"}
 	]`
 
-	filters := []urlfilter.RuleList{}
+	filters := []filterlist.RuleList{}
 
 	// Let's add string rules and check lists count
 	err := addStringRuleLists(rulesJSON, &filters)
@@ -66,7 +68,7 @@ func TestDecodeFilterRuleLists(t *testing.T) {
 	assert.Equal(t, len(filters), 5)
 
 	// Init rules storage and check rules count
-	rs, err := urlfilter.NewRuleStorage(filters)
+	rs, err := filterlist.NewRuleStorage(filters)
 	assert.Nil(t, err)
 	engine := urlfilter.NewDNSEngine(rs)
 	assert.Equal(t, engine.RulesCount, 16)

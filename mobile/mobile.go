@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/urlfilter/filterlist"
+
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
@@ -90,7 +92,7 @@ func (d *DNSProxy) createFilteringEngine(f *FilteringConfig) error {
 		}
 
 		engine := &filteringEngine{}
-		ruleLists := []urlfilter.RuleList{}
+		ruleLists := []filterlist.RuleList{}
 		err := addFileRuleLists(f.FilteringRulesFilesJSON, &ruleLists)
 		if err != nil {
 			return fmt.Errorf("failed to initialize DNS Filtering Engine: %v", err)
@@ -101,7 +103,7 @@ func (d *DNSProxy) createFilteringEngine(f *FilteringConfig) error {
 			return fmt.Errorf("failed to initialize DNS Filtering Engine: %v", err)
 		}
 
-		rs, err := urlfilter.NewRuleStorage(ruleLists)
+		rs, err := filterlist.NewRuleStorage(ruleLists)
 		if err != nil {
 			return fmt.Errorf("failed to initialize Rules Storage: %v", err)
 		}

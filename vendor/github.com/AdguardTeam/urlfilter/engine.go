@@ -1,5 +1,10 @@
 package urlfilter
 
+import (
+	"github.com/AdguardTeam/urlfilter/filterlist"
+	"github.com/AdguardTeam/urlfilter/rules"
+)
+
 // Engine represents the filtering engine with all the loaded rules
 type Engine struct {
 	networkEngine  *NetworkEngine
@@ -7,7 +12,7 @@ type Engine struct {
 }
 
 // NewEngine parses the filtering rules and creates a filtering engine of them
-func NewEngine(s *RuleStorage) *Engine {
+func NewEngine(s *filterlist.RuleStorage) *Engine {
 	return &Engine{
 		networkEngine:  NewNetworkEngine(s),
 		cosmeticEngine: NewCosmeticEngine(s),
@@ -16,23 +21,23 @@ func NewEngine(s *RuleStorage) *Engine {
 
 // MatchRequest - matches the specified request against the filtering engine
 // and returns the matching result.
-func (e *Engine) MatchRequest(r *Request) MatchingResult {
-	var rules []*NetworkRule
-	var sourceRules []*NetworkRule
+func (e *Engine) MatchRequest(r *rules.Request) rules.MatchingResult {
+	var networkRules []*rules.NetworkRule
+	var sourceRules []*rules.NetworkRule
 
-	rules = e.networkEngine.MatchAll(r)
+	networkRules = e.networkEngine.MatchAll(r)
 	if r.SourceURL != "" {
-		sourceRequest := NewRequest(r.SourceURL, "", TypeDocument)
+		sourceRequest := rules.NewRequest(r.SourceURL, "", rules.TypeDocument)
 		sourceRules = e.networkEngine.MatchAll(sourceRequest)
 	}
 
-	return NewMatchingResult(rules, sourceRules)
+	return rules.NewMatchingResult(networkRules, sourceRules)
 }
 
 // GetCosmeticResult gets cosmetic result for the specified hostname and cosmetic options
-func (e *Engine) GetCosmeticResult(hostname string, option CosmeticOption) CosmeticResult {
-	includeCSS := option&CosmeticOptionCSS == CosmeticOptionCSS
-	includeGenericCSS := option&CosmeticOptionGenericCSS == CosmeticOptionGenericCSS
-	includeJS := option&CosmeticOptionJS == CosmeticOptionJS
+func (e *Engine) GetCosmeticResult(hostname string, option rules.CosmeticOption) CosmeticResult {
+	includeCSS := option&rules.CosmeticOptionCSS == rules.CosmeticOptionCSS
+	includeGenericCSS := option&rules.CosmeticOptionGenericCSS == rules.CosmeticOptionGenericCSS
+	includeJS := option&rules.CosmeticOptionJS == rules.CosmeticOptionJS
 	return e.cosmeticEngine.Match(hostname, includeCSS, includeJS, includeGenericCSS)
 }

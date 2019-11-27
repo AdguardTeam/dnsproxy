@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/AdguardTeam/urlfilter.svg?branch=master)](https://travis-ci.org/AdguardTeam/urlfilter)
+[![Build Status](https://travis-ci.com/AdguardTeam/urlfilter.svg?branch=master)](https://travis-ci.com/AdguardTeam/urlfilter)
 [![Code Coverage](https://img.shields.io/codecov/c/github/AdguardTeam/urlfilter/master.svg)](https://codecov.io/github/AdguardTeam/urlfilter?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AdguardTeam/urlfilter)](https://goreportcard.com/report/AdguardTeam/urlfilter)
 [![GolangCI](https://golangci.com/badges/github.com/AdguardTeam/urlfilter.svg)](https://golangci.com/r/github.com/AdguardTeam/urlfilter)
@@ -20,6 +20,7 @@ You can learn more about AdGuard filtering rules syntax from [this article](http
 * [X] Benchmark basic rules matching
 * [X] Hosts matching rules
     * [X] /etc/hosts matching
+    * [X] $badfilter support for host-blocking network rules
 * [X] Memory optimization
 * [ ] Tech document
 * [ ] Cosmetic rules
@@ -32,12 +33,15 @@ You can learn more about AdGuard filtering rules syntax from [this article](http
     * [X] Simple MITM proxy example
     * [X] Add cosmetic filters to the proxy example
     * [X] Handling cosmetic modifiers $elemhide, $generichide, $jsinject
-    * [ ] (!) Server certificate verification - it should pass badssl.com/dashboard/
+    * [X] (!) Server certificate verification - it should pass badssl.com/dashboard/
     * [ ] Unit tests coverage
+    * [ ] Fix TODOs
     * [ ] Proxy - handle CSP (including <meta> tags with CSP)
-    * [ ] Proxy - proper blocking page code
+    * [X] Proxy - proper blocking page code
     * [ ] Proxy - unblocking via a temporary cookie
-    * [ ] Proxy - content script caching
+    * [X] Proxy - content script caching
+    * [X] Proxy - content script compression
+    * [ ] Proxy - brotli support (see [here](https://github.com/andybalholm/brotli))
     * [ ] Content script - babel plugin
     * [ ] Content script - apply ExtCSS rules
     * [ ] Content script - styles protection

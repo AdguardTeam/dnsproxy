@@ -7,6 +7,10 @@ import (
 	"net"
 	"strings"
 
+	"github.com/AdguardTeam/urlfilter/rules"
+
+	"github.com/AdguardTeam/urlfilter/filterlist"
+
 	"github.com/joomcode/errorx"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
@@ -43,7 +47,7 @@ type fileRuleListJSON struct {
 }
 
 // addStringRuleLists parses filtersJSON and adds StringRuleLists to ruleList slice
-func addStringRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
+func addStringRuleLists(listJSON string, ruleList *[]filterlist.RuleList) error {
 	// do nothing if empty string was passed
 	if len(listJSON) == 0 {
 		return nil
@@ -58,7 +62,7 @@ func addStringRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
 
 	// Add each StringRuleList to ruleList
 	for _, filterList := range filterLists {
-		list := &urlfilter.StringRuleList{
+		list := &filterlist.StringRuleList{
 			ID:             filterList.ListID,
 			RulesText:      filterList.FilteringRules,
 			IgnoreCosmetic: false,
@@ -71,7 +75,7 @@ func addStringRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
 }
 
 // addFileRuleLists parses listJSON and adds FileRuleLists to ruleList slice
-func addFileRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
+func addFileRuleLists(listJSON string, ruleList *[]filterlist.RuleList) error {
 	// do nothing if empty string was passed
 	if len(listJSON) == 0 {
 		return nil
@@ -86,7 +90,7 @@ func addFileRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
 
 	// Add each FileRuleList to ruleList
 	for _, filterList := range filterLists {
-		list, err := urlfilter.NewFileRuleList(filterList.ListID, filterList.Path, false)
+		list, err := filterlist.NewFileRuleList(filterList.ListID, filterList.Path, false)
 		if err != nil {
 			return errorx.Decorate(err, "Failed to init FileRuleList with ID %d from %s", filterList.ListID, filterList.Path)
 		}
@@ -99,7 +103,7 @@ func addFileRuleLists(listJSON string, ruleList *[]urlfilter.RuleList) error {
 
 // handleDNSRequest is a custom handler for proxy with filtering
 func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error {
-	var rule urlfilter.Rule
+	var rule rules.Rule
 	var err error
 	var blocked bool
 
@@ -161,13 +165,13 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 
 // filteringEngine is a wrapper for urlfilter structures and filtering options
 type filteringEngine struct {
-	dnsEngine    *urlfilter.DNSEngine   // Filtering Engine
-	rulesStorage *urlfilter.RuleStorage // Serialized filtering rules storage
-	blockType    int                    // Block type
+	dnsEngine    *urlfilter.DNSEngine    // Filtering Engine
+	rulesStorage *filterlist.RuleStorage // Serialized filtering rules storage
+	blockType    int                     // Block type
 }
 
 // match returns result of DNSEngine Match() func
-func (e *filteringEngine) match(hostname string) ([]urlfilter.Rule, bool) {
+func (e *filteringEngine) match(hostname string) ([]rules.Rule, bool) {
 	return e.dnsEngine.Match(hostname)
 }
 
@@ -184,7 +188,7 @@ func (e *filteringEngine) close() error {
 
 // setBlockingResponse sets proxy.DNSContext.Res to the proper blocking response
 // depending on the "blockType" it can be either NXDOMAIN or the IP (0.0.0.0 or ::)
-func (e *filteringEngine) setBlockingResponse(ctx *proxy.DNSContext, netRule *urlfilter.NetworkRule) error {
+func (e *filteringEngine) setBlockingResponse(ctx *proxy.DNSContext, netRule *rules.NetworkRule) error {
 	reqType := ctx.Req.Question[0].Qtype
 	host := strings.TrimSuffix(ctx.Req.Question[0].Name, ".")
 
@@ -213,7 +217,7 @@ func (e *filteringEngine) setBlockingResponse(ctx *proxy.DNSContext, netRule *ur
 
 // filterResponse filters DNSContext response and returns true if request was blocked
 // Response may be filtered by CNAME or IPs
-func (d *DNSProxy) filterResponse(ctx *proxy.DNSContext) (urlfilter.Rule, bool, error) {
+func (d *DNSProxy) filterResponse(ctx *proxy.DNSContext) (rules.Rule, bool, error) {
 	if d.filteringEngine == nil || ctx.Res == nil {
 		return nil, false, nil
 	}
@@ -251,7 +255,7 @@ func (d *DNSProxy) filterResponse(ctx *proxy.DNSContext) (urlfilter.Rule, bool, 
 }
 
 // filterRequest filters DNSContext request and returns true if request was blocked
-func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, error) {
+func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (rules.Rule, bool, error) {
 	// filter request
 	reqType := ctx.Req.Question[0].Qtype
 	host := strings.TrimSuffix(ctx.Req.Question[0].Name, ".")
@@ -260,15 +264,15 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 }
 
 // filter filters DNSContext request or response and returns true if it was blocked
-func (e *filteringEngine) filter(ctx *proxy.DNSContext, host string, msgType string, reqType uint16) (urlfilter.Rule, bool, error) {
-	rules, ok := e.match(host)
+func (e *filteringEngine) filter(ctx *proxy.DNSContext, host string, msgType string, reqType uint16) (rules.Rule, bool, error) {
+	matchingRules, ok := e.match(host)
 	if !ok {
 		return nil, false, nil
 	}
 
 	// DNSEngine Match func returns array of filtering rules. Let's check their kind
-	for _, rule := range rules {
-		if netRule, ok := rule.(*urlfilter.NetworkRule); ok {
+	for _, rule := range matchingRules {
+		if netRule, ok := rule.(*rules.NetworkRule); ok {
 			// It's a network rule. If it's not a whitelist rule - generate NXDomain
 			// Otherwise just set filtering rule to DNSContext and try to resolve it
 			log.Tracef("Network filtering rule for %s was found: %s, ListId: %d", host, rule.Text(), rule.GetFilterListID())
@@ -277,7 +281,7 @@ func (e *filteringEngine) filter(ctx *proxy.DNSContext, host string, msgType str
 				return netRule, err == nil, err
 			}
 			return netRule, false, nil
-		} else if hostRule, ok := rule.(*urlfilter.HostRule); ok {
+		} else if hostRule, ok := rule.(*rules.HostRule); ok {
 			// It's a host rule. We should generate a host rule answer for it.
 			// Let's copy IP from the rule first. We need to do it cause hostRule is a pointer, and IP may be changed for AAAA request
 			ip := hostRule.IP

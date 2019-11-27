@@ -21,7 +21,8 @@ type Upstream interface {
 
 // Options for AddressToUpstream func
 type Options struct {
-	// Bootstrap is a list of plain DNS servers to be used to resolve DOH/DOT hostnames (if any)
+	// Bootstrap is a list of DNS servers to be used to resolve DOH/DOT hostnames (if any)
+	// You can use plain DNS, DNSCrypt, or DOT/DOH with IP addresses (not hostnames)
 	Bootstrap []string
 
 	// Timeout is the default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.

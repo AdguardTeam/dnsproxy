@@ -1,25 +1,30 @@
 package urlfilter
 
+import (
+	"github.com/AdguardTeam/urlfilter/filterlist"
+	"github.com/AdguardTeam/urlfilter/rules"
+)
+
 // CosmeticEngine combines all the cosmetic rules and allows to quickly
 // find all rules matching this or that hostname
 type CosmeticEngine struct {
-	lookupTables map[CosmeticRuleType]*cosmeticLookupTable
+	lookupTables map[rules.CosmeticRuleType]*cosmeticLookupTable
 }
 
 // NewCosmeticEngine builds a new cosmetic engine from the specified rule storage
-func NewCosmeticEngine(s *RuleStorage) *CosmeticEngine {
+func NewCosmeticEngine(s *filterlist.RuleStorage) *CosmeticEngine {
 	engine := CosmeticEngine{
-		lookupTables: map[CosmeticRuleType]*cosmeticLookupTable{
-			CosmeticElementHiding: newCosmeticLookupTable(),
-			CosmeticCSS:           newCosmeticLookupTable(),
-			CosmeticJS:            newCosmeticLookupTable(),
+		lookupTables: map[rules.CosmeticRuleType]*cosmeticLookupTable{
+			rules.CosmeticElementHiding: newCosmeticLookupTable(),
+			rules.CosmeticCSS:           newCosmeticLookupTable(),
+			rules.CosmeticJS:            newCosmeticLookupTable(),
 		},
 	}
 
 	scanner := s.NewRuleStorageScanner()
 	for scanner.Scan() {
 		f, _ := scanner.Rule()
-		rule, ok := f.(*CosmeticRule)
+		rule, ok := f.(*rules.CosmeticRule)
 		if ok {
 			engine.addRule(rule)
 		}
@@ -29,10 +34,10 @@ func NewCosmeticEngine(s *RuleStorage) *CosmeticEngine {
 }
 
 // addRule adds a new cosmetic rule to one of the lookup tables
-func (e *CosmeticEngine) addRule(rule *CosmeticRule) {
+func (e *CosmeticEngine) addRule(rule *rules.CosmeticRule) {
 	switch rule.Type {
-	case CosmeticElementHiding:
-		e.lookupTables[CosmeticElementHiding].addRule(rule)
+	case rules.CosmeticElementHiding:
+		e.lookupTables[rules.CosmeticElementHiding].addRule(rule)
 	default:
 		// TODO: Implement
 		// ignore
@@ -47,7 +52,7 @@ type StylesResult struct {
 	SpecificExtCSS []string `json:"specificExtCss"`
 }
 
-func (s *StylesResult) append(r *CosmeticRule) {
+func (s *StylesResult) append(r *rules.CosmeticRule) {
 	if r.IsGeneric() {
 		if r.ExtendedCSS {
 			s.GenericExtCSS = append(s.GenericExtCSS, r.Content)
@@ -90,7 +95,7 @@ func (e *CosmeticEngine) Match(hostname string, includeCSS bool, includeJS bool,
 	}
 
 	if includeCSS {
-		c := e.lookupTables[CosmeticElementHiding]
+		c := e.lookupTables[rules.CosmeticElementHiding]
 		if includeGenericCSS {
 			for _, rule := range c.genericRules {
 				if !c.isWhitelisted(hostname, rule) && rule.Match(hostname) {
@@ -114,22 +119,22 @@ func (e *CosmeticEngine) Match(hostname string, includeCSS bool, includeJS bool,
 
 // cosmeticLookupTable is a helper structure to speed up cosmetic rules matching
 type cosmeticLookupTable struct {
-	byHostname   map[string][]*CosmeticRule // map with rules grouped by the permitted domains names
-	genericRules []*CosmeticRule            // list of generic rules
-	whitelist    map[string][]*CosmeticRule // map with whitelist rules. key is the rule content
+	byHostname   map[string][]*rules.CosmeticRule // map with rules grouped by the permitted domains names
+	genericRules []*rules.CosmeticRule            // list of generic rules
+	whitelist    map[string][]*rules.CosmeticRule // map with whitelist rules. key is the rule content
 }
 
 // newCosmeticLookupTable creates a new empty instance of the lookup table
 func newCosmeticLookupTable() *cosmeticLookupTable {
 	return &cosmeticLookupTable{
-		byHostname:   map[string][]*CosmeticRule{},
-		genericRules: []*CosmeticRule{},
-		whitelist:    map[string][]*CosmeticRule{},
+		byHostname:   map[string][]*rules.CosmeticRule{},
+		genericRules: []*rules.CosmeticRule{},
+		whitelist:    map[string][]*rules.CosmeticRule{},
 	}
 }
 
 // addRule adds the specified rule to the lookup table
-func (c *cosmeticLookupTable) addRule(f *CosmeticRule) {
+func (c *cosmeticLookupTable) addRule(f *rules.CosmeticRule) {
 	if f.Whitelist {
 		rules := c.whitelist[f.Content]
 		rules = append(rules, f)
@@ -142,7 +147,7 @@ func (c *cosmeticLookupTable) addRule(f *CosmeticRule) {
 		return
 	}
 
-	for _, hostname := range f.permittedDomains {
+	for _, hostname := range f.GetPermittedDomains() {
 		rules := c.byHostname[hostname]
 		rules = append(rules, f)
 		c.byHostname[hostname] = rules
@@ -151,8 +156,8 @@ func (c *cosmeticLookupTable) addRule(f *CosmeticRule) {
 
 // findByHostname looks for matching domain-specific rules
 // Returns nil if nothing found
-func (c *cosmeticLookupTable) findByHostname(hostname string) []*CosmeticRule {
-	var rules []*CosmeticRule
+func (c *cosmeticLookupTable) findByHostname(hostname string) []*rules.CosmeticRule {
+	var rules []*rules.CosmeticRule
 
 	rulesByHostname, found := c.byHostname[hostname]
 	if !found {
@@ -169,7 +174,7 @@ func (c *cosmeticLookupTable) findByHostname(hostname string) []*CosmeticRule {
 }
 
 // isWhitelisted checks if this cosmetic rule is whitelisted on the specified hostname
-func (c *cosmeticLookupTable) isWhitelisted(hostname string, f *CosmeticRule) bool {
+func (c *cosmeticLookupTable) isWhitelisted(hostname string, f *rules.CosmeticRule) bool {
 	list, found := c.whitelist[f.Content]
 	if !found {
 		return false

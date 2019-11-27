@@ -360,10 +360,43 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
+			// Cloudflare DNS
 			address:   "https://1.1.1.1/dns-query",
 			bootstrap: []string{},
 		},
 	}
+	for _, test := range upstreams {
+		t.Run(test.address, func(t *testing.T) {
+			u, err := AddressToUpstream(test.address, Options{Bootstrap: test.bootstrap, Timeout: timeout})
+			if err != nil {
+				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
+			}
+
+			checkUpstream(t, u, test.address)
+		})
+	}
+}
+
+func TestUpstreamDOTBootstrap(t *testing.T) {
+	upstreams := []struct {
+		address   string
+		bootstrap []string
+	}{
+		{
+			address:   "tls://one.one.one.one/",
+			bootstrap: []string{"tls://1.1.1.1"},
+		},
+		{
+			address:   "tls://one.one.one.one/",
+			bootstrap: []string{"https://1.1.1.1/dns-query"},
+		},
+		{
+			address: "tls://one.one.one.one/",
+			// Cisco OpenDNS
+			bootstrap: []string{"sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ"},
+		},
+	}
+
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
 			u, err := AddressToUpstream(test.address, Options{Bootstrap: test.bootstrap, Timeout: timeout})

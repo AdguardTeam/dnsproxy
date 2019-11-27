@@ -8,7 +8,7 @@ matrix:
 
       env:
         - GO111MODULE=on
-        - GIMME_GO_VERSION=1.x
+        - GIMME_GO_VERSION=1.13
 
       go:
         - 1.x
@@ -70,7 +70,7 @@ matrix:
 
       env:
         - GO111MODULE=on
-        - GIMME_GO_VERSION=1.x
+        - GIMME_GO_VERSION=1.13
 
       # Make sure Android NDK is installed
       before_install:
@@ -115,7 +115,7 @@ matrix:
 
       env:
         - GO111MODULE=on
-        - GIMME_GO_VERSION=1.x
+        - GIMME_GO_VERSION=1.13
 
       script:
         - go version

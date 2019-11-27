@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -25,6 +26,26 @@ type dnsCrypt struct {
 func (p *dnsCrypt) Address() string { return p.boot.address }
 
 func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
+	reply, err := p.exchangeDNSCrypt(m)
+
+	if os.IsTimeout(err) || err == io.EOF {
+		// If request times out, it is possible that the server configuration has been changed.
+		// It is safe to assume that the key was rotated (for instance, as it is described here: https://dnscrypt.pl/2017/02/26/how-key-rotation-is-automated/).
+		// We should re-fetch the server certificate info so that the new requests were not failing.
+		p.Lock()
+		p.client = nil
+		p.serverInfo = nil
+		p.Unlock()
+
+		// Retry the request one more time
+		return p.exchangeDNSCrypt(m)
+	}
+
+	return reply, err
+}
+
+// exchangeDNSCrypt attempts to send the DNS query and returns the response
+func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (*dns.Msg, error) {
 	var client *dnscrypt.Client
 	var serverInfo *dnscrypt.ServerInfo
 
@@ -62,16 +83,6 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	if err == nil && reply != nil && reply.Id != m.Id {
 		err = dns.ErrId
-	}
-
-	if os.IsTimeout(err) {
-		// If request times out, it is possible that the server configuration has been changed.
-		// It is safe to assume that the key was rotated (for instance, as it is described here: https://dnscrypt.pl/2017/02/26/how-key-rotation-is-automated/).
-		// We should re-fetch the server certificate info so that the new requests were not failing.
-		p.Lock()
-		p.client = nil
-		p.serverInfo = nil
-		p.Unlock()
 	}
 
 	return reply, err

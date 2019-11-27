@@ -126,12 +126,12 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 		rule, blocked, err = d.filteringEngine.filterRequest(ctx)
 		d.RUnlock()
 		if err != nil {
-			handleDNSResponse(ctx, rule, err)
+			handleDNSResponse(ctx, rule, err, 0)
 			return err
 		}
 
 		if blocked {
-			handleDNSResponse(ctx, rule, nil)
+			handleDNSResponse(ctx, rule, nil, 0)
 			return nil
 		}
 	} else {
@@ -139,7 +139,23 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 	}
 
 	err = p.Resolve(ctx)
-	handleDNSResponse(ctx, rule, err)
+
+	bytesReceived := 0
+	if ctx.Res != nil {
+		bytesReceived = ctx.Res.Len()
+	}
+	// Check if we have some rules before performing filtering. If the rule is not nil it means that this request has been whitelisted.
+	if rule == nil {
+		// Synchronize access to d.filteringEngine so it won't be suddenly uninitialized while in use.
+		// This could happen after proxy server has been stopped, but its workers are not yet exited.
+		d.RLock()
+		if d.filteringEngine != nil {
+			rule, _, err = d.filterResponse(ctx)
+		}
+		d.RUnlock()
+	}
+
+	handleDNSResponse(ctx, rule, err, bytesReceived)
 	return err
 }
 
@@ -195,12 +211,56 @@ func (e *filteringEngine) setBlockingResponse(ctx *proxy.DNSContext, netRule *ur
 	return nil
 }
 
+// filterResponse filters DNSContext response and returns true if request was blocked
+// Response may be filtered by CNAME or IPs
+func (d *DNSProxy) filterResponse(ctx *proxy.DNSContext) (urlfilter.Rule, bool, error) {
+	if d.filteringEngine == nil || ctx.Res == nil {
+		return nil, false, nil
+	}
+
+	for _, answer := range ctx.Res.Answer {
+		host := ""
+
+		switch rec := answer.(type) {
+		case *dns.CNAME:
+			host = strings.TrimSuffix(rec.Target, ".")
+			log.Debug("Filter request: checking CNAME %s for %s", host, rec.Hdr.Name)
+		case *dns.A:
+			host = rec.A.String()
+			log.Debug("Filter request: checking A record %s for %s", host, rec.Hdr.Name)
+		case *dns.AAAA:
+			host = rec.AAAA.String()
+			log.Debug("Filter request: checking AAAA record %s for %s", host, rec.Hdr.Name)
+		default:
+			continue
+		}
+
+		rule, blocked, err := d.filteringEngine.filter(ctx, host, "response", ctx.Req.Question[0].Qtype)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if !blocked {
+			continue
+		}
+
+		return rule, blocked, nil
+	}
+
+	return nil, false, nil
+}
+
 // filterRequest filters DNSContext request and returns true if request was blocked
 func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, bool, error) {
 	// filter request
 	reqType := ctx.Req.Question[0].Qtype
 	host := strings.TrimSuffix(ctx.Req.Question[0].Name, ".")
 
+	return e.filter(ctx, host, "request", reqType)
+}
+
+// filter filters DNSContext request or response and returns true if it was blocked
+func (e *filteringEngine) filter(ctx *proxy.DNSContext, host string, msgType string, reqType uint16) (urlfilter.Rule, bool, error) {
 	rules, ok := e.match(host)
 	if !ok {
 		return nil, false, nil
@@ -230,7 +290,7 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 			matchAAAARequestWithZeroIPv4Rule := reqType == dns.TypeAAAA && ip4 != nil && bytes.Equal(ip4, []byte{0, 0, 0, 0})
 
 			if matchARequest || matchAAAARequest || matchAAAARequestWithZeroIPv4Rule {
-				log.Tracef("Host filtering rule for %s was found: %s, ListId: %d", host, rule.Text(), rule.GetFilterListID())
+				log.Tracef("Host filtering rule for %s %s was found: %s, ListId: %d", host, msgType, rule.Text(), rule.GetFilterListID())
 
 				if e.blockType == BlockTypeNXDomain {
 					// Generate NXDomain if request should be blocked with it
@@ -245,7 +305,7 @@ func (e *filteringEngine) filterRequest(ctx *proxy.DNSContext) (urlfilter.Rule, 
 
 				res, err := genHostRuleAnswer(ctx.Req, ip)
 				if err != nil {
-					err = fmt.Errorf("failed to filter request to %s with rule %s cause %v", host, hostRule.RuleText, err)
+					err = fmt.Errorf("failed to filter %s to %s with rule %s cause %v", msgType, host, hostRule.RuleText, err)
 					return hostRule, false, err
 				}
 				ctx.Res = res

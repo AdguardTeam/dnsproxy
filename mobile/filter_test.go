@@ -2,10 +2,12 @@ package mobile
 
 import (
 	"net"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/urlfilter"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +18,31 @@ const filesJSON = `
 		{"id": 1111, "path": "test_filters/network_filter.txt"},
 		{"id": 11111, "path": "test_filters/hosts_filter.txt"}
 	]`
+
+// testCNAMEs is a simple map of names and CNAMEs necessary for the testUpstream work
+var testCNAMEs = map[string]string{
+	"mail.google.com.":   "googlemail.l.google.com.",
+	"groups.google.com.": "groups.l.google.com.",
+	"picasa.google.com.": "www2.l.google.com.",
+}
+
+// testIPv4 is a simple map of names and IPv4s necessary for the testUpstream work
+var testIPv4 = map[string][]net.IP{
+	"dns.adguard.com.":   {{176, 103, 130, 130}},
+	"adguard.com.":       {{104, 20, 30, 130}},
+	"mail.google.com.":   {{1, 2, 3, 4}},
+	"groups.google.com.": {{5, 6, 7, 8}},
+	"picasa.google.com.": {{9, 10, 11, 12}},
+}
+
+// testIPv6 is a simple map of names and IPv6s necessary for the testUpstream work
+var testIPv6 = map[string][]net.IP{
+	"dns.adguard.com.":   {net.ParseIP("2a00:5a60::ad1:ff")},
+	"adguard.com.":       {net.ParseIP("2606:4700:10::6814:1e82")},
+	"mail.google.com.":   {net.ParseIP("2106:4700:10::6814:1e82")},
+	"groups.google.com.": {net.ParseIP("2206:4700:10::6814:1e82")},
+	"picasa.google.com.": {net.ParseIP("2306:4700:10::6814:1e82")},
+}
 
 // TestDecodeFilterRuleLists tests filtering configuration decode for String and File RuleLists
 func TestDecodeFilterRuleLists(t *testing.T) {
@@ -419,6 +446,105 @@ func TestDNSRequestProcessedEventsNXDomainBlock(t *testing.T) {
 	assertListenerEventsCount(t, listener, eventsCount)
 	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "events.appsflyer.com", "A", "0.0.0.0 events.appsflyer.com", 11111, false)
 	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "events.appsflyer.com", "AAAA", "0.0.0.0 events.appsflyer.com", 11111, false)
+
+	// unregister listener
+	ConfigureDNSRequestProcessedListener(nil)
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	assert.Nil(t, err)
+}
+
+// TestFilteringProxyFilterResponse tests response filtering logic
+func TestFilteringProxyFilterResponse(t *testing.T) {
+	dnsProxy := createTestFilteringProxy(BlockTypeNXDomain)
+
+	listener := &testDNSRequestProcessedListener{}
+	ConfigureDNSRequestProcessedListener(listener)
+
+	// Start listening
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	// Lock dnsProxy to set test upstream
+	dnsProxy.dnsProxy.Lock()
+	// Replace real upstream with test upstream
+	dnsProxy.dnsProxy.Upstreams = []upstream.Upstream{&testUpstream{
+		cn:   testCNAMEs,
+		ipv4: testIPv4,
+		ipv6: testIPv6,
+	}}
+	dnsProxy.dnsProxy.Unlock()
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr()
+	conn, err := dns.Dial("udp", addr)
+	assert.Nil(t, err)
+
+	// There are two events produced with testFilteringRuleNXDomainBlock: A and AAAA requests
+	// We should check count of registered events and each event
+	// mail.google.com should be blocked by CNAME with Network filtering rules
+	eventsCount := 2
+	testFilteringRuleNXDomainBlock(t, conn, "mail.google.com")
+	assertListenerEventsCount(t, listener, eventsCount)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "mail.google.com", "A", "||googlemail.l.google.com^", 5, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "mail.google.com", "AAAA", "||googlemail.l.google.com^", 5, false)
+
+	// Let's check that whitelist rule `@@||host` has a higher priority than `||cname^`
+	// It means that request which has been whitelisted with `@@||host` rule should not be blocked by cname (see filter with filterId 7)
+	eventsCount++
+	assertADNSResponseWhitelistedByResponse(t, listener, conn, "groups.google.com", "groups.l.google.com", "@@||groups.google.com^", 6, eventsCount)
+
+	// Let's test the following rule: `0.0.0.0 cname`
+	eventsCount += 2
+	testFilteringRuleNXDomainBlock(t, conn, "picasa.google.com")
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "picasa.google.com", "A", "0.0.0.0 www2.l.google.com", 7, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "picasa.google.com", "AAAA", "0.0.0.0 www2.l.google.com", 7, false)
+
+	// Let's check the following rule: `0.0.0.0 ip`
+	eventsCount += 2
+	testFilteringRuleNXDomainBlock(t, conn, "dns.adguard.com")
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "dns.adguard.com", "A", "0.0.0.0 176.103.130.130", 8, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "dns.adguard.com", "AAAA", "0.0.0.0 2a00:5a60::ad1:ff", 8, false)
+
+	// Let's check the following rule: `||ip`
+	eventsCount += 2
+	testFilteringRuleNXDomainBlock(t, conn, "adguard.com")
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "adguard.com", "A", "||104.20.30.130", 9, false)
+	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "adguard.com", "AAAA", "||2606:4700:10::6814:1e82", 9, false)
+
+	assertListenerEventsCount(t, listener, 9)
+
+	// Unregister listener
+	ConfigureDNSRequestProcessedListener(nil)
+	// Stop dnsproxy
+	assert.Nil(t, dnsProxy.Stop())
+}
+
+// assertADNSResponseWhitelistedByResponse checks the following logic:
+// Response for A request with given host should contains given CNAME (if any) and whitelisted with given rule from filter with given filterId
+func assertADNSResponseWhitelistedByResponse(t *testing.T, listener *testDNSRequestProcessedListener, conn *dns.Conn, host string, cname string, rule string, filterId int, eventsCount int) {
+	// Create test message and send it
+	req := createHostTestMessage(host)
+	err := conn.WriteMsg(req)
+	assert.Nil(t, err)
+
+	// Receive an answer and check that everything is ok
+	res, err := conn.ReadMsg()
+	assert.Nil(t, err)
+	assert.NotNil(t, res.Answer)
+
+	// Let's check if response contains CNAME record
+	hasCNAME := false
+	for _, ans := range res.Answer {
+		if v, ok := ans.(*dns.CNAME); ok {
+			hasCNAME = true
+			assert.Equal(t, cname, strings.TrimSuffix(v.Target, "."))
+		}
+	}
+	assert.True(t, hasCNAME)
+
+	// Check the last event in the listener
+	assertDNSRequestProcessedEventWithListener(t, listener, host, "A", rule, filterId, eventsCount, true)
 }
 
 // assertDNSRequestProcessedEventWithListener asserts count of events in listener and the last event
@@ -451,7 +577,12 @@ func createTestFilteringProxy(blockType int) *DNSProxy {
 		{"id": 1, "contents": "||example.com^\n||example.org^"},
 		{"id": 2, "contents": "0.0.0.0 google.com\n127.0.0.1 google.ru"},
 		{"id": 3, "contents": "2000:: yandex.ru\n::1 yandex.ua"},
-		{"id": 4, "contents": "@@||google-public-dns-a.google.com^"}
+		{"id": 4, "contents": "@@||google-public-dns-a.google.com^"},
+		{"id": 5, "contents": "||googlemail.l.google.com^"},
+		{"id": 6, "contents": "||groups.l.google.com^\n||wide-groups.l.google.com\n@@||groups.google.com^"},
+		{"id": 7, "contents": "0.0.0.0 www2.l.google.com"},
+		{"id": 8, "contents": "0.0.0.0 176.103.130.130\n0.0.0.0 2a00:5a60::ad1:ff"},
+		{"id": 9, "contents": "||104.20.30.130\n||2606:4700:10::6814:1e82"}
 	]`
 
 	config := createDefaultConfig()
@@ -463,6 +594,71 @@ func createTestFilteringProxy(blockType int) *DNSProxy {
 
 	mobileDNSProxy := DNSProxy{Config: config, FilteringConfig: filteringConfig}
 	return &mobileDNSProxy
+}
+
+// testUpstream is a mock of real upstream.
+// specify fields with necessary values to simulate real upstream behaviour
+type testUpstream struct {
+	cn   map[string]string   // Map of [name]canonical_name
+	ipv4 map[string][]net.IP // Map of [name]IPv4
+	ipv6 map[string][]net.IP // Map of [name]IPv6
+}
+
+func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
+	resp := dns.Msg{}
+	resp.SetReply(m)
+	hasARecord := false
+	hasAAAARecord := false
+
+	reqType := m.Question[0].Qtype
+	name := m.Question[0].Name
+
+	// Let's check if we have any CNAME for given name
+	if cname, ok := u.cn[name]; ok {
+		cn := dns.CNAME{}
+		cn.Hdr.Name = name
+		cn.Hdr.Rrtype = dns.TypeCNAME
+		cn.Target = cname
+		resp.Answer = append(resp.Answer, &cn)
+	}
+
+	// Let's check if we can add some A records to the answer
+	if ipv4addr, ok := u.ipv4[name]; ok && reqType == dns.TypeA {
+		hasARecord = true
+		for _, ipv4 := range ipv4addr {
+			respA := dns.A{}
+			respA.Hdr.Name = name
+			respA.A = ipv4
+			resp.Answer = append(resp.Answer, &respA)
+		}
+	}
+
+	// Let's check if we can add some AAAA records to the answer
+	if ipv6addr, ok := u.ipv6[name]; ok && reqType == dns.TypeAAAA {
+		hasAAAARecord = true
+		for _, ipv6 := range ipv6addr {
+			respAAAA := dns.A{}
+			respAAAA.Hdr.Name = name
+			respAAAA.A = ipv6
+			resp.Answer = append(resp.Answer, &respAAAA)
+		}
+	}
+
+	if len(resp.Answer) == 0 {
+		if hasARecord || hasAAAARecord {
+			// Set No Error RCode if there are some records for given Qname but we didn't apply them
+			resp.SetRcode(m, dns.RcodeSuccess)
+		} else {
+			// Set NXDomain RCode otherwise
+			resp.SetRcode(m, dns.RcodeNameError)
+		}
+	}
+
+	return &resp, nil
+}
+
+func (u *testUpstream) Address() string {
+	return "test"
 }
 
 // testFilteringRulesNXDomainBlockAsync sends requests, which should be blocked with NXDomain, in parallel

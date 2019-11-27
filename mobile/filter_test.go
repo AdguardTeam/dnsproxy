@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/urlfilter"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +18,31 @@ const filesJSON = `
 		{"id": 1111, "path": "test_filters/network_filter.txt"},
 		{"id": 11111, "path": "test_filters/hosts_filter.txt"}
 	]`
+
+// testCNAMEs is a simple map of names and CNAMEs necessary for the testUpstream work
+var testCNAMEs = map[string]string{
+	"mail.google.com.":   "googlemail.l.google.com.",
+	"groups.google.com.": "groups.l.google.com.",
+	"picasa.google.com.": "www2.l.google.com.",
+}
+
+// testIPv4 is a simple map of names and IPv4s necessary for the testUpstream work
+var testIPv4 = map[string][]net.IP{
+	"dns.adguard.com.":   {{176, 103, 130, 130}},
+	"adguard.com.":       {{104, 20, 30, 130}},
+	"mail.google.com.":   {{1, 2, 3, 4}},
+	"groups.google.com.": {{5, 6, 7, 8}},
+	"picasa.google.com.": {{9, 10, 11, 12}},
+}
+
+// testIPv6 is a simple map of names and IPv6s necessary for the testUpstream work
+var testIPv6 = map[string][]net.IP{
+	"dns.adguard.com.":   {net.ParseIP("2a00:5a60::ad1:ff")},
+	"adguard.com.":       {net.ParseIP("2606:4700:10::6814:1e82")},
+	"mail.google.com.":   {net.ParseIP("2106:4700:10::6814:1e82")},
+	"groups.google.com.": {net.ParseIP("2206:4700:10::6814:1e82")},
+	"picasa.google.com.": {net.ParseIP("2306:4700:10::6814:1e82")},
+}
 
 // TestDecodeFilterRuleLists tests filtering configuration decode for String and File RuleLists
 func TestDecodeFilterRuleLists(t *testing.T) {
@@ -439,6 +465,16 @@ func TestFilteringProxyFilterResponse(t *testing.T) {
 	err := dnsProxy.Start()
 	assert.Nil(t, err)
 
+	// Lock dnsProxy to set test upstream
+	dnsProxy.dnsProxy.Lock()
+	// Replace real upstream with test upstream
+	dnsProxy.dnsProxy.Upstreams = []upstream.Upstream{&testUpstream{
+		cn:   testCNAMEs,
+		ipv4: testIPv4,
+		ipv6: testIPv6,
+	}}
+	dnsProxy.dnsProxy.Unlock()
+
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr()
 	conn, err := dns.Dial("udp", addr)
@@ -558,6 +594,71 @@ func createTestFilteringProxy(blockType int) *DNSProxy {
 
 	mobileDNSProxy := DNSProxy{Config: config, FilteringConfig: filteringConfig}
 	return &mobileDNSProxy
+}
+
+// testUpstream is a mock of real upstream.
+// specify fields with necessary values to simulate real upstream behaviour
+type testUpstream struct {
+	cn   map[string]string   // Map of [name]canonical_name
+	ipv4 map[string][]net.IP // Map of [name]IPv4
+	ipv6 map[string][]net.IP // Map of [name]IPv6
+}
+
+func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
+	resp := dns.Msg{}
+	resp.SetReply(m)
+	hasARecord := false
+	hasAAAARecord := false
+
+	reqType := m.Question[0].Qtype
+	name := m.Question[0].Name
+
+	// Let's check if we have any CNAME for given name
+	if cname, ok := u.cn[name]; ok {
+		cn := dns.CNAME{}
+		cn.Hdr.Name = name
+		cn.Hdr.Rrtype = dns.TypeCNAME
+		cn.Target = cname
+		resp.Answer = append(resp.Answer, &cn)
+	}
+
+	// Let's check if we can add some A records to the answer
+	if ipv4addr, ok := u.ipv4[name]; ok && reqType == dns.TypeA {
+		hasARecord = true
+		for _, ipv4 := range ipv4addr {
+			respA := dns.A{}
+			respA.Hdr.Name = name
+			respA.A = ipv4
+			resp.Answer = append(resp.Answer, &respA)
+		}
+	}
+
+	// Let's check if we can add some AAAA records to the answer
+	if ipv6addr, ok := u.ipv6[name]; ok && reqType == dns.TypeAAAA {
+		hasAAAARecord = true
+		for _, ipv6 := range ipv6addr {
+			respAAAA := dns.A{}
+			respAAAA.Hdr.Name = name
+			respAAAA.A = ipv6
+			resp.Answer = append(resp.Answer, &respAAAA)
+		}
+	}
+
+	if len(resp.Answer) == 0 {
+		if hasARecord || hasAAAARecord {
+			// Set No Error RCode if there are some records for given Qname but we didn't apply them
+			resp.SetRcode(m, dns.RcodeSuccess)
+		} else {
+			// Set NXDomain RCode otherwise
+			resp.SetRcode(m, dns.RcodeNameError)
+		}
+	}
+
+	return &resp, nil
+}
+
+func (u *testUpstream) Address() string {
+	return "test"
 }
 
 // testFilteringRulesNXDomainBlockAsync sends requests, which should be blocked with NXDomain, in parallel

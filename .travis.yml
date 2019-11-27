@@ -111,14 +111,14 @@ matrix:
       os:
         - osx
 
-      osx_image: xcode10.1
+      osx_image: xcode11.2
+
+      go:
+        - '1.13'
 
       env:
         - GO111MODULE=on
         - GIMME_GO_VERSION=1.13
-
-      install:
-        - eval "$(curl -sL https://raw.githubusercontent.com/travis-ci/gimme/master/gimme | bash)"
 
       script:
         - go version

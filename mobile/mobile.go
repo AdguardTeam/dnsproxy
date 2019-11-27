@@ -27,7 +27,8 @@ func init() {
 
 	// Load a limited set of root CAs (in order to consume less memory)
 	upstream.RootCAs = loadSystemRootCAs()
-	upstream.DohMaxConnsPerHost = 2
+	// TODO uncomment this part after GO 1.14 release and fix https://github.com/golang/go/issues/34941
+	//upstream.DohMaxConnsPerHost = 2
 }
 
 // DNSProxy represents a proxy with it's configuration

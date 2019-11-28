@@ -1,6 +1,8 @@
 package mobile
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -463,19 +465,15 @@ func TestFilteringProxyFilterResponse(t *testing.T) {
 	listener := &testDNSRequestProcessedListener{}
 	ConfigureDNSRequestProcessedListener(listener)
 
-	// Start listening
-	err := dnsProxy.Start()
-	assert.Nil(t, err)
-
-	// Lock dnsProxy to set test upstream
-	dnsProxy.dnsProxy.Lock()
-	// Replace real upstream with test upstream
-	dnsProxy.dnsProxy.Upstreams = []upstream.Upstream{&testUpstream{
+	testUpstream := &testUpstream{
 		cn:   testCNAMEs,
 		ipv4: testIPv4,
 		ipv6: testIPv6,
-	}}
-	dnsProxy.dnsProxy.Unlock()
+	}
+
+	// Start listening with mocked upstream
+	err := dnsProxy.startWithMock(testUpstream)
+	assert.Nil(t, err)
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr()
@@ -520,6 +518,41 @@ func TestFilteringProxyFilterResponse(t *testing.T) {
 	ConfigureDNSRequestProcessedListener(nil)
 	// Stop dnsproxy
 	assert.Nil(t, dnsProxy.Stop())
+}
+
+// startWithMock starts the DNSProxy with given upstream
+// This method call is similar to call d.Start but it replaces the upstreams with given one before start
+// Use it if you want to have your own responses and not rely on a remote server
+func (d *DNSProxy) startWithMock(u *testUpstream) error {
+	d.Lock()
+	defer d.Unlock()
+
+	if d.dnsProxy != nil {
+		return errors.New("DNS proxy is already started")
+	}
+
+	// Create filtering engine
+	err := d.createFilteringEngine(d.FilteringConfig)
+	if err != nil {
+		return fmt.Errorf("cannot start the DNS proxy: %s", err)
+	}
+
+	c, err := createConfig(d.Config)
+	if err != nil {
+		return fmt.Errorf("cannot start the DNS proxy: %s", err)
+	}
+
+	c.RequestHandler = d.handleDNSRequest
+	d.dnsProxy = &proxy.Proxy{Config: *c}
+	d.dnsProxy.Upstreams = []upstream.Upstream{u}
+
+	// Start the proxy
+	err = d.dnsProxy.Start()
+	if err == nil && d.Config.DetectDNS64Prefix {
+		go calculateNAT64Prefix(d.dnsProxy, d.Config.SystemResolvers)
+	}
+
+	return err
 }
 
 // assertADNSResponseWhitelistedByResponse checks the following logic:

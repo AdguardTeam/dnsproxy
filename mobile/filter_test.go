@@ -486,8 +486,10 @@ func TestFilteringProxyFilterResponse(t *testing.T) {
 	eventsCount := 2
 	testFilteringRuleNXDomainBlock(t, conn, "mail.google.com")
 	assertListenerEventsCount(t, listener, eventsCount)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "mail.google.com", "A", "||googlemail.l.google.com^", 5, false)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "mail.google.com", "AAAA", "||googlemail.l.google.com^", 5, false)
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "mail.google.com",
+		"A", "||googlemail.l.google.com^", "A, 1.2.3.4\nCNAME, googlemail.l.google.com.\n", 5, false)
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "mail.google.com",
+		"AAAA", "||googlemail.l.google.com^", "AAAA, 2106:4700:10::6814:1e82\nCNAME, googlemail.l.google.com.\n", 5, false)
 
 	// Let's check that whitelist rule `@@||host` has a higher priority than `||cname^`
 	// It means that request which has been whitelisted with `@@||host` rule should not be blocked by cname (see filter with filterId 7)
@@ -497,20 +499,27 @@ func TestFilteringProxyFilterResponse(t *testing.T) {
 	// Let's test the following rule: `0.0.0.0 cname`
 	eventsCount += 2
 	testFilteringRuleNXDomainBlock(t, conn, "picasa.google.com")
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "picasa.google.com", "A", "0.0.0.0 www2.l.google.com", 7, false)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "picasa.google.com", "AAAA", "0.0.0.0 www2.l.google.com", 7, false)
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "picasa.google.com",
+		"A", "0.0.0.0 www2.l.google.com", "A, 9.10.11.12\nCNAME, www2.l.google.com.\n", 7, false)
+
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "picasa.google.com",
+		"AAAA", "0.0.0.0 www2.l.google.com", "AAAA, 2306:4700:10::6814:1e82\nCNAME, www2.l.google.com.\n", 7, false)
 
 	// Let's check the following rule: `0.0.0.0 ip`
 	eventsCount += 2
 	testFilteringRuleNXDomainBlock(t, conn, "dns.adguard.com")
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "dns.adguard.com", "A", "0.0.0.0 176.103.130.130", 8, false)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "dns.adguard.com", "AAAA", "0.0.0.0 2a00:5a60::ad1:ff", 8, false)
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "dns.adguard.com",
+		"A", "0.0.0.0 176.103.130.130", "A, 176.103.130.130\n", 8, false)
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "dns.adguard.com",
+		"AAAA", "0.0.0.0 2a00:5a60::ad1:ff", "AAAA, 2a00:5a60::ad1:ff\n", 8, false)
 
 	// Let's check the following rule: `||ip`
 	eventsCount += 2
 	testFilteringRuleNXDomainBlock(t, conn, "adguard.com")
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "adguard.com", "A", "||104.20.30.130", 9, false)
-	assertDNSRequestProcessedEvent(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "adguard.com", "AAAA", "||2606:4700:10::6814:1e82", 9, false)
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-2), "adguard.com",
+		"A", "||104.20.30.130", "A, 104.20.30.130\n", 9, false)
+	assertDNSRequestProcessedEventWithOriginalAnswer(t, getDNSRequestProcessedEventByIdx(listener, eventsCount-1), "adguard.com",
+		"AAAA", "||2606:4700:10::6814:1e82", "AAAA, 2606:4700:10::6814:1e82\n", 9, false)
 
 	assertListenerEventsCount(t, listener, 9)
 
@@ -598,6 +607,12 @@ func assertDNSRequestProcessedEvent(t *testing.T, event DNSRequestProcessedEvent
 	assert.Equal(t, event.Whitelist, whitelist)
 }
 
+// assertDNSRequestProcessedEventWithOriginalAnswer examine event with OriginalAnswer check
+func assertDNSRequestProcessedEventWithOriginalAnswer(t *testing.T, event DNSRequestProcessedEvent, domain, reqType, filteringRule, originalAnswer string, filterListID int, whitelist bool) {
+	assertDNSRequestProcessedEvent(t, event, domain, reqType, filteringRule, filterListID, whitelist)
+	assert.Equal(t, event.OriginalAnswer, originalAnswer)
+}
+
 // getDNSRequestProcessedEventByIdx returns DNSRequestProcessedEvent from listener
 func getDNSRequestProcessedEventByIdx(listener *testDNSRequestProcessedListener, idx int) DNSRequestProcessedEvent {
 	dnsRequestProcessedListenerGuard.Lock()
@@ -662,6 +677,7 @@ func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		hasARecord = true
 		for _, ipv4 := range ipv4addr {
 			respA := dns.A{}
+			respA.Hdr.Rrtype = dns.TypeA
 			respA.Hdr.Name = name
 			respA.A = ipv4
 			resp.Answer = append(resp.Answer, &respA)
@@ -673,6 +689,7 @@ func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		hasAAAARecord = true
 		for _, ipv6 := range ipv6addr {
 			respAAAA := dns.A{}
+			respAAAA.Hdr.Rrtype = dns.TypeAAAA
 			respAAAA.Hdr.Name = name
 			respAAAA.A = ipv6
 			resp.Answer = append(resp.Answer, &respAAAA)

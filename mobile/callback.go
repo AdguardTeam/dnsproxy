@@ -20,10 +20,11 @@ type DNSRequestProcessedEvent struct {
 	Domain string // Queried domain name
 	Type   string // Query type
 
-	StartTime    int64  // Time when dnsproxy started processing request (epoch in milliseconds)
-	Elapsed      int    // Time elapsed on processing
-	Answer       string // DNS Answers string representation
-	UpstreamAddr string // Address of the upstream used to resolve
+	StartTime      int64  // Time when dnsproxy started processing request (epoch in milliseconds)
+	Elapsed        int    // Time elapsed on processing
+	Answer         string // DNS Answers string representation
+	OriginalAnswer string // Original DNS Answers before filtering. This field will be filled if response was blocked by CNAME or IP.
+	UpstreamAddr   string // Address of the upstream used to resolve
 
 	BytesSent     int // Number of bytes sent
 	BytesReceived int // Number of bytes received
@@ -49,7 +50,7 @@ func ConfigureDNSRequestProcessedListener(l DNSRequestProcessedListener) {
 
 // handleDNSResponse handles DNS response from the DNS proxy with filtering rule
 // transforms them to a DNSRequestProcessedEvent instance and notifies the client code about processed messages.
-func handleDNSResponse(d *proxy.DNSContext, filteringRule rules.Rule, err error, bytesReceived int) {
+func handleDNSResponse(d *proxy.DNSContext, originalAnswer *dns.Msg, filteringRule rules.Rule, err error, bytesReceived int) {
 	dnsRequestProcessedListenerGuard.Lock()
 	defer dnsRequestProcessedListenerGuard.Unlock()
 	if dnsRequestProcessedListener == nil {
@@ -89,6 +90,10 @@ func handleDNSResponse(d *proxy.DNSContext, filteringRule rules.Rule, err error,
 		e.FilteringRule = filteringRule.Text()
 		if networkRule, ok := filteringRule.(*rules.NetworkRule); ok {
 			e.Whitelist = networkRule.Whitelist
+		}
+
+		if originalAnswer != nil && len(originalAnswer.Answer) > 0 {
+			e.OriginalAnswer = dnsAnswerListToString(originalAnswer.Answer)
 		}
 	}
 

@@ -130,12 +130,12 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 		rule, blocked, err = d.filteringEngine.filterRequest(ctx)
 		d.RUnlock()
 		if err != nil {
-			handleDNSResponse(ctx, rule, err, 0)
+			handleDNSResponse(ctx, nil, rule, err, 0)
 			return err
 		}
 
 		if blocked {
-			handleDNSResponse(ctx, rule, nil, 0)
+			handleDNSResponse(ctx, nil, rule, nil, 0)
 			return nil
 		}
 	} else {
@@ -145,8 +145,10 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 	err = p.Resolve(ctx)
 
 	bytesReceived := 0
+	originalAnswer := &dns.Msg{}
 	if ctx.Res != nil {
 		bytesReceived = ctx.Res.Len()
+		originalAnswer = ctx.Res.Copy()
 	}
 	// Check if we have some rules before performing filtering. If the rule is not nil it means that this request has been whitelisted.
 	if rule == nil {
@@ -159,7 +161,7 @@ func (d *DNSProxy) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error
 		d.RUnlock()
 	}
 
-	handleDNSResponse(ctx, rule, err, bytesReceived)
+	handleDNSResponse(ctx, originalAnswer, rule, err, bytesReceived)
 	return err
 }
 

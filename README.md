@@ -42,6 +42,7 @@ Application Options:
   -f, --fallback=     Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
   -s, --all-servers   Use parallel queries to speed up resolving by querying all upstream servers simultaneously
   -d, --ipv6-disabled Disable IPv6. All AAAA requests will be replied with No Error response code and empty answer 
+      --edns          Use EDNS Client Subnet extension
 
 Help Options:
   -h, --help        Show this help message

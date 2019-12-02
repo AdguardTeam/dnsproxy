@@ -77,6 +77,9 @@ func TestHttpsProxy(t *testing.T) {
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
 
+	// IP "1.2.3.4" will be used as a client address in DNSContext
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 127.0.0.1")
+
 	client := http.Client{
 		Transport: transport,
 		Timeout:   defaultTimeout,

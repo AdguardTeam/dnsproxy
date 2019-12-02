@@ -862,6 +862,30 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Get a client IP address from HTTP headers that proxy servers may set
+func getIPFromHTTPRequest(r *http.Request) net.IP {
+	names := []string{
+		"CF-Connecting-IP", "True-Client-IP", // set by CloudFlare servers
+		"X-Real-IP",
+	}
+	for _, name := range names {
+		s := r.Header.Get(name)
+		ip := net.ParseIP(s)
+		if ip != nil {
+			return ip
+		}
+	}
+
+	s := r.Header.Get("X-Forwarded-For")
+	s = splitNext(&s, ',') // get left-most IP address
+	ip := net.ParseIP(s)
+	if ip != nil {
+		return ip
+	}
+
+	return nil
+}
+
 // Writes a response to the DOH client
 func (p *Proxy) respondHTTPS(d *DNSContext) error {
 	resp := d.Res
@@ -890,9 +914,14 @@ func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
 		return nil, err
 	}
 
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return nil, fmt.Errorf("invalid IP: %s", host)
+	ip := getIPFromHTTPRequest(r)
+	if ip != nil {
+		log.Info("Using IP address from HTTP request: %s", ip)
+	} else {
+		ip = net.ParseIP(host)
+		if ip == nil {
+			return nil, fmt.Errorf("invalid IP: %s", host)
+		}
 	}
 
 	return &net.TCPAddr{IP: ip, Port: portValue}, nil

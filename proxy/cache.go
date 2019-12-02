@@ -21,29 +21,25 @@ type cache struct {
 }
 
 func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
-	if request == nil {
+	if request == nil || len(request.Question) != 1 {
 		return nil, false
 	}
 	// create key for request
-	ok, key := key(request)
-	if !ok {
-		log.Tracef("key returned !ok")
-		return nil, false
-	}
+	key := key(request)
 	c.Lock()
 	if c.items == nil {
 		c.Unlock()
 		return nil, false
 	}
 	c.Unlock()
-	data := c.items.Get([]byte(key))
+	data := c.items.Get(key)
 	if data == nil {
 		return nil, false
 	}
 
 	res := unpackResponse(data, request)
 	if res == nil {
-		c.items.Del([]byte(key))
+		c.items.Del(key)
 		return nil, false
 	}
 	return res, true
@@ -56,10 +52,7 @@ func (c *cache) Set(m *dns.Msg) {
 	if !isCacheable(m) {
 		return
 	}
-	ok, key := key(m)
-	if !ok {
-		return
-	}
+	key := key(m)
 
 	c.Lock()
 	// lazy initialization for cache
@@ -76,7 +69,7 @@ func (c *cache) Set(m *dns.Msg) {
 	c.Unlock()
 
 	data := packResponse(m)
-	_ = c.items.Set([]byte(key), data)
+	_ = c.items.Set(key, data)
 }
 
 // check if message is cacheable
@@ -168,23 +161,18 @@ func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
 	return ttl
 }
 
-// key is binary little endian in sequence:
-// uint16(qtype) then uint16(qclass) then name
-func key(m *dns.Msg) (bool, string) {
-	if len(m.Question) != 1 {
-		log.Tracef("got msg with len(m.Question) != 1: %d", len(m.Question))
-		return false, ""
-	}
-
-	bb := strings.Builder{}
-	b := make([]byte, 2)
-	binary.LittleEndian.PutUint16(b, m.Question[0].Qtype)
-	bb.Write(b)
-	binary.LittleEndian.PutUint16(b, m.Question[0].Qclass)
-	bb.Write(b)
-	name := strings.ToLower(m.Question[0].Name)
-	bb.WriteString(name)
-	return true, bb.String()
+// Format:
+// uint16(qtype)
+// uint16(qclass)
+// name
+func key(m *dns.Msg) []byte {
+	q := m.Question[0]
+	b := make([]byte, 2+2+len(q.Name))
+	binary.BigEndian.PutUint16(b[:], q.Qtype)
+	binary.BigEndian.PutUint16(b[2:], q.Qclass)
+	name := strings.ToLower(q.Name)
+	copy(b[4:], name)
+	return b
 }
 
 /*

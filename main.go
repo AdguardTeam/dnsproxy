@@ -69,6 +69,9 @@ type Options struct {
 	// If true, all AAAA requests will be replied with NoError RCode and empty answer
 	IPv6Disabled bool `short:"d" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
+	// Use EDNS Client Subnet extension
+	EnableEDNSSubnet bool `long:"edns" description:"Use EDNS Client Subnet extension" optional:"yes" optional-value:"true"`
+
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
 }
@@ -162,6 +165,7 @@ func createProxyConfig(options Options) proxy.Config {
 		CacheSizeBytes:           options.CacheSizeBytes,
 		RefuseAny:                options.RefuseAny,
 		AllServers:               options.AllServers,
+		EnableEDNSClientSubnet:   options.EnableEDNSSubnet,
 	}
 
 	if options.Fallbacks != nil {

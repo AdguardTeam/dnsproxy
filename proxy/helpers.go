@@ -133,3 +133,109 @@ func prefixWithSize(packet []byte) ([]byte, error) {
 	binary.BigEndian.PutUint16(packet[0:2], uint16(len(packet)-2))
 	return packet, nil
 }
+
+// Parse ECS option from DNS response
+// Return IP, mask, scope
+func parseECS(m *dns.Msg) (net.IP, uint8, uint8) {
+	for _, ex := range m.Extra {
+		opt, ok := ex.(*dns.OPT)
+		if !ok {
+			continue
+		}
+		for _, e := range opt.Option {
+			sn, ok := e.(*dns.EDNS0_SUBNET)
+			if !ok {
+				continue
+			}
+			switch sn.Family {
+			case 0:
+				fallthrough
+			case 1:
+				return sn.Address.To4(), sn.SourceNetmask, sn.SourceScope
+			case 2:
+				return sn.Address, sn.SourceNetmask, sn.SourceScope
+			}
+		}
+	}
+	return nil, 0, 0
+}
+
+// Set EDNS Client Subnet option in DNS request object
+// Return masked IP and mask
+func setECS(m *dns.Msg, ip net.IP, scope uint8) (net.IP, uint8) {
+	o := new(dns.OPT)
+	o.SetUDPSize(4096)
+	o.Hdr.Name = "."
+	o.Hdr.Rrtype = dns.TypeOPT
+
+	e := new(dns.EDNS0_SUBNET)
+	e.Code = dns.EDNS0SUBNET
+	if ip.To4() != nil {
+		e.Family = 1
+		e.SourceNetmask = ednsCSDefaultNetmaskV4
+		e.Address = ip.To4().Mask(net.CIDRMask(int(e.SourceNetmask), 32))
+	} else {
+		e.Family = 2
+		e.SourceNetmask = ednsCSDefaultNetmaskV6
+		e.Address = ip.Mask(net.CIDRMask(int(e.SourceNetmask), 128))
+	}
+	e.SourceScope = scope
+	o.Option = append(o.Option, e)
+
+	m.Extra = append(m.Extra, o)
+	return e.Address, e.SourceNetmask
+}
+
+// Return TRUE if IP is within public Internet IP range
+// nolint (gocyclo)
+func isPublicIP(ip net.IP) bool {
+	ip4 := ip.To4()
+	if ip4 != nil {
+		switch ip4[0] {
+		case 0:
+			return false //software
+		case 10:
+			return false //private network
+		case 127:
+			return false //loopback
+		case 169:
+			if ip4[1] == 254 {
+				return false //link-local
+			}
+		case 172:
+			if ip4[1] >= 16 && ip4[1] <= 31 {
+				return false //private network
+			}
+		case 192:
+			if (ip4[1] == 0 && ip4[2] == 0) || //private network
+				(ip4[1] == 0 && ip4[2] == 2) || //documentation
+				(ip4[1] == 88 && ip4[2] == 99) || //reserved
+				(ip4[1] == 168) { //private network
+				return false
+			}
+		case 198:
+			if (ip4[1] == 18 || ip4[2] == 19) || //private network
+				(ip4[1] == 51 || ip4[2] == 100) { //documentation
+				return false
+			}
+		case 203:
+			if ip4[1] == 0 && ip4[2] == 113 { //documentation
+				return false
+			}
+		case 224:
+			if ip4[1] == 0 && ip4[2] == 0 { //multicast
+				return false
+			}
+		case 255:
+			if ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 { //subnet
+				return false
+			}
+		}
+	} else {
+		if ip.IsLoopback() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() {
+			return false
+		}
+	}
+
+	return true
+}

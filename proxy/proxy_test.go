@@ -20,6 +20,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -788,4 +789,157 @@ func publicKey(priv interface{}) interface{} {
 	default:
 		return nil
 	}
+}
+
+func TestECS(t *testing.T) {
+	m := &dns.Msg{}
+	_, mask := setECS(m, net.IP{1, 2, 3, 0}, 16)
+	assert.True(t, mask == 24)
+	ip, mask, scope := parseECS(m)
+	assert.True(t, ip.Equal(net.IP{1, 2, 3, 0}))
+	assert.True(t, mask == 24)
+	assert.True(t, scope == 16)
+}
+
+// Return the first A value in response
+func getIPFromResponse(resp *dns.Msg) net.IP {
+	for _, ans := range resp.Answer {
+		a, ok := ans.(*dns.A)
+		if !ok {
+			continue
+		}
+		return a.A
+	}
+	return nil
+}
+
+// Return the first CNAME value in response
+func getCNAMEFromResponse(resp *dns.Msg) string {
+	for _, ans := range resp.Answer {
+		cn, ok := ans.(*dns.CNAME)
+		if !ok {
+			continue
+		}
+		return cn.Target
+	}
+	return ""
+}
+
+type testUpstream struct {
+	cname1Resp *dns.CNAME
+	aResp      *dns.A
+	ecsIP      net.IP
+	ecsReqIP   net.IP
+	ecsReqMask uint8
+}
+
+func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
+	resp := dns.Msg{}
+	resp.SetReply(m)
+
+	if u.cname1Resp != nil {
+		resp.Answer = append(resp.Answer, u.cname1Resp)
+	}
+
+	resp.Answer = append(resp.Answer, u.aResp)
+
+	u.ecsReqIP, u.ecsReqMask, _ = parseECS(m)
+	if u.ecsIP != nil {
+		_, _ = setECS(&resp, u.ecsIP, 24)
+	}
+
+	return &resp, nil
+}
+
+func (u *testUpstream) Address() string {
+	return ""
+}
+
+// Resolve the same host with the different client subnet values
+func TestECSProxy(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	dnsProxy.EnableEDNSClientSubnet = true
+	dnsProxy.CacheEnabled = true
+	u := testUpstream{}
+	dnsProxy.Upstreams = []upstream.Upstream{&u}
+	err := dnsProxy.Start()
+	assert.True(t, err == nil)
+
+	// first request
+	d := DNSContext{}
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{
+		IP: net.IP{1, 2, 3, 0},
+	}
+	u.aResp = new(dns.A)
+	u.aResp.Hdr.Rrtype = dns.TypeA
+	u.aResp.Hdr.Name = "host."
+	u.aResp.A = net.IP{4, 3, 2, 1}
+	u.aResp.Hdr.Ttl = 60
+	u.ecsIP = net.IP{1, 2, 3, 0}
+	err = dnsProxy.Resolve(&d)
+	assert.True(t, err == nil)
+	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 1}))
+	assert.True(t, u.ecsReqIP.Equal(net.IP{1, 2, 3, 0}))
+
+	// request from another client with the same subnet - must be served from cache
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{
+		IP: net.IP{1, 2, 3, 1},
+	}
+	u.aResp = nil
+	u.ecsIP = nil
+	u.ecsReqIP = nil
+	err = dnsProxy.Resolve(&d)
+	assert.True(t, err == nil)
+	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 1}))
+	assert.True(t, u.ecsReqIP == nil)
+
+	// request from a different subnet - different response
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{
+		IP: net.IP{2, 2, 3, 0},
+	}
+	u.aResp = new(dns.A)
+	u.aResp.Hdr.Name = "host."
+	u.aResp.A = net.IP{4, 3, 2, 2}
+	u.aResp.Hdr.Ttl = 60
+	u.ecsIP = net.IP{2, 2, 3, 0}
+	u.ecsReqIP = nil
+	err = dnsProxy.Resolve(&d)
+	assert.True(t, err == nil)
+	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 2}))
+	assert.True(t, u.ecsReqIP.Equal(net.IP{2, 2, 3, 0}))
+
+	// request from a local IP - store in general (not subnet-aware) cache
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{
+		IP: net.IP{127, 0, 0, 1},
+	}
+	u.aResp = new(dns.A)
+	u.aResp.Hdr.Rrtype = dns.TypeA
+	u.aResp.Hdr.Name = "host."
+	u.aResp.A = net.IP{4, 3, 2, 3}
+	u.aResp.Hdr.Ttl = 60
+	u.ecsIP = nil
+	u.ecsReqIP = nil
+	err = dnsProxy.Resolve(&d)
+	assert.True(t, err == nil)
+	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 3}))
+	assert.True(t, u.ecsReqIP == nil)
+
+	// request from another local IP - get from general cache
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{
+		IP: net.IP{127, 0, 0, 2},
+	}
+	u.aResp = nil
+	u.ecsIP = nil
+	u.ecsReqIP = nil
+	err = dnsProxy.Resolve(&d)
+	assert.True(t, err == nil)
+	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 3}))
+	assert.True(t, u.ecsReqIP == nil)
+
+	_ = dnsProxy.Stop()
 }

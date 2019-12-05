@@ -4,6 +4,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
+
 	"github.com/miekg/dns"
 )
 
@@ -57,19 +59,11 @@ wait:
 				errs = append(errs, result.err)
 			} else {
 				// copy IP addresses from dns.RR to the resulting IPs array
-				for _, ans := range result.resp.Answer {
-					if a, ok := ans.(*dns.A); ok {
-						ip := net.IPAddr{IP: a.A}
-						ipAddrs = append(ipAddrs, ip)
-					} else if a, ok := ans.(*dns.AAAA); ok {
-						ip := net.IPAddr{IP: a.AAAA}
-						ipAddrs = append(ipAddrs, ip)
-					}
-				}
+				proxyutil.AppendIPAddrs(&ipAddrs, result.resp.Answer)
 			}
 			n++
-			// Two parallel lookups
 			if n == 2 {
+				// Two parallel lookups are finished
 				break wait
 			}
 		}
@@ -79,5 +73,5 @@ wait:
 		return []net.IPAddr{}, errs[0]
 	}
 
-	return ipAddrs, nil
+	return proxyutil.SortIPAddrs(ipAddrs), nil
 }

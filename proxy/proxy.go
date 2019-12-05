@@ -239,17 +239,8 @@ func ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS []string, timeout time.
 	return UpstreamConfig{Upstreams: upstreams, DomainReservedUpstreams: domainReservedUpstreams}, nil
 }
 
-// Start initializes the proxy server and starts listening
-func (p *Proxy) Start() error {
-	p.Lock()
-	defer p.Unlock()
-
-	log.Println("Starting the DNS proxy server")
-	err := p.validateConfig()
-	if err != nil {
-		return err
-	}
-
+// Init - initializes the proxy structures but does not start it
+func (p *Proxy) Init() {
 	if p.CacheEnabled {
 		log.Printf("DNS cache is enabled")
 		p.cache = &cache{cacheSize: p.CacheSizeBytes}
@@ -264,6 +255,21 @@ func (p *Proxy) Start() error {
 		// nil means there's no limit
 		p.maxGoroutines = nil
 	}
+}
+
+// Start initializes the proxy server and starts listening
+func (p *Proxy) Start() error {
+	p.Lock()
+	defer p.Unlock()
+
+	log.Println("Starting the DNS proxy server")
+	err := p.validateConfig()
+	if err != nil {
+		return err
+	}
+
+	// Init cache
+	p.Init()
 
 	err = p.startListeners()
 	if err != nil {

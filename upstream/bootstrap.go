@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
+
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -170,18 +172,6 @@ func (r *Resolver) resolve(host string, qtype uint16, ch chan *resultError) {
 	ch <- &resultError{resp, err}
 }
 
-func setIPAddresses(ipAddrs *[]net.IPAddr, answers []dns.RR) {
-	for _, ans := range answers {
-		if a, ok := ans.(*dns.A); ok {
-			ip := net.IPAddr{IP: a.A}
-			*ipAddrs = append(*ipAddrs, ip)
-		} else if a, ok := ans.(*dns.AAAA); ok {
-			ip := net.IPAddr{IP: a.AAAA}
-			*ipAddrs = append(*ipAddrs, ip)
-		}
-	}
-}
-
 // LookupIPAddr returns result of LookupIPAddr method of Resolver's net.Resolver
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
 	if r.resolver != nil {
@@ -212,7 +202,7 @@ wait:
 			if re.err != nil {
 				errs = append(errs, re.err)
 			} else {
-				setIPAddresses(&ipAddrs, re.resp.Answer)
+				proxyutil.AppendIPAddrs(&ipAddrs, re.resp.Answer)
 			}
 			n++
 			if n == 2 {
@@ -225,7 +215,7 @@ wait:
 		return []net.IPAddr{}, errs[0]
 	}
 
-	return ipAddrs, nil
+	return proxyutil.SortIPAddrs(ipAddrs), nil
 }
 
 // dialHandler specifies the dial function for creating unencrypted TCP connections.

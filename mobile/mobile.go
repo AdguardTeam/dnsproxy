@@ -161,6 +161,11 @@ func (d *DNSProxy) Restart(config *Config) error {
 	// Set new config
 	d.Config = config
 
+	// Avoid "bind: address already in use" error
+	// Using SO_REUSEADDR is too painful in Go
+	// https://forum.golangbridge.org/t/bind-address-already-in-use-even-after-listener-closed/1510
+	time.Sleep(100 * time.Millisecond)
+
 	// Start proxy
 	return d.startProxy()
 }

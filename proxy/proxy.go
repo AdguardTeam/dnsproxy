@@ -922,7 +922,7 @@ func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
 
 	ip := getIPFromHTTPRequest(r)
 	if ip != nil {
-		log.Info("Using IP address from HTTP request: %s", ip)
+		log.Debug("Using IP address from HTTP request: %s", ip)
 	} else {
 		ip = net.ParseIP(host)
 		if ip == nil {

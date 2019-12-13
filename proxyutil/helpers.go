@@ -52,5 +52,12 @@ func SortIPAddrs(ipAddrs []net.IPAddr) []net.IPAddr {
 }
 
 func compareIPAddrs(left net.IPAddr, right net.IPAddr) int {
+	l4 := left.IP.To4()
+	r4 := right.IP.To4()
+	if l4 != nil && r4 == nil {
+		return -1 // IPv4 addresses first
+	} else if l4 == nil && r4 != nil {
+		return 1 // IPv4 addresses first
+	}
 	return bytes.Compare(left.IP, right.IP)
 }

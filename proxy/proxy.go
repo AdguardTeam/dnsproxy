@@ -406,6 +406,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		return nil
 	}
 
+	// Get custom upstreams first -- note that they might be empty
 	upstreams := d.Upstreams
 	if len(upstreams) == 0 {
 		// get upstreams for the specified hostname

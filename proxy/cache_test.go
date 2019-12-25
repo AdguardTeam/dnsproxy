@@ -68,6 +68,39 @@ func TestServeCached(t *testing.T) {
 	}
 }
 
+func TestCacheDO(t *testing.T) {
+	testCache := &cache{}
+
+	// Fill the cache
+	reply := dns.Msg{}
+	reply.SetQuestion("google.com.", dns.TypeA)
+	reply.Response = true
+	reply.SetEdns0(4096, true)
+	reply.Answer = []dns.RR{
+		newRR("google.com. 3600 IN A 8.8.8.8"),
+	}
+
+	// Store in cache
+	testCache.Set(&reply)
+
+	// Create a DNS request
+	request := dns.Msg{}
+	request.Id = dns.Id()
+	request.RecursionDesired = true
+	request.SetQuestion("google.com.", dns.TypeA)
+
+	// Try requesting without DO
+	r, ok := testCache.Get(&request)
+	assert.Nil(t, r)
+	assert.False(t, ok)
+
+	// Now add DO and re-test
+	request.SetEdns0(4096, true)
+	r, ok = testCache.Get(&request)
+	assert.NotNil(t, r)
+	assert.True(t, ok)
+}
+
 func TestCacheCNAME(t *testing.T) {
 	testCache := &cache{}
 

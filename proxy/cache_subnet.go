@@ -18,6 +18,7 @@ type cacheSubnet struct {
 
 // Get key
 // Format:
+// uint8(do)
 // uint16(qtype)
 // uint16(qclass)
 // uint8(subnet_mask)
@@ -25,17 +26,36 @@ type cacheSubnet struct {
 // name
 func keyWithSubnet(m *dns.Msg, ip net.IP, mask uint8) []byte {
 	q := m.Question[0]
-	cap := 2 + 2 + 1 + len(q.Name)
+	cap := 1 + 2 + 2 + 1 + len(q.Name)
 	if mask != 0 {
 		cap += len(ip)
 	}
-	b := make([]byte, cap)
-	binary.BigEndian.PutUint16(b[:], q.Qtype)
-	k := 2
 
+	// init the array
+	b := make([]byte, cap)
+	k := 0
+
+	// put do
+	opt := m.IsEdns0()
+	do := false
+	if opt != nil {
+		do = opt.Do()
+	}
+	if do {
+		b[k] = 1
+	} else {
+		b[k] = 0
+	}
+
+	// put qtype
+	binary.BigEndian.PutUint16(b[:], q.Qtype)
+	k += 2
+
+	// put qclass
 	binary.BigEndian.PutUint16(b[k:], q.Qclass)
 	k += 2
 
+	// add mask
 	b[k] = mask
 	k++
 	if mask != 0 {

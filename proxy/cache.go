@@ -162,16 +162,31 @@ func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
 }
 
 // Format:
+// uint8(do)
 // uint16(qtype)
 // uint16(qclass)
 // name
 func key(m *dns.Msg) []byte {
 	q := m.Question[0]
-	b := make([]byte, 2+2+len(q.Name))
-	binary.BigEndian.PutUint16(b[:], q.Qtype)
-	binary.BigEndian.PutUint16(b[2:], q.Qclass)
+	b := make([]byte, 1+2+2+len(q.Name))
+
+	// put do
+	opt := m.IsEdns0()
+	do := false
+	if opt != nil {
+		do = opt.Do()
+	}
+	if do {
+		b[0] = 1
+	} else {
+		b[0] = 0
+	}
+
+	// put qtype, qclass, name
+	binary.BigEndian.PutUint16(b[1:], q.Qtype)
+	binary.BigEndian.PutUint16(b[3:], q.Qclass)
 	name := strings.ToLower(q.Name)
-	copy(b[4:], name)
+	copy(b[5:], name)
 	return b
 }
 

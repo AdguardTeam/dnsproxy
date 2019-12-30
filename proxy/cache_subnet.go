@@ -46,7 +46,7 @@ func keyWithSubnet(m *dns.Msg, ip net.IP, mask uint8) []byte {
 	} else {
 		b[k] = 0
 	}
-	k += 1
+	k++
 
 	// put qtype
 	binary.BigEndian.PutUint16(b[:], q.Qtype)

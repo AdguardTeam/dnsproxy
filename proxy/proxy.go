@@ -400,8 +400,40 @@ func (p *Proxy) getUpstreamsForDomain(host string) []upstream.Upstream {
 	return p.Upstreams
 }
 
+// Set EDNS Client-Subnet data in DNS request
+func (p *Proxy) processECS(d *DNSContext) {
+	d.ecsReqIP = nil
+	d.ecsReqMask = uint8(0)
+
+	ip, mask, _ := parseECS(d.Req)
+	if mask == 0 {
+		// Set EDNS Client-Subnet data
+		var clientIP net.IP
+		switch addr := d.Addr.(type) {
+		case *net.UDPAddr:
+			clientIP = addr.IP
+		case *net.TCPAddr:
+			clientIP = addr.IP
+		}
+
+		if clientIP != nil && isPublicIP(clientIP) {
+			ip, mask = setECS(d.Req, clientIP, 0)
+			log.Debug("Set ECS data: %s/%d", ip, mask)
+		}
+	} else {
+		log.Debug("Passing through ECS data: %s/%d", ip, mask)
+	}
+
+	d.ecsReqIP = ip
+	d.ecsReqMask = mask
+}
+
 // Resolve is the default resolving method used by the DNS proxy to query upstreams
 func (p *Proxy) Resolve(d *DNSContext) error {
+	if p.Config.EnableEDNSClientSubnet {
+		p.processECS(d)
+	}
+
 	if p.replyFromCache(d) {
 		return nil
 	}

@@ -163,11 +163,6 @@ func parseECS(m *dns.Msg) (net.IP, uint8, uint8) {
 // Set EDNS Client Subnet option in DNS request object
 // Return masked IP and mask
 func setECS(m *dns.Msg, ip net.IP, scope uint8) (net.IP, uint8) {
-	o := new(dns.OPT)
-	o.SetUDPSize(4096)
-	o.Hdr.Name = "."
-	o.Hdr.Rrtype = dns.TypeOPT
-
 	e := new(dns.EDNS0_SUBNET)
 	e.Code = dns.EDNS0SUBNET
 	if ip.To4() != nil {
@@ -180,8 +175,23 @@ func setECS(m *dns.Msg, ip net.IP, scope uint8) (net.IP, uint8) {
 		e.Address = ip.Mask(net.CIDRMask(int(e.SourceNetmask), 128))
 	}
 	e.SourceScope = scope
-	o.Option = append(o.Option, e)
 
+	// If OPT record already exists - add EDNS option inside it
+	// Note that servers may return FORMERR if they meet 2 OPT records.
+	for _, ex := range m.Extra {
+		if ex.Header().Rrtype == dns.TypeOPT {
+			opt := ex.(*dns.OPT)
+			opt.Option = append(opt.Option, e)
+			return e.Address, e.SourceNetmask
+		}
+	}
+
+	// Create an OPT record and add EDNS option inside it
+	o := new(dns.OPT)
+	o.SetUDPSize(4096)
+	o.Hdr.Name = "."
+	o.Hdr.Rrtype = dns.TypeOPT
+	o.Option = append(o.Option, e)
 	m.Extra = append(m.Extra, o)
 	return e.Address, e.SourceNetmask
 }

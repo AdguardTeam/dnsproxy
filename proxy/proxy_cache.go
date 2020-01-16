@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"net"
-
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
@@ -27,36 +25,14 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 		return false
 	}
 
-	d.ecsReqIP = nil
-	d.ecsReqMask = uint8(0)
-
-	ip, mask, _ := parseECS(d.Req)
-	if mask == 0 {
-		// Set EDNS Client-Subnet data
-		var clientIP net.IP
-		switch addr := d.Addr.(type) {
-		case *net.UDPAddr:
-			clientIP = addr.IP
-		case *net.TCPAddr:
-			clientIP = addr.IP
-		}
-
-		if clientIP != nil && isPublicIP(clientIP) {
-			ip, mask = setECS(d.Req, clientIP, 0)
-			log.Debug("Set ECS data: %s/%d", ip, mask)
-		}
-	} else {
-		log.Debug("Passing through ECS data: %s/%d", ip, mask)
-	}
-
-	if mask != 0 && p.cacheSubnet != nil {
-		val, ok := p.cacheSubnet.GetWithSubnet(d.Req, ip, mask)
+	if d.ecsReqMask != 0 && p.cacheSubnet != nil {
+		val, ok := p.cacheSubnet.GetWithSubnet(d.Req, d.ecsReqIP, d.ecsReqMask)
 		if ok && val != nil {
 			d.Res = val
 			log.Debug("Serving response from subnet cache")
 			return true
 		}
-	} else if mask == 0 && p.cache != nil {
+	} else if d.ecsReqMask == 0 && p.cache != nil {
 		val, ok := p.cache.Get(d.Req)
 		if ok && val != nil {
 			d.Res = val
@@ -65,8 +41,6 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 		}
 	}
 
-	d.ecsReqIP = ip
-	d.ecsReqMask = mask
 	return false
 }
 

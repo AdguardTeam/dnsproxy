@@ -420,6 +420,7 @@ func (p *Proxy) processECS(d *DNSContext) {
 				clientIP = addr.IP
 			}
 		}
+
 		if clientIP != nil && isPublicIP(clientIP) {
 			ip, mask = setECS(d.Req, clientIP, 0)
 			log.Debug("Set ECS data: %s/%d", ip, mask)

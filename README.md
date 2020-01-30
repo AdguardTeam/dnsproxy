@@ -43,7 +43,7 @@ Application Options:
   -s, --all-servers   Use parallel queries to speed up resolving by querying all upstream servers simultaneously
   -d, --ipv6-disabled Disable IPv6. All AAAA requests will be replied with No Error response code and empty answer 
       --edns          Use EDNS Client Subnet extension
-      --ednsaddr=     Send EDNS Client Address
+      --edns-addr=    Send EDNS Client Address
       --version       Prints the program version
 
 Help Options:

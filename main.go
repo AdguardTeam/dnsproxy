@@ -72,6 +72,9 @@ type Options struct {
 	// Use EDNS Client Subnet extension
 	EnableEDNSSubnet bool `long:"edns" description:"Use EDNS Client Subnet extension" optional:"yes" optional-value:"true"`
 
+	// User Custom EDNS Client Address
+	EDNSAddr string `long:"ednsaddr" description:"Send EDNS Client Address"`
+
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
 }
@@ -146,6 +149,7 @@ func run(options Options) {
 // createProxyConfig creates proxy.Config from the command line arguments
 func createProxyConfig(options Options) proxy.Config {
 	listenIP := net.ParseIP(options.ListenAddr)
+	ednsIP := net.ParseIP(options.EDNSAddr)
 	if listenIP == nil {
 		log.Fatalf("cannot parse %s", options.ListenAddr)
 	}
@@ -166,6 +170,7 @@ func createProxyConfig(options Options) proxy.Config {
 		RefuseAny:                options.RefuseAny,
 		AllServers:               options.AllServers,
 		EnableEDNSClientSubnet:   options.EnableEDNSSubnet,
+		EDNSAddr:                 ednsIP,
 	}
 
 	if options.Fallbacks != nil {

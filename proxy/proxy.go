@@ -120,6 +120,7 @@ type Config struct {
 	// We store these responses in general cache (without subnet)
 	//  so they will never be used for clients with public IP addresses.
 	EnableEDNSClientSubnet bool
+	EDNSAddr               net.IP // ECS IP used in request
 
 	CacheEnabled   bool // cache status
 	CacheSizeBytes int  // Cache size (in bytes). Default: 64k
@@ -409,13 +410,16 @@ func (p *Proxy) processECS(d *DNSContext) {
 	if mask == 0 {
 		// Set EDNS Client-Subnet data
 		var clientIP net.IP
-		switch addr := d.Addr.(type) {
-		case *net.UDPAddr:
-			clientIP = addr.IP
-		case *net.TCPAddr:
-			clientIP = addr.IP
+		if p.Config.EDNSAddr != nil {
+			clientIP = p.Config.EDNSAddr
+		} else {
+			switch addr := d.Addr.(type) {
+			case *net.UDPAddr:
+				clientIP = addr.IP
+			case *net.TCPAddr:
+				clientIP = addr.IP
+			}
 		}
-
 		if clientIP != nil && isPublicIP(clientIP) {
 			ip, mask = setECS(d.Req, clientIP, 0)
 			log.Debug("Set ECS data: %s/%d", ip, mask)

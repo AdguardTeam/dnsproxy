@@ -153,11 +153,6 @@ func createProxyConfig(options Options) proxy.Config {
 		log.Fatalf("cannot parse %s", options.ListenAddr)
 	}
 
-	ednsIP := net.ParseIP(options.EDNSAddr)
-	if ednsIP == nil {
-		log.Fatalf("cannot parse %s", options.EDNSAddr)
-	}
-
 	// Init upstreams
 	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
 	if err != nil {
@@ -174,7 +169,18 @@ func createProxyConfig(options Options) proxy.Config {
 		RefuseAny:                options.RefuseAny,
 		AllServers:               options.AllServers,
 		EnableEDNSClientSubnet:   options.EnableEDNSSubnet,
-		EDNSAddr:                 ednsIP,
+	}
+
+	if options.EDNSAddr != "" {
+		if (options.EnableEDNSSubnet) {
+			ednsIP := net.ParseIP(options.EDNSAddr)
+			if ednsIP == nil {
+				log.Fatalf("cannot parse %s", options.EDNSAddr)
+			}
+			config.EDNSAddr = ednsIP
+		} else {
+			log.Printf("--edns-addr=%s need --edns to work", options.EDNSAddr)
+		}
 	}
 
 	if options.Fallbacks != nil {

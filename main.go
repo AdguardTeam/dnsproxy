@@ -172,7 +172,7 @@ func createProxyConfig(options Options) proxy.Config {
 	}
 
 	if options.EDNSAddr != "" {
-		if (options.EnableEDNSSubnet) {
+		if options.EnableEDNSSubnet {
 			ednsIP := net.ParseIP(options.EDNSAddr)
 			if ednsIP == nil {
 				log.Fatalf("cannot parse %s", options.EDNSAddr)

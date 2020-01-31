@@ -256,7 +256,7 @@ func TestDialContext(t *testing.T) {
 		},
 		{
 			addresses: []string{"1.1.1.1:5555", "1.1.1.1:853", "8.8.8.8:85"},
-			host:      "cloudflare-dns.com",
+			host:      "1dot1dot1dot1.cloudflare-dns.com",
 		},
 	}
 	for _, test := range resolved {
@@ -322,7 +322,7 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{"8.8.8.8"},
 		},
 		{
-			address:   "https://cloudflare-dns.com/dns-query",
+			address:   "https://1dot1dot1dot1.cloudflare-dns.com/dns-query",
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
@@ -436,7 +436,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			bootstrap: []string{"1.0.0.1", "8.8.8.8:535"},
 		},
 		{
-			address:   "https://cloudflare-dns.com/dns-query",
+			address:   "https://1dot1dot1dot1.cloudflare-dns.com/dns-query",
 			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 		},
 		{

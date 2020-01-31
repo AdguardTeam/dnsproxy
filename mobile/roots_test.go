@@ -30,7 +30,7 @@ func TestPopularUpstreams(t *testing.T) {
 			address: "tls://dns.google",
 		},
 		{
-			address: "https://dns.cloudflare.com/dns-query",
+			address: "https://cloudflare-dns.com/dns-query",
 		},
 		{
 			address: "tls://1.1.1.1",

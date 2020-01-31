@@ -158,9 +158,9 @@ func fetchCertIDs() ([]certID, error) {
 		return nil, err
 	}
 	text := string(body)
-	idx := strings.Index(text, "<div id=\"trusted\"")
+	idx := strings.Index(text, "<h2 id=\"trusted\"")
 	text = text[idx:]
-	text = text[:strings.Index(text, "</div>")]
+	text = text[:strings.Index(text, "</table></div>")]
 
 	var ids []certID
 	cols := make(map[string]int)

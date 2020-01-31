@@ -43,6 +43,7 @@ Application Options:
   -s, --all-servers   Use parallel queries to speed up resolving by querying all upstream servers simultaneously
   -d, --ipv6-disabled Disable IPv6. All AAAA requests will be replied with No Error response code and empty answer 
       --edns          Use EDNS Client Subnet extension
+      --edns-addr=    Send EDNS Client Address
 
 Help Options:
   -h, --help        Show this help message
@@ -142,6 +143,25 @@ Sends queries for `*.host.com` to `1.1.1.1:53` except for `*.maps.host.com` whic
 ```
 ./dnsproxy -u 8.8.8.8:53 -u [/host.com/]1.1.1.1:53 -u [/maps.host.com/]#`
 ```
+
+### EDNS Client Subnet
+
+To enable support for EDNS Client Subnet extension you should run dnsproxy with `--edns` flag:
+
+```
+./dnsproxy -u 8.8.8.8:53 --edns
+```
+
+Now if you connect to the proxy from the Internet - it will pass through your original IP address's prefix to the upstream server.  This way the upstream server may respond with IP addresses of the servers that are located near you to minimize latency.
+
+If you want to use EDNS CS feature when you're connecting to the proxy from a local network, you need to set `--edns-addr=PUBLIC_IP` argument:
+
+```
+./dnsproxy -u 8.8.8.8:53 --edns --edns-addr=72.72.72.72
+```
+
+Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy will pass through 72.72.72.72 to the upstream server.
+
 
 ### TODO
 

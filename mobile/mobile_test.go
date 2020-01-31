@@ -96,7 +96,7 @@ func TestMobileApiResolve(t *testing.T) {
 		// It seems that CloudFlare chooses more complicated cipher suites.
 		// It leads to higher memory usage.
 		"tls://1.1.1.1",
-		"https://dns.cloudflare.com/dns-query",
+		"https://cloudflare-dns.com/dns-query",
 		"tls://dns.adguard.com",
 		"https://dns.adguard.com/dns-query",
 		"176.103.130.130",
@@ -162,7 +162,7 @@ func TestMobileApiMultipleQueries(t *testing.T) {
 		// It seems that CloudFlare chooses more complicated cipher suites.
 		// It leads to higher memory usage.
 		"tls://1.1.1.1",
-		"https://dns.cloudflare.com/dns-query",
+		"https://cloudflare-dns.com/dns-query",
 		"tls://dns.adguard.com",
 		"https://dns.adguard.com/dns-query",
 		"176.103.130.130",

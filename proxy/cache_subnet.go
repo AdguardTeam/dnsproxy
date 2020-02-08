@@ -13,6 +13,8 @@ import (
 type cacheSubnet struct {
 	items        glcache.Cache // cache
 	cacheSize    int           // cache size (in bytes)
+	cacheMinTTL  uint32        // minimum TTL for DNS entries (in seconds)
+	cacheMaxTTL  uint32        // maximum TTL for DNS entries (in seconds)
 	sync.RWMutex               // lock
 }
 
@@ -131,6 +133,6 @@ func (c *cacheSubnet) SetWithSubnet(m *dns.Msg, ip net.IP, mask uint8) {
 	}
 	c.Unlock()
 
-	data := packResponse(m)
+	data := packResponse(m, c.cacheMinTTL, c.cacheMaxTTL)
 	_ = c.items.Set(key, data)
 }

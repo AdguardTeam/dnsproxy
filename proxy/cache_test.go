@@ -262,6 +262,74 @@ func TestCacheExpiration(t *testing.T) {
 	}
 }
 
+func TestCacheExpirationWithTTLOverride(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	dnsProxy.CacheEnabled = true
+	dnsProxy.CacheMinTTL = 2
+	dnsProxy.CacheMaxTTL = 4
+	err := dnsProxy.Start()
+	if err != nil {
+		t.Fatalf("cannot start the DNS proxy: %s", err)
+	}
+
+	// Create dns messages with 1 second TTL
+	googleReply := dns.Msg{}
+	googleReply.SetQuestion("google.com.", dns.TypeA)
+	googleReply.Response = true
+	googleReply.Answer = []dns.RR{newRR("google.com. 1 IN A 8.8.8.8")}
+
+	youtubeReply := dns.Msg{}
+	youtubeReply.SetQuestion("youtube.com.", dns.TypeA)
+	youtubeReply.Response = true
+	youtubeReply.Answer = []dns.RR{newRR("youtube.com 60 IN A 173.194.221.198")}
+
+	dnsProxy.cache.Set(&youtubeReply)
+	dnsProxy.cache.Set(&googleReply)
+
+	// Wait a minimal amount of time, greater than the
+	// original minimum TTL entry.
+	time.Sleep(1100 * time.Millisecond)
+
+	//Update the expected youtube response TTL
+	//to be maxTTL (4) - time waited (1) = 3
+	youtubeReply.Answer[0].Header().Ttl = 3
+
+	r, ok := dnsProxy.cache.Get(&youtubeReply)
+	if !ok {
+		t.Fatalf("No cache found for %s", youtubeReply.Question[0].Name)
+	}
+	if diff := deepEqualMsg(r, &youtubeReply); diff != nil {
+		t.Error(diff)
+	}
+
+	r, ok = dnsProxy.cache.Get(&googleReply)
+	if !ok {
+		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)
+	}
+	if diff := deepEqualMsg(r, &googleReply); diff != nil {
+		t.Error(diff)
+	}
+
+	// Wait an additional amount of time, greater than the max TTL,
+	// to guarrantee that all entries have been evicted.
+	time.Sleep(3100 * time.Millisecond)
+
+	// Both messages should be already removed from the cache
+	_, ok = dnsProxy.cache.Get(&youtubeReply)
+	if ok {
+		t.Fatalf("cache for %s was not removed from the cache", youtubeReply.Question[0].Name)
+	}
+	_, ok = dnsProxy.cache.Get(&googleReply)
+	if ok {
+		t.Fatalf("cache for %s was not removed from the cache", googleReply.Question[0].Name)
+	}
+
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
 func TestCache(t *testing.T) {
 	tests := testCases{
 		cache: []testEntry{

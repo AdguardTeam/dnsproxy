@@ -122,8 +122,10 @@ type Config struct {
 	EnableEDNSClientSubnet bool
 	EDNSAddr               net.IP // ECS IP used in request
 
-	CacheEnabled   bool // cache status
-	CacheSizeBytes int  // Cache size (in bytes). Default: 64k
+	CacheEnabled   bool   // cache status
+	CacheSizeBytes int    // Cache size (in bytes). Default: 64k
+	CacheMinTTL    uint32 // Minimum TTL for DNS entries (in seconds).
+	CacheMaxTTL    uint32 // Maximum TTL for DNS entries (in seconds).
 
 	Upstreams []upstream.Upstream // list of upstreams
 	Fallbacks []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
@@ -244,7 +246,7 @@ func ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS []string, timeout time.
 func (p *Proxy) Init() {
 	if p.CacheEnabled {
 		log.Printf("DNS cache is enabled")
-		p.cache = &cache{cacheSize: p.CacheSizeBytes}
+		p.cache = &cache{cacheSize: p.CacheSizeBytes, cacheMinTTL: p.CacheMinTTL, cacheMaxTTL: p.CacheMaxTTL}
 		if p.Config.EnableEDNSClientSubnet {
 			p.cacheSubnet = &cacheSubnet{cacheSize: p.CacheSizeBytes}
 		}

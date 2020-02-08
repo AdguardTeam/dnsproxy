@@ -12,11 +12,16 @@ import (
 	"github.com/miekg/dns"
 )
 
-const defaultCacheSize = 64 * 1024 // in bytes
+const (
+	defaultCacheSize = 64 * 1024 // in bytes
+	cacheMinTTLLimit = 60 * 60   // in seconds
+)
 
 type cache struct {
 	items        glcache.Cache // cache
 	cacheSize    int           // cache size (in bytes)
+	cacheMinTTL  uint32        // minimum TTL for DNS entries (in seconds)
+	cacheMaxTTL  uint32        // maximum TTL for DNS entries (in seconds)
 	sync.RWMutex               // lock
 }
 
@@ -49,9 +54,11 @@ func (c *cache) Set(m *dns.Msg) {
 	if m == nil {
 		return // no-op
 	}
-	if !isCacheable(m) {
+
+	if !isCacheable(m, c.cacheMinTTL, c.cacheMaxTTL) {
 		return
 	}
+
 	key := key(m)
 
 	c.Lock()
@@ -68,12 +75,12 @@ func (c *cache) Set(m *dns.Msg) {
 	}
 	c.Unlock()
 
-	data := packResponse(m)
+	data := packResponse(m, c.cacheMinTTL, c.cacheMaxTTL)
 	_ = c.items.Set(key, data)
 }
 
 // check if message is cacheable
-func isCacheable(m *dns.Msg) bool {
+func isCacheable(m *dns.Msg, cacheMinTTL uint32, cacheMaxTTL uint32) bool {
 	// truncated messages aren't valid
 	if m.Truncated {
 		log.Tracef("Refusing to cache truncated message")
@@ -90,6 +97,7 @@ func isCacheable(m *dns.Msg) bool {
 	qType := m.Question[0].Qtype
 
 	ttl := findLowestTTL(m)
+	ttl = respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL)
 	if ttl == 0 {
 		return false
 	}
@@ -161,6 +169,22 @@ func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
 	return ttl
 }
 
+// Updates a given TTL to fall within the range specified
+// by the cacheMinTTL and cacheMaxTTL settings
+func respectTTLOverrides(ttl uint32, cacheMinTTL uint32, cacheMaxTTL uint32) uint32 {
+	cacheMinTTL = min(cacheMinTTL, cacheMinTTLLimit)
+
+	if ttl < cacheMinTTL {
+		return cacheMinTTL
+	}
+
+	if cacheMaxTTL != 0 && ttl > cacheMaxTTL {
+		return cacheMaxTTL
+	}
+
+	return ttl
+}
+
 // Format:
 // uint8(do)
 // uint16(qtype)
@@ -194,9 +218,11 @@ func key(m *dns.Msg) []byte {
 expire [4]byte
 dns_message []byte
 */
-func packResponse(m *dns.Msg) []byte {
+func packResponse(m *dns.Msg, cacheMinTTL uint32, cacheMaxTTL uint32) []byte {
 	pm, _ := m.Pack()
-	expire := uint32(time.Now().Unix()) + findLowestTTL(m)
+	responseTTL := findLowestTTL(m)
+	actualTTL := respectTTLOverrides(responseTTL, cacheMinTTL, cacheMaxTTL)
+	expire := uint32(time.Now().Unix()) + actualTTL
 	var d []byte
 	d = make([]byte, 4+len(pm))
 	binary.BigEndian.PutUint32(d, expire)

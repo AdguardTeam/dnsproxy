@@ -37,6 +37,9 @@ Application Options:
   -r, --ratelimit=     Ratelimit (requests per second) (default: 0)
   -z, --cache          If specified, DNS cache is enabled
   -e  --cache-size=    Cache size (in bytes). Default: 65536
+      --cache-min-ttl= Minimum TTL value for DNS entries, in seconds. Capped at 3600 seconds (1 hour).
+                       Artificially extending TTLs should only be done with careful consideration.
+      --cache-max-ttl= Maximum TTL value for DNS entries, in seconds.
   -a, --refuse-any     If specified, refuse ANY requests
   -u, --upstream=      An upstream to be used (can be specified multiple times)
   -f, --fallback=      Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
@@ -44,8 +47,6 @@ Application Options:
   -d, --ipv6-disabled  Disable IPv6. All AAAA requests will be replied with No Error response code and empty answer 
       --edns           Use EDNS Client Subnet extension
       --edns-addr=     Send EDNS Client Address
-      --cache-min-ttl= Minimum TTL value for DNS entries, in seconds.
-      --cache-max-ttl= Maximum TTL value for DNS entries, in seconds.
 
 Help Options:
   -h, --help        Show this help message

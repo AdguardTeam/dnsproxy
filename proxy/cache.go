@@ -12,7 +12,10 @@ import (
 	"github.com/miekg/dns"
 )
 
-const defaultCacheSize = 64 * 1024 // in bytes
+const (
+	defaultCacheSize = 64 * 1024 // in bytes
+	cacheMinTTLLimit = 60 * 60   // in seconds
+)
 
 type cache struct {
 	items        glcache.Cache // cache
@@ -167,12 +170,16 @@ func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
 // Updates a given TTL to fall within the range specified
 // by the cacheMinTTL and cacheMaxTTL settings
 func respectTTLOverrides(ttl uint32, cacheMinTTL uint32, cacheMaxTTL uint32) uint32 {
-	if cacheMinTTL > 0 && ttl < cacheMinTTL {
+	cacheMinTTL = min(cacheMinTTL, cacheMinTTLLimit)
+
+	if ttl < cacheMinTTL {
 		return cacheMinTTL
 	}
-	if cacheMaxTTL > 0 && ttl > cacheMaxTTL {
+
+	if cacheMaxTTL != 0 && ttl > cacheMaxTTL {
 		return cacheMaxTTL
 	}
+
 	return ttl
 }
 

@@ -246,7 +246,11 @@ func ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS []string, timeout time.
 func (p *Proxy) Init() {
 	if p.CacheEnabled {
 		log.Printf("DNS cache is enabled")
-		p.cache = &cache{cacheSize: p.CacheSizeBytes, cacheMinTTL: p.CacheMinTTL, cacheMaxTTL: p.CacheMaxTTL}
+
+		p.cache = &cache{cacheSize: p.CacheSizeBytes,
+			cacheMinTTL: p.CacheMinTTL,
+			cacheMaxTTL: p.CacheMaxTTL}
+
 		if p.Config.EnableEDNSClientSubnet {
 			p.cacheSubnet = &cacheSubnet{cacheSize: p.CacheSizeBytes}
 		}

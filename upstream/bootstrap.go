@@ -23,6 +23,10 @@ import (
 // nolint
 var RootCAs *x509.CertPool
 
+// CipherSuites - custom list of TLSv1.2 ciphers
+// nolint
+var CipherSuites []uint16
+
 type bootstrapper struct {
 	address        string        // in form of "tls://one.one.one.one:853"
 	resolvers      []*Resolver   // list of Resolvers to use to resolve hostname, if necessary
@@ -338,9 +342,10 @@ func createDialContext(addresses []string, timeout time.Duration) (dialContext d
 // createTLSConfig creates a client TLS config
 func createTLSConfig(host string) *tls.Config {
 	return &tls.Config{
-		ServerName: host,
-		RootCAs:    RootCAs,
-		MinVersion: tls.VersionTLS12,
+		ServerName:   host,
+		RootCAs:      RootCAs,
+		CipherSuites: CipherSuites,
+		MinVersion:   tls.VersionTLS12,
 	}
 }
 

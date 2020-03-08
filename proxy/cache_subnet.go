@@ -114,7 +114,7 @@ func (c *cacheSubnet) GetWithSubnet(request *dns.Msg, ip net.IP, mask uint8) (*d
 // ip: IP subnet this response is valid for
 // mask: subnet mask
 func (c *cacheSubnet) SetWithSubnet(m *dns.Msg, ip net.IP, mask uint8) {
-	if m == nil || !isCacheable(m) {
+	if m == nil || !isCacheable(m, c.cacheMinTTL, c.cacheMaxTTL) {
 		return
 	}
 	key := keyWithSubnet(m, ip, mask)

@@ -302,26 +302,16 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		t.Error(diff)
 	}
 
+	//The presence of the Google entry and assertion
+	//that the TTL = 1 AFTER we've already waited 1 second
+	//proves that the Google response was updated to match
+	//the MinTTL = 2 value.
 	r, ok = dnsProxy.cache.Get(&googleReply)
 	if !ok {
 		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)
 	}
 	if diff := deepEqualMsg(r, &googleReply); diff != nil {
 		t.Error(diff)
-	}
-
-	// Wait an additional amount of time, greater than the max TTL,
-	// to guarrantee that all entries have been evicted.
-	time.Sleep(3100 * time.Millisecond)
-
-	// Both messages should be already removed from the cache
-	_, ok = dnsProxy.cache.Get(&youtubeReply)
-	if ok {
-		t.Fatalf("cache for %s was not removed from the cache", youtubeReply.Question[0].Name)
-	}
-	_, ok = dnsProxy.cache.Get(&googleReply)
-	if ok {
-		t.Fatalf("cache for %s was not removed from the cache", googleReply.Question[0].Name)
 	}
 
 	err = dnsProxy.Stop()

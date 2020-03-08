@@ -55,7 +55,7 @@ type Options struct {
 	CacheSizeBytes int `short:"e" long:"cache-size" description:"Cache size (in bytes). Default: 64k"`
 
 	// DNS cache minimum TTL value - overrides record value
-	CacheMinTTL uint32 `long:"cache-min-ttl" description:"Minimum TTL value for DNS entries, in seconds. Capped at 3600 seconds (1 hour). Artificially extending TTLs should only be done with careful consideration."`
+	CacheMinTTL uint32 `long:"cache-min-ttl" description:"Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration."`
 
 	// DNS cache maximum TTL value - overrides record value
 	CacheMaxTTL uint32 `long:"cache-max-ttl" description:"Maximum TTL value for DNS entries, in seconds."`

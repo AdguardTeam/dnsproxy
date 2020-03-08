@@ -54,7 +54,7 @@ func (c *cache) Set(m *dns.Msg) {
 	if m == nil {
 		return // no-op
 	}
-	if !isCacheable(m) {
+	if !isCacheable(m, c.cacheMinTTL, c.cacheMaxTTL) {
 		return
 	}
 	key := key(m)
@@ -78,7 +78,7 @@ func (c *cache) Set(m *dns.Msg) {
 }
 
 // check if message is cacheable
-func isCacheable(m *dns.Msg) bool {
+func isCacheable(m *dns.Msg, cacheMinTTL uint32, cacheMaxTTL uint32) bool {
 	// truncated messages aren't valid
 	if m.Truncated {
 		log.Tracef("Refusing to cache truncated message")
@@ -94,8 +94,8 @@ func isCacheable(m *dns.Msg) bool {
 	qName := m.Question[0].Name
 	qType := m.Question[0].Qtype
 
-	//TODO: Do we need to handle cacheMinTTL settings here??
 	ttl := findLowestTTL(m)
+	ttl = respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL)
 	if ttl == 0 {
 		return false
 	}

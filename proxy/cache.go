@@ -54,9 +54,11 @@ func (c *cache) Set(m *dns.Msg) {
 	if m == nil {
 		return // no-op
 	}
+
 	if !isCacheable(m, c.cacheMinTTL, c.cacheMaxTTL) {
 		return
 	}
+
 	key := key(m)
 
 	c.Lock()

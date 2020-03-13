@@ -36,12 +36,13 @@ func TestLookupIPAddr(t *testing.T) {
 
 	addrs, err = p.LookupIPAddr("dns.google")
 	assert.Nil(t, err)
-	assert.Equal(t, 4, len(addrs))
-
+	assert.True(t, len(addrs) == 2 || len(addrs) == 4)
 	assertContainsIP(t, addrs, "8.8.8.8")
 	assertContainsIP(t, addrs, "8.8.4.4")
-	assertContainsIP(t, addrs, "2001:4860:4860::8888")
-	assertContainsIP(t, addrs, "2001:4860:4860::8844")
+	if len(addrs) == 4 {
+		assertContainsIP(t, addrs, "2001:4860:4860::8888")
+		assertContainsIP(t, addrs, "2001:4860:4860::8844")
+	}
 }
 
 func assertContainsIP(t *testing.T, addrs []net.IPAddr, ip string) {

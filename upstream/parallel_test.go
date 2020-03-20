@@ -2,8 +2,13 @@ package upstream
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -63,4 +68,59 @@ func TestLookupParallel(t *testing.T) {
 	if elapsed > timeout {
 		t.Fatalf("lookup took more time than the configured timeout: %v", elapsed)
 	}
+}
+
+type testUpstream struct {
+	a     net.IP
+	err   bool
+	sleep time.Duration // a delay before response
+}
+
+func (u *testUpstream) Exchange(req *dns.Msg) (*dns.Msg, error) {
+	if u.sleep != 0 {
+		time.Sleep(u.sleep)
+	}
+
+	resp := &dns.Msg{}
+	resp.SetReply(req)
+
+	if len(u.a) != 0 {
+		a := dns.A{}
+		a.A = u.a
+		resp.Answer = append(resp.Answer, &a)
+	}
+
+	if u.err {
+		return nil, fmt.Errorf("upstream error")
+	}
+
+	return resp, nil
+}
+
+func (u *testUpstream) Address() string {
+	return ""
+}
+
+func TestExchangeAll(t *testing.T) {
+	u1 := testUpstream{}
+	u1.a = net.ParseIP("1.1.1.1")
+	u1.sleep = 100 * time.Millisecond
+
+	u2 := testUpstream{}
+	u2.err = true
+
+	u3 := testUpstream{}
+	u3.a = net.ParseIP("3.3.3.3")
+
+	ups := []Upstream{&u1, &u2, &u3}
+	req := createHostTestMessage("test.org")
+	res, err := ExchangeAll(ups, req)
+	assert.True(t, err == nil)
+	assert.True(t, len(res) == 2)
+
+	a := res[0].Resp.Answer[0].(*dns.A)
+	assert.True(t, a.A.To4().Equal(net.ParseIP("3.3.3.3").To4()))
+
+	a = res[1].Resp.Answer[0].(*dns.A)
+	assert.True(t, a.A.To4().Equal(net.ParseIP("1.1.1.1").To4()))
 }

@@ -47,6 +47,7 @@ Application Options:
   -d, --ipv6-disabled  Disable IPv6. All AAAA requests will be replied with No Error response code and empty answer 
       --edns           Use EDNS Client Subnet extension
       --edns-addr=     Send EDNS Client Address
+      --fastest-addr   Respond to A or AAAA requests only with the fastest IP address
 
 Help Options:
   -h, --help        Show this help message

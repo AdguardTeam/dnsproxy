@@ -47,6 +47,8 @@ github.com/shirou/gopsutil/net
 github.com/shirou/gopsutil/process
 # github.com/shirou/w32 v0.0.0-20160930032740-bb4de0191aa4
 github.com/shirou/w32
+# github.com/sparrc/go-ping v0.0.0-20190613174326-4e5b6552494c
+github.com/sparrc/go-ping
 # github.com/stretchr/testify v1.4.0
 github.com/stretchr/testify/assert
 # golang.org/x/crypto v0.0.0-20191001170739-f9e2070545dc
@@ -63,6 +65,7 @@ golang.org/x/net/bpf
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
+golang.org/x/net/icmp
 golang.org/x/net/idna
 golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket

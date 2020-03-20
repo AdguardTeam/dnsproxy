@@ -17,6 +17,7 @@ require (
 	github.com/miekg/dns v1.1.19
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/shirou/gopsutil v2.19.9+incompatible
+	github.com/sparrc/go-ping v0.0.0-20190613174326-4e5b6552494c
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/crypto v0.0.0-20191001170739-f9e2070545dc // indirect
 	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0

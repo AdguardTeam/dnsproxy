@@ -273,3 +273,14 @@ func min(x uint32, y uint32) uint32 {
 
 	return y
 }
+
+func getIPFromDNSRecord(r dns.RR) net.IP {
+	switch addr := r.(type) {
+	case *dns.A:
+		return addr.A.To4()
+
+	case *dns.AAAA:
+		return addr.AAAA
+	}
+	return nil
+}

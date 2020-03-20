@@ -81,6 +81,10 @@ type Options struct {
 	// Use Custom EDNS Client Address
 	EDNSAddr string `long:"edns-addr" description:"Send EDNS Client Address"`
 
+	// Respond to A or AAAA requests only with the fastest IP address
+	//  detected by ICMP response time or TCP connection time
+	FastestAddress bool `long:"fastest-addr" description:"Respond to A or AAAA requests only with the fastest IP address" optional:"yes" optional-value:"true"`
+
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
 }
@@ -177,6 +181,7 @@ func createProxyConfig(options Options) proxy.Config {
 		RefuseAny:                options.RefuseAny,
 		AllServers:               options.AllServers,
 		EnableEDNSClientSubnet:   options.EnableEDNSSubnet,
+		FindFastestAddr:          options.FastestAddress,
 	}
 
 	if options.EDNSAddr != "" {

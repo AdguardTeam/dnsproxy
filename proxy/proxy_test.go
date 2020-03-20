@@ -831,6 +831,7 @@ func getCNAMEFromResponse(resp *dns.Msg) string {
 type testUpstream struct {
 	cname1Resp *dns.CNAME
 	aResp      *dns.A
+	aRespArr   []*dns.A
 	ecsIP      net.IP
 	ecsReqIP   net.IP
 	ecsReqMask uint8
@@ -845,6 +846,10 @@ func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	}
 
 	resp.Answer = append(resp.Answer, u.aResp)
+
+	for _, a := range u.aRespArr {
+		resp.Answer = append(resp.Answer, a)
+	}
 
 	u.ecsReqIP, u.ecsReqMask, _ = parseECS(m)
 	if u.ecsIP != nil {

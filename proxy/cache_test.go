@@ -433,12 +433,19 @@ func newRR(rr string) dns.RR {
 // deepEqual is same as deep.Equal, except:
 //  * ignores Id when comparing
 //  * ignores Rdlength
-//  * question names are not case sensetive
+//  * question names are not case sensitive
 func deepEqualMsg(left *dns.Msg, right *dns.Msg) []string {
 	temp := *left
 	temp.Id = right.Id
 	if len(temp.Answer) == 1 && len(right.Answer) == 1 {
 		temp.Answer[0].Header().Rdlength = right.Answer[0].Header().Rdlength
+	}
+	for _, rr := range right.Answer {
+		if a, ok := rr.(*dns.A); ok {
+			if a.A.To4() != nil {
+				a.A = a.A.To4()
+			}
+		}
 	}
 	for i := range left.Question {
 		left.Question[i].Name = strings.ToLower(left.Question[i].Name)

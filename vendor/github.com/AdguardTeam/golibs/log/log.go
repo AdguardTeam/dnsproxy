@@ -1,5 +1,4 @@
-// Logging functions
-
+// Package log contains necessary logging functions
 package log
 
 import (

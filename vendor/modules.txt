@@ -1,57 +1,38 @@
-# github.com/AdguardTeam/golibs v0.3.0
+# github.com/AdguardTeam/golibs v0.4.0
 github.com/AdguardTeam/golibs/cache
 github.com/AdguardTeam/golibs/log
 github.com/AdguardTeam/golibs/utils
-# github.com/AdguardTeam/urlfilter v0.7.0
-github.com/AdguardTeam/urlfilter
-github.com/AdguardTeam/urlfilter/filterlist
-github.com/AdguardTeam/urlfilter/filterutil
-github.com/AdguardTeam/urlfilter/rules
-# github.com/StackExchange/wmi v0.0.0-20190523213315-cbe66965904d
-github.com/StackExchange/wmi
 # github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da
 github.com/aead/chacha20/chacha
 # github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635
 github.com/aead/poly1305
-# github.com/ameshkov/dnscrypt v1.0.7
+# github.com/ameshkov/dnscrypt v1.1.0
 github.com/ameshkov/dnscrypt
 github.com/ameshkov/dnscrypt/xsecretbox
 # github.com/ameshkov/dnsstamps v1.0.1
 github.com/ameshkov/dnsstamps
-# github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a
-github.com/asaskevich/govalidator
 # github.com/beefsack/go-rate v0.0.0-20180408011153-efa7637bb9b6
 github.com/beefsack/go-rate
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/go-ole/go-ole v1.2.4
-github.com/go-ole/go-ole
-github.com/go-ole/go-ole/oleutil
-# github.com/go-test/deep v1.0.1
+# github.com/go-test/deep v1.0.5
 github.com/go-test/deep
 # github.com/jessevdk/go-flags v1.4.0
 github.com/jessevdk/go-flags
-# github.com/joomcode/errorx v1.0.0
+# github.com/joomcode/errorx v1.0.1
 github.com/joomcode/errorx
-# github.com/miekg/dns v1.1.19
+# github.com/miekg/dns v1.1.29
 github.com/miekg/dns
 # github.com/patrickmn/go-cache v2.1.0+incompatible
 github.com/patrickmn/go-cache
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/shirou/gopsutil v2.19.9+incompatible
-github.com/shirou/gopsutil/cpu
-github.com/shirou/gopsutil/internal/common
-github.com/shirou/gopsutil/mem
-github.com/shirou/gopsutil/net
-github.com/shirou/gopsutil/process
-# github.com/shirou/w32 v0.0.0-20160930032740-bb4de0191aa4
-github.com/shirou/w32
 # github.com/sparrc/go-ping v0.0.0-20190613174326-4e5b6552494c
 github.com/sparrc/go-ping
-# github.com/stretchr/testify v1.4.0
+# github.com/stretchr/testify v1.5.1
 github.com/stretchr/testify/assert
-# golang.org/x/crypto v0.0.0-20191001170739-f9e2070545dc
+# golang.org/x/crypto v0.0.0-20200403201458-baeed622b8d8
+golang.org/x/crypto/blake2b
 golang.org/x/crypto/curve25519
 golang.org/x/crypto/ed25519
 golang.org/x/crypto/ed25519/internal/edwards25519
@@ -60,7 +41,7 @@ golang.org/x/crypto/nacl/box
 golang.org/x/crypto/nacl/secretbox
 golang.org/x/crypto/poly1305
 golang.org/x/crypto/salsa20/salsa
-# golang.org/x/net v0.0.0-20191002035440-2ec189313ef0
+# golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
 golang.org/x/net/bpf
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
@@ -71,8 +52,7 @@ golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
-golang.org/x/net/publicsuffix
-# golang.org/x/sys v0.0.0-20191002091554-b397fe3ad8ed
+# golang.org/x/sys v0.0.0-20200331124033-c3d80250170d
 golang.org/x/sys/cpu
 golang.org/x/sys/unix
 golang.org/x/sys/windows
@@ -81,5 +61,5 @@ golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
-# gopkg.in/yaml.v2 v2.2.3
+# gopkg.in/yaml.v2 v2.2.8
 gopkg.in/yaml.v2

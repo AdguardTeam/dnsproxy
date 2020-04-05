@@ -22,7 +22,6 @@ func Decorate(err error, message string, args ...interface{}) *Error {
 	return NewErrorBuilder(transparentWrapper).
 		WithConditionallyFormattedMessage(message, args...).
 		WithCause(err).
-		Transparent().
 		Create()
 }
 
@@ -34,7 +33,6 @@ func EnhanceStackTrace(err error, message string, args ...interface{}) *Error {
 	return NewErrorBuilder(transparentWrapper).
 		WithConditionallyFormattedMessage(message, args...).
 		WithCause(err).
-		Transparent().
 		EnhanceStackTrace().
 		Create()
 }
@@ -50,7 +48,6 @@ func EnsureStackTrace(err error) *Error {
 	return NewErrorBuilder(stackTraceWrapper).
 		WithConditionallyFormattedMessage("").
 		WithCause(err).
-		Transparent().
 		EnhanceStackTrace().
 		Create()
 }

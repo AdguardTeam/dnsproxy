@@ -68,7 +68,7 @@ func (c *cache) Clear() {
 // Set value
 func (c *cache) Set(key []byte, val []byte) bool {
 	addSize := uint(len(key) + len(val))
-	if uint(addSize) > c.conf.MaxElementSize {
+	if addSize > c.conf.MaxElementSize {
 		return false // too large data
 	}
 

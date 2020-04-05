@@ -22,17 +22,27 @@ linters-settings:
     line-length: 200
 
 linters:
-  enable-all: true
-  disable:
-    - gocritic
-    - scopelint
-    - prealloc
-    - maligned
-    - unparam
-    - gosimple
-    - gochecknoglobals
-    - godox
-    - funlen
+  enable:
+    - deadcode
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - structcheck
+    - unused
+    - varcheck
+    - bodyclose
+    - depguard
+    - dupl
+    - gocyclo
+    - goimports
+    - golint
+    - gosec
+    - misspell
+    - stylecheck
+    - unconvert
+  disable-all: true
+  fast: true
 
 issues:
   exclude-use-default: false

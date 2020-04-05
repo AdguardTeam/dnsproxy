@@ -12,7 +12,7 @@ Moreover, it can work as a `DNS-over-HTTPS` and/or `DNS-over-TLS` server.
 
 ## How to build
 
-You will need go v1.13 or later.
+You will need go v1.14 or later.
 
 ```
 $ go build
@@ -165,13 +165,3 @@ If you want to use EDNS CS feature when you're connecting to the proxy from a lo
 ```
 
 Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy will pass through 72.72.72.72 to the upstream server.
-
-
-### TODO
-
-* [x] Configure fallback resolver
-* [x] Listen on TCP/TLS as well
-* [X] gomobile/gobind builds
-* [X] Listen on HTTPS
-* [ ] DNSSEC validation
-* [ ] 1.0.0 release

@@ -1,5 +1,4 @@
-// Useful functions
-
+// Package utils provides simple helper functions that are used in AdGuard projects
 package utils
 
 import (

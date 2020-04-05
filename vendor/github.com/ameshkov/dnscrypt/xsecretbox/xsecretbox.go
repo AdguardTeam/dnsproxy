@@ -52,7 +52,7 @@ func Seal(out, nonce, message, key []byte) []byte {
 
 	var tag [TagSize]byte
 	hash := poly1305.New(polyKey)
-	hash.Write(ciphertext)
+	_, _ = hash.Write(ciphertext)
 	hash.Sum(tag[:0])
 	copy(tagOut, tag[:])
 
@@ -80,7 +80,7 @@ func Open(out, nonce, box, key []byte) ([]byte, error) {
 	var tag [TagSize]byte
 	ciphertext := box[TagSize:]
 	hash := poly1305.New(polyKey)
-	hash.Write(ciphertext)
+	_, _ = hash.Write(ciphertext)
 	hash.Sum(tag[:0])
 	if subtle.ConstantTimeCompare(tag[:], box[:TagSize]) != 1 {
 		return nil, errors.New("ciphertext authentication failed")

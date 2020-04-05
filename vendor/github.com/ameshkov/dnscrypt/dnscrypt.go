@@ -183,9 +183,9 @@ func (c *Client) ExchangeConn(m *dns.Msg, s *ServerInfo, conn net.Conn) (*dns.Ms
 	}
 
 	if c.Timeout > 0 {
-		conn.SetDeadline(time.Now().Add(c.Timeout))
+		_ = conn.SetDeadline(time.Now().Add(c.Timeout))
 	}
-	conn.Write(encryptedQuery)
+	_, _ = conn.Write(encryptedQuery)
 	encryptedResponse := make([]byte, maxDNSPacketSize)
 
 	// Reading the response
@@ -344,8 +344,8 @@ func (s *ServerInfo) decrypt(encrypted []byte, nonce []byte) ([]byte, error) {
 	sharedKey := &s.ServerCert.SharedKey
 	serverMagicLen := len(serverMagic)
 	responseHeaderLen := serverMagicLen + nonceSize
-	if len(encrypted) < responseHeaderLen+tagSize+int(minDNSPacketSize) ||
-		len(encrypted) > responseHeaderLen+tagSize+int(maxDNSPacketSize) ||
+	if len(encrypted) < responseHeaderLen+tagSize+minDNSPacketSize ||
+		len(encrypted) > responseHeaderLen+tagSize+maxDNSPacketSize ||
 		!bytes.Equal(encrypted[:serverMagicLen], serverMagic[:]) {
 		return encrypted, errors.New("invalid message size or prefix")
 	}
@@ -447,7 +447,7 @@ func computeSharedKey(cryptoConstruction CryptoConstruction, secretKey *[32]byte
 func isDigit(b byte) bool { return b >= '0' && b <= '9' }
 
 func dddToByte(s []byte) byte {
-	return byte((s[0]-'0')*100 + (s[1]-'0')*10 + (s[2] - '0'))
+	return (s[0]-'0')*100 + (s[1]-'0')*10 + (s[2] - '0')
 }
 
 func packTxtString(s string) ([]byte, error) {

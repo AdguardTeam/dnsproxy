@@ -245,6 +245,13 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 		return nil
 	}
 
+	// check if DO flag is set in the request
+	reqOpt := request.IsEdns0()
+	reqDo := false
+	if reqOpt != nil {
+		reqDo = reqOpt.Do()
+	}
+
 	res := dns.Msg{}
 	res.SetReply(request)
 	res.Authoritative = false
@@ -265,6 +272,12 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 	for _, r := range m.Extra {
 		// don't return OPT records as these are hop-by-hop
 		if r.Header().Rrtype == dns.TypeOPT {
+			// unless DO was set in the request
+			// get it's value from the original header then
+			if reqDo {
+				opt := r.(*dns.OPT)
+				res.SetEdns0(opt.UDPSize(), opt.Do())
+			}
 			continue
 		}
 		extra := dns.Copy(r)

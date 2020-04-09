@@ -18,6 +18,12 @@ func (p *Proxy) udpCreate() error {
 		return errorx.Decorate(err, "couldn't listen to UDP socket")
 	}
 
+	err = udpSetOptions(udpListen)
+	if err != nil {
+		udpListen.Close()
+		return fmt.Errorf("udpSetOptions: %s", err)
+	}
+
 	p.udpListen = udpListen
 	log.Printf("Listening to udp://%s", p.udpListen.LocalAddr())
 	return nil
@@ -34,7 +40,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 		}
 		p.RUnlock()
 
-		n, addr, err := conn.ReadFrom(b)
+		n, localIP, remoteAddr, err := p.readUDP(conn, b)
 		// documentation says to handle the packet even if err occurs, so do that first
 		if n > 0 {
 			// make a copy of all bytes because ReadFrom() will overwrite contents of b on next call
@@ -43,7 +49,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 			copy(packet, b)
 			p.guardMaxGoroutines()
 			go func() {
-				p.handleUDPPacket(packet, addr, conn) // ignore errors
+				p.handleUDPPacket(packet, localIP, remoteAddr, conn)
 				p.freeMaxGoroutines()
 			}()
 		}
@@ -58,8 +64,8 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 }
 
 // handleUDPPacket processes the incoming UDP packet and sends a DNS response
-func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn) {
-	log.Tracef("Start handling new UDP packet from %s", addr)
+func (p *Proxy) handleUDPPacket(packet []byte, localIP net.IP, remoteAddr *net.UDPAddr, conn *net.UDPConn) {
+	log.Tracef("Start handling new UDP packet from %s", remoteAddr)
 
 	msg := &dns.Msg{}
 	err := msg.Unpack(packet)
@@ -69,10 +75,11 @@ func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 	}
 
 	d := &DNSContext{
-		Proto: "udp",
-		Req:   msg,
-		Addr:  addr,
-		Conn:  conn,
+		Proto:   ProtoUDP,
+		Req:     msg,
+		Addr:    remoteAddr,
+		Conn:    conn,
+		localIP: localIP,
 	}
 
 	err = p.handleDNSRequest(d)
@@ -84,18 +91,18 @@ func (p *Proxy) handleUDPPacket(packet []byte, addr net.Addr, conn *net.UDPConn)
 // Writes a response to the UDP client
 func (p *Proxy) respondUDP(d *DNSContext) error {
 	resp := d.Res
-	conn := d.Conn.(*net.UDPConn)
 
 	bytes, err := resp.Pack()
 	if err != nil {
 		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
 	}
-	n, err := conn.WriteTo(bytes, d.Addr)
+
+	n, err := udpWrite(bytes, d)
 	if n == 0 && isConnClosed(err) {
 		return err
 	}
 	if err != nil {
-		return errorx.Decorate(err, "conn.WriteTo() returned error")
+		return errorx.Decorate(err, "conn.WriteMsgUDP() returned error")
 	}
 	if n != len(bytes) {
 		return fmt.Errorf("conn.WriteTo() returned with %d != %d", n, len(bytes))

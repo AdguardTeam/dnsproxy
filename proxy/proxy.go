@@ -81,6 +81,8 @@ type Proxy struct {
 
 	fastestAddr FastestAddr // fastest-addr module
 
+	udpOOBSize int // size for received OOB data
+
 	Config // proxy configuration
 
 	maxGoroutines chan bool // limits the number of parallel queries. if nil, there's no limit
@@ -150,6 +152,7 @@ type DNSContext struct {
 	Res                *dns.Msg            // DNS response from an upstream
 	Conn               net.Conn            // underlying client connection. Can be null in the case of DOH.
 	Addr               net.Addr            // client address.
+	localIP            net.IP              // local IP address (for UDP socket)
 	HTTPRequest        *http.Request       // HTTP request (for DOH only)
 	HTTPResponseWriter http.ResponseWriter // HTTP response writer (for DOH only)
 	StartTime          time.Time           // processing start time
@@ -259,6 +262,8 @@ func (p *Proxy) Init() {
 			p.cacheSubnet = &cacheSubnet{cacheSize: p.CacheSizeBytes}
 		}
 	}
+
+	p.udpOOBSize = udpGetOOBSize()
 
 	if p.FindFastestAddr {
 		p.fastestAddr.Init()

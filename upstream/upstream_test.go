@@ -77,7 +77,8 @@ func TestUpstreamRace(t *testing.T) {
 			req := createTestMessage()
 			res, err := u.Exchange(req)
 			if err != nil {
-				abort <- fmt.Sprintf("failed to resolve: %v", err)
+				abort <- fmt.Sprintf("%s failed to resolve: %v", u.Address(), err)
+				return
 			}
 			assertResponse(t, res)
 			t.Logf("Finished %d", idx)

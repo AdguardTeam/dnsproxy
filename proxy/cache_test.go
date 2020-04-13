@@ -290,22 +290,26 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	// original minimum TTL entry.
 	time.Sleep(1100 * time.Millisecond)
 
-	//Update the expected youtube response TTL
-	//to be maxTTL (4) - time waited (1) = 3
+	// Update the expected youtube response TTL
+	// to be maxTTL (4) - time waited (1) = 3
 	youtubeReply.Answer[0].Header().Ttl = 3
 
 	r, ok := dnsProxy.cache.Get(&youtubeReply)
 	if !ok {
 		t.Fatalf("No cache found for %s", youtubeReply.Question[0].Name)
 	}
-	if diff := deepEqualMsg(r, &youtubeReply); diff != nil {
-		t.Error(diff)
-	}
 
-	//The presence of the Google entry and assertion
-	//that the TTL = 1 AFTER we've already waited 1 second
-	//proves that the Google response was updated to match
-	//the MinTTL = 2 value.
+	assert.NotNil(t, r.Answer)
+	ttl := r.Answer[0].Header().Ttl
+
+	// Update the expected youtube response TTL
+	// to be maxTTL (4) - time waited (1) = 3 (or less)
+	assert.True(t, ttl <= 3)
+
+	// The presence of the Google entry and assertion
+	// that the TTL = 1 AFTER we've already waited 1 second
+	// proves that the Google response was updated to match
+	// the MinTTL = 2 value.
 	r, ok = dnsProxy.cache.Get(&googleReply)
 	if !ok {
 		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)

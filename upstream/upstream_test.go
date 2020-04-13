@@ -319,7 +319,7 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{},
 		},
 		{
-			address:   "https://dns9.quad9.net:443/dns-query",
+			address:   "https://dns10.quad9.net:443/dns-query",
 			bootstrap: []string{"8.8.8.8"},
 		},
 		{
@@ -436,7 +436,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 		},
 		{
-			address:   "https://dns9.quad9.net:443/dns-query",
+			address:   "https://dns10.quad9.net:443/dns-query",
 			bootstrap: []string{"1.2.3.4:79", "8.8.8.8:53"},
 		},
 		{

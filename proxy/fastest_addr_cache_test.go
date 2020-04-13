@@ -14,7 +14,7 @@ func TestFastestAddrCache(t *testing.T) {
 	f := FastestAddr{}
 	f.Init()
 	f.allowICMP = false
-	f.tcpPort = 8081
+	f.tcpPorts = []uint{40812}
 	up1 := &testUpstream{}
 
 	ent := cacheEntry{

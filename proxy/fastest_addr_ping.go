@@ -25,13 +25,12 @@ type pingResult struct {
 	latencyMsec uint
 }
 
-// Ping an address via ICMP and then send signal to the channel
-func (f *FastestAddr) pingDo(addr net.IP, exres *upstream.ExchangeAllResult, ch chan *pingResult) {
+// pingDo - pings an address via ICMP and then send signal to the channel
+func (f *FastestAddr) pingDo(addr net.IP, exres *upstream.ExchangeAllResult, ttl uint32, ch chan *pingResult) {
 	res := &pingResult{}
 	res.addr = addr
 	res.exres = exres
 	res.isICMP = true
-	respTTL := findLowestTTL(res.exres.Resp)
 
 	if runtime.GOOS == "windows" && !adminRights {
 		log.Debug("pinger requires admin rights on Windows")
@@ -66,21 +65,20 @@ func (f *FastestAddr) pingDo(addr net.IP, exres *upstream.ExchangeAllResult, ch 
 			res.exres.Resp.Question[0].Name, addr)
 		log.Debug("%s", res.err)
 
-		f.cacheAddFailure(res.addr, respTTL)
+		f.cacheAddFailure(res.addr, ttl)
 	} else {
 		res.latencyMsec = uint(time.Since(start).Milliseconds())
-		f.cacheAddSuccessful(res.addr, respTTL, res.latencyMsec)
+		f.cacheAddSuccessful(res.addr, ttl, res.latencyMsec)
 	}
 
 	ch <- res
 }
 
-// pingDoTCP connect to a remote address via TCP and then send signal to the channel
-func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.ExchangeAllResult, ch chan *pingResult) {
+// pingDoTCP connects to a remote address via TCP and then send signal to the channel
+func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.ExchangeAllResult, ttl uint32, ch chan *pingResult) {
 	res := &pingResult{}
 	res.addr = addr
 	res.exres = exres
-	respTTL := findLowestTTL(res.exres.Resp)
 
 	a := net.JoinHostPort(addr.String(), strconv.Itoa(int(tcpPort)))
 	log.Debug("%s: Connecting to %s via TCP",
@@ -92,7 +90,7 @@ func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.Excha
 			res.exres.Resp.Question[0].Name, addr)
 		log.Debug("%s", res.err)
 
-		f.cacheAddFailure(res.addr, respTTL)
+		f.cacheAddFailure(res.addr, ttl)
 
 		ch <- res
 		return
@@ -100,7 +98,7 @@ func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.Excha
 	res.latencyMsec = uint(time.Since(start).Milliseconds())
 	conn.Close()
 
-	f.cacheAddSuccessful(res.addr, respTTL, res.latencyMsec)
+	f.cacheAddSuccessful(res.addr, ttl, res.latencyMsec)
 
 	ch <- res
 }

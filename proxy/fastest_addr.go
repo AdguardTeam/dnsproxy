@@ -114,13 +114,14 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 			}
 
 			if f.cacheFind(ip) == nil {
+				ttl := findLowestTTL(r.Resp)
 				if f.allowICMP {
-					go f.pingDo(ip, &r, ch)
+					go f.pingDo(ip, &r, ttl, ch)
 					total++
 				}
 				if f.allowTCP {
 					for _, port := range f.tcpPorts {
-						go f.pingDoTCP(ip, port, &r, ch)
+						go f.pingDoTCP(ip, port, &r, ttl, ch)
 						total++
 					}
 				}

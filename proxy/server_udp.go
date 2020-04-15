@@ -102,10 +102,10 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 		return err
 	}
 	if err != nil {
-		return errorx.Decorate(err, "conn.WriteMsgUDP() returned error")
+		return errorx.Decorate(err, "udpWrite() returned error")
 	}
 	if n != len(bytes) {
-		return fmt.Errorf("conn.WriteTo() returned with %d != %d", n, len(bytes))
+		return fmt.Errorf("udpWrite() returned with %d != %d", n, len(bytes))
 	}
 	return nil
 }

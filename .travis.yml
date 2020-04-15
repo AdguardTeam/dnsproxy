@@ -22,6 +22,9 @@ before_install:
 
 script:
   - |-
+    # Fail if any command fails
+    set -e
+
     case $TRAVIS_OS_NAME in
       linux | osx)
         # Run linter

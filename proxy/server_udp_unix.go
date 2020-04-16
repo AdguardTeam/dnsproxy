@@ -1,4 +1,4 @@
-// +build aix darwin dragonfly linux netbsd openbsd solaris
+// +build aix darwin dragonfly linux netbsd openbsd solaris freebsd
 
 package proxy
 

@@ -4,19 +4,12 @@ import (
 	"encoding/binary"
 	"net"
 	"strings"
-	"sync"
 
 	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/miekg/dns"
 )
 
-type cacheSubnet struct {
-	items        glcache.Cache // cache
-	cacheSize    int           // cache size (in bytes)
-	cacheMinTTL  uint32        // minimum TTL for DNS entries (in seconds)
-	cacheMaxTTL  uint32        // maximum TTL for DNS entries (in seconds)
-	sync.RWMutex               // lock
-}
+type cacheSubnet cache
 
 // Get key
 // Format:

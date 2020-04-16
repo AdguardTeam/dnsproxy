@@ -951,3 +951,56 @@ func TestECSProxy(t *testing.T) {
 
 	_ = dnsProxy.Stop()
 }
+
+func TestECSProxyCacheMinMaxTTL(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	dnsProxy.EnableEDNSClientSubnet = true
+	dnsProxy.CacheEnabled = true
+	dnsProxy.CacheMinTTL = 20
+	dnsProxy.CacheMaxTTL = 40
+	u := testUpstream{}
+	dnsProxy.Upstreams = []upstream.Upstream{&u}
+	err := dnsProxy.Start()
+	assert.True(t, err == nil)
+
+	// first request
+	clientIP := net.IP{1, 2, 3, 0}
+	d := DNSContext{}
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{
+		IP: clientIP,
+	}
+	u.aResp = new(dns.A)
+	u.aResp.Hdr.Rrtype = dns.TypeA
+	u.aResp.Hdr.Name = "host."
+	u.aResp.A = net.IP{4, 3, 2, 1}
+	u.aResp.Hdr.Ttl = 10
+	u.ecsIP = clientIP
+	err = dnsProxy.Resolve(&d)
+	assert.True(t, err == nil)
+
+	// get from cache - check min TTL
+	m, _ := dnsProxy.cacheSubnet.GetWithSubnet(d.Req, clientIP, 24)
+	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMinTTL)
+
+	// 2nd request
+	clientIP = net.IP{1, 2, 4, 0}
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{
+		IP: clientIP,
+	}
+	u.aResp = new(dns.A)
+	u.aResp.Hdr.Rrtype = dns.TypeA
+	u.aResp.Hdr.Name = "host."
+	u.aResp.A = net.IP{4, 3, 2, 1}
+	u.aResp.Hdr.Ttl = 60
+	u.ecsIP = clientIP
+	err = dnsProxy.Resolve(&d)
+	assert.True(t, err == nil)
+
+	// get from cache - check max TTL
+	m, _ = dnsProxy.cacheSubnet.GetWithSubnet(d.Req, clientIP, 24)
+	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
+
+	_ = dnsProxy.Stop()
+}

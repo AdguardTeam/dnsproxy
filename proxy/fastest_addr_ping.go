@@ -23,23 +23,25 @@ func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.Excha
 	res.addr = addr
 	res.exres = exres
 
+	qName := res.exres.Resp.Question[0].Name
 	a := net.JoinHostPort(addr.String(), strconv.Itoa(int(tcpPort)))
-	log.Debug("%s: Connecting to %s via TCP",
-		res.exres.Resp.Question[0].Name, a)
+	log.Debug("%s: Connecting to %s via TCP", qName, a)
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", a, tcpTimeout*time.Millisecond)
 	if err != nil {
-		res.err = fmt.Errorf("%s: no reply from %s",
-			res.exres.Resp.Question[0].Name, addr)
-		log.Debug("%s", res.err)
+		res.err = fmt.Errorf("%s: no reply from %s", qName, addr)
+		log.Debug("pingDoTCP error: %v", res.err)
 
 		f.cacheAddFailure(res.addr)
 
 		ch <- res
 		return
 	}
-	res.latencyMsec = uint(time.Since(start).Milliseconds())
-	conn.Close()
+	elapsedMsec := uint(time.Since(start).Milliseconds())
+	log.Debug("%s: Elapsed on %s - %d", qName, a, elapsedMsec)
+
+	res.latencyMsec = elapsedMsec
+	_ = conn.Close()
 
 	f.cacheAddSuccessful(res.addr, res.latencyMsec)
 

@@ -1,10 +1,8 @@
 package proxy
 
 import (
-	"errors"
 	"fmt"
 	"net"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -12,7 +10,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/sparrc/go-ping"
 )
 
 var adminRights, _ = proxyutil.HaveAdminRights()
@@ -21,61 +18,11 @@ type pingResult struct {
 	addr        net.IP
 	exres       *upstream.ExchangeAllResult
 	err         error
-	isICMP      bool // true: ICMP;  false: TCP
 	latencyMsec uint
 }
 
-// pingDo - pings an address via ICMP and then send signal to the channel
-func (f *FastestAddr) pingDo(addr net.IP, exres *upstream.ExchangeAllResult, ttl uint32, ch chan *pingResult) {
-	res := &pingResult{}
-	res.addr = addr
-	res.exres = exres
-	res.isICMP = true
-
-	if runtime.GOOS == "windows" && !adminRights {
-		log.Debug("pinger requires admin rights on Windows")
-		res.err = errors.New("pinger requires admin rights on Windows")
-		ch <- res
-		return
-	}
-
-	pinger, err := ping.NewPinger(addr.String())
-	if err != nil {
-		log.Error("ping.NewPinger(): %v", err)
-		res.err = err
-		ch <- res
-		return
-	}
-
-	pinger.SetPrivileged(adminRights)
-	pinger.Timeout = icmpTimeout * time.Millisecond
-	pinger.Count = 1
-	reply := false
-	pinger.OnRecv = func(pkt *ping.Packet) {
-		log.Debug("Received ICMP Reply from %s", addr.String())
-		reply = true
-	}
-	log.Debug("%s: Sending ICMP Echo to %s",
-		res.exres.Resp.Question[0].Name, addr)
-	start := time.Now()
-	pinger.Run()
-
-	if !reply {
-		res.err = fmt.Errorf("%s: no reply from %s",
-			res.exres.Resp.Question[0].Name, addr)
-		log.Debug("%s", res.err)
-
-		f.cacheAddFailure(res.addr, ttl)
-	} else {
-		res.latencyMsec = uint(time.Since(start).Milliseconds())
-		f.cacheAddSuccessful(res.addr, ttl, res.latencyMsec)
-	}
-
-	ch <- res
-}
-
 // pingDoTCP connects to a remote address via TCP and then send signal to the channel
-func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.ExchangeAllResult, ttl uint32, ch chan *pingResult) {
+func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.ExchangeAllResult, ch chan *pingResult) {
 	res := &pingResult{}
 	res.addr = addr
 	res.exres = exres
@@ -90,7 +37,7 @@ func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.Excha
 			res.exres.Resp.Question[0].Name, addr)
 		log.Debug("%s", res.err)
 
-		f.cacheAddFailure(res.addr, ttl)
+		f.cacheAddFailure(res.addr)
 
 		ch <- res
 		return
@@ -98,7 +45,7 @@ func (f *FastestAddr) pingDoTCP(addr net.IP, tcpPort uint, exres *upstream.Excha
 	res.latencyMsec = uint(time.Since(start).Milliseconds())
 	conn.Close()
 
-	f.cacheAddSuccessful(res.addr, ttl, res.latencyMsec)
+	f.cacheAddSuccessful(res.addr, res.latencyMsec)
 
 	ch <- res
 }
@@ -116,10 +63,7 @@ func (f *FastestAddr) pingWait(total int, ch chan *pingResult) (fastestAddrResul
 				break
 			}
 
-			proto := "icmp"
-			if !res.isICMP {
-				proto = "tcp"
-			}
+			proto := "tcp"
 			log.Debug("%s: Determined %s address as the fastest (%s, %dms)",
 				res.exres.Resp.Question[0].Name, res.addr, proto, res.latencyMsec)
 

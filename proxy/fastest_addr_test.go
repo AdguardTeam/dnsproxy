@@ -28,7 +28,6 @@ func TestFastestAddrOneDeadIP(t *testing.T) {
 
 	f := FastestAddr{}
 	f.Init()
-	f.allowICMP = false
 	f.tcpPorts = []uint{uint(listener.Addr().(*net.TCPAddr).Port)}
 	up1 := &testUpstream{}
 
@@ -61,7 +60,6 @@ func TestFastestAddrOneFaster(t *testing.T) {
 
 	f := FastestAddr{}
 	f.Init()
-	f.allowICMP = false
 	f.tcpPorts = []uint{443, uint(listener.Addr().(*net.TCPAddr).Port)}
 	up1 := &testUpstream{}
 
@@ -90,7 +88,6 @@ func TestFastestAddrOneFaster(t *testing.T) {
 func TestFastestAddrAllDead(t *testing.T) {
 	f := FastestAddr{}
 	f.Init()
-	f.allowICMP = false
 	f.tcpPorts = []uint{40812}
 	up1 := &testUpstream{}
 

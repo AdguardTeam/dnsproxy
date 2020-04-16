@@ -12,15 +12,13 @@ import (
 )
 
 const (
-	icmpTimeout = 1000
-	tcpTimeout  = 1000
+	tcpTimeout = 1000
 )
 
 // FastestAddr - object data
 type FastestAddr struct {
 	cache     glcache.Cache // cache of the fastest IP addresses
 	cacheLock sync.Mutex    // for atomic find-and-store cache operation
-	allowICMP bool          // send ICMP request
 	allowTCP  bool          // connect via TCP
 	tcpPorts  []uint        // TCP ports we're using to check connection speed
 }
@@ -32,7 +30,6 @@ func (f *FastestAddr) Init() {
 		EnableLRU: true,
 	}
 	f.cache = glcache.New(conf)
-	f.allowICMP = true
 	f.allowTCP = true
 	f.tcpPorts = []uint{80, 443}
 }
@@ -66,9 +63,7 @@ type fastestAddrResult struct {
 //   . If all addresses have been found: choose the fastest
 //   . If several (but not all) addresses have been found: remember the fastest
 // . For each response, for each IP address (not found in cache):
-//   . send ICMP packet
 //   . connect via TCP
-// . Receive ICMP packets.  The first received packet makes it the fastest IP address.
 // . Receive TCP connection status.  The first connected address - the fastest IP address.
 // . Choose the fastest address between this and the one previously found in cache
 // . Return DNS packet containing the chosen IP address (remove all other IP addresses from the packet)
@@ -100,9 +95,6 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 	if f.allowTCP {
 		chCap = chCap + ipAddrsLen*len(f.tcpPorts)
 	}
-	if f.allowICMP {
-		chCap = chCap + ipAddrsLen
-	}
 
 	ch := make(chan *pingResult, chCap)
 	total := 0
@@ -122,14 +114,9 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 				}
 				usedIPs[ipStr] = true
 
-				ttl := findLowestTTL(r.Resp)
-				if f.allowICMP {
-					go f.pingDo(ip, &r, ttl, ch)
-					total++
-				}
 				if f.allowTCP {
 					for _, port := range f.tcpPorts {
-						go f.pingDoTCP(ip, port, &replies[i], ttl, ch)
+						go f.pingDoTCP(ip, port, &replies[i], ch)
 						total++
 					}
 				}

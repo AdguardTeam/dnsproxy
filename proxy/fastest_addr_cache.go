@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	fastestAddrCacheMinTTLSec = 2 * 60 // min. cache TTL in seconds
+	fastestAddrCacheTTLSec = 10 * 60 // cache TTL for IP addresses
 )
 
 type cacheEntry struct {
@@ -70,26 +70,26 @@ func (f *FastestAddr) cacheFind(ip net.IP) *cacheEntry {
 }
 
 // store unsuccessful attempt in cache
-func (f *FastestAddr) cacheAddFailure(addr net.IP, ttl uint32) {
+func (f *FastestAddr) cacheAddFailure(addr net.IP) {
 	ent := cacheEntry{}
 	ent.status = 1
 	f.cacheLock.Lock()
 	if f.cacheFind(addr) == nil {
-		f.cacheAdd(&ent, addr, ttl)
+		f.cacheAdd(&ent, addr, fastestAddrCacheTTLSec)
 	}
 	f.cacheLock.Unlock()
 }
 
 // store a successul ping result in cache
 // replace previous result if our latency is lower
-func (f *FastestAddr) cacheAddSuccessful(addr net.IP, ttl uint32, latency uint) {
+func (f *FastestAddr) cacheAddSuccessful(addr net.IP, latency uint) {
 	ent := cacheEntry{}
 	ent.status = 0
 	ent.latencyMsec = latency
 	f.cacheLock.Lock()
 	entCached := f.cacheFind(addr)
 	if entCached == nil || entCached.status != 0 || entCached.latencyMsec > latency {
-		f.cacheAdd(&ent, addr, ttl)
+		f.cacheAdd(&ent, addr, fastestAddrCacheTTLSec)
 	}
 	f.cacheLock.Unlock()
 }
@@ -99,10 +99,6 @@ func (f *FastestAddr) cacheAdd(ent *cacheEntry, addr net.IP, ttl uint32) {
 	ip := addr.To4()
 	if ip == nil {
 		ip = addr
-	}
-
-	if ttl < fastestAddrCacheMinTTLSec {
-		ttl = fastestAddrCacheMinTTLSec
 	}
 
 	val := packCacheEntry(ent, ttl)

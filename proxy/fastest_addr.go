@@ -106,6 +106,7 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 
 	ch := make(chan *pingResult, chCap)
 	total := 0
+	usedIPs := make(map[string]bool)
 	for i, r := range replies {
 		for _, a := range r.Resp.Answer {
 			ip := getIPFromDNSRecord(a)
@@ -114,6 +115,13 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 			}
 
 			if f.cacheFind(ip) == nil {
+				ipStr := ip.String()
+				_, ok := usedIPs[ipStr]
+				if ok {
+					continue // we've already scheduled a task for this IP
+				}
+				usedIPs[ipStr] = true
+
 				ttl := findLowestTTL(r.Resp)
 				if f.allowICMP {
 					go f.pingDo(ip, &r, ttl, ch)

@@ -40,7 +40,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 		}
 		p.RUnlock()
 
-		n, localIP, remoteAddr, err := p.readUDP(conn, b)
+		n, localIP, remoteAddr, err := p.udpRead(conn, b)
 		// documentation says to handle the packet even if err occurs, so do that first
 		if n > 0 {
 			// make a copy of all bytes because ReadFrom() will overwrite contents of b on next call
@@ -49,7 +49,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 			copy(packet, b)
 			p.guardMaxGoroutines()
 			go func() {
-				p.handleUDPPacket(packet, localIP, remoteAddr, conn)
+				p.udpHandlePacket(packet, localIP, remoteAddr, conn)
 				p.freeMaxGoroutines()
 			}()
 		}
@@ -63,8 +63,8 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 	}
 }
 
-// handleUDPPacket processes the incoming UDP packet and sends a DNS response
-func (p *Proxy) handleUDPPacket(packet []byte, localIP net.IP, remoteAddr *net.UDPAddr, conn *net.UDPConn) {
+// udpHandlePacket processes the incoming UDP packet and sends a DNS response
+func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.UDPAddr, conn *net.UDPConn) {
 	log.Tracef("Start handling new UDP packet from %s", remoteAddr)
 
 	msg := &dns.Msg{}

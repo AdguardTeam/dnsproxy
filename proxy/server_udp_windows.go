@@ -10,7 +10,7 @@ func udpSetOptions(c *net.UDPConn) error {
 	return nil
 }
 
-func (p *Proxy) readUDP(c *net.UDPConn, buf []byte) (int, net.IP, *net.UDPAddr, error) {
+func (p *Proxy) udpRead(c *net.UDPConn, buf []byte) (int, net.IP, *net.UDPAddr, error) {
 	n, addr, err := c.ReadFrom(buf)
 	var udpAddr *net.UDPAddr
 	if addr != nil {

@@ -44,8 +44,8 @@ func udpMakeOOBWithSrc(ip net.IP) []byte {
 	return cm.Marshal()
 }
 
-// readUDP - receive payload and OOB data from UDP socket
-func (p *Proxy) readUDP(c *net.UDPConn, buf []byte) (int, net.IP, *net.UDPAddr, error) {
+// udpRead - receive payload and OOB data from UDP socket
+func (p *Proxy) udpRead(c *net.UDPConn, buf []byte) (int, net.IP, *net.UDPAddr, error) {
 	var oobn int
 	oob := make([]byte, p.udpOOBSize)
 	var err error

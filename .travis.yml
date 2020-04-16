@@ -3,6 +3,8 @@ sudo: false
 
 os:
   - linux
+  - osx
+  - windows
 
 env:
   - GO111MODULE=on
@@ -11,32 +13,63 @@ go:
   - 1.x
 
 before_install:
-  - curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(go env GOPATH)/bin v1.23.8
+  - |-
+    case $TRAVIS_OS_NAME in
+      linux | osx)
+        curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(go env GOPATH)/bin v1.23.8
+        ;;
+    esac
 
 script:
-  # Run linter
-  - golangci-lint run
-  # Run tests
-  - go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
-  # Windows-386 build
-  - GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
-  # Windows-amd64 build
-  - GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
-  # Linux-386 build
-  - GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
-  # Linux-amd64 build
-  - GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
-  # Linux-arm64 build
-  - GOOS=linux GOARCH=arm64 VERSION=${TRAVIS_TAG:-dev} make release
-  # Linux-armv6 build
-  - GOOS=linux GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
-  # Darwin-amd64 build
-  - GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
-  # List build output
-  - ls -l build/dnsproxy-*
+  - |-
+    # Fail if any command fails
+    set -e
+
+    case $TRAVIS_OS_NAME in
+      linux | osx)
+        # Run linter
+        golangci-lint run
+
+        # Run tests
+        go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+
+        # Windows-386 build
+        GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+
+        # Windows-amd64 build
+        GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+
+        # Linux-386 build
+        GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+
+        # Linux-amd64 build
+        GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+
+        # Linux-arm64 build
+        GOOS=linux GOARCH=arm64 VERSION=${TRAVIS_TAG:-dev} make release
+
+        # Linux-armv6 build
+        GOOS=linux GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
+
+        # Darwin-amd64 build
+        GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+
+        # List build output
+        ls -l build/dnsproxy-*
+        ;;
+      windows)
+        # Run tests
+        go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+        ;;
+    esac
 
 after_success:
-  - bash <(curl -s https://codecov.io/bash)
+  - |-
+    case $TRAVIS_OS_NAME in
+      linux)
+        bash <(curl -s https://codecov.io/bash)
+        ;;
+    esac
 
 deploy:
   provider: releases
@@ -47,6 +80,7 @@ deploy:
   on:
     repo: AdguardTeam/dnsproxy
     tags: true
+    condition: $TRAVIS_OS_NAME = linux
   file_glob: true
   skip_cleanup: true
 

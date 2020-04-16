@@ -1,32 +1,26 @@
 package proxy
 
 import (
-	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
-	ping "github.com/sparrc/go-ping"
 )
 
 const (
-	icmpTimeout = 1000
-	tcpTimeout  = 1000
+	tcpTimeout = 1000
 )
 
 // FastestAddr - object data
 type FastestAddr struct {
 	cache     glcache.Cache // cache of the fastest IP addresses
 	cacheLock sync.Mutex    // for atomic find-and-store cache operation
-	allowICMP bool          // send ICMP request
 	allowTCP  bool          // connect via TCP
-	tcpPort   uint          // TCP port we try to connect to
+	tcpPorts  []uint        // TCP ports we're using to check connection speed
 }
 
 // Init - initialize module
@@ -36,9 +30,8 @@ func (f *FastestAddr) Init() {
 		EnableLRU: true,
 	}
 	f.cache = glcache.New(conf)
-	f.allowICMP = true
 	f.allowTCP = true
-	f.tcpPort = 80
+	f.tcpPorts = []uint{80, 443}
 }
 
 // Get the number of A and AAAA records
@@ -70,9 +63,7 @@ type fastestAddrResult struct {
 //   . If all addresses have been found: choose the fastest
 //   . If several (but not all) addresses have been found: remember the fastest
 // . For each response, for each IP address (not found in cache):
-//   . send ICMP packet
 //   . connect via TCP
-// . Receive ICMP packets.  The first received packet makes it the fastest IP address.
 // . Receive TCP connection status.  The first connected address - the fastest IP address.
 // . Choose the fastest address between this and the one previously found in cache
 // . Return DNS packet containing the chosen IP address (remove all other IP addresses from the packet)
@@ -83,8 +74,8 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 	}
 	host := strings.ToLower(req.Question[0].Name)
 
-	total := f.totalIPAddrs(replies)
-	if total <= 1 {
+	ipAddrsLen := f.totalIPAddrs(replies)
+	if ipAddrsLen <= 1 {
 		// use the only response
 		log.Debug("FastestAddr: %s: using the only response from upstream servers", host)
 		return replies[0].Resp, replies[0].Upstream, nil
@@ -94,15 +85,21 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 	if cachedResult.res != nil {
 		log.Debug("%s: Found %s address as the fastest (from cache, %dms)",
 			host, cachedResult.ip, cachedResult.latency)
-		if cachedResult.nCached == total {
+		if cachedResult.nCached == ipAddrsLen {
 			// use the result from cache only if all IP addresses are found in cache
 			return prepareReply(cachedResult.res.Resp, cachedResult.ip), cachedResult.res.Upstream, nil
 		}
 	}
 
-	ch := make(chan *pingResult, total)
-	total = 0
-	for _, r := range replies {
+	chCap := 0
+	if f.allowTCP {
+		chCap = chCap + ipAddrsLen*len(f.tcpPorts)
+	}
+
+	ch := make(chan *pingResult, chCap)
+	total := 0
+	usedIPs := make(map[string]bool)
+	for i, r := range replies {
 		for _, a := range r.Resp.Answer {
 			ip := getIPFromDNSRecord(a)
 			if ip == nil {
@@ -110,13 +107,18 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 			}
 
 			if f.cacheFind(ip) == nil {
-				if f.allowICMP {
-					go f.pingDo(ip, &r, ch)
-					total++
+				ipStr := ip.String()
+				_, ok := usedIPs[ipStr]
+				if ok {
+					continue // we've already scheduled a task for this IP
 				}
+				usedIPs[ipStr] = true
+
 				if f.allowTCP {
-					go f.pingDoTCP(ip, &r, ch)
-					total++
+					for _, port := range f.tcpPorts {
+						go f.pingDoTCP(ip, port, &replies[i], ch)
+						total++
+					}
 				}
 			}
 		}
@@ -168,117 +170,4 @@ func prepareReply(resp *dns.Msg, address net.IP) *dns.Msg {
 	}
 	resp.Answer = ans
 	return resp
-}
-
-type pingResult struct {
-	addr        net.IP
-	exres       *upstream.ExchangeAllResult
-	err         error
-	isICMP      bool // true: ICMP;  false: TCP
-	latencyMsec uint
-}
-
-// Ping an address via ICMP and then send signal to the channel
-func (f *FastestAddr) pingDo(addr net.IP, exres *upstream.ExchangeAllResult, ch chan *pingResult) {
-	res := &pingResult{}
-	res.addr = addr
-	res.exres = exres
-	res.isICMP = true
-	respTTL := findLowestTTL(res.exres.Resp)
-
-	pinger, err := ping.NewPinger(addr.String())
-	if err != nil {
-		log.Error("ping.NewPinger(): %v", err)
-		res.err = err
-		ch <- res
-		return
-	}
-
-	pinger.SetPrivileged(true)
-	pinger.Timeout = icmpTimeout * time.Millisecond
-	pinger.Count = 1
-	reply := false
-	pinger.OnRecv = func(pkt *ping.Packet) {
-		log.Debug("Received ICMP Reply from %s", addr.String())
-		reply = true
-	}
-	log.Debug("%s: Sending ICMP Echo to %s",
-		res.exres.Resp.Question[0].Name, addr)
-	start := time.Now()
-	pinger.Run()
-
-	if !reply {
-		res.err = fmt.Errorf("%s: no reply from %s",
-			res.exres.Resp.Question[0].Name, addr)
-		log.Debug("%s", res.err)
-
-		f.cacheAddFailure(res.addr, respTTL)
-	} else {
-		res.latencyMsec = uint(time.Since(start).Milliseconds())
-		f.cacheAddSuccessful(res.addr, respTTL, res.latencyMsec)
-	}
-
-	ch <- res
-}
-
-// Connect to a remote address via TCP and then send signal to the channel
-func (f *FastestAddr) pingDoTCP(addr net.IP, exres *upstream.ExchangeAllResult, ch chan *pingResult) {
-	res := &pingResult{}
-	res.addr = addr
-	res.exres = exres
-	respTTL := findLowestTTL(res.exres.Resp)
-
-	a := net.JoinHostPort(addr.String(), strconv.Itoa(int(f.tcpPort)))
-	log.Debug("%s: Connecting to %s via TCP",
-		res.exres.Resp.Question[0].Name, a)
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", a, tcpTimeout*time.Millisecond)
-	if err != nil {
-		res.err = fmt.Errorf("%s: no reply from %s",
-			res.exres.Resp.Question[0].Name, addr)
-		log.Debug("%s", res.err)
-
-		f.cacheAddFailure(res.addr, respTTL)
-
-		ch <- res
-		return
-	}
-	res.latencyMsec = uint(time.Since(start).Milliseconds())
-	conn.Close()
-
-	f.cacheAddSuccessful(res.addr, respTTL, res.latencyMsec)
-
-	ch <- res
-}
-
-// Wait for the first successful ping result
-func (f *FastestAddr) pingWait(total int, ch chan *pingResult) (fastestAddrResult, error) {
-	result := fastestAddrResult{}
-	n := 0
-	for {
-		select {
-		case res := <-ch:
-			n++
-
-			if res.err != nil {
-				break
-			}
-
-			proto := "icmp"
-			if !res.isICMP {
-				proto = "tcp"
-			}
-			log.Debug("%s: Determined %s address as the fastest (%s, %dms)",
-				res.exres.Resp.Question[0].Name, res.addr, proto, res.latencyMsec)
-
-			result.res = res.exres
-			result.ip = res.addr
-			result.latency = res.latencyMsec
-			return result, nil
-		}
-
-		if n == total {
-			return result, fmt.Errorf("all ping tasks were timed out")
-		}
-	}
 }

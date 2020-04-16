@@ -13,8 +13,7 @@ import (
 func TestFastestAddrCache(t *testing.T) {
 	f := FastestAddr{}
 	f.Init()
-	f.allowICMP = false
-	f.tcpPort = 8081
+	f.tcpPorts = []uint{40812}
 	up1 := &testUpstream{}
 
 	ent := cacheEntry{
@@ -28,7 +27,7 @@ func TestFastestAddrCache(t *testing.T) {
 		status:      0,
 		latencyMsec: 222,
 	}
-	f.cacheAdd(&ent, net.ParseIP("2.2.2.2"), fastestAddrCacheMinTTLSec)
+	f.cacheAdd(&ent, net.ParseIP("2.2.2.2"), fastestAddrCacheTTLSec)
 	replies := []upstream.ExchangeAllResult{
 		upstream.ExchangeAllResult{
 			Resp:     &dns.Msg{},

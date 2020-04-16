@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 )
@@ -19,58 +18,68 @@ func createARec(host, ip string) *dns.A {
 	return a
 }
 
-// . Upstream server returns "127.0.0.1", "8.8.8.8" IP addresses:
-//    "127.0.0.1" is dead, "8.8.8.8" is alive
-// . The algorithm returns "8.8.8.8"
-//
-// . Upstream server returns "127.0.0.1", "8.8.8.8", "127.0.0.2" IP addresses:
-//    "127.0.0.1" is dead, "8.8.8.8" is alive, "127.0.0.2" is alive
-// . The algorithm returns "127.0.0.2"
-func TestFastestAddr(t *testing.T) {
+// . Upstream server returns "10.15.16.17" (dead), "127.0.0.1" (alive)
+// . The algorithm returns "127.0.0.1"
+func TestFastestAddrOneDeadIP(t *testing.T) {
+	// Listener that we're using for TCP checks
+	listener, err := net.Listen("tcp", ":0")
+	assert.Nil(t, err)
+	defer listener.Close()
+
 	f := FastestAddr{}
 	f.Init()
-	f.allowICMP = false
-	f.tcpPort = 80
+	f.tcpPorts = []uint{uint(listener.Addr().(*net.TCPAddr).Port)}
 	up1 := &testUpstream{}
 
-	// start listening TCP port on 127.0.0.2
-	addr := net.TCPAddr{
-		IP:   net.ParseIP("127.0.0.2"),
-		Port: int(f.tcpPort),
-	}
-	lisn, err := net.ListenTCP("tcp4", &addr)
-	if err != nil {
-		log.Info("skipping test: %s", err)
-		return
-	}
-	defer lisn.Close()
-
-	log.SetLevel(log.DEBUG)
-
 	// add the 1st A response record
-	up1.aResp = createARec("test.org.", "127.0.0.1")
+	// this IP is dead (nothing is listening on our port)
+	up1.aResp = createARec("test.org.", "10.15.16.17")
 
 	// add the 2nd A response record
-	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "8.8.8.8"))
+	// Alive IP address
+	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "127.0.0.1"))
 
+	// Check that it's alive
 	ups := []upstream.Upstream{up1}
 	req := createHostTestMessage("test.org")
 	resp, up, err := f.exchangeFastest(req, ups)
-	assert.True(t, err == nil)
-	assert.True(t, up == up1)
-	assert.True(t, resp != nil)
+	assert.Nil(t, err)
+	assert.Equal(t, up, up1)
+	assert.NotNil(t, resp)
 	ip := resp.Answer[0].(*dns.A).A.String()
-	assert.True(t, ip == "8.8.8.8")
+	assert.Equal(t, "127.0.0.1", ip)
+}
 
-	f.tcpPort = 8081
+// . Upstream server returns "8.8.8.8" (alive, slow), "127.0.0.1" (alive, fast)
+// . The algorithm returns "127.0.0.1"
+func TestFastestAddrOneFaster(t *testing.T) {
+	// Listener that we're using for TCP checks
+	listener, err := net.Listen("tcp", ":0")
+	assert.Nil(t, err)
+	defer listener.Close()
 
-	// add the 3rd A response record
-	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "127.0.0.2"))
+	f := FastestAddr{}
+	f.Init()
+	f.tcpPorts = []uint{443, uint(listener.Addr().(*net.TCPAddr).Port)}
+	up1 := &testUpstream{}
 
-	// 127.0.0.2 (from tcp-connection) is faster than 8.8.8.8 (from cache)
-	resp, up, err = f.exchangeFastest(req, ups)
-	ip = resp.Answer[0].(*dns.A).A.String()
-	assert.True(t, ip == "127.0.0.2")
+	// add the 1st A response record
+	// this IP is alive, but it's slower than localhost
+	up1.aResp = createARec("test.org.", "8.8.8.8")
+
+	// add the 2nd A response record
+	// This IP is alive and much faster
+	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "127.0.0.1"))
+
+	// Check that localhost is faster
+	ups := []upstream.Upstream{up1}
+	req := createHostTestMessage("test.org")
+	resp, up, err := f.exchangeFastest(req, ups)
+	assert.Nil(t, err)
+	assert.Equal(t, up, up1)
+	assert.NotNil(t, resp)
+	ip := resp.Answer[0].(*dns.A).A.String()
+	assert.Equal(t, "127.0.0.1", ip)
 }
 
 // . Upstream server returns "127.0.0.1", "127.0.0.2", "127.0.0.3" IP addresses:
@@ -79,8 +88,7 @@ func TestFastestAddr(t *testing.T) {
 func TestFastestAddrAllDead(t *testing.T) {
 	f := FastestAddr{}
 	f.Init()
-	f.allowICMP = false
-	f.tcpPort = 8081
+	f.tcpPorts = []uint{40812}
 	up1 := &testUpstream{}
 
 	up1.aResp = createARec("test.org.", "127.0.0.1")

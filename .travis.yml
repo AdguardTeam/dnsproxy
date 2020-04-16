@@ -51,6 +51,9 @@ script:
         # Linux-armv6 build
         GOOS=linux GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
 
+        # Linux-armv6 build
+        GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
+
         # Darwin-amd64 build
         GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
 

@@ -6,13 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/proxyutil"
-
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 )
-
-var adminRights, _ = proxyutil.HaveAdminRights()
 
 type pingResult struct {
 	addr        net.IP

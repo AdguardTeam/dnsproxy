@@ -106,7 +106,7 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 
 	ch := make(chan *pingResult, chCap)
 	total := 0
-	for _, r := range replies {
+	for i, r := range replies {
 		for _, a := range r.Resp.Answer {
 			ip := getIPFromDNSRecord(a)
 			if ip == nil {
@@ -121,7 +121,7 @@ func (f *FastestAddr) exchangeFastest(req *dns.Msg, upstreams []upstream.Upstrea
 				}
 				if f.allowTCP {
 					for _, port := range f.tcpPorts {
-						go f.pingDoTCP(ip, port, &r, ttl, ch)
+						go f.pingDoTCP(ip, port, &replies[i], ttl, ch)
 						total++
 					}
 				}

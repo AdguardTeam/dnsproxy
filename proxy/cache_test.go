@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/go-test/deep"
@@ -265,38 +266,47 @@ func TestCacheExpiration(t *testing.T) {
 func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 	dnsProxy.CacheEnabled = true
-	dnsProxy.CacheMinTTL = 2
-	dnsProxy.CacheMaxTTL = 4
+	dnsProxy.CacheMinTTL = 20
+	dnsProxy.CacheMaxTTL = 40
+	u := testUpstream{}
+	dnsProxy.Upstreams = []upstream.Upstream{&u}
 	err := dnsProxy.Start()
 	if err != nil {
 		t.Fatalf("cannot start the DNS proxy: %s", err)
 	}
 
-	// Create dns messages with 1 second TTL
-	googleReply := dns.Msg{}
-	googleReply.SetQuestion("google.com.", dns.TypeA)
-	googleReply.Response = true
-	googleReply.Answer = []dns.RR{newRR("google.com. 1 IN A 8.8.8.8")}
+	// 1st request with TTL=10 -> replaced with CacheMinTTL
+	d := DNSContext{}
+	d.Req = createHostTestMessage("host")
+	d.Addr = &net.TCPAddr{}
+	u.aResp = new(dns.A)
+	u.aResp.Hdr.Rrtype = dns.TypeA
+	u.aResp.Hdr.Name = "host."
+	u.aResp.A = net.IP{4, 3, 2, 1}
+	u.aResp.Hdr.Ttl = 10
+	err = dnsProxy.Resolve(&d)
+	assert.Nil(t, err)
 
-	youtubeReply := dns.Msg{}
-	youtubeReply.SetQuestion("youtube.com.", dns.TypeA)
-	youtubeReply.Response = true
-	youtubeReply.Answer = []dns.RR{newRR("youtube.com 60 IN A 173.194.221.198")}
+	// get from cache - check min TTL
+	r, ok := dnsProxy.cache.Get(d.Req)
+	assert.True(t, ok)
+	assert.Equal(t, dnsProxy.CacheMinTTL, r.Answer[0].Header().Ttl)
 
-	dnsProxy.cache.Set(&youtubeReply)
-	dnsProxy.cache.Set(&googleReply)
+	// 2nd request with TTL=60 -> replaced with CacheMaxTTL
+	d.Req = createHostTestMessage("host2")
+	d.Addr = &net.TCPAddr{}
+	u.aResp = new(dns.A)
+	u.aResp.Hdr.Rrtype = dns.TypeA
+	u.aResp.Hdr.Name = "host2."
+	u.aResp.A = net.IP{4, 3, 2, 1}
+	u.aResp.Hdr.Ttl = 60
+	err = dnsProxy.Resolve(&d)
+	assert.Nil(t, err)
 
-	r, ok := dnsProxy.cache.Get(&googleReply)
-	if !ok {
-		t.Fatalf("No cache found for %s", googleReply.Question[0].Name)
-	}
-	assert.True(t, r.Answer[0].Header().Ttl == dnsProxy.CacheMinTTL)
-
-	r, ok = dnsProxy.cache.Get(&youtubeReply)
-	if !ok {
-		t.Fatalf("No cache found for %s", youtubeReply.Question[0].Name)
-	}
-	assert.True(t, r.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
+	// get from cache - check max TTL
+	r, ok = dnsProxy.cache.Get(d.Req)
+	assert.True(t, ok)
+	assert.Equal(t, dnsProxy.CacheMaxTTL, r.Answer[0].Header().Ttl)
 
 	err = dnsProxy.Stop()
 	if err != nil {

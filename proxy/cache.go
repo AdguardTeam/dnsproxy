@@ -20,8 +20,6 @@ const (
 type cache struct {
 	items        glcache.Cache // cache
 	cacheSize    int           // cache size (in bytes)
-	cacheMinTTL  uint32        // minimum TTL for DNS entries (in seconds)
-	cacheMaxTTL  uint32        // maximum TTL for DNS entries (in seconds)
 	sync.RWMutex               // lock
 }
 
@@ -55,7 +53,7 @@ func (c *cache) Set(m *dns.Msg) {
 		return // no-op
 	}
 
-	if !isCacheable(m, c.cacheMinTTL, c.cacheMaxTTL) {
+	if !isCacheable(m) {
 		return
 	}
 
@@ -75,12 +73,12 @@ func (c *cache) Set(m *dns.Msg) {
 	}
 	c.Unlock()
 
-	data := packResponse(m, c.cacheMinTTL, c.cacheMaxTTL)
+	data := packResponse(m)
 	_ = c.items.Set(key, data)
 }
 
 // check if message is cacheable
-func isCacheable(m *dns.Msg, cacheMinTTL uint32, cacheMaxTTL uint32) bool {
+func isCacheable(m *dns.Msg) bool {
 	// truncated messages aren't valid
 	if m.Truncated {
 		log.Tracef("Refusing to cache truncated message")
@@ -97,7 +95,6 @@ func isCacheable(m *dns.Msg, cacheMinTTL uint32, cacheMaxTTL uint32) bool {
 	qType := m.Question[0].Qtype
 
 	ttl := findLowestTTL(m)
-	ttl = respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL)
 	if ttl == 0 {
 		return false
 	}
@@ -218,10 +215,9 @@ func key(m *dns.Msg) []byte {
 expire [4]byte
 dns_message []byte
 */
-func packResponse(m *dns.Msg, cacheMinTTL uint32, cacheMaxTTL uint32) []byte {
+func packResponse(m *dns.Msg) []byte {
 	pm, _ := m.Pack()
-	responseTTL := findLowestTTL(m)
-	actualTTL := respectTTLOverrides(responseTTL, cacheMinTTL, cacheMaxTTL)
+	actualTTL := findLowestTTL(m)
 	expire := uint32(time.Now().Unix()) + actualTTL
 	var d []byte
 	d = make([]byte, 4+len(pm))

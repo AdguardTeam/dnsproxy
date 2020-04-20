@@ -255,16 +255,12 @@ func (p *Proxy) Init() {
 		log.Printf("DNS cache is enabled")
 
 		p.cache = &cache{
-			cacheSize:   p.CacheSizeBytes,
-			cacheMinTTL: p.CacheMinTTL,
-			cacheMaxTTL: p.CacheMaxTTL,
+			cacheSize: p.CacheSizeBytes,
 		}
 
 		if p.Config.EnableEDNSClientSubnet {
 			p.cacheSubnet = &cacheSubnet{
-				cacheSize:   p.CacheSizeBytes,
-				cacheMinTTL: p.CacheMinTTL,
-				cacheMaxTTL: p.CacheMaxTTL,
+				cacheSize: p.CacheSizeBytes,
 			}
 		}
 	}
@@ -458,6 +454,14 @@ func (p *Proxy) processECS(d *DNSContext) {
 	d.ecsReqMask = mask
 }
 
+// Set TTL value of all records according to our settings
+func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
+	for _, rr := range r.Answer {
+		newTTL := respectTTLOverrides(rr.Header().Ttl, p.CacheMinTTL, p.CacheMaxTTL)
+		rr.Header().Ttl = newTTL
+	}
+}
+
 // Resolve is the default resolving method used by the DNS proxy to query upstreams
 func (p *Proxy) Resolve(d *DNSContext) error {
 	if p.Config.EnableEDNSClientSubnet {
@@ -493,6 +497,8 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// set Upstream that resolved DNS request to DNSContext
 	if reply != nil {
 		d.Upstream = u
+
+		p.setMinMaxTTL(reply)
 
 		// Saving cached response
 		p.setInCache(d, reply)

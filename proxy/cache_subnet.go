@@ -107,7 +107,7 @@ func (c *cacheSubnet) GetWithSubnet(request *dns.Msg, ip net.IP, mask uint8) (*d
 // ip: IP subnet this response is valid for
 // mask: subnet mask
 func (c *cacheSubnet) SetWithSubnet(m *dns.Msg, ip net.IP, mask uint8) {
-	if m == nil || !isCacheable(m, c.cacheMinTTL, c.cacheMaxTTL) {
+	if m == nil || !isCacheable(m) {
 		return
 	}
 	key := keyWithSubnet(m, ip, mask)
@@ -126,6 +126,6 @@ func (c *cacheSubnet) SetWithSubnet(m *dns.Msg, ip net.IP, mask uint8) {
 	}
 	c.Unlock()
 
-	data := packResponse(m, c.cacheMinTTL, c.cacheMaxTTL)
+	data := packResponse(m)
 	_ = c.items.Set(key, data)
 }

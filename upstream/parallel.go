@@ -169,22 +169,22 @@ func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]
 	}
 
 	errs := []error{}
+	n := 0
 	for {
 		select {
 		case result := <-ch:
-			addr := result.address
-			err := result.err
-			if err != nil {
-				errs = append(errs, err)
+			n++
+
+			if result.err != nil {
+				errs = append(errs, result.err)
+				break
 			}
 
-			if len(errs) == size {
-				return nil, errorx.DecorateMany("all resolvers failed to lookup", errs...)
-			}
+			return result.address, nil
+		}
 
-			if addr != nil && err == nil {
-				return addr, nil
-			}
+		if n == size {
+			return nil, errorx.DecorateMany("all resolvers failed to lookup", errs...)
 		}
 	}
 }

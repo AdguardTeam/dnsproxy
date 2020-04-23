@@ -70,6 +70,21 @@ func TestLookupParallel(t *testing.T) {
 	}
 }
 
+func TestLookupParallelEmpty(t *testing.T) {
+	u1 := testUpstream{}
+	u2 := testUpstream{}
+
+	resolvers := []*Resolver{}
+	resolvers = append(resolvers, &Resolver{upstream: &u1})
+	resolvers = append(resolvers, &Resolver{upstream: &u2})
+
+	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
+	defer cancel()
+	a, err := LookupParallel(ctx, resolvers, "google.com")
+	assert.Nil(t, err)
+	assert.Equal(t, 0, len(a))
+}
+
 type testUpstream struct {
 	a     net.IP
 	err   bool

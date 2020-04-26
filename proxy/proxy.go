@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/fastip"
+
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/utils"
@@ -79,7 +81,7 @@ type Proxy struct {
 	cache       *cache       // cache instance (nil if cache is disabled)
 	cacheSubnet *cacheSubnet // cache instance (nil if cache is disabled)
 
-	fastestAddr FastestAddr // fastest-addr module
+	fastestAddr *fastip.FastestAddr // fastest-addr module
 
 	udpOOBSize int // size for received OOB data
 
@@ -268,7 +270,7 @@ func (p *Proxy) Init() {
 	p.udpOOBSize = udpGetOOBSize()
 
 	if p.FindFastestAddr {
-		p.fastestAddr.Init()
+		p.fastestAddr = fastip.NewFastestAddr()
 	}
 
 	if p.MaxGoroutines > 0 {
@@ -457,8 +459,13 @@ func (p *Proxy) processECS(d *DNSContext) {
 // Set TTL value of all records according to our settings
 func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
 	for _, rr := range r.Answer {
-		newTTL := respectTTLOverrides(rr.Header().Ttl, p.CacheMinTTL, p.CacheMaxTTL)
-		rr.Header().Ttl = newTTL
+		originalTTL := rr.Header().Ttl
+		newTTL := respectTTLOverrides(originalTTL, p.CacheMinTTL, p.CacheMaxTTL)
+
+		if originalTTL != newTTL {
+			log.Debug("Override TTL from %d to %d", originalTTL, newTTL)
+			rr.Header().Ttl = newTTL
+		}
 	}
 }
 
@@ -521,7 +528,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dns.Msg, u upstream.Upstream, err error) {
 	qtype := req.Question[0].Qtype
 	if p.FindFastestAddr && (qtype == dns.TypeA || qtype == dns.TypeAAAA) {
-		reply, u, err = p.fastestAddr.exchangeFastest(req, upstreams)
+		reply, u, err = p.fastestAddr.ExchangeFastest(req, upstreams)
 		return
 	}
 
@@ -617,12 +624,16 @@ func (p *Proxy) validateConfig() error {
 		return errors.New("no default upstreams specified")
 	}
 
+	if p.CacheMinTTL > 0 || p.CacheMaxTTL > 0 {
+		log.Info("Cache TTL override is enabled. Min=%d, Max=%d", p.CacheMinTTL, p.CacheMaxTTL)
+	}
+
 	if p.Ratelimit > 0 {
-		log.Printf("Ratelimit is enabled and set to %d rps", p.Ratelimit)
+		log.Info("Ratelimit is enabled and set to %d rps", p.Ratelimit)
 	}
 
 	if p.RefuseAny {
-		log.Print("The server is configured to refuse ANY requests")
+		log.Info("The server is configured to refuse ANY requests")
 	}
 
 	return nil

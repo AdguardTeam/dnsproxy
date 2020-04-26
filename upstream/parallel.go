@@ -85,17 +85,17 @@ func ExchangeAll(upstreams []Upstream, req *dns.Msg) ([]ExchangeAllResult, error
 	}
 
 	errs := []error{}
-	n := 0
 	ch := make(chan *exchangeResult, len(upstreams))
 
+	// schedule async exchanges
 	for _, f := range upstreams {
 		go exchangeAsync(f, req, ch)
 	}
 
-	for {
+	// wait for all exchanges to finish
+	for n := 0; n < len(upstreams); n++ {
 		select {
 		case rep := <-ch:
-			n++
 			if rep.err != nil {
 				errs = append(errs, rep.err)
 			} else if rep.reply != nil {
@@ -105,9 +105,6 @@ func ExchangeAll(upstreams []Upstream, req *dns.Msg) ([]ExchangeAllResult, error
 				}
 				replies = append(replies, res)
 			}
-		}
-		if n == len(upstreams) {
-			break
 		}
 	}
 

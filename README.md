@@ -124,6 +124,24 @@ Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel q
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53 -u tls://dns.adguard.com --all-servers
 ```
 
+### Fastest addr + cache-min-ttl
+
+This option would be useful to the users with problematic network connection.
+In this mode, `dnsproxy` would detect the fastest IP address among all that were returned,
+and it will return only it.
+
+Additionally, for those with problematic network connection, it makes sense to override `cache-min-ttl`.
+In this case, `dnsproxy` will make sure that DNS responses are cached for at least the specified amount of time.
+
+It makes sense to run it with multiple upstream servers only.
+
+Run a DNS proxy with two upstreams, min-TTL set to 10 minutes, fastest address detection is enabled:
+```
+./dnsproxy -u 8.8.8.8 -u 1.1.1.1 --cache --cache-min-ttl=600 --fastest-addr
+```
+
+ who run `dnsproxy` with multiple upstreams 
+
 ### Specifying upstreams for domains
 
 You can specify upstreams that will be used for a specific domain(s). We use the dnsmasq-like syntax (see `--server` description [here](http://www.thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html)).

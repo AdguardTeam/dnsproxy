@@ -9,6 +9,18 @@ import (
 	"github.com/miekg/dns"
 )
 
+// GetIPFromDNSRecord - extracts IP address for a DNS record
+func GetIPFromDNSRecord(r dns.RR) net.IP {
+	switch addr := r.(type) {
+	case *dns.A:
+		return addr.A.To4()
+
+	case *dns.AAAA:
+		return addr.AAAA
+	}
+	return nil
+}
+
 // AppendIPAddrs appends the IP addresses got from dns.RR to the specified array
 func AppendIPAddrs(ipAddrs *[]net.IPAddr, answers []dns.RR) {
 	for _, ans := range answers {

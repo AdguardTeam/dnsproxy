@@ -1,4 +1,4 @@
-package proxy
+package fastip
 
 import (
 	"net"
@@ -9,15 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func createARec(host, ip string) *dns.A {
-	a := new(dns.A)
-	a.Hdr.Rrtype = dns.TypeA
-	a.Hdr.Name = host
-	a.A = net.ParseIP(ip)
-	a.Hdr.Ttl = 60
-	return a
-}
-
 // . Upstream server returns "10.15.16.17" (dead), "127.0.0.1" (alive)
 // . The algorithm returns "127.0.0.1"
 func TestFastestAddrOneDeadIP(t *testing.T) {
@@ -26,25 +17,25 @@ func TestFastestAddrOneDeadIP(t *testing.T) {
 	assert.Nil(t, err)
 	defer listener.Close()
 
-	f := FastestAddr{}
-	f.Init()
+	f := NewFastestAddr()
 	f.tcpPorts = []uint{uint(listener.Addr().(*net.TCPAddr).Port)}
 	up1 := &testUpstream{}
+	up2 := &testUpstream{}
 
 	// add the 1st A response record
 	// this IP is dead (nothing is listening on our port)
-	up1.aResp = createARec("test.org.", "10.15.16.17")
+	up1.addARec("test.org.", "10.15.16.17")
 
 	// add the 2nd A response record
 	// Alive IP address
-	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "127.0.0.1"))
+	up2.addARec("test.org.", "127.0.0.1")
 
 	// Check that it's alive
-	ups := []upstream.Upstream{up1}
+	ups := []upstream.Upstream{up1, up2}
 	req := createHostTestMessage("test.org")
-	resp, up, err := f.exchangeFastest(req, ups)
+	resp, up, err := f.ExchangeFastest(req, ups)
 	assert.Nil(t, err)
-	assert.Equal(t, up, up1)
+	assert.Equal(t, up, up2)
 	assert.NotNil(t, resp)
 	ip := resp.Answer[0].(*dns.A).A.String()
 	assert.Equal(t, "127.0.0.1", ip)
@@ -58,25 +49,25 @@ func TestFastestAddrOneFaster(t *testing.T) {
 	assert.Nil(t, err)
 	defer listener.Close()
 
-	f := FastestAddr{}
-	f.Init()
+	f := NewFastestAddr()
 	f.tcpPorts = []uint{443, uint(listener.Addr().(*net.TCPAddr).Port)}
 	up1 := &testUpstream{}
+	up2 := &testUpstream{}
 
 	// add the 1st A response record
 	// this IP is alive, but it's slower than localhost
-	up1.aResp = createARec("test.org.", "8.8.8.8")
+	up1.addARec("test.org.", "8.8.8.8")
 
 	// add the 2nd A response record
 	// This IP is alive and much faster
-	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "127.0.0.1"))
+	up2.addARec("test.org.", "127.0.0.1")
 
 	// Check that localhost is faster
-	ups := []upstream.Upstream{up1}
+	ups := []upstream.Upstream{up1, up2}
 	req := createHostTestMessage("test.org")
-	resp, up, err := f.exchangeFastest(req, ups)
+	resp, up, err := f.ExchangeFastest(req, ups)
 	assert.Nil(t, err)
-	assert.Equal(t, up, up1)
+	assert.Equal(t, up, up2)
 	assert.NotNil(t, resp)
 	ip := resp.Answer[0].(*dns.A).A.String()
 	assert.Equal(t, "127.0.0.1", ip)
@@ -86,19 +77,58 @@ func TestFastestAddrOneFaster(t *testing.T) {
 //    all are dead
 // . The algorithm returns "127.0.0.1"
 func TestFastestAddrAllDead(t *testing.T) {
-	f := FastestAddr{}
-	f.Init()
-	f.tcpPorts = []uint{40812}
+	f := NewFastestAddr()
+	f.tcpPorts = []uint{getFreePort()}
 	up1 := &testUpstream{}
 
-	up1.aResp = createARec("test.org.", "127.0.0.1")
-	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "127.0.0.2"))
-	up1.aRespArr = append(up1.aRespArr, createARec("test.org.", "127.0.0.3"))
+	up1.addARec("test.org.", "127.0.0.1")
+	up1.addARec("test.org.", "127.0.0.2")
+	up1.addARec("test.org.", "127.0.0.3")
 
 	ups := []upstream.Upstream{up1}
 	req := createHostTestMessage("test.org")
-	resp, _, err := f.exchangeFastest(req, ups)
-	assert.True(t, err == nil)
+	resp, _, err := f.ExchangeFastest(req, ups)
+	assert.Nil(t, err)
 	ip := resp.Answer[0].(*dns.A).A.String()
-	assert.True(t, ip == "127.0.0.1")
+	assert.Equal(t, "127.0.0.1", ip)
+}
+
+type testUpstream struct {
+	aRespArr []*dns.A
+}
+
+func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
+	resp := dns.Msg{}
+	resp.SetReply(m)
+
+	for _, a := range u.aRespArr {
+		resp.Answer = append(resp.Answer, a)
+	}
+
+	return &resp, nil
+}
+
+func (u *testUpstream) Address() string {
+	return ""
+}
+
+func (u *testUpstream) addARec(host, ip string) {
+	a := new(dns.A)
+	a.Hdr.Rrtype = dns.TypeA
+	a.Hdr.Name = host
+	a.A = net.ParseIP(ip)
+	a.Hdr.Ttl = 60
+
+	u.aRespArr = append(u.aRespArr, a)
+}
+
+func createHostTestMessage(host string) *dns.Msg {
+	req := dns.Msg{}
+	req.Id = dns.Id()
+	req.RecursionDesired = true
+	name := host + "."
+	req.Question = []dns.Question{
+		{Name: name, Qtype: dns.TypeA, Qclass: dns.ClassINET},
+	}
+	return &req
 }

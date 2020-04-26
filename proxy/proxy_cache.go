@@ -19,7 +19,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 		val, ok := p.cache.Get(d.Req)
 		if ok && val != nil {
 			d.Res = val
-			log.Tracef("Serving cached response")
+			log.Debug("Serving cached response")
 			return true
 		}
 		return false

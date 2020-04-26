@@ -1,11 +1,9 @@
-package proxy
+package fastip
 
 import (
 	"encoding/binary"
 	"net"
 	"time"
-
-	"github.com/AdguardTeam/dnsproxy/upstream"
 )
 
 const (
@@ -17,11 +15,11 @@ type cacheEntry struct {
 	latencyMsec uint
 }
 
-/*
-expire [4]byte
-status byte
-latency_msec [2]byte
-*/
+// packCacheEntry - packss cache entry + ttl to bytes
+//
+// expire [4]byte
+// status byte
+// latency_msec [2]byte
 func packCacheEntry(ent *cacheEntry, ttl uint32) []byte {
 	expire := uint32(time.Now().Unix()) + ttl
 	var d []byte
@@ -38,6 +36,8 @@ func packCacheEntry(ent *cacheEntry, ttl uint32) []byte {
 	return d
 }
 
+// unpackCacheEntry - unpacks bytes to cache entry and checks TTL
+// if the record is expired, returns nil
 func unpackCacheEntry(data []byte) *cacheEntry {
 	now := time.Now().Unix()
 	expire := binary.BigEndian.Uint32(data[:4])
@@ -56,9 +56,11 @@ func unpackCacheEntry(data []byte) *cacheEntry {
 	return &ent
 }
 
-// find in cache
+// cacheFind - find entry in the cache for this IP
+// returns null if nothing found or if the record for this ip is expired
 func (f *FastestAddr) cacheFind(ip net.IP) *cacheEntry {
-	val := f.cache.Get(ip)
+	k := getCacheKey(ip)
+	val := f.cache.Get(k)
 	if val == nil {
 		return nil
 	}
@@ -69,7 +71,7 @@ func (f *FastestAddr) cacheFind(ip net.IP) *cacheEntry {
 	return ent
 }
 
-// store unsuccessful attempt in cache
+// cacheAddFailure - store unsuccessful attempt in cache
 func (f *FastestAddr) cacheAddFailure(addr net.IP) {
 	ent := cacheEntry{}
 	ent.status = 1
@@ -80,7 +82,7 @@ func (f *FastestAddr) cacheAddFailure(addr net.IP) {
 	f.cacheLock.Unlock()
 }
 
-// store a successul ping result in cache
+// store a successful ping result in cache
 // replace previous result if our latency is lower
 func (f *FastestAddr) cacheAddSuccessful(addr net.IP, latency uint) {
 	ent := cacheEntry{}
@@ -94,53 +96,18 @@ func (f *FastestAddr) cacheAddSuccessful(addr net.IP, latency uint) {
 	f.cacheLock.Unlock()
 }
 
-// store in cache
+// cacheAdd -- adds a new entry to the cache
 func (f *FastestAddr) cacheAdd(ent *cacheEntry, addr net.IP, ttl uint32) {
-	ip := addr.To4()
-	if ip == nil {
-		ip = addr
-	}
-
+	ip := getCacheKey(addr)
 	val := packCacheEntry(ent, ttl)
 	f.cache.Set(ip, val)
 }
 
-// Search in cache
-func (f *FastestAddr) getFromCache(host string, replies []upstream.ExchangeAllResult) fastestAddrResult {
-	result := fastestAddrResult{}
-	var fastestIP net.IP
-	var fastestRes *upstream.ExchangeAllResult
-	var minLatency uint
-	minLatency = 0xffff
-
-	n := 0
-	for _, r := range replies {
-		for _, a := range r.Resp.Answer {
-			ip := getIPFromDNSRecord(a)
-			if ip == nil {
-				continue
-			}
-
-			ent := f.cacheFind(ip)
-			if ent != nil {
-				n++
-			}
-			if ent != nil && ent.status == 0 && minLatency > ent.latencyMsec {
-				fastestIP = ip
-				fastestRes = &r
-				minLatency = ent.latencyMsec
-			}
-		}
+// getCacheKey - gets cache key (compresses ipv4 to 4 bytes)
+func getCacheKey(addr net.IP) net.IP {
+	ip := addr.To4()
+	if ip == nil {
+		ip = addr
 	}
-
-	result.nCached = n
-
-	if fastestRes != nil {
-		result.res = fastestRes
-		result.ip = fastestIP
-		result.latency = minLatency
-		return result
-	}
-
-	return result
+	return ip
 }

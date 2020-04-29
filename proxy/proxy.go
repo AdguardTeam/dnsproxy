@@ -196,6 +196,12 @@ func ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS []string, timeout time.
 	upstreams := []upstream.Upstream{}
 	domainReservedUpstreams := map[string][]upstream.Upstream{}
 
+	if len(bootstrapDNS) > 0 {
+		for i, b := range bootstrapDNS {
+			log.Info("Bootstrap %d: %s", i, b)
+		}
+	}
+
 	for i, u := range upstreamConfig {
 		hosts := []string{}
 		if strings.HasPrefix(u, "[/") {
@@ -270,10 +276,12 @@ func (p *Proxy) Init() {
 	p.udpOOBSize = udpGetOOBSize()
 
 	if p.FindFastestAddr {
+		log.Printf("Fastest IP is enabled")
 		p.fastestAddr = fastip.NewFastestAddr()
 	}
 
 	if p.MaxGoroutines > 0 {
+		log.Info("MaxGoroutines is set to %d", p.MaxGoroutines)
 		p.maxGoroutines = make(chan bool, p.MaxGoroutines)
 	} else {
 		// nil means there's no limit

@@ -210,7 +210,7 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 	dnsproxy.Upstreams = config.Upstreams
 	dnsproxy.DomainsReservedUpstreams = config.DomainReservedUpstreams
 
-	assertUpstreamsForDomain(t, dnsproxy, 2, "www.google.com.", []string{"1.2.3.4:53", "1.1.1.1:853"})
+	assertUpstreamsForDomain(t, dnsproxy, 2, "www.google.com.", []string{"1.2.3.4:53", "tls://1.1.1.1:853"})
 	assertUpstreamsForDomain(t, dnsproxy, 1, "www2.google.com.", []string{"4.3.2.1:53"})
 	assertUpstreamsForDomain(t, dnsproxy, 1, "internal.local.", []string{"4.3.2.1:53"})
 	assertUpstreamsForDomain(t, dnsproxy, 1, "google.", []string{"1.2.3.4:53"})

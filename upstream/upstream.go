@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -76,14 +77,19 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout}, nil
 	case "tcp":
 		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout, preferTCP: true}, nil
+
 	case "tls":
-		resolverURL := getHostWithPort(upstreamURL, "853")
+		if upstreamURL.Port() == "" {
+			upstreamURL.Host += ":853"
+		}
+		resolverURL := upstreamURL.String()
 		b, err := urlToBoot(resolverURL, opts)
 		if err != nil {
 			return nil, errorx.Decorate(err, "couldn't create tls bootstrapper")
 		}
 
 		return &dnsOverTLS{boot: b}, nil
+
 	case "https":
 		if upstreamURL.Port() == "" {
 			upstreamURL.Host += ":443"
@@ -142,4 +148,26 @@ func getHostWithPort(upstreamURL *url.URL, defaultPort string) string {
 		return upstreamURL.Host + ":" + defaultPort
 	}
 	return upstreamURL.Host
+}
+
+// Write to log DNS request information that we are going to send
+func logBegin(upstreamAddress string, req *dns.Msg) {
+	qtype := ""
+	target := ""
+	if len(req.Question) != 0 {
+		qtype = dns.TypeToString[req.Question[0].Qtype]
+		target = req.Question[0].Name
+	}
+	log.Debug("%s: sending request %s %s",
+		upstreamAddress, qtype, target)
+}
+
+// Write to log about the result of DNS request
+func logFinish(upstreamAddress string, err error) {
+	status := "ok"
+	if err != nil {
+		status = err.Error()
+	}
+	log.Debug("%s: response: %s",
+		upstreamAddress, status)
 }

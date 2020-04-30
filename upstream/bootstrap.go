@@ -126,7 +126,11 @@ func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
 // DOH and DOT are okay only in the case if an IP address is used in the IP address
 func isResolverValidBootstrap(upstream Upstream) bool {
 	if u, ok := upstream.(*dnsOverTLS); ok {
-		host, _, err := net.SplitHostPort(u.Address())
+		urlAddr, err := url.Parse(u.Address())
+		if err != nil {
+			return false
+		}
+		host, _, err := net.SplitHostPort(urlAddr.Host)
 		if err != nil {
 			return false
 		}

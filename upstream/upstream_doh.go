@@ -39,7 +39,9 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, errorx.Decorate(err, "couldn't initialize HTTP client or transport")
 	}
 
+	logBegin(p.Address(), m)
 	r, err := p.exchangeHTTPSClient(m, client)
+	logFinish(p.Address(), err)
 	if err != nil {
 		p.Lock()
 		if client == p.client {

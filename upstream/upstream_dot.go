@@ -40,7 +40,9 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, errorx.Decorate(err, "Failed to get a connection from TLSPool to %s", p.Address())
 	}
 
+	logBegin(p.Address(), m)
 	reply, err := p.exchangeConn(poolConn, m)
+	logFinish(p.Address(), err)
 	if err != nil {
 		log.Tracef("The TLS connection is expired due to %s", err)
 
@@ -56,7 +58,9 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		}
 
 		// Retry sending the DNS request
+		logBegin(p.Address(), m)
 		reply, err = p.exchangeConn(poolConn, m)
+		logFinish(p.Address(), err)
 	}
 
 	if err == nil {

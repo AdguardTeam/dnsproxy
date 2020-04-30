@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBootstrapTimeout(t *testing.T) {
@@ -371,6 +372,25 @@ func TestUpstreams(t *testing.T) {
 			checkUpstream(t, u, test.address)
 		})
 	}
+}
+
+func TestUpstreamAddress(t *testing.T) {
+	opt := Options{Bootstrap: []string{"1.1.1.1"}}
+
+	u, _ := AddressToUpstream("1.1.1.1", Options{})
+	assert.Equal(t, "1.1.1.1:53", u.Address())
+
+	u, _ = AddressToUpstream("one.one.one.one", Options{})
+	assert.Equal(t, "one.one.one.one:53", u.Address())
+
+	u, _ = AddressToUpstream("tcp://one.one.one.one", opt)
+	assert.Equal(t, "tcp://one.one.one.one:53", u.Address())
+
+	u, _ = AddressToUpstream("tls://one.one.one.one", opt)
+	assert.Equal(t, "tls://one.one.one.one:853", u.Address())
+
+	u, _ = AddressToUpstream("https://one.one.one.one", opt)
+	assert.Equal(t, "https://one.one.one.one:443", u.Address())
 }
 
 func TestUpstreamDOTBootstrap(t *testing.T) {

@@ -24,10 +24,6 @@ func GetIPFromDNSRecord(r dns.RR) net.IP {
 
 // ContainsIP checks if the specified IP is in the array
 func ContainsIP(ips []net.IP, ip net.IP) bool {
-	if len(ips) == 0 {
-		return false
-	}
-
 	for _, i := range ips {
 		if i.Equal(ip) {
 			return true

@@ -21,3 +21,21 @@ func TestSortIPAddrs(t *testing.T) {
 	assert.Equal(t, ipAddrs[2].String(), "2a00:5a60::bad1:ff")
 	assert.Equal(t, ipAddrs[3].String(), "2a00:5a60::bad2:ff")
 }
+
+func TestContainsIP(t *testing.T) {
+	ips := []net.IP{}
+	ips = append(ips, net.ParseIP("176.103.130.134"))
+	ips = append(ips, net.ParseIP("2a00:5a60::bad1:ff"))
+
+	ip := net.ParseIP("176.103.130.134")
+	assert.True(t, ContainsIP(ips, ip))
+
+	ip = net.ParseIP("2a00:5a60::bad1:ff")
+	assert.True(t, ContainsIP(ips, ip))
+
+	ip = net.ParseIP("2a00:5a60::bad1:ff1")
+	assert.False(t, ContainsIP(ips, ip))
+
+	ip = net.ParseIP("127.0.0.1")
+	assert.False(t, ContainsIP(ips, ip))
+}

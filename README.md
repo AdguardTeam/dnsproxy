@@ -4,11 +4,23 @@
 [![GolangCI](https://golangci.com/badges/github.com/AdguardTeam/dnsproxy.svg)](https://golangci.com/r/github.com/AdguardTeam/dnsproxy)
 [![Go Doc](https://godoc.org/github.com/AdguardTeam/dnsproxy?status.svg)](https://godoc.org/github.com/AdguardTeam/dnsproxy)
 
-# DNS Proxy
+# DNS Proxy <!-- omit in toc -->
 
 A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, and `DNSCrypt`.
 
 Moreover, it can work as a `DNS-over-HTTPS` and/or `DNS-over-TLS` server.
+
+- [How to build](#how-to-build)
+- [Usage](#usage)
+- [Examples](#examples)
+  - [Simple options](#simple-options)
+  - [Encrypted upstreams](#encrypted-upstreams)
+  - [Encrypted DNS server](#encrypted-dns-server)
+  - [Additional features](#additional-features)
+  - [Fastest addr + cache-min-ttl](#fastest-addr--cache-min-ttl)
+  - [Specifying upstreams for domains](#specifying-upstreams-for-domains)
+  - [EDNS Client Subnet](#edns-client-subnet)
+  - [Bogus NXDomain](#bogus-nxdomain)
 
 ## How to build
 
@@ -25,33 +37,34 @@ Usage:
   dnsproxy [OPTIONS]
 
 Application Options:
-  -v, --verbose        Verbose output (optional)
-  -o, --output=        Path to the log file. If not set, write to stdout.
-  -l, --listen=        Listen address (default: 0.0.0.0)
-  -p, --port=          Listen port. Zero value disables TCP and UDP listeners (default: 53)
-  -h, --https-port=    Listen port for DNS-over-HTTPS (default: 0)
-  -t, --tls-port=      Listen port for DNS-over-TLS (default: 0)
-  -c, --tls-crt=       Path to a file with the certificate chain
-  -k, --tls-key=       Path to a file with the private key
-  -b, --bootstrap=     Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
-  -r, --ratelimit=     Ratelimit (requests per second) (default: 0)
-  -z, --cache          If specified, DNS cache is enabled
-  -e  --cache-size=    Cache size (in bytes). Default: 65536
-      --cache-min-ttl= Minimum TTL value for DNS entries, in seconds. Capped at 3600 seconds (1 hour).
-                       Artificially extending TTLs should only be done with careful consideration.
-      --cache-max-ttl= Maximum TTL value for DNS entries, in seconds.
-  -a, --refuse-any     If specified, refuse ANY requests
-  -u, --upstream=      An upstream to be used (can be specified multiple times)
-  -f, --fallback=      Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
-  -s, --all-servers    Use parallel queries to speed up resolving by querying all upstream servers simultaneously
-  -d, --ipv6-disabled  Disable IPv6. All AAAA requests will be replied with No Error response code and empty answer 
-      --edns           Use EDNS Client Subnet extension
-      --edns-addr=     Send EDNS Client Address
-      --fastest-addr   Respond to A or AAAA requests only with the fastest IP address
+  -v, --verbose         Verbose output (optional)
+  -o, --output=         Path to the log file. If not set, write to stdout.
+  -l, --listen=         Listen address (default: 0.0.0.0)
+  -p, --port=           Listen port. Zero value disables TCP and UDP listeners (default: 53)
+  -h, --https-port=     Listen port for DNS-over-HTTPS (default: 0)
+  -t, --tls-port=       Listen port for DNS-over-TLS (default: 0)
+  -c, --tls-crt=        Path to a file with the certificate chain
+  -k, --tls-key=        Path to a file with the private key
+  -u, --upstream=       An upstream to be used (can be specified multiple times)
+  -b, --bootstrap=      Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
+  -f, --fallback=       Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
+      --all-servers     If specified, parallel queries to all configured upstream servers are enabled
+      --fastest-addr    Respond to A or AAAA requests only with the fastest IP address
+      --cache           If specified, DNS cache is enabled
+      --cache-size=     Cache size (in bytes). Default: 64k
+      --cache-min-ttl=  Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with
+                        careful consideration.
+      --cache-max-ttl=  Maximum TTL value for DNS entries, in seconds.
+  -r, --ratelimit=      Ratelimit (requests per second) (default: 0)
+      --refuse-any      If specified, refuse ANY requests
+      --edns            Use EDNS Client Subnet extension
+      --edns-addr=      Send EDNS Client Address
+      --ipv6-disabled   If specified, all AAAA requests will be replied with NoError RCode and empty answer
+      --bogus-nxdomain= Transform responses that contain only given IP addresses into NXDOMAIN. Can be specified multiple times.
+      --version         Prints the program version
 
 Help Options:
-  -h, --help        Show this help message
-  --version         Print DNS proxy version
+  -h, --help            Show this help message
 ```
 
 ## Examples
@@ -154,7 +167,7 @@ If one or more domains are specified, that upstream (`upstreamString`) is used o
 2. More specific domains take precedence over less specific domains, so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send queries for *.host.com to 1.2.3.4, except *.www.host.com, which will go to 2.3.4.5
 3. The special server address '#' means, "use the standard servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for *.host.com to 1.2.3.4, except *.www.host.com which will be forwarded as usual.
 
-#### Examples
+**Examples**
 
 Sends queries for `*.local` domains to `192.168.0.1:53`. Other queries are sent to `8.8.8.8:53`.
 ```
@@ -183,3 +196,13 @@ If you want to use EDNS CS feature when you're connecting to the proxy from a lo
 ```
 
 Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy will pass through 72.72.72.72 to the upstream server.
+
+### Bogus NXDomain
+
+This option is similar to dnsmasq `bogus-nxdomain`. If specified, `dnsproxy` transforms responses that contain only the given IP addresses into `NXDOMAIN`. Can be specified multiple times.
+
+In the example below, we use AdGuard DNS server that returns `0.0.0.0` for blocked domains, and tranform them to `NXDOMAIN`.
+
+```
+./dnsproxy -u 176.103.130.130:53 --bogus-nxdomain=0.0.0.0
+```

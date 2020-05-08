@@ -18,11 +18,17 @@ import (
 
 // Options represents console arguments
 type Options struct {
+	// Log settings
+	// --
+
 	// Should we write
 	Verbose bool `short:"v" long:"verbose" description:"Verbose output (optional)" optional:"yes" optional-value:"true"`
 
 	// Path to a log file
 	LogOutput string `short:"o" long:"output" description:"Path to the log file. If not set, write to stdout." default:""`
+
+	// Server settings
+	// --
 
 	// Server listen address
 	ListenAddr string `short:"l" long:"listen" description:"Listen address" default:"0.0.0.0"`
@@ -42,17 +48,33 @@ type Options struct {
 	// Path to the file with the private key
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
+	// Upstream DNS servers settings
+	// --
+
+	// DNS upstreams
+	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
+
 	// Bootstrap DNS
 	BootstrapDNS []string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)"`
 
-	// Ratelimit value
-	Ratelimit int `short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
+	// Fallback DNS resolver
+	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times"`
+
+	// If true, parallel queries to all configured upstream servers
+	AllServers bool `long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
+
+	// Respond to A or AAAA requests only with the fastest IP address
+	//  detected by ICMP response time or TCP connection time
+	FastestAddress bool `long:"fastest-addr" description:"Respond to A or AAAA requests only with the fastest IP address" optional:"yes" optional-value:"true"`
+
+	// Cache settings
+	// --
 
 	// If true, DNS cache is enabled
-	Cache bool `short:"z" long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
+	Cache bool `long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
 
 	// Cache size value
-	CacheSizeBytes int `short:"e" long:"cache-size" description:"Cache size (in bytes). Default: 64k"`
+	CacheSizeBytes int `long:"cache-size" description:"Cache size (in bytes). Default: 64k"`
 
 	// DNS cache minimum TTL value - overrides record value
 	CacheMinTTL uint32 `long:"cache-min-ttl" description:"Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration."`
@@ -60,20 +82,17 @@ type Options struct {
 	// DNS cache maximum TTL value - overrides record value
 	CacheMaxTTL uint32 `long:"cache-max-ttl" description:"Maximum TTL value for DNS entries, in seconds."`
 
+	// Anti-DNS amplification measures
+	// --
+
+	// Ratelimit value
+	Ratelimit int `short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
+
 	// If true, refuse ANY requests
-	RefuseAny bool `short:"a" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
+	RefuseAny bool `long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
 
-	// DNS upstreams
-	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
-
-	// Fallback DNS resolver
-	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times"`
-
-	// If true, parallel queries to all configured upstream servers
-	AllServers bool `short:"s" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
-
-	// If true, all AAAA requests will be replied with NoError RCode and empty answer
-	IPv6Disabled bool `short:"d" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
+	// ECS settings
+	// --
 
 	// Use EDNS Client Subnet extension
 	EnableEDNSSubnet bool `long:"edns" description:"Use EDNS Client Subnet extension" optional:"yes" optional-value:"true"`
@@ -81,9 +100,14 @@ type Options struct {
 	// Use Custom EDNS Client Address
 	EDNSAddr string `long:"edns-addr" description:"Send EDNS Client Address"`
 
-	// Respond to A or AAAA requests only with the fastest IP address
-	//  detected by ICMP response time or TCP connection time
-	FastestAddress bool `long:"fastest-addr" description:"Respond to A or AAAA requests only with the fastest IP address" optional:"yes" optional-value:"true"`
+	// Other settings and options
+	// --
+
+	// If true, all AAAA requests will be replied with NoError RCode and empty answer
+	IPv6Disabled bool `long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
+
+	// Transform responses that contain only given IP addresses into NXDOMAIN
+	BogusNXDomain []string `long:"bogus-nxdomain" description:"Transform responses that contain only given IP addresses into NXDOMAIN. Can be specified multiple times."`
 
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
@@ -207,6 +231,19 @@ func createProxyConfig(options Options) proxy.Config {
 			fallbacks = append(fallbacks, fallback)
 		}
 		config.Fallbacks = fallbacks
+	}
+
+	if len(options.BogusNXDomain) > 0 {
+		bogusIP := []net.IP{}
+		for _, s := range options.BogusNXDomain {
+			ip := net.ParseIP(s)
+			if ip == nil {
+				log.Error("Invalid IP: %s", s)
+			} else {
+				bogusIP = append(bogusIP, ip)
+			}
+		}
+		config.BogusNXDomain = bogusIP
 	}
 
 	// Prepare the TLS config

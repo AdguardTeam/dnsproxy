@@ -10,6 +10,7 @@ import (
 )
 
 // GetIPFromDNSRecord - extracts IP address for a DNS record
+// returns null if the record is of a wrong type
 func GetIPFromDNSRecord(r dns.RR) net.IP {
 	switch addr := r.(type) {
 	case *dns.A:
@@ -19,6 +20,17 @@ func GetIPFromDNSRecord(r dns.RR) net.IP {
 		return addr.AAAA
 	}
 	return nil
+}
+
+// ContainsIP checks if the specified IP is in the array
+func ContainsIP(ips []net.IP, ip net.IP) bool {
+	for _, i := range ips {
+		if i.Equal(ip) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // AppendIPAddrs appends the IP addresses got from dns.RR to the specified array

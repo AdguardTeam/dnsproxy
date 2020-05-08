@@ -107,7 +107,7 @@ type Options struct {
 	IPv6Disabled bool `long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
 	// Transform responses that contain only given IP addresses into NXDOMAIN
-	BoguxNXDomain []string `long:"bogus-nxdomain" description:"Transform responses that contain only given IP addresses into NXDOMAIN. Can be specified multiple times."`
+	BogusNXDomain []string `long:"bogus-nxdomain" description:"Transform responses that contain only given IP addresses into NXDOMAIN. Can be specified multiple times."`
 
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
@@ -233,9 +233,9 @@ func createProxyConfig(options Options) proxy.Config {
 		config.Fallbacks = fallbacks
 	}
 
-	if len(options.BoguxNXDomain) > 0 {
+	if len(options.BogusNXDomain) > 0 {
 		bogusIP := []net.IP{}
-		for _, s := range options.BoguxNXDomain {
+		for _, s := range options.BogusNXDomain {
 			ip := net.ParseIP(s)
 			if ip == nil {
 				log.Error("Invalid IP: %s", s)

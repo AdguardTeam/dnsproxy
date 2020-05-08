@@ -20,7 +20,7 @@ Moreover, it can work as a `DNS-over-HTTPS` and/or `DNS-over-TLS` server.
   - [Fastest addr + cache-min-ttl](#fastest-addr--cache-min-ttl)
   - [Specifying upstreams for domains](#specifying-upstreams-for-domains)
   - [EDNS Client Subnet](#edns-client-subnet)
-  - [Bogux NXDomain](#bogux-nxdomain)
+  - [Bogus NXDomain](#bogus-nxdomain)
 
 ## How to build
 
@@ -197,7 +197,7 @@ If you want to use EDNS CS feature when you're connecting to the proxy from a lo
 
 Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy will pass through 72.72.72.72 to the upstream server.
 
-### Bogux NXDomain
+### Bogus NXDomain
 
 This option is similar to dnsmasq `bogus-nxdomain`. If specified, `dnsproxy` transforms responses that contain only the given IP addresses into `NXDOMAIN`. Can be specified multiple times.
 

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBoguxNXDomainTypeA(t *testing.T) {
+func TestBogusNXDomainTypeA(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 	dnsProxy.CacheEnabled = true
 	dnsProxy.BogusNXDomain = []net.IP{net.ParseIP("4.3.2.1")}

@@ -272,7 +272,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		log.Tracef("Received empty AAAA response, checking DNS64")
 		reply, u, err = p.checkDNS64(d.Req, reply, upstreams)
 	} else if p.isBogusNXDomain(reply) {
-		log.Tracef("Received IP from the bogux-nxdomain list, replacing response")
+		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")
 		reply = p.genNXDomain(reply)
 	}
 

@@ -12,7 +12,9 @@ import (
 // isEmptyAAAAResponse checks AAAA answer to be empty
 // returns true if NAT64 prefix already calculated and there are no answers for AAAA question
 func (p *Proxy) isEmptyAAAAResponse(resp, req *dns.Msg) bool {
-	return p.isNAT64PrefixAvailable() && req.Question[0].Qtype == dns.TypeAAAA && (resp == nil || len(resp.Answer) == 0)
+	return p.isNAT64PrefixAvailable() &&
+		(resp == nil || len(resp.Answer) == 0) &&
+		req.Question[0].Qtype == dns.TypeAAAA
 }
 
 // isNAT64PrefixAvailable returns true if NAT64 prefix was calculated

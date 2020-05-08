@@ -49,8 +49,7 @@ func TestHttpsProxy(t *testing.T) {
 	httpsAddr := dnsProxy.Addr(ProtoHTTPS)
 
 	dialer := &net.Dialer{
-		Timeout:   defaultTimeout,
-		DualStack: true,
+		Timeout: defaultTimeout,
 	}
 	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		// Route request to the DOH server address
@@ -814,18 +813,6 @@ func getIPFromResponse(resp *dns.Msg) net.IP {
 		return a.A
 	}
 	return nil
-}
-
-// Return the first CNAME value in response
-func getCNAMEFromResponse(resp *dns.Msg) string {
-	for _, ans := range resp.Answer {
-		cn, ok := ans.(*dns.CNAME)
-		if !ok {
-			continue
-		}
-		return cn.Target
-	}
-	return ""
 }
 
 type testUpstream struct {

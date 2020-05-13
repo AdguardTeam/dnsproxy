@@ -3,15 +3,10 @@ package proxy
 import (
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"net"
-	"strings"
-	"time"
-
-	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/utils"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/log"
 )
 
 // Config contains all the fields necessary for proxy configuration
@@ -35,11 +30,10 @@ type Config struct {
 	// Upstream DNS servers and their settings
 	// --
 
-	Upstreams                []upstream.Upstream            // list of upstreams
-	Fallbacks                []upstream.Upstream            // list of fallback resolvers (which will be used if regular upstream failed to answer)
-	AllServers               bool                           // if true, parallel queries to all configured upstream servers are enabled
-	DomainsReservedUpstreams map[string][]upstream.Upstream // map of domains and lists of corresponding upstreams
-	FindFastestAddr          bool                           // use Fastest Address algorithm
+	UpstreamConfig  *UpstreamConfig     // Upstream DNS servers configuration
+	Fallbacks       []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
+	AllServers      bool                // if true, parallel queries to all configured upstream servers are enabled
+	FindFastestAddr bool                // use Fastest Address algorithm
 
 	// BogusNXDomain - transforms responses that contain only given IP addresses into NXDOMAIN
 	// Similar to dnsmasq's "bogus-nxdomain"
@@ -88,95 +82,6 @@ type Config struct {
 	MaxGoroutines int // maximum number of goroutines processing the DNS requests (important for mobile)
 }
 
-// UpstreamConfig is a wrapper for list of default upstreams and map of reserved domains and corresponding upstreams
-type UpstreamConfig struct {
-	Upstreams               []upstream.Upstream            // list of default upstreams
-	DomainReservedUpstreams map[string][]upstream.Upstream // map of reserved domains and lists of corresponding upstreams
-}
-
-// ParseUpstreamsConfig returns UpstreamConfig and error if upstreams configuration is invalid
-// default upstream syntax: <upstreamString>
-// reserved upstream syntax: [/domain1/../domainN/]<upstreamString>
-// More specific domains take priority over less specific domains,
-// To exclude more specific domains from reserved upstreams querying you should use the following syntax: [/domain1/../domainN/]#
-// So the following config: ["[/host.com/]1.2.3.4", "[/www.host.com/]2.3.4.5", "[/maps.host.com/]#", "3.4.5.6"]
-// will send queries for *.host.com to 1.2.3.4, except for *.www.host.com, which will go to 2.3.4.5 and *.maps.host.com,
-// which will go to default server 3.4.5.6 with all other domains
-func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Duration) (UpstreamConfig, error) {
-	return ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS, timeout, func(address string, opts upstream.Options) (upstream.Upstream, error) {
-		return upstream.AddressToUpstream(address, opts)
-	})
-}
-
-// AddressToUpstreamFunction is a type for a callback function which creates an upstream object
-type AddressToUpstreamFunction func(address string, opts upstream.Options) (upstream.Upstream, error)
-
-// ParseUpstreamsConfigEx is an extended version of ParseUpstreamsConfig() which has a custom callback function which creates an upstream object
-func ParseUpstreamsConfigEx(upstreamConfig, bootstrapDNS []string, timeout time.Duration, addressToUpstreamFunction AddressToUpstreamFunction) (UpstreamConfig, error) {
-	upstreams := []upstream.Upstream{}
-	domainReservedUpstreams := map[string][]upstream.Upstream{}
-
-	if len(bootstrapDNS) > 0 {
-		for i, b := range bootstrapDNS {
-			log.Info("Bootstrap %d: %s", i, b)
-		}
-	}
-
-	for i, u := range upstreamConfig {
-		hosts := []string{}
-		if strings.HasPrefix(u, "[/") {
-			// split domains and upstream string
-			domainsAndUpstream := strings.Split(strings.TrimPrefix(u, "[/"), "/]")
-			if len(domainsAndUpstream) != 2 {
-				return UpstreamConfig{}, fmt.Errorf("wrong upstream specification: %s", u)
-			}
-
-			// split domains list
-			for _, host := range strings.Split(domainsAndUpstream[0], "/") {
-				if host != "" {
-					if err := utils.IsValidHostname(host); err != nil {
-						return UpstreamConfig{}, err
-					}
-					hosts = append(hosts, strings.ToLower(host+"."))
-				} else {
-					// empty domain specification means `unqualified names only`
-					hosts = append(hosts, UnqualifiedNames)
-				}
-			}
-			u = domainsAndUpstream[1]
-		}
-
-		// # excludes more specific domain from reserved upstreams querying
-		if u == "#" && len(hosts) > 0 {
-			for _, host := range hosts {
-				domainReservedUpstreams[host] = nil
-			}
-			continue
-		}
-
-		// create an upstream
-		dnsUpstream, err := addressToUpstreamFunction(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout})
-		if err != nil {
-			return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", u, bootstrapDNS, err)
-		}
-
-		if len(hosts) > 0 {
-			for _, host := range hosts {
-				_, ok := domainReservedUpstreams[host]
-				if !ok {
-					domainReservedUpstreams[host] = []upstream.Upstream{}
-				}
-				domainReservedUpstreams[host] = append(domainReservedUpstreams[host], dnsUpstream)
-			}
-			log.Printf("Upstream %d: %s is reserved for next domains: %s", i, dnsUpstream.Address(), strings.Join(hosts, ", "))
-		} else {
-			log.Printf("Upstream %d: %s", i, dnsUpstream.Address())
-			upstreams = append(upstreams, dnsUpstream)
-		}
-	}
-	return UpstreamConfig{Upstreams: upstreams, DomainReservedUpstreams: domainReservedUpstreams}, nil
-}
-
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not
 func (p *Proxy) validateConfig() error {
 	if p.started {
@@ -195,8 +100,12 @@ func (p *Proxy) validateConfig() error {
 		return errors.New("cannot create an HTTPS listener without TLS config")
 	}
 
-	if len(p.Upstreams) == 0 {
-		if len(p.DomainsReservedUpstreams) == 0 {
+	if p.UpstreamConfig == nil {
+		return errors.New("no default upstreams specified")
+	}
+
+	if len(p.UpstreamConfig.Upstreams) == 0 {
+		if len(p.UpstreamConfig.DomainReservedUpstreams) == 0 {
 			return errors.New("no upstreams specified")
 		}
 		return errors.New("no default upstreams specified")

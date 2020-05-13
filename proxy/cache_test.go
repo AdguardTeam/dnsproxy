@@ -269,7 +269,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	dnsProxy.CacheMinTTL = 20
 	dnsProxy.CacheMaxTTL = 40
 	u := testUpstream{}
-	dnsProxy.Upstreams = []upstream.Upstream{&u}
+	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
 	err := dnsProxy.Start()
 	if err != nil {
 		t.Fatalf("cannot start the DNS proxy: %s", err)

@@ -4,7 +4,6 @@ package proxy
 import (
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -96,9 +95,10 @@ type DNSContext struct {
 	StartTime          time.Time           // processing start time
 	Upstream           upstream.Upstream   // upstream that resolved DNS request
 
-	// Upstream servers to use for this request
+	// CustomUpstreamConfig -- custom upstream servers configuration
+	// to use for this request only.
 	// If set, Resolve() uses it instead of default servers
-	Upstreams []upstream.Upstream
+	CustomUpstreamConfig *UpstreamConfig
 
 	ecsReqIP   net.IP // ECS IP used in request
 	ecsReqMask uint8  // ECS mask used in request
@@ -258,11 +258,17 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		return nil
 	}
 
+	host := d.Req.Question[0].Name
+	var upstreams []upstream.Upstream
+
 	// Get custom upstreams first -- note that they might be empty
-	upstreams := d.Upstreams
-	if len(upstreams) == 0 {
-		// get upstreams for the specified hostname
-		upstreams = p.getUpstreamsForDomain(d.Req.Question[0].Name)
+	if d.CustomUpstreamConfig != nil {
+		upstreams = d.CustomUpstreamConfig.getUpstreamsForDomain(host)
+	}
+
+	// If nothing found in the custom upstreams, start using the default ones
+	if upstreams == nil {
+		upstreams = p.UpstreamConfig.getUpstreamsForDomain(host)
 	}
 
 	// execute the DNS request
@@ -306,37 +312,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 
 	return err
-}
-
-// getUpstreamsForDomain looks for a domain in reserved domains map and returns a list of corresponding upstreams.
-// returns default upstreams list if domain isn't found. More specific domains take priority over less specific domains.
-// For example, map contains the following keys: host.com and www.host.com
-// If we are looking for domain mail.host.com, this method will return value of host.com key
-// If we are looking for domain www.host.com, this method will return value of www.host.com key
-// If more specific domain value is nil, it means that domain was excluded and should be exchanged with default upstreams
-func (p *Proxy) getUpstreamsForDomain(host string) []upstream.Upstream {
-	if len(p.DomainsReservedUpstreams) == 0 {
-		return p.Upstreams
-	}
-
-	dotsCount := strings.Count(host, ".")
-	if dotsCount < 2 {
-		return p.DomainsReservedUpstreams[UnqualifiedNames]
-	}
-
-	for i := 1; i <= dotsCount; i++ {
-		h := strings.SplitAfterN(host, ".", i)
-		name := h[i-1]
-		if u, ok := p.DomainsReservedUpstreams[strings.ToLower(name)]; ok {
-			if u == nil {
-				// domain was excluded from reserved upstreams querying
-				return p.Upstreams
-			}
-			return u
-		}
-	}
-
-	return p.Upstreams
 }
 
 // Set EDNS Client-Subnet data in DNS request

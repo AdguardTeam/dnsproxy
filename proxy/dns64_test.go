@@ -25,7 +25,7 @@ func TestProxyWithDNS64(t *testing.T) {
 
 	// Let's create test A request to ipv4OnlyHost and exchange it with test proxy
 	req := createHostTestMessage(ipv4OnlyHost)
-	resp, _, err := dnsProxy.exchange(req, dnsProxy.Upstreams)
+	resp, _, err := dnsProxy.exchange(req, dnsProxy.UpstreamConfig.Upstreams)
 	if err != nil {
 		t.Fatalf("Can not exchange test message for %s cause: %s", ipv4OnlyHost, err)
 	}
@@ -74,7 +74,7 @@ func TestProxyWithDNS64(t *testing.T) {
 func TestDNS64Race(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 	dnsProxy.nat64Prefix = prefix
-	dnsProxy.Upstreams = append(dnsProxy.Upstreams, dnsProxy.Upstreams[0])
+	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, dnsProxy.UpstreamConfig.Upstreams[0])
 
 	// Start listening
 	err := dnsProxy.Start()

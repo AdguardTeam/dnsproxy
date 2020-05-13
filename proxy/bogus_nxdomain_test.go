@@ -15,7 +15,7 @@ func TestBogusNXDomainTypeA(t *testing.T) {
 	dnsProxy.BogusNXDomain = []net.IP{net.ParseIP("4.3.2.1")}
 
 	u := testUpstream{}
-	dnsProxy.Upstreams = []upstream.Upstream{&u}
+	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
 	err := dnsProxy.Start()
 	assert.Nil(t, err)
 

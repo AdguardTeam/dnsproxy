@@ -130,7 +130,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	var err error
 
 	if d.Res == nil {
-		if len(p.Upstreams) == 0 {
+		if len(p.UpstreamConfig.Upstreams) == 0 {
 			panic("SHOULD NOT HAPPEN: no default upstreams specified")
 		}
 

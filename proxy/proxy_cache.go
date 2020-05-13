@@ -8,7 +8,7 @@ import (
 // Get response from general or subnet cache
 // Return TRUE if response is found in cache
 func (p *Proxy) replyFromCache(d *DNSContext) bool {
-	if p.cache == nil || len(d.Upstreams) > 0 {
+	if p.cache == nil || d.CustomUpstreamConfig != nil {
 		// Do not use cache if:
 		// it is disabled
 		// the query is with custom upstreams
@@ -46,7 +46,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 
 // Store response in general or subnet cache
 func (p *Proxy) setInCache(d *DNSContext, resp *dns.Msg) {
-	if p.cache == nil || len(d.Upstreams) > 0 {
+	if p.cache == nil || d.CustomUpstreamConfig != nil {
 		// Do not use cache if:
 		// it is disabled
 		// the query is with custom upstreams

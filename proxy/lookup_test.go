@@ -19,7 +19,8 @@ func TestLookupIPAddr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}
-	p.Upstreams = append(upstreams, dnsUpstream)
+	p.UpstreamConfig = &UpstreamConfig{}
+	p.UpstreamConfig.Upstreams = append(upstreams, dnsUpstream)
 
 	// Init the proxy
 	p.Init()

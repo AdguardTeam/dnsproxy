@@ -195,17 +195,16 @@ func createProxyConfig(options Options) proxy.Config {
 
 	// Create the config
 	config := proxy.Config{
-		Upstreams:                upstreamConfig.Upstreams,
-		DomainsReservedUpstreams: upstreamConfig.DomainReservedUpstreams,
-		Ratelimit:                options.Ratelimit,
-		CacheEnabled:             options.Cache,
-		CacheSizeBytes:           options.CacheSizeBytes,
-		CacheMinTTL:              options.CacheMinTTL,
-		CacheMaxTTL:              options.CacheMaxTTL,
-		RefuseAny:                options.RefuseAny,
-		AllServers:               options.AllServers,
-		EnableEDNSClientSubnet:   options.EnableEDNSSubnet,
-		FindFastestAddr:          options.FastestAddress,
+		UpstreamConfig:         &upstreamConfig,
+		Ratelimit:              options.Ratelimit,
+		CacheEnabled:           options.Cache,
+		CacheSizeBytes:         options.CacheSizeBytes,
+		CacheMinTTL:            options.CacheMinTTL,
+		CacheMaxTTL:            options.CacheMaxTTL,
+		RefuseAny:              options.RefuseAny,
+		AllServers:             options.AllServers,
+		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
+		FindFastestAddr:        options.FastestAddress,
 	}
 
 	if options.EDNSAddr != "" {

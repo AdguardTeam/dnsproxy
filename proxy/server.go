@@ -97,6 +97,11 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	d.StartTime = time.Now()
 	p.logDNSMessage(d.Req)
 
+	if d.Req.Response {
+		log.Debug("Dropping incoming Reply packet")
+		return nil
+	}
+
 	if p.BeforeRequestHandler != nil {
 		ok, err := p.BeforeRequestHandler(p, d)
 		if err != nil {

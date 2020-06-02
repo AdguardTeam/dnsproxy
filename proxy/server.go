@@ -98,7 +98,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	p.logDNSMessage(d.Req)
 
 	if d.Req.Response {
-		log.Debug("Dropping incoming Reply packet")
+		log.Debug("Dropping incoming Reply packet from %s", d.Addr.String())
 		return nil
 	}
 
@@ -122,7 +122,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	}
 
 	if len(d.Req.Question) != 1 {
-		log.Printf("got invalid number of questions: %v", len(d.Req.Question))
+		log.Debug("got invalid number of questions: %v", len(d.Req.Question))
 		d.Res = p.genServerFailure(d.Req)
 	}
 

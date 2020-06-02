@@ -605,6 +605,44 @@ func TestInvalidDNSRequest(t *testing.T) {
 	}
 }
 
+// Server must drop incoming Response messages
+func TestResponseInRequest(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	addr := dnsProxy.Addr(ProtoUDP)
+	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+
+	req := createTestMessage()
+	req.Response = true
+
+	r, _, err := client.Exchange(req, addr.String())
+	assert.NotNil(t, err)
+	assert.Nil(t, r)
+
+	_ = dnsProxy.Stop()
+}
+
+// Server must respond with SERVFAIL to requests without a Question
+func TestNoQuestion(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	addr := dnsProxy.Addr(ProtoUDP)
+	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+
+	req := createTestMessage()
+	req.Question = nil
+
+	r, _, err := client.Exchange(req, addr.String())
+	assert.Nil(t, err)
+	assert.Equal(t, dns.RcodeServerFailure, r.Rcode)
+
+	_ = dnsProxy.Stop()
+}
+
 func TestExchangeCustomUpstreamConfig(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 	err := dnsProxy.Start()

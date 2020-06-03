@@ -30,9 +30,7 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 	domainReservedUpstreams := map[string][]upstream.Upstream{}
 
 	if len(bootstrapDNS) > 0 {
-		for i, b := range bootstrapDNS {
-			log.Info("Bootstrap %d: %s", i, b)
-		}
+		log.Debug("Bootstraps: %v", bootstrapDNS)
 	}
 
 	for i, u := range upstreamConfig {
@@ -81,9 +79,9 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 				}
 				domainReservedUpstreams[host] = append(domainReservedUpstreams[host], dnsUpstream)
 			}
-			log.Printf("Upstream %d: %s is reserved for next domains: %s", i, dnsUpstream.Address(), strings.Join(hosts, ", "))
+			log.Debug("Upstream %d: %s is reserved for next domains: %s", i, dnsUpstream.Address(), strings.Join(hosts, ", "))
 		} else {
-			log.Printf("Upstream %d: %s", i, dnsUpstream.Address())
+			log.Debug("Upstream %d: %s", i, dnsUpstream.Address())
 			upstreams = append(upstreams, dnsUpstream)
 		}
 	}

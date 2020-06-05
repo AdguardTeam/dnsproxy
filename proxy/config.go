@@ -9,6 +9,18 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 )
 
+// UpstreamModeType - upstream mode
+type UpstreamModeType int
+
+const (
+	// UModeLoadBalance - LoadBalance
+	UModeLoadBalance UpstreamModeType = iota
+	// UModeParallel - parallel queries to all configured upstream servers are enabled
+	UModeParallel
+	// UModeFastestAddr - use Fastest Address algorithm
+	UModeFastestAddr
+)
+
 // Config contains all the fields necessary for proxy configuration
 type Config struct {
 	// Listeners
@@ -30,10 +42,9 @@ type Config struct {
 	// Upstream DNS servers and their settings
 	// --
 
-	UpstreamConfig  *UpstreamConfig     // Upstream DNS servers configuration
-	Fallbacks       []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
-	AllServers      bool                // if true, parallel queries to all configured upstream servers are enabled
-	FindFastestAddr bool                // use Fastest Address algorithm
+	UpstreamConfig *UpstreamConfig     // Upstream DNS servers configuration
+	Fallbacks      []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
+	UpstreamMode   UpstreamModeType    // How to request the upstream servers
 
 	// BogusNXDomain - transforms responses that contain only given IP addresses into NXDOMAIN
 	// Similar to dnsmasq's "bogus-nxdomain"

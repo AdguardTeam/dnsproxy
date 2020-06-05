@@ -122,7 +122,7 @@ func (p *Proxy) Init() {
 
 	p.udpOOBSize = udpGetOOBSize()
 
-	if p.FindFastestAddr {
+	if p.UpstreamMode == UModeFastestAddr {
 		log.Printf("Fastest IP is enabled")
 		p.fastestAddr = fastip.NewFastestAddr()
 	}

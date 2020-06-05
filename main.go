@@ -181,6 +181,7 @@ func run(options Options) {
 }
 
 // createProxyConfig creates proxy.Config from the command line arguments
+// nolint (gocyclo)
 func createProxyConfig(options Options) proxy.Config {
 	listenIP := net.ParseIP(options.ListenAddr)
 	if listenIP == nil {
@@ -202,9 +203,12 @@ func createProxyConfig(options Options) proxy.Config {
 		CacheMinTTL:            options.CacheMinTTL,
 		CacheMaxTTL:            options.CacheMaxTTL,
 		RefuseAny:              options.RefuseAny,
-		AllServers:             options.AllServers,
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
-		FindFastestAddr:        options.FastestAddress,
+	}
+	if options.AllServers {
+		config.UpstreamMode = proxy.UModeParallel
+	} else if options.FastestAddress {
+		config.UpstreamMode = proxy.UModeFastestAddr
 	}
 
 	if options.EDNSAddr != "" {

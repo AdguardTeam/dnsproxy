@@ -68,6 +68,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	msg := new(dns.Msg)
 	if err = msg.Unpack(buf); err != nil {
+		log.Debug("msg.Unpack: %s", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}

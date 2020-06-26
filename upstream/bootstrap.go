@@ -338,6 +338,10 @@ func createDialContext(addresses []string, timeout time.Duration) (dialContext d
 			errs = append(errs, err)
 			log.Tracef("dialer failed to initialize connection to %s, in %d milliseconds, cause: %s", resolverAddress, elapsed, err)
 		}
+
+		if len(errs) == 0 {
+			return nil, fmt.Errorf("all dialers failed to initialize connection")
+		}
 		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
 	}
 	return

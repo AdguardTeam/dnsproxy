@@ -85,15 +85,34 @@ func TestLookupParallelEmpty(t *testing.T) {
 	assert.Equal(t, 0, len(a))
 }
 
+func TestExchangeParallelEmpty(t *testing.T) {
+	u1 := testUpstream{}
+	u1.empty = true
+	u2 := testUpstream{}
+	u2.empty = true
+	u := []Upstream{&u1, &u2}
+
+	req := createTestMessage()
+	a, up, err := ExchangeParallel(u, req)
+	assert.NotNil(t, err)
+	assert.Nil(t, a)
+	assert.Nil(t, up)
+}
+
 type testUpstream struct {
 	a     net.IP
 	err   bool
+	empty bool
 	sleep time.Duration // a delay before response
 }
 
 func (u *testUpstream) Exchange(req *dns.Msg) (*dns.Msg, error) {
 	if u.sleep != 0 {
 		time.Sleep(u.sleep)
+	}
+
+	if u.empty {
+		return nil, nil
 	}
 
 	resp := &dns.Msg{}

@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -42,24 +43,21 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, Upstream, error) {
 	}
 
 	errs := []error{}
-	for {
+	for n := 0; n < len(u); n++ {
 		select {
 		case rep := <-ch:
-			reply := rep.reply
-			err := rep.err
-			if err != nil {
-				errs = append(errs, err)
-			}
-
-			if len(errs) == size {
-				return nil, nil, errorx.DecorateMany("all upstreams failed to exchange", errs...)
-			}
-
-			if reply != nil && err == nil {
-				return reply, rep.upstream, nil
+			if rep.err != nil {
+				errs = append(errs, rep.err)
+			} else if rep.reply != nil {
+				return rep.reply, rep.upstream, nil
 			}
 		}
 	}
+
+	if len(errs) == 0 {
+		return nil, nil, fmt.Errorf("none of upstream servers responded")
+	}
+	return nil, nil, errorx.DecorateMany("all upstreams failed to respond", errs...)
 }
 
 // ExchangeAllResult - result of ExchangeAll()

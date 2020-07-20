@@ -2,11 +2,14 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -99,6 +102,9 @@ type Options struct {
 
 	// Use Custom EDNS Client Address
 	EDNSAddr string `long:"edns-addr" description:"Send EDNS Client Address"`
+
+	// Add user-specific EDNS exstension
+	EDNSOpt []string `long:"ednsopt" description:"List of EDNS extensions to send along with the DNS query (ex: 8:deadbeaf)"`
 
 	// Other settings and options
 	// --
@@ -215,6 +221,27 @@ func createProxyConfig(options Options) proxy.Config {
 			config.EDNSAddr = ednsIP
 		} else {
 			log.Printf("--edns-addr=%s need --edns to work", options.EDNSAddr)
+		}
+	}
+
+	if len(options.EDNSOpt) > 0 {
+		config.EDNSOpts = make(map[uint16][]byte)
+		for _, s := range options.EDNSOpt {
+			kv := strings.Split(s, ":")
+			if len(kv) != 2 {
+				log.Fatalf("parse error for '%s', --ednsopt must be of the form: option-code:base64encodeddata (ex: --ednsopt 8:SGVsbG8gd29ybGQK)", s)
+			} else {
+				r, err := strconv.ParseUint(kv[0], 10, 16)
+				if err != nil {
+					log.Fatalf("parse error for '%s', --ednsopt option-code must be a valid 16 bits numbers (between 0 and 65535)", kv[0])
+				}
+				optionCode := uint16(r)
+				data, err := base64.StdEncoding.DecodeString(kv[1])
+				if err != nil {
+					log.Fatalf("parse error for '%s', --ednsopt data must be a valid base64 encoded string: (%s)", kv[1], err)
+				}
+				config.EDNSOpts[optionCode] = data
+			}
 		}
 	}
 

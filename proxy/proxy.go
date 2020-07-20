@@ -258,6 +258,10 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		p.processECS(d)
 	}
 
+	if p.Config.EDNSOpts != nil {
+		p.processEDNSOpts(d)
+	}
+
 	if p.replyFromCache(d) {
 		return nil
 	}
@@ -348,4 +352,30 @@ func (p *Proxy) processECS(d *DNSContext) {
 
 	d.ecsReqIP = ip
 	d.ecsReqMask = mask
+}
+
+// Set EDNSOpts
+func (p *Proxy) processEDNSOpts(d *DNSContext) {
+	var o (*dns.OPT) = nil
+	for _, ex := range d.Req.Extra {
+		if ex.Header().Rrtype == dns.TypeOPT {
+			o = ex.(*dns.OPT)
+			break
+		}
+	}
+
+	if o == nil { // OPT Record does not already exist, create it
+		o = new(dns.OPT)
+		o.SetUDPSize(4096)
+		o.Hdr.Name = "."
+		o.Hdr.Rrtype = dns.TypeOPT
+		d.Req.Extra = append(d.Req.Extra, o)
+	}
+
+	for k, v := range p.Config.EDNSOpts {
+		e := new(dns.EDNS0_LOCAL)
+		e.Code = k
+		e.Data = v
+		o.Option = append(o.Option, e)
+	}
 }

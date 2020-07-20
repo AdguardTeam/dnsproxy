@@ -59,6 +59,7 @@ Application Options:
       --refuse-any      If specified, refuse ANY requests
       --edns            Use EDNS Client Subnet extension
       --edns-addr=      Send EDNS Client Address
+      --ednsopt=        List of EDNS extensions to send along with the DNS query (ex: 8:deadbeaf)
       --ipv6-disabled   If specified, all AAAA requests will be replied with NoError RCode and empty answer
       --bogus-nxdomain= Transform responses that contain only given IP addresses into NXDOMAIN. Can be specified multiple times.
       --version         Prints the program version
@@ -201,6 +202,25 @@ If you want to use EDNS CS feature when you're connecting to the proxy from a lo
 ```
 
 Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy will pass through 72.72.72.72 to the upstream server.
+
+
+### EDNS Generic raw option
+
+You can add any EDNS extension of your choice with the `--ednsopt` flag.
+
+The option argument for this flag is of the form:
+
+    option_code:base64_data
+
+where:
+
+`option_code` is a 16 bit unsigned integer (0-65535)
+`base64_data` is a base64 encoded byte array
+
+```
+DATA=$(echo -n "This is a binary string" | base64)
+./dnsproxy -u 8.8.8.8:53 --ednsopt="4242:${DATA}"
+```
 
 ### Bogus NXDomain
 

@@ -15,64 +15,67 @@ import (
 
 // startListeners configures and starts listener loops
 func (p *Proxy) startListeners() error {
-	if p.UDPListenAddr != nil {
-		err := p.udpCreate()
+	for _, a := range p.UDPListenAddr {
+		udpListen, err := p.udpCreate(a)
 		if err != nil {
 			return err
 		}
+		p.udpListen = append(p.udpListen, udpListen)
 	}
 
-	if p.TCPListenAddr != nil {
+	for _, a := range p.TCPListenAddr {
 		log.Printf("Creating the TCP server socket")
-		tcpAddr := p.TCPListenAddr
-		tcpListen, err := net.ListenTCP("tcp", tcpAddr)
+		tcpListen, err := net.ListenTCP("tcp", a)
 		if err != nil {
 			return errorx.Decorate(err, "couldn't listen to TCP socket")
 		}
-		p.tcpListen = tcpListen
-		log.Printf("Listening to tcp://%s", p.tcpListen.Addr())
+		p.tcpListen = append(p.tcpListen, tcpListen)
+		log.Printf("Listening to tcp://%s", tcpListen.Addr())
 	}
 
-	if p.TLSListenAddr != nil {
+	for _, a := range p.TLSListenAddr {
 		log.Printf("Creating the TLS server socket")
-		tlsAddr := p.TLSListenAddr
-		tcpListen, err := net.ListenTCP("tcp", tlsAddr)
+		tcpListen, err := net.ListenTCP("tcp", a)
 		if err != nil {
 			return errorx.Decorate(err, "could not start TLS listener")
 		}
-		p.tlsListen = tls.NewListener(tcpListen, p.TLSConfig)
-		log.Printf("Listening to tls://%s", p.tlsListen.Addr())
+		l := tls.NewListener(tcpListen, p.TLSConfig)
+		p.tlsListen = append(p.tlsListen, l)
+		log.Printf("Listening to tls://%s", l.Addr())
 	}
 
-	if p.HTTPSListenAddr != nil {
+	for _, a := range p.HTTPSListenAddr {
 		log.Printf("Creating the HTTPS server")
-		tcpListen, err := net.ListenTCP("tcp", p.HTTPSListenAddr)
+		tcpListen, err := net.ListenTCP("tcp", a)
 		if err != nil {
 			return errorx.Decorate(err, "could not start HTTPS listener")
 		}
-		p.httpsListen = tls.NewListener(tcpListen, p.TLSConfig)
-		log.Printf("Listening to https://%s", p.httpsListen.Addr())
-		p.httpsServer = &http.Server{
+		l := tls.NewListener(tcpListen, p.TLSConfig)
+		p.httpsListen = append(p.httpsListen, l)
+		log.Printf("Listening to https://%s", l.Addr())
+
+		srv := &http.Server{
 			Handler:           p,
 			ReadHeaderTimeout: defaultTimeout,
 			WriteTimeout:      defaultTimeout,
 		}
+		p.httpsServer = append(p.httpsServer, srv)
 	}
 
-	if p.udpListen != nil {
-		go p.udpPacketLoop(p.udpListen)
+	for _, l := range p.udpListen {
+		go p.udpPacketLoop(l)
 	}
 
-	if p.tcpListen != nil {
-		go p.tcpPacketLoop(p.tcpListen, ProtoTCP)
+	for _, l := range p.tcpListen {
+		go p.tcpPacketLoop(l, ProtoTCP)
 	}
 
-	if p.tlsListen != nil {
-		go p.tcpPacketLoop(p.tlsListen, ProtoTLS)
+	for _, l := range p.tlsListen {
+		go p.tcpPacketLoop(l, ProtoTLS)
 	}
 
-	if p.httpsListen != nil {
-		go p.listenHTTPS()
+	for i := range p.httpsServer {
+		go p.listenHTTPS(p.httpsServer[i], p.httpsListen[i])
 	}
 
 	return nil

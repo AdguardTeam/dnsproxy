@@ -26,11 +26,11 @@ type Config struct {
 	// Listeners
 	// --
 
-	UDPListenAddr   *net.UDPAddr // if nil, then it does not listen for UDP
-	TCPListenAddr   *net.TCPAddr // if nil, then it does not listen for TCP
-	HTTPSListenAddr *net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
-	TLSListenAddr   *net.TCPAddr // if nil, then it does not listen for TLS (DoT)
-	TLSConfig       *tls.Config  // necessary for listening for TLS
+	UDPListenAddr   []*net.UDPAddr // if nil, then it does not listen for UDP
+	TCPListenAddr   []*net.TCPAddr // if nil, then it does not listen for TCP
+	HTTPSListenAddr []*net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
+	TLSListenAddr   []*net.TCPAddr // if nil, then it does not listen for TLS (DoT)
+	TLSConfig       *tls.Config    // necessary for listening for TLS
 
 	// Rate-limiting and anti-DNS amplification measures
 	// --

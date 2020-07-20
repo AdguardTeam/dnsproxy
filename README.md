@@ -39,10 +39,10 @@ Usage:
 Application Options:
   -v, --verbose         Verbose output (optional)
   -o, --output=         Path to the log file. If not set, write to stdout.
-  -l, --listen=         Listen address (default: 0.0.0.0)
-  -p, --port=           Listen port. Zero value disables TCP and UDP listeners (default: 53)
-  -h, --https-port=     Listen port for DNS-over-HTTPS (default: 0)
-  -t, --tls-port=       Listen port for DNS-over-TLS (default: 0)
+  -l, --listen=         Listening addresses (default: 0.0.0.0)
+  -p, --port=           Listening ports. Zero value disables TCP and UDP listeners (default: 53)
+  -h, --https-port=     Listening ports for DNS-over-HTTPS
+  -t, --tls-port=       Listen port for DNS-over-TLS
   -c, --tls-crt=        Path to a file with the certificate chain
   -k, --tls-key=        Path to a file with the private key
   -u, --upstream=       An upstream to be used (can be specified multiple times)
@@ -84,6 +84,11 @@ The same proxy with verbose logging enabled writing it to the file `log.txt`.
 Runs a DNS proxy on `127.0.0.1:5353` with multiple upstreams.
 ```
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53
+```
+
+Listen on multiple interfaces and ports:
+```
+./dnsproxy -l 127.0.0.1 -l 192.168.1.10 -p 5353 -p 5354 -u 1.1.1.1
 ```
 
 ### Encrypted upstreams

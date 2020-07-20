@@ -53,12 +53,12 @@ type ResponseHandler func(d *DNSContext, err error)
 
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
-	started     bool         // Started flag
-	udpListen   *net.UDPConn // UDP listen connection
-	tcpListen   net.Listener // TCP listener
-	tlsListen   net.Listener // TLS listener
-	httpsListen net.Listener // HTTPS listener
-	httpsServer *http.Server // HTTPS server instance
+	started     bool           // Started flag
+	udpListen   []*net.UDPConn // UDP listen connection
+	tcpListen   []net.Listener // TCP listener
+	tlsListen   []net.Listener // TLS listener
+	httpsListen []net.Listener // HTTPS listener
+	httpsServer []*http.Server // HTTPS server instance
 
 	upstreamRttStats map[string]int // Map of upstream addresses and their rtt. Used to sort upstreams "from fast to slow"
 	rttLock          sync.Mutex     // Synchronizes access to the upstreamRttStats map
@@ -172,38 +172,38 @@ func (p *Proxy) Stop() error {
 
 	errs := []error{}
 
-	if p.tcpListen != nil {
-		err := p.tcpListen.Close()
-		p.tcpListen = nil
+	for _, l := range p.tcpListen {
+		err := l.Close()
 		if err != nil {
 			errs = append(errs, errorx.Decorate(err, "couldn't close TCP listening socket"))
 		}
 	}
+	p.tcpListen = nil
 
-	if p.udpListen != nil {
-		err := p.udpListen.Close()
-		p.udpListen = nil
+	for _, l := range p.udpListen {
+		err := l.Close()
 		if err != nil {
 			errs = append(errs, errorx.Decorate(err, "couldn't close UDP listening socket"))
 		}
 	}
+	p.udpListen = nil
 
-	if p.tlsListen != nil {
-		err := p.tlsListen.Close()
-		p.tlsListen = nil
+	for _, l := range p.tlsListen {
+		err := l.Close()
 		if err != nil {
 			errs = append(errs, errorx.Decorate(err, "couldn't close TLS listening socket"))
 		}
 	}
+	p.tlsListen = nil
 
-	if p.httpsServer != nil {
-		err := p.httpsServer.Close()
-		p.httpsListen = nil
-		p.httpsServer = nil
+	for _, srv := range p.httpsServer {
+		err := srv.Close()
 		if err != nil {
 			errs = append(errs, errorx.Decorate(err, "couldn't close HTTPS server"))
 		}
 	}
+	p.httpsListen = nil
+	p.httpsServer = nil
 
 	if p.maxGoroutines != nil {
 		close(p.maxGoroutines)
@@ -224,25 +224,29 @@ func (p *Proxy) Addr(proto string) net.Addr {
 	defer p.RUnlock()
 	switch proto {
 	case ProtoTCP:
-		if p.tcpListen == nil {
+		if len(p.tcpListen) == 0 {
 			return nil
 		}
-		return p.tcpListen.Addr()
+		return p.tcpListen[0].Addr()
+
 	case ProtoTLS:
-		if p.tlsListen == nil {
+		if len(p.tlsListen) == 0 {
 			return nil
 		}
-		return p.tlsListen.Addr()
+		return p.tlsListen[0].Addr()
+
 	case ProtoHTTPS:
-		if p.httpsListen == nil {
+		if len(p.httpsListen) == 0 {
 			return nil
 		}
-		return p.httpsListen.Addr()
+		return p.httpsListen[0].Addr()
+
 	case ProtoUDP:
-		if p.udpListen == nil {
+		if len(p.udpListen) == 0 {
 			return nil
 		}
-		return p.udpListen.LocalAddr()
+		return p.udpListen[0].LocalAddr()
+
 	default:
 		panic("proto must be 'tcp', 'tls', 'https' or 'udp'")
 	}

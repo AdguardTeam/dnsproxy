@@ -10,23 +10,21 @@ import (
 )
 
 // udpCreate - create a UDP listening socket
-func (p *Proxy) udpCreate() error {
+func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 	log.Printf("Creating the UDP server socket")
-	udpAddr := p.UDPListenAddr
 	udpListen, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return errorx.Decorate(err, "couldn't listen to UDP socket")
+		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
 	}
 
 	err = udpSetOptions(udpListen)
 	if err != nil {
 		udpListen.Close()
-		return fmt.Errorf("udpSetOptions: %s", err)
+		return nil, fmt.Errorf("udpSetOptions: %s", err)
 	}
 
-	p.udpListen = udpListen
-	log.Printf("Listening to udp://%s", p.udpListen.LocalAddr())
-	return nil
+	log.Printf("Listening to udp://%s", udpListen.LocalAddr())
+	return udpListen, nil
 }
 
 // udpPacketLoop listens for incoming UDP packets

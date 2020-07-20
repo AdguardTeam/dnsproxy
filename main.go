@@ -31,16 +31,16 @@ type Options struct {
 	// --
 
 	// Server listen address
-	ListenAddr string `short:"l" long:"listen" description:"Listen address" default:"0.0.0.0"`
+	ListenAddrs []string `short:"l" long:"listen" description:"Listening addresses" default:"0.0.0.0"`
 
 	// Server listen port
-	ListenPort int `short:"p" long:"port" description:"Listen port. Zero value disables TCP and UDP listeners" default:"53"`
+	ListenPorts []int `short:"p" long:"port" description:"Listening ports. Zero value disables TCP and UDP listeners" default:"53"`
 
-	// HTTPS listen port (0 to disable DOH server)
-	HTTPSListenPort int `short:"h" long:"https-port" description:"Listen port for DNS-over-HTTPS" default:"0"`
+	// HTTPS listen port
+	HTTPSListenPorts []int `short:"h" long:"https-port" description:"Listening ports for DNS-over-HTTPS"`
 
-	// TLS listen port (0 to disable DOH server)
-	TLSListenPort int `short:"t" long:"tls-port" description:"Listen port for DNS-over-TLS" default:"0"`
+	// TLS listen port
+	TLSListenPorts []int `short:"t" long:"tls-port" description:"Listening ports for DNS-over-TLS"`
 
 	// Path to the .crt with the certificate chain
 	TLSCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
@@ -183,11 +183,6 @@ func run(options Options) {
 // createProxyConfig creates proxy.Config from the command line arguments
 // nolint (gocyclo)
 func createProxyConfig(options Options) proxy.Config {
-	listenIP := net.ParseIP(options.ListenAddr)
-	if listenIP == nil {
-		log.Fatalf("cannot parse %s", options.ListenAddr)
-	}
-
 	// Init upstreams
 	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
 	if err != nil {
@@ -258,18 +253,42 @@ func createProxyConfig(options Options) proxy.Config {
 		config.TLSConfig = tlsConfig
 	}
 
-	if options.TLSListenPort > 0 && config.TLSConfig != nil {
-		config.TLSListenAddr = &net.TCPAddr{Port: options.TLSListenPort, IP: listenIP}
+	listenIPs := []net.IP{}
+	for _, a := range options.ListenAddrs {
+		ip := net.ParseIP(a)
+		if ip == nil {
+			log.Fatalf("cannot parse %s", a)
+		}
+		listenIPs = append(listenIPs, ip)
 	}
 
-	if options.HTTPSListenPort > 0 && config.TLSConfig != nil {
-		config.HTTPSListenAddr = &net.TCPAddr{Port: options.HTTPSListenPort, IP: listenIP}
+	if config.TLSConfig != nil {
+		for _, port := range options.TLSListenPorts {
+			for _, ip := range listenIPs {
+				a := &net.TCPAddr{Port: port, IP: ip}
+				config.TLSListenAddr = append(config.TLSListenAddr, a)
+			}
+		}
+
+		for _, port := range options.HTTPSListenPorts {
+			for _, ip := range listenIPs {
+				a := &net.TCPAddr{Port: port, IP: ip}
+				config.HTTPSListenAddr = append(config.HTTPSListenAddr, a)
+			}
+		}
 	}
 
-	// Init TCP and UDP listen addresses if listen port is not equal to zero
-	if options.ListenPort > 0 {
-		config.UDPListenAddr = &net.UDPAddr{Port: options.ListenPort, IP: listenIP}
-		config.TCPListenAddr = &net.TCPAddr{Port: options.ListenPort, IP: listenIP}
+	if len(options.ListenPorts) != 0 && options.ListenPorts[0] != 0 {
+		for _, port := range options.ListenPorts {
+			for _, ip := range listenIPs {
+
+				ua := &net.UDPAddr{Port: port, IP: ip}
+				config.UDPListenAddr = append(config.UDPListenAddr, ua)
+
+				ta := &net.TCPAddr{Port: port, IP: ip}
+				config.TCPListenAddr = append(config.TCPListenAddr, ta)
+			}
+		}
 	}
 
 	return config

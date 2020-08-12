@@ -30,9 +30,9 @@ type Options struct {
 	// timeout=0 means infinite timeout.
 	Timeout time.Duration
 
-	// ServerIP allows specifying the resolver's IP address. In the case if it's specified,
-	// bootstrap DNS servers won't be used at all.
-	ServerIP net.IP
+	// List of IP addresses of upstream DNS server
+	// Bootstrap DNS servers won't be used at all
+	ServerIPAddrs []net.IP
 }
 
 // AddressToUpstream converts the specified address to an Upstream instance
@@ -61,11 +61,11 @@ func AddressToUpstream(address string, opts Options) (Upstream, error) {
 
 // urlToBoot creates an instance of the bootstrapper with the specified options
 func urlToBoot(resolverURL string, opts Options) (*bootstrapper, error) {
-	if opts.ServerIP == nil {
+	if len(opts.ServerIPAddrs) == 0 {
 		return toBoot(resolverURL, opts.Bootstrap, opts.Timeout), nil
 	}
 
-	return toBootResolved(resolverURL, opts.ServerIP, opts.Timeout)
+	return toBootResolved(resolverURL, opts.ServerIPAddrs, opts.Timeout)
 }
 
 // urlToUpstream converts a URL to an Upstream
@@ -122,10 +122,11 @@ func stampToUpstream(address string, opts Options) (Upstream, error) {
 		}
 
 		// Parse and add to options
-		opts.ServerIP = net.ParseIP(host)
-		if opts.ServerIP == nil {
+		ip := net.ParseIP(host)
+		if ip == nil {
 			return nil, fmt.Errorf("invalid server address in the stamp: %s", stamp.ServerAddrStr)
 		}
+		opts.ServerIPAddrs = []net.IP{ip}
 	}
 
 	switch stamp.Proto {

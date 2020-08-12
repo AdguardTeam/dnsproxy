@@ -46,19 +46,22 @@ type Resolver struct {
 // toBootResolved creates a new bootstrapper that already contains resolved config.
 // This can be done only in the case when we already know the resolver IP address.
 // timeout is also used for establishing TCP connections
-func toBootResolved(address string, serverIP net.IP, timeout time.Duration) (*bootstrapper, error) {
+func toBootResolved(address string, serverIPAddrs []net.IP, timeout time.Duration) (*bootstrapper, error) {
 	// get a host without port
 	host, port, err := getAddressHostPort(address)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrapper requires port in address %s", address)
 	}
 
-	// Upgrade lock to protect n.resolved
-	resolverAddress := net.JoinHostPort(serverIP.String(), port)
+	var resolverAddresses []string
+	for _, ip := range serverIPAddrs {
+		addr := net.JoinHostPort(ip.String(), port)
+		resolverAddresses = append(resolverAddresses, addr)
+	}
 
 	return &bootstrapper{
 		address:        address,
-		dialContext:    createDialContext([]string{resolverAddress}, timeout),
+		dialContext:    createDialContext(resolverAddresses, timeout),
 		resolvedConfig: createTLSConfig(host),
 		timeout:        timeout,
 	}, nil

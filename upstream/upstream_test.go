@@ -515,7 +515,11 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
-			opts := Options{Bootstrap: test.bootstrap, Timeout: timeout, ServerIP: net.ParseIP(test.serverIP)}
+			opts := Options{
+				Bootstrap:     test.bootstrap,
+				Timeout:       timeout,
+				ServerIPAddrs: []net.IP{net.ParseIP(test.serverIP)},
+			}
 			u, err := AddressToUpstream(test.address, opts)
 			if err != nil {
 				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)

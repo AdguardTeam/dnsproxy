@@ -16,7 +16,7 @@ import (
 // serveHttps starts the HTTPS server
 func (p *Proxy) listenHTTPS(srv *http.Server, l net.Listener) {
 	log.Printf("Listening to DNS-over-HTTPS on %s", l.Addr())
-	err := srv.Serve(l)
+	err := srv.ServeTLS(l, "", "")
 
 	if err != http.ErrServerClosed {
 		log.Printf("HTTPS server was closed unexpectedly: %s", err)

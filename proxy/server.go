@@ -50,11 +50,11 @@ func (p *Proxy) startListeners() error {
 		if err != nil {
 			return errorx.Decorate(err, "could not start HTTPS listener")
 		}
-		l := tls.NewListener(tcpListen, p.TLSConfig)
-		p.httpsListen = append(p.httpsListen, l)
-		log.Printf("Listening to https://%s", l.Addr())
+		p.httpsListen = append(p.httpsListen, tcpListen)
+		log.Printf("Listening to https://%s", tcpListen.Addr())
 
 		srv := &http.Server{
+			TLSConfig:         p.TLSConfig,
 			Handler:           p,
 			ReadHeaderTimeout: defaultTimeout,
 			WriteTimeout:      defaultTimeout,

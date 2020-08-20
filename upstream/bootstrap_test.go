@@ -9,7 +9,8 @@ import (
 )
 
 func TestNewResolver(t *testing.T) {
-	r := NewResolver("1.1.1.1:53", 3*time.Second)
+	r, err := NewResolver("1.1.1.1:53", 3*time.Second)
+	assert.Nil(t, err)
 
 	ipAddrs, err := r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	if err != nil {
@@ -32,40 +33,45 @@ func TestNewResolver(t *testing.T) {
 }
 
 func TestNewResolverIsValid(t *testing.T) {
-	r := NewResolver("1.1.1.1:53", 3*time.Second)
+	r, err := NewResolver("1.1.1.1:53", 3*time.Second)
+	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err := r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	r = NewResolver("tls://1.1.1.1", 3*time.Second)
+	r, err = NewResolver("tls://1.1.1.1", 3*time.Second)
+	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	r = NewResolver("https://1.1.1.1/dns-query", 3*time.Second)
+	r, err = NewResolver("https://1.1.1.1/dns-query", 3*time.Second)
+	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	// AdGuard DNS (DNSCrypt)
-	r = NewResolver("sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20", 3*time.Second)
+	r, err = NewResolver("sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20", 3*time.Second)
+	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	r = NewResolver("tls://dns.adguard.com", 3*time.Second)
-	assert.Nil(t, r.upstream)
-	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
-	assert.Nil(t, err)
-	assert.True(t, len(addrs) == 0)
+	// not an IP address:
 
-	r = NewResolver("https://dns.adguard.com/dns-query", 3*time.Second)
-	assert.Nil(t, r.upstream)
-	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
-	assert.Nil(t, err)
-	assert.True(t, len(addrs) == 0)
+	r, err = NewResolver("tls://dns.adguard.com", 3*time.Second)
+	assert.NotNil(t, err)
+
+	r, err = NewResolver("https://dns.adguard.com/dns-query", 3*time.Second)
+	assert.NotNil(t, err)
+
+	r, err = NewResolver("tcp://dns.adguard.com", 0)
+	assert.NotNil(t, err)
+
+	r, err = NewResolver("dns.adguard.com", 0)
+	assert.NotNil(t, err)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,22 @@ type Options struct {
 	ServerIPAddrs []net.IP
 }
 
+// Parse "host:port" string and validate port number
+func parseHostAndPort(addr string) (string, string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	} else {
+		// validate port
+		portN, err := strconv.Atoi(port)
+		if err != nil || portN <= 0 || portN > 0xffff {
+			return "", "", fmt.Errorf("invalid address: %s", addr)
+		}
+		port = strconv.Itoa(portN)
+	}
+	return host, port, nil
+}
+
 // AddressToUpstream converts the specified address to an Upstream instance
 // * 8.8.8.8:53 -- plain DNS
 // * tcp://8.8.8.8:53 -- plain DNS over TCP
@@ -51,18 +68,21 @@ func AddressToUpstream(address string, opts Options) (Upstream, error) {
 	}
 
 	// we don't have scheme in the url, so it's just a plain DNS host:port
-	_, _, err := net.SplitHostPort(address)
+	host, port, err := parseHostAndPort(address)
 	if err != nil {
-		// doesn't have port, default to 53
-		address = net.JoinHostPort(address, "53")
+		return nil, err
 	}
-	return &plainDNS{address: address, timeout: opts.Timeout}, nil
+	if port == "" {
+		port = "53"
+	}
+
+	return &plainDNS{address: net.JoinHostPort(host, port), timeout: opts.Timeout}, nil
 }
 
 // urlToBoot creates an instance of the bootstrapper with the specified options
 func urlToBoot(resolverURL string, opts Options) (*bootstrapper, error) {
 	if len(opts.ServerIPAddrs) == 0 {
-		return toBoot(resolverURL, opts.Bootstrap, opts.Timeout), nil
+		return toBoot(resolverURL, opts.Bootstrap, opts.Timeout)
 	}
 
 	return toBootResolved(resolverURL, opts.ServerIPAddrs, opts.Timeout)
@@ -102,9 +122,9 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 		}
 
 		return &dnsOverHTTPS{boot: b}, nil
+
 	default:
-		// assume it's plain DNS
-		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout}, nil
+		return nil, fmt.Errorf("unsupported URL scheme: %s", upstreamURL.Scheme)
 	}
 }
 
@@ -133,7 +153,11 @@ func stampToUpstream(address string, opts Options) (Upstream, error) {
 	case dnsstamps.StampProtoTypePlain:
 		return &plainDNS{address: stamp.ServerAddrStr, timeout: opts.Timeout}, nil
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		return &dnsCrypt{boot: toBoot(address, opts.Bootstrap, opts.Timeout)}, nil
+		b, err := toBoot(address, opts.Bootstrap, opts.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap server parse: %s", err)
+		}
+		return &dnsCrypt{boot: b}, nil
 	case dnsstamps.StampProtoTypeDoH:
 		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), opts)
 	case dnsstamps.StampProtoTypeTLS:

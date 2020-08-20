@@ -391,6 +391,18 @@ func TestUpstreamAddress(t *testing.T) {
 
 	u, _ = AddressToUpstream("https://one.one.one.one", opt)
 	assert.Equal(t, "https://one.one.one.one:443", u.Address())
+
+	_, err := AddressToUpstream("asdf://1.1.1.1", Options{})
+	assert.NotNil(t, err) // bad scheme
+
+	_, err = AddressToUpstream("12345.1.1.1:1234567", Options{})
+	assert.NotNil(t, err) // bad port
+
+	_, err = AddressToUpstream(":1234567", Options{})
+	assert.NotNil(t, err) // empty host
+
+	_, err = AddressToUpstream("host:", Options{})
+	assert.NotNil(t, err) // empty port
 }
 
 func TestUpstreamDOTBootstrap(t *testing.T) {
@@ -480,6 +492,12 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			checkUpstream(t, u, test.address)
 		})
 	}
+
+	_, err := AddressToUpstream("tls://example.org", Options{Bootstrap: []string{
+		"8.8.8.8",
+		"asdfasdf",
+	}})
+	assert.NotNil(t, err) // bad bootstrap "asdfasdf"
 }
 
 func TestUpstreamsWithServerIP(t *testing.T) {

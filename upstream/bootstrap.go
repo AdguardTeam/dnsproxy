@@ -71,36 +71,40 @@ func toBootResolved(address string, serverIPAddrs []net.IP, timeout time.Duratio
 // address -- original resolver address string (i.e. tls://one.one.one.one:853)
 // bootstrapAddr -- a list of bootstrap DNS resolvers' addresses
 // timeout -- DNS query timeout
-func toBoot(address string, bootstrapAddr []string, timeout time.Duration) *bootstrapper {
+func toBoot(address string, bootstrapAddr []string, timeout time.Duration) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
 	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
 		// Create a list of resolvers for parallel lookup
 		for _, boot := range bootstrapAddr {
-			r := NewResolver(boot, timeout)
+			r, err := NewResolver(boot, timeout)
+			if err != nil {
+				return nil, err
+			}
 			resolvers = append(resolvers, r)
 		}
 	} else {
+		r, _ := NewResolver("", timeout) // NewResolver("") always succeeds
 		// nil resolver if the default one
-		resolvers = append(resolvers, NewResolver("", timeout))
+		resolvers = append(resolvers, r)
 	}
 
 	return &bootstrapper{
 		address:   address,
 		resolvers: resolvers,
 		timeout:   timeout,
-	}
+	}, nil
 }
 
 // NewResolver creates an instance of Resolver structure with defined net.Resolver and it's address
 // resolverAddress is address of net.Resolver
 // The host in the address parameter of Dial func will always be a literal IP address (from documentation)
-func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
+func NewResolver(resolverAddress string, timeout time.Duration) (*Resolver, error) {
 	r := &Resolver{}
 
 	// set default net.Resolver as a resolver if resolverAddress is empty
 	if resolverAddress == "" {
 		r.resolver = &net.Resolver{}
-		return r
+		return r, nil
 	}
 
 	r.resolverAddress = resolverAddress
@@ -111,7 +115,7 @@ func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
 	r.upstream, err = AddressToUpstream(resolverAddress, opts)
 	if err != nil {
 		log.Error("AddressToUpstream: %s", err)
-		return r
+		return r, fmt.Errorf("AddressToUpstream: %s", err)
 	}
 
 	// Validate the bootstrap resolver. It must be either a plain DNS resolver.
@@ -119,9 +123,10 @@ func NewResolver(resolverAddress string, timeout time.Duration) *Resolver {
 	if !isResolverValidBootstrap(r.upstream) {
 		r.upstream = nil
 		log.Error("Resolver %s is not eligible to be a bootstrap DNS server", resolverAddress)
+		return r, fmt.Errorf("Resolver %s is not eligible to be a bootstrap DNS server", resolverAddress)
 	}
 
-	return r
+	return r, nil
 }
 
 // isResolverValidBootstrap checks if the upstream is eligible to be a bootstrap DNS server
@@ -160,6 +165,18 @@ func isResolverValidBootstrap(upstream Upstream) bool {
 		return false
 	}
 
+	if strings.HasPrefix(upstream.Address(), "sdns://") {
+		return true
+	}
+
+	host, _, err := net.SplitHostPort(upstream.Address())
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
 	return true
 }
 

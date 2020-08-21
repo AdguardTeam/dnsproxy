@@ -61,6 +61,13 @@ func TestNewResolverIsValid(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
+	r, err = NewResolver("tcp://9.9.9.9", 3*time.Second)
+	assert.Nil(t, err)
+	assert.NotNil(t, r.upstream)
+	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
+	assert.Nil(t, err)
+	assert.True(t, len(addrs) > 0)
+
 	// not an IP address:
 
 	r, err = NewResolver("tls://dns.adguard.com", 3*time.Second)

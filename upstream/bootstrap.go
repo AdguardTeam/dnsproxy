@@ -165,11 +165,16 @@ func isResolverValidBootstrap(upstream Upstream) bool {
 		return false
 	}
 
-	if strings.HasPrefix(upstream.Address(), "sdns://") {
+	a := upstream.Address()
+	if strings.HasPrefix(a, "sdns://") {
 		return true
 	}
 
-	host, _, err := net.SplitHostPort(upstream.Address())
+	if strings.HasPrefix(a, "tcp://") {
+		a = a[len("tcp://"):]
+	}
+
+	host, _, err := net.SplitHostPort(a)
 	if err != nil {
 		return false
 	}

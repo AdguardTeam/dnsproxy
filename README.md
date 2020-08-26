@@ -6,9 +6,9 @@
 
 # DNS Proxy <!-- omit in toc -->
 
-A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, and `DNSCrypt`.
+A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, `DNSCrypt`, and `DNS-over-QUIC`. Moreover, it can work as a `DNS-over-HTTPS`, `DNS-over-TLS` or `DNS-over-QUIC` server.
 
-Moreover, it can work as a `DNS-over-HTTPS` and/or `DNS-over-TLS` server.
+> Note that `DNS-over-QUIC` support is experimental, don't use it in production.
 
 - [How to build](#how-to-build)
 - [Usage](#usage)
@@ -103,6 +103,11 @@ DNS-over-HTTPS upstream with specified bootstrap DNS:
 ./dnsproxy -u https://dns.adguard.com/dns-query -b 1.1.1.1:53
 ```
 
+DNS-over-QUIC upstream:
+```
+./dnsproxy -u quic://dns.adguard.com
+```
+
 DNSCrypt upstream ([DNS Stamp](https://dnscrypt.info/stamps) of AdGuard DNS):
 ```
 ./dnsproxy -u sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20
@@ -128,6 +133,11 @@ Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
 Runs a DNS-over-HTTPS proxy on `127.0.0.1:443`.
 ```
 ./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0 
+```
+
+Runs a DNS-over-QUIC proxy on `127.0.0.1:784`.
+```
+./dnsproxy -l 127.0.0.1 --quic-port=784 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0 
 ```
 
 ### Additional features

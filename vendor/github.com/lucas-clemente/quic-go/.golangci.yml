@@ -1,0 +1,45 @@
+run:
+  skip-files:
+    - internal/handshake/client_session_state.go
+    - internal/handshake/unsafe_test.go
+
+linters-settings:
+  depguard:
+    type: blacklist
+    packages:
+      - github.com/marten-seemann/qtls
+    packages-with-error-message:
+      - github.com/marten-seemann/qtls: "importing qtls only allowed in internal/qtls"
+  misspell:
+    ignore-words:
+      - ect
+
+linters:
+  disable-all: true
+  enable:
+    - deadcode
+    - depguard
+    - goconst
+    - goimports
+    - gosimple
+    - ineffassign
+    - misspell
+    - prealloc
+    - scopelint
+    - staticcheck
+    - stylecheck
+    - structcheck
+    - unconvert
+    - unparam
+    - unused
+    - varcheck
+    - vet
+
+issues:
+  exclude-rules:
+    - path: qlog/
+      linters:
+        - goconst
+    - path: internal/qtls
+      linters:
+        - depguard

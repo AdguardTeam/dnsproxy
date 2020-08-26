@@ -1,10 +1,7 @@
 package proxy
 
 import (
-	"crypto/tls"
 	"fmt"
-	"net"
-	"net/http"
 	"strings"
 	"time"
 
@@ -15,51 +12,29 @@ import (
 
 // startListeners configures and starts listener loops
 func (p *Proxy) startListeners() error {
-	for _, a := range p.UDPListenAddr {
-		udpListen, err := p.udpCreate(a)
-		if err != nil {
-			return err
-		}
-		p.udpListen = append(p.udpListen, udpListen)
+	err := p.createUDPListeners()
+	if err != nil {
+		return err
 	}
 
-	for _, a := range p.TCPListenAddr {
-		log.Printf("Creating the TCP server socket")
-		tcpListen, err := net.ListenTCP("tcp", a)
-		if err != nil {
-			return errorx.Decorate(err, "couldn't listen to TCP socket")
-		}
-		p.tcpListen = append(p.tcpListen, tcpListen)
-		log.Printf("Listening to tcp://%s", tcpListen.Addr())
+	err = p.createTCPListeners()
+	if err != nil {
+		return err
 	}
 
-	for _, a := range p.TLSListenAddr {
-		log.Printf("Creating the TLS server socket")
-		tcpListen, err := net.ListenTCP("tcp", a)
-		if err != nil {
-			return errorx.Decorate(err, "could not start TLS listener")
-		}
-		l := tls.NewListener(tcpListen, p.TLSConfig)
-		p.tlsListen = append(p.tlsListen, l)
-		log.Printf("Listening to tls://%s", l.Addr())
+	err = p.createTLSListeners()
+	if err != nil {
+		return err
 	}
 
-	for _, a := range p.HTTPSListenAddr {
-		log.Printf("Creating the HTTPS server")
-		tcpListen, err := net.ListenTCP("tcp", a)
-		if err != nil {
-			return errorx.Decorate(err, "could not start HTTPS listener")
-		}
-		p.httpsListen = append(p.httpsListen, tcpListen)
-		log.Printf("Listening to https://%s", tcpListen.Addr())
+	err = p.createHTTPSListeners()
+	if err != nil {
+		return err
+	}
 
-		srv := &http.Server{
-			TLSConfig:         p.TLSConfig,
-			Handler:           p,
-			ReadHeaderTimeout: defaultTimeout,
-			WriteTimeout:      defaultTimeout,
-		}
-		p.httpsServer = append(p.httpsServer, srv)
+	err = p.createQUICListeners()
+	if err != nil {
+		return err
 	}
 
 	for _, l := range p.udpListen {
@@ -76,6 +51,10 @@ func (p *Proxy) startListeners() error {
 
 	for i := range p.httpsServer {
 		go p.listenHTTPS(p.httpsServer[i], p.httpsListen[i])
+	}
+
+	for _, l := range p.quicListen {
+		go p.quicPacketLoop(l)
 	}
 
 	return nil
@@ -182,6 +161,8 @@ func (p *Proxy) respond(d *DNSContext) {
 		err = p.respondTCP(d)
 	case ProtoHTTPS:
 		err = p.respondHTTPS(d)
+	case ProtoQUIC:
+		err = p.respondQUIC(d)
 	default:
 		err = fmt.Errorf("SHOULD NOT HAPPEN - unknown protocol: %s", d.Proto)
 	}

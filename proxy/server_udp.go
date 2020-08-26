@@ -9,9 +9,21 @@ import (
 	"github.com/miekg/dns"
 )
 
+func (p *Proxy) createUDPListeners() error {
+	for _, a := range p.UDPListenAddr {
+		udpListen, err := p.udpCreate(a)
+		if err != nil {
+			return err
+		}
+		p.udpListen = append(p.udpListen, udpListen)
+	}
+
+	return nil
+}
+
 // udpCreate - create a UDP listening socket
 func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
-	log.Printf("Creating the UDP server socket")
+	log.Info("Creating the UDP server socket")
 	udpListen, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
@@ -19,17 +31,17 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 
 	err = udpSetOptions(udpListen)
 	if err != nil {
-		udpListen.Close()
-		return nil, fmt.Errorf("udpSetOptions: %s", err)
+		_ = udpListen.Close()
+		return nil, errorx.Decorate(err, "udpSetOptions failed")
 	}
 
-	log.Printf("Listening to udp://%s", udpListen.LocalAddr())
+	log.Info("Listening to udp://%s", udpListen.LocalAddr())
 	return udpListen, nil
 }
 
 // udpPacketLoop listens for incoming UDP packets
 func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
-	log.Printf("Entering the UDP listener loop on %s", conn.LocalAddr())
+	log.Info("Entering the UDP listener loop on %s", conn.LocalAddr())
 	b := make([]byte, dns.MaxMsgSize)
 	for {
 		p.RLock()
@@ -53,10 +65,11 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 		}
 		if err != nil {
 			if isConnClosed(err) {
-				log.Printf("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
-				break
+				log.Info("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
+			} else {
+				log.Info("got error when reading from UDP listen: %s", err)
 			}
-			log.Printf("got error when reading from UDP listen: %s", err)
+			break
 		}
 	}
 }

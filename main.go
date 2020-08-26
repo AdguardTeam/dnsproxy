@@ -33,14 +33,17 @@ type Options struct {
 	// Server listen address
 	ListenAddrs []string `short:"l" long:"listen" description:"Listening addresses" default:"0.0.0.0"`
 
-	// Server listen port
+	// Server listen ports
 	ListenPorts []int `short:"p" long:"port" description:"Listening ports. Zero value disables TCP and UDP listeners" default:"53"`
 
-	// HTTPS listen port
+	// HTTPS listen ports
 	HTTPSListenPorts []int `short:"h" long:"https-port" description:"Listening ports for DNS-over-HTTPS"`
 
-	// TLS listen port
+	// TLS listen ports
 	TLSListenPorts []int `short:"t" long:"tls-port" description:"Listening ports for DNS-over-TLS"`
+
+	// QUIC listen ports
+	QUICListenPorts []int `short:"q" long:"quic-port" description:"Listening ports for DNS-over-QUIC"`
 
 	// Path to the .crt with the certificate chain
 	TLSCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
@@ -274,6 +277,13 @@ func createProxyConfig(options Options) proxy.Config {
 			for _, ip := range listenIPs {
 				a := &net.TCPAddr{Port: port, IP: ip}
 				config.HTTPSListenAddr = append(config.HTTPSListenAddr, a)
+			}
+		}
+
+		for _, port := range options.QUICListenPorts {
+			for _, ip := range listenIPs {
+				a := &net.UDPAddr{Port: port, IP: ip}
+				config.QUICListenAddr = append(config.QUICListenAddr, a)
 			}
 		}
 	}

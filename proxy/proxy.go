@@ -7,6 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+
+	"github.com/lucas-clemente/quic-go"
+
 	"github.com/AdguardTeam/dnsproxy/fastip"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -33,6 +37,8 @@ const (
 	ProtoTLS = "tls"
 	// ProtoHTTPS is DNS-over-HTTPS
 	ProtoHTTPS = "https"
+	// ProtoQUIC is QUIC transport
+	ProtoQUIC = "quic"
 	// UnqualifiedNames is reserved name for "unqualified names only", ie names without dots
 	UnqualifiedNames = "unqualified_names"
 )
@@ -53,12 +59,13 @@ type ResponseHandler func(d *DNSContext, err error)
 
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
-	started     bool           // Started flag
-	udpListen   []*net.UDPConn // UDP listen connection
-	tcpListen   []net.Listener // TCP listener
-	tlsListen   []net.Listener // TLS listener
-	httpsListen []net.Listener // HTTPS listener
-	httpsServer []*http.Server // HTTPS server instance
+	started     bool            // Started flag
+	udpListen   []*net.UDPConn  // UDP listen connections
+	tcpListen   []net.Listener  // TCP listeners
+	tlsListen   []net.Listener  // TLS listeners
+	quicListen  []quic.Listener // QUIC listeners
+	httpsListen []net.Listener  // HTTPS listeners
+	httpsServer []*http.Server  // HTTPS server instance
 
 	upstreamRttStats map[string]int // Map of upstream addresses and their rtt. Used to sort upstreams "from fast to slow"
 	rttLock          sync.Mutex     // Synchronizes access to the upstreamRttStats map
@@ -74,6 +81,8 @@ type Proxy struct {
 
 	fastestAddr *fastip.FastestAddr // fastest-addr module
 
+	bytesPool *sync.Pool // bytes pool to avoid unnecessary allocations when reading DNS packets
+
 	udpOOBSize int // size for received OOB data
 
 	Config // proxy configuration
@@ -84,21 +93,31 @@ type Proxy struct {
 
 // DNSContext represents a DNS request message context
 type DNSContext struct {
-	Proto              string              // "udp", "tcp", "tls", "https"
-	Req                *dns.Msg            // DNS request
-	Res                *dns.Msg            // DNS response from an upstream
-	Conn               net.Conn            // underlying client connection. Can be null in the case of DOH.
-	Addr               net.Addr            // client address.
-	localIP            net.IP              // local IP address (for UDP socket)
-	HTTPRequest        *http.Request       // HTTP request (for DOH only)
-	HTTPResponseWriter http.ResponseWriter // HTTP response writer (for DOH only)
-	StartTime          time.Time           // processing start time
-	Upstream           upstream.Upstream   // upstream that resolved DNS request
+	Proto     string            // "udp", "tcp", "tls", "https"
+	Req       *dns.Msg          // DNS request
+	Res       *dns.Msg          // DNS response from an upstream
+	Addr      net.Addr          // client address.
+	StartTime time.Time         // processing start time
+	Upstream  upstream.Upstream // upstream that resolved DNS request
 
 	// CustomUpstreamConfig -- custom upstream servers configuration
 	// to use for this request only.
 	// If set, Resolve() uses it instead of default servers
 	CustomUpstreamConfig *UpstreamConfig
+
+	// Conn - underlying client connection. Can be null in the case of DOH.
+	Conn net.Conn
+
+	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
+	localIP net.IP
+
+	// HTTPRequest - HTTP request (for DOH only)
+	HTTPRequest *http.Request
+	// HTTPResponseWriter - HTTP response writer (for DOH only)
+	HTTPResponseWriter http.ResponseWriter
+
+	// QUICStream - QUIC stream from which we got the query (for DOQ only)
+	QUICStream quic.Stream
 
 	ecsReqIP   net.IP // ECS IP used in request
 	ecsReqMask uint8  // ECS mask used in request
@@ -120,7 +139,19 @@ func (p *Proxy) Init() {
 		}
 	}
 
+	if p.TLSConfig != nil && len(p.TLSConfig.NextProtos) == 0 {
+		p.TLSConfig.NextProtos = []string{
+			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+		}
+	}
+
 	p.udpOOBSize = udpGetOOBSize()
+	p.bytesPool = &sync.Pool{
+		New: func() interface{} {
+			// 2 bytes may be used to store packet length (see TCP/TLS)
+			return make([]byte, 2+dns.MaxMsgSize)
+		},
+	}
 
 	if p.UpstreamMode == UModeFastestAddr {
 		log.Printf("Fastest IP is enabled")
@@ -147,7 +178,7 @@ func (p *Proxy) Start() error {
 		return err
 	}
 
-	// Init cache
+	// Init proxy
 	p.Init()
 
 	err = p.startListeners()
@@ -205,6 +236,14 @@ func (p *Proxy) Stop() error {
 	p.httpsListen = nil
 	p.httpsServer = nil
 
+	for _, l := range p.quicListen {
+		err := l.Close()
+		if err != nil {
+			errs = append(errs, errorx.Decorate(err, "couldn't close QUIC listener"))
+		}
+	}
+	p.quicListen = nil
+
 	if p.maxGoroutines != nil {
 		close(p.maxGoroutines)
 	}
@@ -217,8 +256,49 @@ func (p *Proxy) Stop() error {
 	return nil
 }
 
-// Addr returns the listen address for the specified proto or null if the proxy does not listen to it
-// proto must be "tcp", "tls", "https" or "udp"
+// Addrs returns all listen addresses for the specified proto or nil if the proxy does not listen to it.
+// proto must be "tcp", "tls", "https", "quic", or "udp"
+func (p *Proxy) Addrs(proto string) []net.Addr {
+	p.RLock()
+	defer p.RUnlock()
+
+	var addrs []net.Addr
+
+	switch proto {
+	case ProtoTCP:
+		for _, l := range p.tcpListen {
+			addrs = append(addrs, l.Addr())
+		}
+
+	case ProtoTLS:
+		for _, l := range p.tlsListen {
+			addrs = append(addrs, l.Addr())
+		}
+
+	case ProtoHTTPS:
+		for _, l := range p.httpsListen {
+			addrs = append(addrs, l.Addr())
+		}
+
+	case ProtoUDP:
+		for _, l := range p.udpListen {
+			addrs = append(addrs, l.LocalAddr())
+		}
+
+	case ProtoQUIC:
+		for _, l := range p.quicListen {
+			addrs = append(addrs, l.Addr())
+		}
+
+	default:
+		panic("proto must be 'tcp', 'tls', 'https', 'quic', or 'udp'")
+	}
+
+	return addrs
+}
+
+// Addr returns the first listen address for the specified proto or null if the proxy does not listen to it
+// proto must be "tcp", "tls", "https", "quic", or "udp"
 func (p *Proxy) Addr(proto string) net.Addr {
 	p.RLock()
 	defer p.RUnlock()
@@ -247,8 +327,14 @@ func (p *Proxy) Addr(proto string) net.Addr {
 		}
 		return p.udpListen[0].LocalAddr()
 
+	case ProtoQUIC:
+		if len(p.quicListen) == 0 {
+			return nil
+		}
+		return p.quicListen[0].Addr()
+
 	default:
-		panic("proto must be 'tcp', 'tls', 'https' or 'udp'")
+		panic("proto must be 'tcp', 'tls', 'https', 'quic', or 'udp'")
 	}
 }
 

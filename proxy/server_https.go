@@ -13,15 +13,37 @@ import (
 	"github.com/miekg/dns"
 )
 
+func (p *Proxy) createHTTPSListeners() error {
+	for _, a := range p.HTTPSListenAddr {
+		log.Info("Creating an HTTPS server")
+		tcpListen, err := net.ListenTCP("tcp", a)
+		if err != nil {
+			return errorx.Decorate(err, "could not start HTTPS listener")
+		}
+		p.httpsListen = append(p.httpsListen, tcpListen)
+		log.Info("Listening to https://%s", tcpListen.Addr())
+
+		srv := &http.Server{
+			TLSConfig:         p.TLSConfig,
+			Handler:           p,
+			ReadHeaderTimeout: defaultTimeout,
+			WriteTimeout:      defaultTimeout,
+		}
+		p.httpsServer = append(p.httpsServer, srv)
+	}
+
+	return nil
+}
+
 // serveHttps starts the HTTPS server
 func (p *Proxy) listenHTTPS(srv *http.Server, l net.Listener) {
-	log.Printf("Listening to DNS-over-HTTPS on %s", l.Addr())
+	log.Info("Listening to DNS-over-HTTPS on %s", l.Addr())
 	err := srv.ServeTLS(l, "", "")
 
 	if err != http.ErrServerClosed {
-		log.Printf("HTTPS server was closed unexpectedly: %s", err)
+		log.Info("HTTPS server was closed unexpectedly: %s", err)
 	} else {
-		log.Printf("HTTPS server was closed")
+		log.Info("HTTPS server was closed")
 	}
 }
 
@@ -68,7 +90,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	msg := new(dns.Msg)
 	if err = msg.Unpack(buf); err != nil {
-		log.Debug("msg.Unpack: %s", err)
+		log.Tracef("msg.Unpack: %s", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -143,7 +165,7 @@ func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
 
 	ip := getIPFromHTTPRequest(r)
 	if ip != nil {
-		log.Debug("Using IP address from HTTP request: %s", ip)
+		log.Tracef("Using IP address from HTTP request: %s", ip)
 	} else {
 		ip = net.ParseIP(host)
 		if ip == nil {

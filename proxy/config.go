@@ -30,6 +30,7 @@ type Config struct {
 	TCPListenAddr   []*net.TCPAddr // if nil, then it does not listen for TCP
 	HTTPSListenAddr []*net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
 	TLSListenAddr   []*net.TCPAddr // if nil, then it does not listen for TLS (DoT)
+	QUICListenAddr  []*net.UDPAddr // if nil, then it does not listen for QUIC (DoQ)
 	TLSConfig       *tls.Config    // necessary for listening for TLS
 
 	// Rate-limiting and anti-DNS amplification measures

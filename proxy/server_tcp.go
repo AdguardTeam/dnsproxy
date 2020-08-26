@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"time"
@@ -9,6 +10,33 @@ import (
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
+
+func (p *Proxy) createTCPListeners() error {
+	for _, a := range p.TCPListenAddr {
+		log.Printf("Creating a TCP server socket")
+		tcpListen, err := net.ListenTCP("tcp", a)
+		if err != nil {
+			return errorx.Decorate(err, "couldn't listen to TCP socket")
+		}
+		p.tcpListen = append(p.tcpListen, tcpListen)
+		log.Printf("Listening to tcp://%s", tcpListen.Addr())
+	}
+	return nil
+}
+
+func (p *Proxy) createTLSListeners() error {
+	for _, a := range p.TLSListenAddr {
+		log.Printf("Creating a TLS server socket")
+		tcpListen, err := net.ListenTCP("tcp", a)
+		if err != nil {
+			return errorx.Decorate(err, "could not start TLS listener")
+		}
+		l := tls.NewListener(tcpListen, p.TLSConfig)
+		p.tlsListen = append(p.tlsListen, l)
+		log.Printf("Listening to tls://%s", l.Addr())
+	}
+	return nil
+}
 
 // tcpPacketLoop listens for incoming TCP packets
 // proto is either "tcp" or "tls"
@@ -19,10 +47,11 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 
 		if err != nil {
 			if isConnClosed(err) {
-				log.Printf("tcpListen.Accept() returned because we're reading from a closed connection, exiting loop")
-				break
+				log.Tracef("TCP connection has been closed, exiting loop")
+			} else {
+				log.Info("got error when reading from TCP listen: %s", err)
 			}
-			log.Printf("got error when reading from TCP listen: %s", err)
+			break
 		} else {
 			p.guardMaxGoroutines()
 			go func() {
@@ -55,7 +84,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 		msg := &dns.Msg{}
 		err = msg.Unpack(packet)
 		if err != nil {
-			log.Printf("error handling TCP packet: %s", err)
+			log.Info("error handling TCP packet: %s", err)
 			return
 		}
 

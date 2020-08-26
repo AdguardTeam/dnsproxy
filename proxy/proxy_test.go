@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 )
@@ -133,6 +134,63 @@ func TestTlsProxy(t *testing.T) {
 	}
 
 	sendTestMessages(t, conn)
+
+	// Stop the proxy
+	err = dnsProxy.Stop()
+	if err != nil {
+		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
+func TestQuicProxy(t *testing.T) {
+	// Prepare the proxy server
+	serverConfig, caPem := createServerTLSConfig(t)
+	dnsProxy := createTestProxy(t, serverConfig)
+
+	// Start listening
+	err := dnsProxy.Start()
+	assert.Nil(t, err)
+
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPem)
+	tlsConfig := &tls.Config{
+		ServerName: tlsServerName,
+		RootCAs:    roots,
+		NextProtos: []string{NextProtoDQ},
+	}
+
+	// Create a DNS-over-QUIC client connection
+	addr := dnsProxy.Addr(ProtoQUIC)
+
+	sess, err := quic.DialAddr(addr.String(), tlsConfig, nil)
+	assert.Nil(t, err)
+	defer sess.CloseWithError(0, "")
+
+	stream, err := sess.OpenStreamSync(context.Background())
+	assert.Nil(t, err)
+	defer stream.Close()
+
+	msg := createTestMessage()
+	buf, err := msg.Pack()
+	assert.Nil(t, err)
+
+	// Send the DNS query
+	_, err = stream.Write(buf)
+	assert.Nil(t, err)
+
+	// Now read the response
+	respBytes := make([]byte, 64*1024)
+	n, err := stream.Read(respBytes)
+	assert.True(t, err == nil || err.Error() == "EOF")
+	assert.True(t, n > minDNSPacketSize)
+
+	// Unpack the response
+	reply := new(dns.Msg)
+	err = reply.Unpack(respBytes)
+	assert.Nil(t, err)
+
+	// Check the response
+	assertResponse(t, reply)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()
@@ -827,18 +885,21 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 
 	if tlsConfig != nil {
 		p.TLSListenAddr = []*net.TCPAddr{
-			&net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)},
+			{Port: 0, IP: net.ParseIP(listenIP)},
 		}
 		p.HTTPSListenAddr = []*net.TCPAddr{
-			&net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)},
+			{Port: 0, IP: net.ParseIP(listenIP)},
+		}
+		p.QUICListenAddr = []*net.UDPAddr{
+			{Port: 0, IP: net.ParseIP(listenIP)},
 		}
 		p.TLSConfig = tlsConfig
 	} else {
 		p.UDPListenAddr = []*net.UDPAddr{
-			&net.UDPAddr{Port: 0, IP: net.ParseIP(listenIP)},
+			{Port: 0, IP: net.ParseIP(listenIP)},
 		}
 		p.TCPListenAddr = []*net.TCPAddr{
-			&net.TCPAddr{Port: 0, IP: net.ParseIP(listenIP)},
+			{Port: 0, IP: net.ParseIP(listenIP)},
 		}
 	}
 	upstreams := make([]upstream.Upstream, 0)

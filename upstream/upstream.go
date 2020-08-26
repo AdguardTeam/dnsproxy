@@ -34,6 +34,9 @@ type Options struct {
 	// List of IP addresses of upstream DNS server
 	// Bootstrap DNS servers won't be used at all
 	ServerIPAddrs []net.IP
+
+	// InsecureSkipVerify - if true, do not verify the server certificate
+	InsecureSkipVerify bool
 }
 
 // Parse "host:port" string and validate port number
@@ -82,10 +85,10 @@ func AddressToUpstream(address string, opts Options) (Upstream, error) {
 // urlToBoot creates an instance of the bootstrapper with the specified options
 func urlToBoot(resolverURL string, opts Options) (*bootstrapper, error) {
 	if len(opts.ServerIPAddrs) == 0 {
-		return toBoot(resolverURL, opts.Bootstrap, opts.Timeout)
+		return newBootstrapper(resolverURL, opts.Bootstrap, opts.Timeout, opts.InsecureSkipVerify)
 	}
 
-	return toBootResolved(resolverURL, opts.ServerIPAddrs, opts.Timeout)
+	return newBootstrapperResolved(resolverURL, opts.ServerIPAddrs, opts.Timeout, opts.InsecureSkipVerify)
 }
 
 // urlToUpstream converts a URL to an Upstream
@@ -97,6 +100,20 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout}, nil
 	case "tcp":
 		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout, preferTCP: true}, nil
+	case "quic":
+		if upstreamURL.Port() == "" {
+			// https://tools.ietf.org/html/draft-huitema-dprive-dnsoquic-00#section-8.2.1
+			// Early experiments MAY use port 784.  This port is marked in the IANA
+			// registry as unassigned.
+			upstreamURL.Host += ":784"
+		}
+		resolverURL := upstreamURL.String()
+		b, err := urlToBoot(resolverURL, opts)
+		if err != nil {
+			return nil, errorx.Decorate(err, "couldn't create quic bootstrapper")
+		}
+
+		return &dnsOverQUIC{boot: b}, nil
 
 	case "tls":
 		if upstreamURL.Port() == "" {
@@ -153,7 +170,7 @@ func stampToUpstream(address string, opts Options) (Upstream, error) {
 	case dnsstamps.StampProtoTypePlain:
 		return &plainDNS{address: stamp.ServerAddrStr, timeout: opts.Timeout}, nil
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		b, err := toBoot(address, opts.Bootstrap, opts.Timeout)
+		b, err := newBootstrapper(address, opts.Bootstrap, opts.Timeout, opts.InsecureSkipVerify)
 		if err != nil {
 			return nil, fmt.Errorf("bootstrap server parse: %s", err)
 		}

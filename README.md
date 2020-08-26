@@ -42,7 +42,8 @@ Application Options:
   -l, --listen=         Listening addresses (default: 0.0.0.0)
   -p, --port=           Listening ports. Zero value disables TCP and UDP listeners (default: 53)
   -h, --https-port=     Listening ports for DNS-over-HTTPS
-  -t, --tls-port=       Listen port for DNS-over-TLS
+  -t, --tls-port=       Listening ports for DNS-over-TLS
+  -q, --quic-port=      Listening ports for DNS-over-QUIC
   -c, --tls-crt=        Path to a file with the certificate chain
   -k, --tls-key=        Path to a file with the private key
   -u, --upstream=       An upstream to be used (can be specified multiple times)
@@ -52,8 +53,8 @@ Application Options:
       --fastest-addr    Respond to A or AAAA requests only with the fastest IP address
       --cache           If specified, DNS cache is enabled
       --cache-size=     Cache size (in bytes). Default: 64k
-      --cache-min-ttl=  Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with
-                        careful consideration.
+      --cache-min-ttl=  Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be
+                        done with careful consideration.
       --cache-max-ttl=  Maximum TTL value for DNS entries, in seconds.
   -r, --ratelimit=      Ratelimit (requests per second) (default: 0)
       --refuse-any      If specified, refuse ANY requests

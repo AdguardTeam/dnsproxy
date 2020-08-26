@@ -19,6 +19,5 @@ require (
 	golang.org/x/net v0.0.0-20200707034311-ab3426394381
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a // indirect
 	golang.org/x/sys v0.0.0-20200519105757-fe76b779f299
-	golang.org/x/text v0.3.2 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )

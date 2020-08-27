@@ -1,5 +1,3 @@
-// +build ignore
-
 package upstream
 
 import (
@@ -10,7 +8,7 @@ import (
 
 func TestUpstreamDOQ(t *testing.T) {
 	// Create a DNS-over-QUIC upstream
-	address := "quic://127.0.0.1"
+	address := "quic://dns.adguard.com"
 	u, err := AddressToUpstream(address, Options{InsecureSkipVerify: true})
 	assert.Nil(t, err)
 

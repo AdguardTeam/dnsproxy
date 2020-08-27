@@ -214,6 +214,11 @@ func TestUpstreams(t *testing.T) {
 			address:   "https://1.1.1.1/dns-query",
 			bootstrap: []string{},
 		},
+		{
+			// Cloudflare DNS
+			address:   "quic://dns-unfiltered.adguard.com",
+			bootstrap: []string{},
+		},
 	}
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {

@@ -33,28 +33,13 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 		log.Debug("Bootstraps: %v", bootstrapDNS)
 	}
 
-	for i, u := range upstreamConfig {
-		hosts := []string{}
-		if strings.HasPrefix(u, "[/") {
-			// split domains and upstream string
-			domainsAndUpstream := strings.Split(strings.TrimPrefix(u, "[/"), "/]")
-			if len(domainsAndUpstream) != 2 {
-				return UpstreamConfig{}, fmt.Errorf("wrong upstream specification: %s", u)
-			}
+	// We use this index to avoid creating duplicates of upstreams
+	upstreamsIndex := map[string]upstream.Upstream{}
 
-			// split domains list
-			for _, host := range strings.Split(domainsAndUpstream[0], "/") {
-				if host != "" {
-					if err := utils.IsValidHostname(host); err != nil {
-						return UpstreamConfig{}, err
-					}
-					hosts = append(hosts, strings.ToLower(host+"."))
-				} else {
-					// empty domain specification means `unqualified names only`
-					hosts = append(hosts, UnqualifiedNames)
-				}
-			}
-			u = domainsAndUpstream[1]
+	for i, l := range upstreamConfig {
+		u, hosts, err := parseUpstreamLine(l)
+		if err != nil {
+			return UpstreamConfig{}, err
 		}
 
 		// # excludes more specific domain from reserved upstreams querying
@@ -62,30 +47,71 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 			for _, host := range hosts {
 				domainReservedUpstreams[host] = nil
 			}
-			continue
-		}
-
-		// create an upstream
-		dnsUpstream, err := upstream.AddressToUpstream(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout})
-		if err != nil {
-			return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", u, bootstrapDNS, err)
-		}
-
-		if len(hosts) > 0 {
-			for _, host := range hosts {
-				_, ok := domainReservedUpstreams[host]
-				if !ok {
-					domainReservedUpstreams[host] = []upstream.Upstream{}
-				}
-				domainReservedUpstreams[host] = append(domainReservedUpstreams[host], dnsUpstream)
-			}
-			log.Debug("Upstream %d: %s is reserved for next domains: %s", i, dnsUpstream.Address(), strings.Join(hosts, ", "))
 		} else {
-			log.Debug("Upstream %d: %s", i, dnsUpstream.Address())
-			upstreams = append(upstreams, dnsUpstream)
+			dnsUpstream, ok := upstreamsIndex[u]
+			if !ok {
+				// create an upstream
+				dnsUpstream, err = upstream.AddressToUpstream(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout})
+				if err != nil {
+					return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, bootstrapDNS, err)
+				}
+
+				// save to the index
+				upstreamsIndex[u] = dnsUpstream
+			}
+
+			if len(hosts) > 0 {
+				for _, host := range hosts {
+					_, ok := domainReservedUpstreams[host]
+					if !ok {
+						domainReservedUpstreams[host] = []upstream.Upstream{}
+					}
+					domainReservedUpstreams[host] = append(domainReservedUpstreams[host], dnsUpstream)
+				}
+				log.Debug("Upstream %d: %s is reserved for next domains: %s", i, dnsUpstream.Address(), strings.Join(hosts, ", "))
+			} else {
+				log.Debug("Upstream %d: %s", i, dnsUpstream.Address())
+				upstreams = append(upstreams, dnsUpstream)
+			}
 		}
 	}
-	return UpstreamConfig{Upstreams: upstreams, DomainReservedUpstreams: domainReservedUpstreams}, nil
+	return UpstreamConfig{
+		Upstreams:               upstreams,
+		DomainReservedUpstreams: domainReservedUpstreams,
+	}, nil
+}
+
+// parseUpstreamLine - parses upstream line and returns the following:
+// upstream address
+// list of domains for which this upstream is reserved (may be nil)
+// error if something went wrong
+func parseUpstreamLine(l string) (string, []string, error) {
+	var hosts []string
+	u := l
+
+	if strings.HasPrefix(l, "[/") {
+		// split domains and upstream string
+		domainsAndUpstream := strings.Split(strings.TrimPrefix(l, "[/"), "/]")
+		if len(domainsAndUpstream) != 2 {
+			return "", nil, fmt.Errorf("wrong upstream specification: %s", l)
+		}
+
+		// split domains list
+		for _, host := range strings.Split(domainsAndUpstream[0], "/") {
+			if host != "" {
+				if err := utils.IsValidHostname(host); err != nil {
+					return "", nil, err
+				}
+				hosts = append(hosts, strings.ToLower(host+"."))
+			} else {
+				// empty domain specification means `unqualified names only`
+				hosts = append(hosts, UnqualifiedNames)
+			}
+		}
+		u = domainsAndUpstream[1]
+	}
+
+	return u, hosts, nil
 }
 
 // getUpstreamsForDomain looks for a domain in reserved domains map and returns a list of corresponding upstreams.

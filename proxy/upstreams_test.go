@@ -3,6 +3,8 @@ package proxy
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetUpstreamsForDomain(t *testing.T) {
@@ -18,6 +20,20 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 	assertUpstreamsForDomain(t, config, 1, "internal.local.", []string{"4.3.2.1:53"})
 	assertUpstreamsForDomain(t, config, 1, "google.", []string{"1.2.3.4:53"})
 	assertUpstreamsForDomain(t, config, 0, "maps.google.com.", []string{})
+}
+
+func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
+	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
+	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second)
+	assert.Nil(t, err)
+	assert.Len(t, config.Upstreams, 0)
+	assert.Len(t, config.DomainReservedUpstreams, 2)
+
+	u1 := config.DomainReservedUpstreams["example.com."][0]
+	u2 := config.DomainReservedUpstreams["example.org."][0]
+
+	// Check that the very same Upstream instance is used for both domains
+	assert.True(t, u1 == u2)
 }
 
 // assertUpstreamsForDomain checks count and addresses of the specified domain upstreams

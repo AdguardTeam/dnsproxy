@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"bytes"
-	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
@@ -10,16 +8,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"io/ioutil"
 	"math/big"
 	"net"
-	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 )
@@ -30,200 +25,6 @@ const (
 	tlsServerName     = "testdns.adguard.com"
 	testMessagesCount = 10
 )
-
-func TestHttpsProxy(t *testing.T) {
-	// Prepare the proxy server
-	serverConfig, caPem := createServerTLSConfig(t)
-	dnsProxy := createTestProxy(t, serverConfig)
-
-	// Start listening
-	err := dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
-
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(caPem)
-	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
-
-	// Send a DNS-over-HTTPS request
-	httpsAddr := dnsProxy.Addr(ProtoHTTPS)
-
-	dialer := &net.Dialer{
-		Timeout: defaultTimeout,
-	}
-	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		// Route request to the DOH server address
-		return dialer.DialContext(ctx, network, httpsAddr.String())
-	}
-	transport := &http.Transport{
-		TLSClientConfig:    tlsConfig,
-		DisableCompression: true,
-		DialContext:        dialContext,
-	}
-
-	msg := createTestMessage()
-	buf, err := msg.Pack()
-	if err != nil {
-		t.Fatalf("couldn't pack DNS request: %s", err)
-	}
-
-	bb := bytes.NewBuffer(buf)
-	req, err := http.NewRequest("POST", "https://test.com", bb)
-	if err != nil {
-		t.Fatalf("couldn't create a new HTTP request: %s", err)
-	}
-
-	req.Header.Set("Content-Type", "application/dns-message")
-	req.Header.Set("Accept", "application/dns-message")
-
-	// IP "1.2.3.4" will be used as a client address in DNSContext
-	req.Header.Set("X-Forwarded-For", "1.2.3.4, 127.0.0.1")
-
-	client := http.Client{
-		Transport: transport,
-		Timeout:   defaultTimeout,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("couldn't exec the HTTP request: %s", err)
-	}
-	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("coulnd't read the response body: %s", err)
-	}
-	reply := &dns.Msg{}
-	err = reply.Unpack(body)
-	if err != nil {
-		t.Fatalf("invalid DNS response: %s", err)
-	}
-
-	assertResponse(t, reply)
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
-	}
-}
-
-func TestTlsProxy(t *testing.T) {
-	// Prepare the proxy server
-	serverConfig, caPem := createServerTLSConfig(t)
-	dnsProxy := createTestProxy(t, serverConfig)
-
-	// Start listening
-	err := dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
-
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(caPem)
-	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
-
-	// Create a DNS-over-TLS client connection
-	addr := dnsProxy.Addr(ProtoTLS)
-	conn, err := dns.DialWithTLS("tcp-tls", addr.String(), tlsConfig)
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
-
-	sendTestMessages(t, conn)
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
-	}
-}
-
-func TestQuicProxy(t *testing.T) {
-	// Prepare the proxy server
-	serverConfig, caPem := createServerTLSConfig(t)
-	dnsProxy := createTestProxy(t, serverConfig)
-
-	// Start listening
-	err := dnsProxy.Start()
-	assert.Nil(t, err)
-
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(caPem)
-	tlsConfig := &tls.Config{
-		ServerName: tlsServerName,
-		RootCAs:    roots,
-		NextProtos: []string{NextProtoDQ},
-	}
-
-	// Create a DNS-over-QUIC client connection
-	addr := dnsProxy.Addr(ProtoQUIC)
-
-	sess, err := quic.DialAddr(addr.String(), tlsConfig, nil)
-	assert.Nil(t, err)
-	defer sess.CloseWithError(0, "")
-
-	stream, err := sess.OpenStreamSync(context.Background())
-	assert.Nil(t, err)
-	defer stream.Close()
-
-	msg := createTestMessage()
-	buf, err := msg.Pack()
-	assert.Nil(t, err)
-
-	// Send the DNS query
-	_, err = stream.Write(buf)
-	assert.Nil(t, err)
-
-	// Now read the response
-	respBytes := make([]byte, 64*1024)
-	n, err := stream.Read(respBytes)
-	assert.True(t, err == nil || err.Error() == "EOF")
-	assert.True(t, n > minDNSPacketSize)
-
-	// Unpack the response
-	reply := new(dns.Msg)
-	err = reply.Unpack(respBytes)
-	assert.Nil(t, err)
-
-	// Check the response
-	assertResponse(t, reply)
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
-	}
-}
-
-func TestUdpProxy(t *testing.T) {
-	// Prepare the proxy server
-	dnsProxy := createTestProxy(t, nil)
-
-	// Start listening
-	err := dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
-
-	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr(ProtoUDP)
-	conn, err := dns.Dial("udp", addr.String())
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
-
-	sendTestMessages(t, conn)
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
-	}
-}
 
 // TestProxyRace sends multiple parallel DNS requests to the
 // fully configured dnsproxy to check for race conditions
@@ -556,32 +357,6 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	if elapsed > 3*timeout {
 		t.Fatalf("the operation took much more time than the configured timeout")
 	}
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
-	}
-}
-
-func TestTcpProxy(t *testing.T) {
-	// Prepare the proxy server
-	dnsProxy := createTestProxy(t, nil)
-
-	// Start listening
-	err := dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
-
-	// Create a DNS-over-TCP client connection
-	addr := dnsProxy.Addr(ProtoTCP)
-	conn, err := dns.Dial("tcp", addr.String())
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
-
-	sendTestMessages(t, conn)
 
 	// Stop the proxy
 	err = dnsProxy.Stop()

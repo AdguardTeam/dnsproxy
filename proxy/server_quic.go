@@ -56,21 +56,30 @@ func (p *Proxy) quicPacketLoop(l quic.Listener) {
 // handleQUICSession handles a new QUIC session.
 // It waits for new streams and passes it to handleQUICStream
 func (p *Proxy) handleQUICSession(session quic.Session) {
-	stream, err := session.AcceptStream(context.Background())
-	if err != nil {
-		if isQuicConnClosedErr(err) {
-			log.Tracef("QUIC connection has been closed")
-		} else {
-			log.Info("got error when reading from QUIC listen: %s", err)
+	for {
+		// The stub to resolver DNS traffic follows a simple pattern in which
+		// the client sends a query, and the server provides a response.  This
+		// design specifies that for each subsequent query on a QUIC connection
+		// the client MUST select the next available client-initiated
+		// bidirectional stream
+		stream, err := session.AcceptStream(context.Background())
+		if err != nil {
+			if isQuicConnClosedErr(err) {
+				log.Tracef("QUIC connection has been closed")
+			} else {
+				log.Info("got error when accepting a new QUIC stream: %s", err)
+			}
+			// Close the session to make sure resources are freed
+			_ = session.CloseWithError(0, "")
+			return
 		}
-		return
+		p.guardMaxGoroutines()
+		go func() {
+			p.handleQUICStream(stream, session)
+			_ = stream.Close()
+			p.freeMaxGoroutines()
+		}()
 	}
-	p.guardMaxGoroutines()
-	go func() {
-		p.handleQUICStream(stream, session)
-		_ = stream.Close()
-		p.freeMaxGoroutines()
-	}()
 }
 
 // handleQUICStream reads DNS queries from the stream, processes them,

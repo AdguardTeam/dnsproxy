@@ -65,7 +65,7 @@ func (p *Proxy) handleQUICSession(session quic.Session) {
 		stream, err := session.AcceptStream(context.Background())
 		if err != nil {
 			if isQuicConnClosedErr(err) {
-				log.Tracef("QUIC connection has been closed")
+				log.Tracef("QUIC connection has been closed: %v", err)
 			} else {
 				log.Info("got error when accepting a new QUIC stream: %s", err)
 			}
@@ -165,6 +165,11 @@ func isQuicConnClosedErr(err error) bool {
 	str := err.Error()
 
 	if strings.Contains(str, "server closed") {
+		return true
+	}
+
+	// NO_ERROR: No recent network activity
+	if strings.Contains(str, "NO_ERROR") {
 		return true
 	}
 

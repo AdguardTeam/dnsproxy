@@ -12,8 +12,8 @@ import (
 )
 
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
-// by selecting the ALPN token "dq" in the crypto handshake.
-const NextProtoDQ = "dq"
+// by selecting the ALPN token "doq" in the crypto handshake.
+const NextProtoDQ = "doq"
 
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {

@@ -94,24 +94,28 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	defer p.bytesPool.Put(buf)
 
 	// One query -- one stream
+	// The client MUST send the DNS query over the selected stream, and MUST
+	// indicate through the STREAM FIN mechanism that no further data will
+	// be sent on that stream.
+
+	// err is not checked here because STREAM FIN sent by the client is indicated as error here.
+	// instead, we should check the number of bytes received.
+	n, err := stream.Read(buf)
+
 	// The server MUST send the response on the same stream, and MUST indicate through
 	// the STREAM FIN mechanism that no further data will be sent on that stream.
-
-	n, err := stream.Read(buf)
-	if err != nil {
-		if isQuicConnClosedErr(err) {
-			log.Tracef("QUIC connection has been closed")
-		} else {
-			log.Info("got error while reading from a QUIC stream: %v", err)
-		}
-		return
-	}
-
-	// Make sure stream is closed after query has been processed
 	defer stream.Close()
 
 	if n < minDNSPacketSize {
-		log.Info("too short packet for a DNS query")
+		switch {
+		case err != nil && isQuicConnClosedErr(err):
+			return
+		case err != nil && !isQuicConnClosedErr(err):
+			log.Info("error while reading from a QUIC stream: %v", err)
+		default:
+			log.Info("too short packet for a DNS query")
+		}
+
 		return
 	}
 
@@ -154,6 +158,10 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 }
 
 func isQuicConnClosedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
 	str := err.Error()
 
 	if strings.Contains(str, "server closed") {
@@ -161,6 +169,10 @@ func isQuicConnClosedErr(err error) bool {
 	}
 
 	if strings.HasSuffix(str, "Application error 0x0") {
+		return true
+	}
+
+	if err.Error() == "EOF" {
 		return true
 	}
 

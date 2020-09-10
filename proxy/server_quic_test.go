@@ -50,31 +50,35 @@ func TestQuicProxy(t *testing.T) {
 }
 
 func sendTestQUICMessage(t *testing.T, sess quic.Session) {
-	// #1: Open stream
+	// Open stream
 	stream, err := sess.OpenStreamSync(context.Background())
 	assert.Nil(t, err)
 	defer stream.Close()
 
-	// #1: Write
+	// Write
 	msg := createTestMessage()
 	buf, err := msg.Pack()
 	assert.Nil(t, err)
 
-	// #1: Send the DNS query
+	// Send the DNS query
 	_, err = stream.Write(buf)
 	assert.Nil(t, err)
 
-	// #1: Now read the response
+	// Close closes the write-direction of the stream
+	// and sends a STREAM FIN packet.
+	stream.Close()
+
+	// Now read the response
 	respBytes := make([]byte, 64*1024)
 	n, err := stream.Read(respBytes)
 	assert.True(t, err == nil || err.Error() == "EOF")
 	assert.True(t, n > minDNSPacketSize)
 
-	// #1: Unpack the response
+	// Unpack the response
 	reply := new(dns.Msg)
 	err = reply.Unpack(respBytes)
 	assert.Nil(t, err)
 
-	// #1: Check the response
+	// Check the response
 	assertResponse(t, reply)
 }

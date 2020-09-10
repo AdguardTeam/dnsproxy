@@ -48,6 +48,12 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, err
 	}
 
+	// The client MUST send the DNS query over the selected stream, and MUST
+	// indicate through the STREAM FIN mechanism that no further data will
+	// be sent on that stream.
+	// stream.Close() -- closes the write-direction of the stream.
+	_ = stream.Close()
+
 	pool := p.getBytesPool()
 	var respBuf []byte
 	respBuf = pool.Get().([]byte)
@@ -59,7 +65,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	n, err := stream.Read(respBuf)
 	if err != nil && n == 0 {
-		return nil, errorx.Decorate(err, "failed to read response from %s", p.Address())
+		return nil, errorx.Decorate(err, "failed to read response from %s due to %v", p.Address(), err)
 	}
 
 	reply := new(dns.Msg)

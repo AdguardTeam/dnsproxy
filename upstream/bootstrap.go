@@ -19,7 +19,7 @@ import (
 
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
 // by selecting the ALPN token "dq" in the crypto handshake.
-const NextProtoDQ = "dq"
+const NextProtoDQ = "doq-i00"
 
 // RootCAs is the CertPool that must be used by all upstreams
 // Redefining RootCAs makes sense on iOS to overcome the 15MB memory limit of the NEPacketTunnelProvider

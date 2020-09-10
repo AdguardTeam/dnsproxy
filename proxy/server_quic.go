@@ -13,7 +13,11 @@ import (
 
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
 // by selecting the ALPN token "dq" in the crypto handshake.
-const NextProtoDQ = "dq"
+// Current draft version: https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-00
+const NextProtoDQ = "doq-i00"
+
+// compatProtoDQ - ALPNs for backwards compatibility
+var compatProtoDQ = []string{"dq", "doq"}
 
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {

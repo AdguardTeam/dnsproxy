@@ -141,8 +141,11 @@ func (p *Proxy) Init() {
 
 	if p.TLSConfig != nil && len(p.TLSConfig.NextProtos) == 0 {
 		p.TLSConfig.NextProtos = []string{
-			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+			"http/1.1",
+			http2.NextProtoTLS,
+			NextProtoDQ,
 		}
+		p.TLSConfig.NextProtos = append(p.TLSConfig.NextProtos, compatProtoDQ...)
 	}
 
 	p.udpOOBSize = udpGetOOBSize()

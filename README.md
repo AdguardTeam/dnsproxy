@@ -27,7 +27,7 @@ A simple DNS proxy server that supports all existing DNS protocols including `DN
 You will need go v1.14 or later.
 
 ```
-$ go build
+$ go build -mod=vendor
 ```
 
 ## Usage

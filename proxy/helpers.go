@@ -264,12 +264,3 @@ func splitNext(str *string, splitBy byte) string {
 	}
 	return strings.TrimSpace(s)
 }
-
-// mathematical minimum between two uint32 values.
-func min(x uint32, y uint32) uint32 {
-	if x < y {
-		return x
-	}
-
-	return y
-}

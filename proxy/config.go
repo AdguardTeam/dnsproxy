@@ -73,6 +73,9 @@ type Config struct {
 	EnableEDNSClientSubnet bool
 	EDNSAddr               net.IP // ECS IP used in request
 
+	// List of raw EDNS options
+	EDNSOpts map[uint16][]byte
+
 	// Cache settings
 	// --
 

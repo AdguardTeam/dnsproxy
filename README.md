@@ -220,5 +220,5 @@ This option is similar to dnsmasq `bogus-nxdomain`. If specified, `dnsproxy` tra
 In the example below, we use AdGuard DNS server that returns `0.0.0.0` for blocked domains, and tranform them to `NXDOMAIN`.
 
 ```
-./dnsproxy -u 176.103.130.130:53 --bogus-nxdomain=0.0.0.0
+./dnsproxy -u 94.140.14.14:53 --bogus-nxdomain=0.0.0.0
 ```

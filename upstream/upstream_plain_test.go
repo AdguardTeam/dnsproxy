@@ -8,7 +8,7 @@ import (
 
 func TestDNSTruncated(t *testing.T) {
 	// AdGuard DNS
-	address := "176.103.130.130:53"
+	address := "94.140.14.14:53"
 	// Google DNS
 	// address := "8.8.8.8:53"
 	u, err := AddressToUpstream(address, Options{Timeout: timeout})

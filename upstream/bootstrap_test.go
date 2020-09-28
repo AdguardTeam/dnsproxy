@@ -17,7 +17,7 @@ func TestDialContext(t *testing.T) {
 			host:      "dns.google.com",
 		},
 		{
-			addresses: []string{"176.103.130.130:855", "176.103.130.130:853"},
+			addresses: []string{"94.140.14.14:855", "94.140.14.14:853"},
 			host:      "dns.adguard.com",
 		},
 		{

@@ -15,7 +15,7 @@ func TestLookupIPAddr(t *testing.T) {
 	upstreams := make([]upstream.Upstream, 0)
 	// Use AdGuard DNS here
 	opts := upstream.Options{Timeout: defaultTimeout}
-	dnsUpstream, err := upstream.AddressToUpstream("176.103.130.130", opts)
+	dnsUpstream, err := upstream.AddressToUpstream("94.140.14.14", opts)
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}
@@ -30,10 +30,10 @@ func TestLookupIPAddr(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 4, len(addrs))
 
-	assertContainsIP(t, addrs, "176.103.130.130")
-	assertContainsIP(t, addrs, "176.103.130.131")
-	assertContainsIP(t, addrs, "2a00:5a60::ad1:ff")
-	assertContainsIP(t, addrs, "2a00:5a60::ad2:ff")
+	assertContainsIP(t, addrs, "94.140.14.14")
+	assertContainsIP(t, addrs, "94.140.15.15")
+	assertContainsIP(t, addrs, "2a10:50c0::ad1:ff")
+	assertContainsIP(t, addrs, "2a10:50c0::ad2:ff")
 
 	addrs, err = p.LookupIPAddr("dns.google")
 	assert.Nil(t, err)

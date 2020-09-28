@@ -145,7 +145,7 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{},
 		},
 		{
-			address:   "176.103.130.130:5353",
+			address:   "94.140.14.14:5353",
 			bootstrap: []string{},
 		},
 		{
@@ -370,12 +370,12 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 		{
 			address:   "tls://dns.adguard.com",
 			bootstrap: invalidBootstrap,
-			serverIP:  "176.103.130.130",
+			serverIP:  "94.140.14.14",
 		},
 		{
 			address:   "https://dns.adguard.com/dns-query",
 			bootstrap: invalidBootstrap,
-			serverIP:  "176.103.130.130",
+			serverIP:  "94.140.14.14",
 		},
 		{
 			// AdGuard DNS DOH with the IP address specified

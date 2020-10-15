@@ -22,7 +22,7 @@ release: check-env-release
 	mkdir -p $(BUILDDIR)
 	cp LICENSE $(BUILDDIR)/
 	cp README.md $(BUILDDIR)/
-	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -mod=vendor -ldflags "-X main.VersionString=$(VERSION)" -o $(BUILDDIR)/$(NAME)$(ext)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -mod=vendor -ldflags "-X main.VersionString=$(VERSION)" -o $(BUILDDIR)/$(NAME)$(ext)
 	cd $(BASE_BUILDDIR) ; $(archiveCmd)
 
 test:

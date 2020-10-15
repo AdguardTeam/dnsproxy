@@ -51,6 +51,12 @@ script:
         # Linux-armv6 build
         GOOS=linux GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
 
+        # Linux-mips build
+        GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
+
+        # Linux-mipsle build
+        GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
+
         # freebsd-armv6 build
         GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
 

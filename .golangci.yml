@@ -67,3 +67,5 @@ issues:
     # gosec: TLS InsecureSkipVerify may be true
     # We have a configuration option that allows to do this
     - G402
+    # gosec: Use of weak random number generator
+    - G404

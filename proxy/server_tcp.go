@@ -2,10 +2,10 @@ package proxy
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -46,7 +46,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 		clientConn, err := l.Accept()
 
 		if err != nil {
-			if isConnClosed(err) {
+			if proxyutil.IsConnClosed(err) {
 				log.Tracef("TCP connection has been closed, exiting loop")
 			} else {
 				log.Info("got error when reading from TCP listen: %s", err)
@@ -76,7 +76,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 		p.RUnlock()
 
 		conn.SetDeadline(time.Now().Add(defaultTimeout)) //nolint
-		packet, err := readPrefixed(&conn)
+		packet, err := proxyutil.ReadPrefixed(conn)
 		if err != nil {
 			return
 		}
@@ -112,20 +112,14 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
 	}
 
-	bytes, err = prefixWithSize(bytes)
-	if err != nil {
-		return errorx.Decorate(err, "couldn't add prefix with size")
-	}
+	err = proxyutil.WritePrefixed(bytes, conn)
 
-	n, err := conn.Write(bytes)
-	if n == 0 && isConnClosed(err) {
+	if proxyutil.IsConnClosed(err) {
 		return err
 	}
 	if err != nil {
 		return errorx.Decorate(err, "conn.Write() returned error")
 	}
-	if n != len(bytes) {
-		return fmt.Errorf("conn.Write() returned with %d != %d", n, len(bytes))
-	}
+
 	return nil
 }

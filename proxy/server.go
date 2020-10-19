@@ -37,6 +37,11 @@ func (p *Proxy) startListeners() error {
 		return err
 	}
 
+	err = p.createDNSCryptListeners()
+	if err != nil {
+		return err
+	}
+
 	for _, l := range p.udpListen {
 		go p.udpPacketLoop(l)
 	}
@@ -55,6 +60,16 @@ func (p *Proxy) startListeners() error {
 
 	for _, l := range p.quicListen {
 		go p.quicPacketLoop(l)
+	}
+
+	for _, l := range p.dnsCryptUDPListen {
+		listen := l
+		go func() { _ = p.dnsCryptServer.ServeUDP(listen) }()
+	}
+
+	for _, l := range p.dnsCryptTCPListen {
+		listen := l
+		go func() { _ = p.dnsCryptServer.ServeTCP(listen) }()
 	}
 
 	return nil
@@ -163,6 +178,8 @@ func (p *Proxy) respond(d *DNSContext) {
 		err = p.respondHTTPS(d)
 	case ProtoQUIC:
 		err = p.respondQUIC(d)
+	case ProtoDNSCrypt:
+		err = p.respondDNSCrypt(d)
 	default:
 		err = fmt.Errorf("SHOULD NOT HAPPEN - unknown protocol: %s", d.Proto)
 	}

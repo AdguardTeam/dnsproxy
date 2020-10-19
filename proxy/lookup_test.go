@@ -26,16 +26,7 @@ func TestLookupIPAddr(t *testing.T) {
 	p.Init()
 
 	// Now let's try doing some lookups
-	addrs, err := p.LookupIPAddr("dns.adguard.com")
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(addrs))
-
-	assertContainsIP(t, addrs, "94.140.14.14")
-	assertContainsIP(t, addrs, "94.140.15.15")
-	assertContainsIP(t, addrs, "2a10:50c0::ad1:ff")
-	assertContainsIP(t, addrs, "2a10:50c0::ad2:ff")
-
-	addrs, err = p.LookupIPAddr("dns.google")
+	addrs, err := p.LookupIPAddr("dns.google")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) == 2 || len(addrs) == 4)
 	assertContainsIP(t, addrs, "8.8.8.8")

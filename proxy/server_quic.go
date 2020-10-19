@@ -22,8 +22,6 @@ var compatProtoDQ = []string{"dq", "doq"}
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
 		log.Info("Creating a QUIC listener")
-
-		// TODO: find a way to call udpSetOptions
 		quicListen, err := quic.ListenAddr(a.String(), p.TLSConfig, nil)
 		if err != nil {
 			return errorx.Decorate(err, "could not start QUIC listener")

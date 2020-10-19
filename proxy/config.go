@@ -7,6 +7,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/ameshkov/dnscrypt/v2"
 )
 
 // UpstreamModeType - upstream mode
@@ -21,17 +22,39 @@ const (
 	UModeFastestAddr
 )
 
+// BeforeRequestHandler is an optional custom handler called before DNS requests
+// If it returns false, the request won't be processed at all
+type BeforeRequestHandler func(p *Proxy, d *DNSContext) (bool, error)
+
+// RequestHandler is an optional custom handler for DNS requests
+// It is called instead of the default method (Proxy.Resolve())
+// See handler_test.go for examples
+type RequestHandler func(p *Proxy, d *DNSContext) error
+
+// ResponseHandler is a callback method that is called when DNS query has been processed
+// d -- current DNS query context (contains response if it was successful)
+// err -- error (if any)
+type ResponseHandler func(d *DNSContext, err error)
+
 // Config contains all the fields necessary for proxy configuration
 type Config struct {
 	// Listeners
 	// --
 
-	UDPListenAddr   []*net.UDPAddr // if nil, then it does not listen for UDP
-	TCPListenAddr   []*net.TCPAddr // if nil, then it does not listen for TCP
-	HTTPSListenAddr []*net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
-	TLSListenAddr   []*net.TCPAddr // if nil, then it does not listen for TLS (DoT)
-	QUICListenAddr  []*net.UDPAddr // if nil, then it does not listen for QUIC (DoQ)
-	TLSConfig       *tls.Config    // necessary for listening for TLS
+	UDPListenAddr         []*net.UDPAddr // if nil, then it does not listen for UDP
+	TCPListenAddr         []*net.TCPAddr // if nil, then it does not listen for TCP
+	HTTPSListenAddr       []*net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
+	TLSListenAddr         []*net.TCPAddr // if nil, then it does not listen for TLS (DoT)
+	QUICListenAddr        []*net.UDPAddr // if nil, then it does not listen for QUIC (DoQ)
+	DNSCryptUDPListenAddr []*net.UDPAddr // if nil, then it does not listen for DNSCrypt
+	DNSCryptTCPListenAddr []*net.TCPAddr // if nil, then it does not listen for DNSCrypt
+
+	// Encryption configuration
+	// --
+
+	TLSConfig            *tls.Config    // necessary for TLS, HTTPS, QUIC
+	DNSCryptProviderName string         // DNSCrypt provider name
+	DNSCryptResolverCert *dnscrypt.Cert // DNSCrypt resolver certificate
 
 	// Rate-limiting and anti-DNS amplification measures
 	// --
@@ -100,16 +123,9 @@ func (p *Proxy) validateConfig() error {
 		return errors.New("server has been already started")
 	}
 
-	if p.UDPListenAddr == nil && p.TCPListenAddr == nil && p.TLSListenAddr == nil && p.HTTPSListenAddr == nil {
-		return errors.New("no listen address specified")
-	}
-
-	if p.TLSListenAddr != nil && p.TLSConfig == nil {
-		return errors.New("cannot create a TLS listener without TLS config")
-	}
-
-	if p.HTTPSListenAddr != nil && p.TLSConfig == nil {
-		return errors.New("cannot create an HTTPS listener without TLS config")
+	err := p.validateListenAddrs()
+	if err != nil {
+		return err
 	}
 
 	if p.UpstreamConfig == nil {
@@ -140,4 +156,45 @@ func (p *Proxy) validateConfig() error {
 	}
 
 	return nil
+}
+
+// validateListenAddrs -- checks if listen addrs are properly configured
+func (p *Proxy) validateListenAddrs() error {
+	if !p.hasListenAddrs() {
+		return errors.New("no listen address specified")
+	}
+
+	if p.TLSListenAddr != nil && p.TLSConfig == nil {
+		return errors.New("cannot create a TLS listener without TLS config")
+	}
+
+	if p.HTTPSListenAddr != nil && p.TLSConfig == nil {
+		return errors.New("cannot create an HTTPS listener without TLS config")
+	}
+
+	if p.QUICListenAddr != nil && p.TLSConfig == nil {
+		return errors.New("cannot create a QUIC listener without TLS config")
+	}
+
+	if (p.DNSCryptTCPListenAddr != nil || p.DNSCryptUDPListenAddr != nil) &&
+		(p.DNSCryptResolverCert == nil || p.DNSCryptProviderName == "") {
+		return errors.New("cannot create a DNSCrypt listener without DNSCrypt config")
+	}
+
+	return nil
+}
+
+// hasListenAddrs - is there any addresses to listen to?
+func (p *Proxy) hasListenAddrs() bool {
+	if p.UDPListenAddr == nil &&
+		p.TCPListenAddr == nil &&
+		p.TLSListenAddr == nil &&
+		p.HTTPSListenAddr == nil &&
+		p.QUICListenAddr == nil &&
+		p.DNSCryptUDPListenAddr == nil &&
+		p.DNSCryptTCPListenAddr == nil {
+		return false
+	}
+
+	return true
 }

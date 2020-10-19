@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 )
@@ -653,6 +654,41 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
 
 	_ = dnsProxy.Stop()
+}
+
+func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
+	p := createTestProxy(t, nil)
+	p.UDPListenAddr = nil
+	p.TCPListenAddr = nil
+	port := getFreePort()
+	p.DNSCryptUDPListenAddr = []*net.UDPAddr{
+		{Port: int(port), IP: net.ParseIP(listenIP)},
+	}
+	p.DNSCryptTCPListenAddr = []*net.TCPAddr{
+		{Port: int(port), IP: net.ParseIP(listenIP)},
+	}
+
+	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil)
+	assert.Nil(t, err)
+
+	cert, err := rc.CreateCert()
+	assert.Nil(t, err)
+
+	p.DNSCryptProviderName = rc.ProviderName
+	p.DNSCryptResolverCert = cert
+	return p, rc
+}
+
+func getFreePort() uint {
+	l, _ := net.Listen("tcp", ":0")
+	port := uint(l.Addr().(*net.TCPAddr).Port)
+
+	// stop listening immediately
+	_ = l.Close()
+
+	// sleep for 100ms (may be necessary on Windows)
+	time.Sleep(100 * time.Millisecond)
+	return port
 }
 
 func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {

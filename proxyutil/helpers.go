@@ -5,9 +5,27 @@ package proxyutil
 import (
 	"bytes"
 	"net"
+	"strings"
 
 	"github.com/miekg/dns"
 )
+
+// IsConnClosed - checks if the error signals of a closed server connecting
+func IsConnClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+	nerr, ok := err.(*net.OpError)
+	if !ok {
+		return false
+	}
+
+	if strings.Contains(nerr.Err.Error(), "use of closed network connection") {
+		return true
+	}
+
+	return false
+}
 
 // GetIPFromDNSRecord - extracts IP address for a DNS record
 // returns null if the record is of a wrong type

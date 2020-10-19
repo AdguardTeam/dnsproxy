@@ -7,17 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/http2"
-
-	"github.com/lucas-clemente/quic-go"
-
 	"github.com/AdguardTeam/dnsproxy/fastip"
-
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/joomcode/errorx"
+	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
+	"golang.org/x/net/http2"
 )
 
 const (
@@ -39,88 +38,67 @@ const (
 	ProtoHTTPS = "https"
 	// ProtoQUIC is QUIC transport
 	ProtoQUIC = "quic"
+	// ProtoDNSCrypt is DNSCrypt
+	ProtoDNSCrypt = "dnscrypt"
 	// UnqualifiedNames is reserved name for "unqualified names only", ie names without dots
 	UnqualifiedNames = "unqualified_names"
 )
 
-// BeforeRequestHandler is an optional custom handler called before DNS requests
-// If it returns false, the request won't be processed at all
-type BeforeRequestHandler func(p *Proxy, d *DNSContext) (bool, error)
-
-// RequestHandler is an optional custom handler for DNS requests
-// It is called instead of the default method (Proxy.Resolve())
-// See handler_test.go for examples
-type RequestHandler func(p *Proxy, d *DNSContext) error
-
-// ResponseHandler is a callback method that is called when DNS query has been processed
-// d -- current DNS query context (contains response if it was successful)
-// err -- error (if any)
-type ResponseHandler func(d *DNSContext, err error)
-
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
-	started     bool            // Started flag
-	udpListen   []*net.UDPConn  // UDP listen connections
-	tcpListen   []net.Listener  // TCP listeners
-	tlsListen   []net.Listener  // TLS listeners
-	quicListen  []quic.Listener // QUIC listeners
-	httpsListen []net.Listener  // HTTPS listeners
-	httpsServer []*http.Server  // HTTPS server instance
+	started bool // Started flag
+
+	// Listeners
+	// --
+
+	udpListen         []*net.UDPConn   // UDP listen connections
+	tcpListen         []net.Listener   // TCP listeners
+	tlsListen         []net.Listener   // TLS listeners
+	quicListen        []quic.Listener  // QUIC listeners
+	httpsListen       []net.Listener   // HTTPS listeners
+	httpsServer       []*http.Server   // HTTPS server instance
+	dnsCryptUDPListen []*net.UDPConn   // UDP listen connections for DNSCrypt
+	dnsCryptTCPListen []net.Listener   // TCP listeners for DNSCrypt
+	dnsCryptServer    *dnscrypt.Server // DNSCrypt server instance
+
+	// Upstream
+	// --
 
 	upstreamRttStats map[string]int // Map of upstream addresses and their rtt. Used to sort upstreams "from fast to slow"
 	rttLock          sync.Mutex     // Synchronizes access to the upstreamRttStats map
 
+	// DNS64 (in case dnsproxy works in a NAT64/DNS64 network)
+	// --
+
 	nat64Prefix []byte     // NAT 64 prefix
 	nat64Lock   sync.Mutex // Prefix lock
+
+	// Ratelimit
+	// --
 
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
+	// DNS cache
+	// --
+
 	cache       *cache       // cache instance (nil if cache is disabled)
 	cacheSubnet *cacheSubnet // cache instance (nil if cache is disabled)
 
+	// FastestAddr module
+	// --
+
 	fastestAddr *fastip.FastestAddr // fastest-addr module
 
-	bytesPool *sync.Pool // bytes pool to avoid unnecessary allocations when reading DNS packets
+	// Other
+	// --
 
-	udpOOBSize int // size for received OOB data
+	bytesPool     *sync.Pool // bytes pool to avoid unnecessary allocations when reading DNS packets
+	udpOOBSize    int        // size for received OOB data
+	maxGoroutines chan bool  // limits the number of parallel queries. if nil, there's no limit
+	sync.RWMutex             // protects parallel access to proxy structures
 
 	Config // proxy configuration
-
-	maxGoroutines chan bool // limits the number of parallel queries. if nil, there's no limit
-	sync.RWMutex            // protects parallel access to proxy structures
-}
-
-// DNSContext represents a DNS request message context
-type DNSContext struct {
-	Proto     string            // "udp", "tcp", "tls", "https"
-	Req       *dns.Msg          // DNS request
-	Res       *dns.Msg          // DNS response from an upstream
-	Addr      net.Addr          // client address.
-	StartTime time.Time         // processing start time
-	Upstream  upstream.Upstream // upstream that resolved DNS request
-
-	// CustomUpstreamConfig -- custom upstream servers configuration
-	// to use for this request only.
-	// If set, Resolve() uses it instead of default servers
-	CustomUpstreamConfig *UpstreamConfig
-
-	// Conn - underlying client connection. Can be null in the case of DOH.
-	Conn net.Conn
-
-	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
-	localIP net.IP
-
-	// HTTPRequest - HTTP request (for DOH only)
-	HTTPRequest *http.Request
-	// HTTPResponseWriter - HTTP response writer (for DOH only)
-	HTTPResponseWriter http.ResponseWriter
-
-	// QUICStream - QUIC stream from which we got the query (for DOQ only)
-	QUICStream quic.Stream
-
-	ecsReqIP   net.IP // ECS IP used in request
-	ecsReqMask uint8  // ECS mask used in request
 }
 
 // Init - initializes the proxy structures but does not start it
@@ -148,7 +126,16 @@ func (p *Proxy) Init() {
 		p.TLSConfig.NextProtos = append(p.TLSConfig.NextProtos, compatProtoDQ...)
 	}
 
-	p.udpOOBSize = udpGetOOBSize()
+	if p.DNSCryptResolverCert != nil && p.DNSCryptProviderName != "" {
+		log.Info("Initializing DNSCrypt: %s", p.DNSCryptProviderName)
+		p.dnsCryptServer = &dnscrypt.Server{
+			ProviderName: p.DNSCryptProviderName,
+			ResolverCert: p.DNSCryptResolverCert,
+			Handler:      &dnsCryptHandler{proxy: p},
+		}
+	}
+
+	p.udpOOBSize = proxyutil.UDPGetOOBSize()
 	p.bytesPool = &sync.Pool{
 		New: func() interface{} {
 			// 2 bytes may be used to store packet length (see TCP/TLS)
@@ -175,7 +162,7 @@ func (p *Proxy) Start() error {
 	p.Lock()
 	defer p.Unlock()
 
-	log.Println("Starting the DNS proxy server")
+	log.Info("Starting the DNS proxy server")
 	err := p.validateConfig()
 	if err != nil {
 		return err
@@ -184,6 +171,7 @@ func (p *Proxy) Start() error {
 	// Init proxy
 	p.Init()
 
+	// Start listeners
 	err = p.startListeners()
 	if err != nil {
 		return err
@@ -195,12 +183,12 @@ func (p *Proxy) Start() error {
 
 // Stop stops the proxy server including all its listeners
 func (p *Proxy) Stop() error {
-	log.Println("Stopping the DNS proxy server")
+	log.Info("Stopping the DNS proxy server")
 
 	p.Lock()
 	defer p.Unlock()
 	if !p.started {
-		log.Println("The DNS proxy server is not started")
+		log.Info("The DNS proxy server is not started")
 		return nil
 	}
 
@@ -246,6 +234,22 @@ func (p *Proxy) Stop() error {
 		}
 	}
 	p.quicListen = nil
+
+	for _, l := range p.dnsCryptUDPListen {
+		err := l.Close()
+		if err != nil {
+			errs = append(errs, errorx.Decorate(err, "couldn't close DNSCrypt UDP listening socket"))
+		}
+	}
+	p.dnsCryptUDPListen = nil
+
+	for _, l := range p.dnsCryptTCPListen {
+		err := l.Close()
+		if err != nil {
+			errs = append(errs, errorx.Decorate(err, "couldn't close DNCrypt TCP listening socket"))
+		}
+	}
+	p.dnsCryptTCPListen = nil
 
 	if p.maxGoroutines != nil {
 		close(p.maxGoroutines)
@@ -293,8 +297,17 @@ func (p *Proxy) Addrs(proto string) []net.Addr {
 			addrs = append(addrs, l.Addr())
 		}
 
+	case ProtoDNSCrypt:
+		// Using only UDP addrs here
+		// TODO: to do it better we should either do ProtoDNSCryptTCP/ProtoDNSCryptUDP
+		// or we should change the configuration so that it was not possible to
+		// set different ports for TCP/UDP listeners.
+		for _, l := range p.dnsCryptUDPListen {
+			addrs = append(addrs, l.LocalAddr())
+		}
+
 	default:
-		panic("proto must be 'tcp', 'tls', 'https', 'quic', or 'udp'")
+		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
 	}
 
 	return addrs
@@ -336,8 +349,13 @@ func (p *Proxy) Addr(proto string) net.Addr {
 		}
 		return p.quicListen[0].Addr()
 
+	case ProtoDNSCrypt:
+		if len(p.dnsCryptUDPListen) == 0 {
+			return nil
+		}
+		return p.dnsCryptUDPListen[0].LocalAddr()
 	default:
-		panic("proto must be 'tcp', 'tls', 'https', 'quic', or 'udp'")
+		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
 	}
 }
 
@@ -398,7 +416,9 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	} else {
 		d.Res = reply
 	}
-	d.Res.Compress = true // some devices require DNS message compression
+
+	// truncate and compress the response
+	d.scrub()
 
 	if p.ResponseHandler != nil {
 		p.ResponseHandler(d, err)

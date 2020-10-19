@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/ameshkov/dnscrypt"
+	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
@@ -17,8 +17,8 @@ import (
 //
 type dnsCrypt struct {
 	boot       *bootstrapper
-	client     *dnscrypt.Client     // DNSCrypt client properties
-	serverInfo *dnscrypt.ServerInfo // DNSCrypt server info
+	client     *dnscrypt.Client       // DNSCrypt client properties
+	serverInfo *dnscrypt.ResolverInfo // DNSCrypt resolver info
 
 	sync.RWMutex // protects DNSCrypt client
 }
@@ -47,20 +47,20 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 // exchangeDNSCrypt attempts to send the DNS query and returns the response
 func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (*dns.Msg, error) {
 	var client *dnscrypt.Client
-	var serverInfo *dnscrypt.ServerInfo
+	var resolverInfo *dnscrypt.ResolverInfo
 
 	p.RLock()
 	client = p.client
-	serverInfo = p.serverInfo
+	resolverInfo = p.serverInfo
 	p.RUnlock()
 
 	now := uint32(time.Now().Unix())
-	if client == nil || serverInfo == nil || (serverInfo != nil && serverInfo.ServerCert.NotAfter < now) {
+	if client == nil || resolverInfo == nil || resolverInfo.ResolverCert.NotAfter < now {
 		p.Lock()
 
 		// Using "udp" for DNSCrypt upstreams by default
-		client = &dnscrypt.Client{Timeout: p.boot.timeout, AdjustPayloadSize: false}
-		si, _, err := client.Dial(p.boot.address)
+		client = &dnscrypt.Client{Timeout: p.boot.timeout}
+		ri, err := client.Dial(p.boot.address)
 
 		if err != nil {
 			p.Unlock()
@@ -68,17 +68,17 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (*dns.Msg, error) {
 		}
 
 		p.client = client
-		p.serverInfo = si
-		serverInfo = si
+		p.serverInfo = ri
+		resolverInfo = ri
 		p.Unlock()
 	}
 
-	reply, _, err := client.Exchange(m, serverInfo)
+	reply, err := client.Exchange(m, resolverInfo)
 
 	if reply != nil && reply.Truncated {
 		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
-		tcpClient := dnscrypt.Client{Timeout: p.boot.timeout, Proto: "tcp"}
-		reply, _, err = tcpClient.Exchange(m, serverInfo)
+		tcpClient := dnscrypt.Client{Timeout: p.boot.timeout, Net: "tcp"}
+		reply, err = tcpClient.Exchange(m, resolverInfo)
 	}
 
 	if err == nil && reply != nil && reply.Id != m.Id {

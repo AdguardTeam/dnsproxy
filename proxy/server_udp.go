@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
+
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -29,7 +31,7 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
 	}
 
-	err = udpSetOptions(udpListen)
+	err = proxyutil.UDPSetOptions(udpListen)
 	if err != nil {
 		_ = udpListen.Close()
 		return nil, errorx.Decorate(err, "udpSetOptions failed")
@@ -50,7 +52,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 		}
 		p.RUnlock()
 
-		n, localIP, remoteAddr, err := p.udpRead(conn, b)
+		n, localIP, remoteAddr, err := proxyutil.UDPRead(conn, b, p.udpOOBSize)
 		// documentation says to handle the packet even if err occurs, so do that first
 		if n > 0 {
 			// make a copy of all bytes because ReadFrom() will overwrite contents of b on next call
@@ -64,7 +66,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 			}()
 		}
 		if err != nil {
-			if isConnClosed(err) {
+			if proxyutil.IsConnClosed(err) {
 				log.Info("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
 			} else {
 				log.Info("got error when reading from UDP listen: %s", err)
@@ -108,8 +110,10 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
 	}
 
-	n, err := udpWrite(bytes, d)
-	if n == 0 && isConnClosed(err) {
+	conn := d.Conn.(*net.UDPConn)
+	rAddr := d.Addr.(*net.UDPAddr)
+	n, err := proxyutil.UDPWrite(bytes, conn, rAddr, d.localIP)
+	if n == 0 && proxyutil.IsConnClosed(err) {
 		return err
 	}
 	if err != nil {

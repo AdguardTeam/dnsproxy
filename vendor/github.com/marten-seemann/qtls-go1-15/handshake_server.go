@@ -54,6 +54,7 @@ func (c *Conn) serverHandshake() error {
 		// This should already have been caught by the check that the ClientHello doesn't
 		// offer any (supported) versions older than TLS 1.3.
 		// Check again to make sure we can't be tricked into using an older version.
+		c.sendAlert(alertProtocolVersion)
 		return errors.New("tls: negotiated TLS < 1.3 when using QUIC")
 	}
 
@@ -169,12 +170,14 @@ func (c *Conn) readClientHello() (*clientHelloMsg, error) {
 			}
 			for _, v := range supportedVersions {
 				if ver == v {
+					c.sendAlert(alertProtocolVersion)
 					return nil, fmt.Errorf("tls: client offered old TLS version %#x", ver)
 				}
 			}
 		}
 		// Make the config we're using allows us to use TLS 1.3.
 		if c.config.maxSupportedVersion() < VersionTLS13 {
+			c.sendAlert(alertInternalError)
 			return nil, errors.New("tls: MaxVersion prevents QUIC from using TLS 1.3")
 		}
 	}

@@ -13,7 +13,9 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/ameshkov/dnscrypt/v2"
 	goFlags "github.com/jessevdk/go-flags"
+	"gopkg.in/yaml.v3"
 )
 
 // Options represents console arguments
@@ -27,7 +29,7 @@ type Options struct {
 	// Path to a log file
 	LogOutput string `short:"o" long:"output" description:"Path to the log file. If not set, write to stdout." default:""`
 
-	// Server settings
+	// Listen addrs
 	// --
 
 	// Server listen address
@@ -45,11 +47,20 @@ type Options struct {
 	// QUIC listen ports
 	QUICListenPorts []int `short:"q" long:"quic-port" description:"Listening ports for DNS-over-QUIC"`
 
+	// DNSCrypt listen ports
+	DNSCryptListenPorts []int `short:"y" long:"dnscrypt-port" description:"Listening ports for DNSCrypt"`
+
+	// Encryption config
+	// --
+
 	// Path to the .crt with the certificate chain
 	TLSCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
 
 	// Path to the file with the private key
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
+
+	// Path to the DNSCrypt configuration file
+	DNSCryptConfigPath string `short:"g" long:"dnscrypt-config" description:"Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt"`
 
 	// Upstream DNS servers settings
 	// --
@@ -184,17 +195,9 @@ func run(options Options) {
 }
 
 // createProxyConfig creates proxy.Config from the command line arguments
-// nolint (gocyclo)
 func createProxyConfig(options Options) proxy.Config {
-	// Init upstreams
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
-	if err != nil {
-		log.Fatalf("error while parsing upstreams configuration: %s", err)
-	}
-
 	// Create the config
 	config := proxy.Config{
-		UpstreamConfig:         &upstreamConfig,
 		Ratelimit:              options.Ratelimit,
 		CacheEnabled:           options.Cache,
 		CacheSizeBytes:         options.CacheSizeBytes,
@@ -203,22 +206,32 @@ func createProxyConfig(options Options) proxy.Config {
 		RefuseAny:              options.RefuseAny,
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
 	}
+
+	initUpstreams(&config, options)
+	initEDNS(&config, options)
+	initBogusNXDomain(&config, options)
+	initTLSConfig(&config, options)
+	initDNSCryptConfig(&config, options)
+	initListenAddrs(&config, options)
+
+	return config
+}
+
+// initUpstreams inits upstream-related config
+func initUpstreams(config *proxy.Config, options Options) {
+	// Init upstreams
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
+	if err != nil {
+		log.Fatalf("error while parsing upstreams configuration: %s", err)
+	}
+	config.UpstreamConfig = &upstreamConfig
+
 	if options.AllServers {
 		config.UpstreamMode = proxy.UModeParallel
 	} else if options.FastestAddress {
 		config.UpstreamMode = proxy.UModeFastestAddr
-	}
-
-	if options.EDNSAddr != "" {
-		if options.EnableEDNSSubnet {
-			ednsIP := net.ParseIP(options.EDNSAddr)
-			if ednsIP == nil {
-				log.Fatalf("cannot parse %s", options.EDNSAddr)
-			}
-			config.EDNSAddr = ednsIP
-		} else {
-			log.Printf("--edns-addr=%s need --edns to work", options.EDNSAddr)
-		}
+	} else {
+		config.UpstreamMode = proxy.UModeLoadBalance
 	}
 
 	if options.Fallbacks != nil {
@@ -233,7 +246,25 @@ func createProxyConfig(options Options) proxy.Config {
 		}
 		config.Fallbacks = fallbacks
 	}
+}
 
+// initEDNS - init EDNS-related config
+func initEDNS(config *proxy.Config, options Options) {
+	if options.EDNSAddr != "" {
+		if options.EnableEDNSSubnet {
+			ednsIP := net.ParseIP(options.EDNSAddr)
+			if ednsIP == nil {
+				log.Fatalf("cannot parse %s", options.EDNSAddr)
+			}
+			config.EDNSAddr = ednsIP
+		} else {
+			log.Printf("--edns-addr=%s need --edns to work", options.EDNSAddr)
+		}
+	}
+}
+
+// initBogusNXDomain - inits BogusNXDomain structure
+func initBogusNXDomain(config *proxy.Config, options Options) {
 	if len(options.BogusNXDomain) > 0 {
 		bogusIP := []net.IP{}
 		for _, s := range options.BogusNXDomain {
@@ -246,8 +277,10 @@ func createProxyConfig(options Options) proxy.Config {
 		}
 		config.BogusNXDomain = bogusIP
 	}
+}
 
-	// Prepare the TLS config
+// initTLSConfig - inits TLS config
+func initTLSConfig(config *proxy.Config, options Options) {
 	if options.TLSCertPath != "" && options.TLSKeyPath != "" {
 		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath)
 		if err != nil {
@@ -255,7 +288,36 @@ func createProxyConfig(options Options) proxy.Config {
 		}
 		config.TLSConfig = tlsConfig
 	}
+}
 
+// initDNSCryptConfig - inits DNSCrypt config
+func initDNSCryptConfig(config *proxy.Config, options Options) {
+	if options.DNSCryptConfigPath == "" {
+		return
+	}
+
+	b, err := ioutil.ReadFile(options.DNSCryptConfigPath)
+	if err != nil {
+		log.Fatalf("failed to read DNSCrypt config %s: %v", options.DNSCryptConfigPath, err)
+	}
+
+	rc := &dnscrypt.ResolverConfig{}
+	err = yaml.Unmarshal(b, rc)
+	if err != nil {
+		log.Fatalf("failed to unmarshal DNSCrypt config: %v", err)
+	}
+
+	cert, err := rc.CreateCert()
+	if err != nil {
+		log.Fatalf("failed to create DNSCrypt certificate: %v", err)
+	}
+
+	config.DNSCryptResolverCert = cert
+	config.DNSCryptProviderName = rc.ProviderName
+}
+
+// initListenAddrs - inits listen addrs
+func initListenAddrs(config *proxy.Config, options Options) {
 	listenIPs := []net.IP{}
 	for _, a := range options.ListenAddrs {
 		ip := net.ParseIP(a)
@@ -263,6 +325,19 @@ func createProxyConfig(options Options) proxy.Config {
 			log.Fatalf("cannot parse %s", a)
 		}
 		listenIPs = append(listenIPs, ip)
+	}
+
+	if len(options.ListenPorts) != 0 && options.ListenPorts[0] != 0 {
+		for _, port := range options.ListenPorts {
+			for _, ip := range listenIPs {
+
+				ua := &net.UDPAddr{Port: port, IP: ip}
+				config.UDPListenAddr = append(config.UDPListenAddr, ua)
+
+				ta := &net.TCPAddr{Port: port, IP: ip}
+				config.TCPListenAddr = append(config.TCPListenAddr, ta)
+			}
+		}
 	}
 
 	if config.TLSConfig != nil {
@@ -288,20 +363,17 @@ func createProxyConfig(options Options) proxy.Config {
 		}
 	}
 
-	if len(options.ListenPorts) != 0 && options.ListenPorts[0] != 0 {
-		for _, port := range options.ListenPorts {
+	if config.DNSCryptResolverCert != nil && config.DNSCryptProviderName != "" {
+		for _, port := range options.DNSCryptListenPorts {
 			for _, ip := range listenIPs {
+				tcp := &net.TCPAddr{Port: port, IP: ip}
+				config.DNSCryptTCPListenAddr = append(config.DNSCryptTCPListenAddr, tcp)
 
-				ua := &net.UDPAddr{Port: port, IP: ip}
-				config.UDPListenAddr = append(config.UDPListenAddr, ua)
-
-				ta := &net.TCPAddr{Port: port, IP: ip}
-				config.TCPListenAddr = append(config.TCPListenAddr, ta)
+				udp := &net.UDPAddr{Port: port, IP: ip}
+				config.DNSCryptUDPListenAddr = append(config.DNSCryptUDPListenAddr, udp)
 			}
 		}
 	}
-
-	return config
 }
 
 // IPv6 configuration

@@ -23,6 +23,8 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 		return
 	}
 
+	// UModeLoadBalance goes below
+
 	if len(upstreams) == 1 {
 		u = upstreams[0]
 		reply, _, err = exchangeWithUpstream(u, req)

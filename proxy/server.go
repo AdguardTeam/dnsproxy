@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -43,15 +44,15 @@ func (p *Proxy) startListeners() error {
 	}
 
 	for _, l := range p.udpListen {
-		go p.udpPacketLoop(l)
+		go p.udpPacketLoop(l, p.requestGoroutinesSema)
 	}
 
 	for _, l := range p.tcpListen {
-		go p.tcpPacketLoop(l, ProtoTCP)
+		go p.tcpPacketLoop(l, ProtoTCP, p.requestGoroutinesSema)
 	}
 
 	for _, l := range p.tlsListen {
-		go p.tcpPacketLoop(l, ProtoTLS)
+		go p.tcpPacketLoop(l, ProtoTLS, p.requestGoroutinesSema)
 	}
 
 	for i := range p.httpsServer {
@@ -59,34 +60,18 @@ func (p *Proxy) startListeners() error {
 	}
 
 	for _, l := range p.quicListen {
-		go p.quicPacketLoop(l)
+		go p.quicPacketLoop(l, p.requestGoroutinesSema)
 	}
 
 	for _, l := range p.dnsCryptUDPListen {
-		listen := l
-		go func() { _ = p.dnsCryptServer.ServeUDP(listen) }()
+		go func(l *net.UDPConn) { _ = p.dnsCryptServer.ServeUDP(l) }(l)
 	}
 
 	for _, l := range p.dnsCryptTCPListen {
-		listen := l
-		go func() { _ = p.dnsCryptServer.ServeTCP(listen) }()
+		go func(l net.Listener) { _ = p.dnsCryptServer.ServeTCP(l) }(l)
 	}
 
 	return nil
-}
-
-// guardMaxGoroutines makes sure that there are no more than p.MaxGoroutines parallel goroutines
-func (p *Proxy) guardMaxGoroutines() {
-	if p.maxGoroutines != nil {
-		p.maxGoroutines <- true
-	}
-}
-
-// freeMaxGoroutines allows other goroutines to do the job
-func (p *Proxy) freeMaxGoroutines() {
-	if p.maxGoroutines != nil {
-		<-p.maxGoroutines
-	}
 }
 
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.

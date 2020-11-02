@@ -108,7 +108,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	if n.dialContext != nil && n.resolvedConfig != nil { // fast path
 		tlsConfig, dialContext := n.resolvedConfig, n.dialContext
 		n.RUnlock()
-		return tlsConfig, dialContext, nil
+		return tlsConfig.Clone(), dialContext, nil
 	}
 
 	//

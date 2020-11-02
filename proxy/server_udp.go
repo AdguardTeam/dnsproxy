@@ -41,8 +41,10 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 	return udpListen, nil
 }
 
-// udpPacketLoop listens for incoming UDP packets
-func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
+// udpPacketLoop listens for incoming UDP packets.
+//
+// See also the comment on Proxy.requestGoroutinesSema.
+func (p *Proxy) udpPacketLoop(conn *net.UDPConn, requestGoroutinesSema semaphore) {
 	log.Info("Entering the UDP listener loop on %s", conn.LocalAddr())
 	b := make([]byte, dns.MaxMsgSize)
 	for {
@@ -59,10 +61,10 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn) {
 			// we need the contents to survive the call because we're handling them in goroutine
 			packet := make([]byte, n)
 			copy(packet, b)
-			p.guardMaxGoroutines()
+			requestGoroutinesSema.acquire()
 			go func() {
 				p.udpHandlePacket(packet, localIP, remoteAddr, conn)
-				p.freeMaxGoroutines()
+				requestGoroutinesSema.release()
 			}()
 		}
 		if err != nil {

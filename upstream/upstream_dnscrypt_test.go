@@ -12,7 +12,7 @@ import (
 func TestUpstreamDNSCrypt(t *testing.T) {
 	// AdGuard DNS (DNSCrypt)
 	address := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
-	u, err := AddressToUpstream(address, Options{})
+	u, err := AddressToUpstream(address, Options{Timeout: dialTimeout})
 	assert.Nil(t, err)
 
 	// Test that it responds properly

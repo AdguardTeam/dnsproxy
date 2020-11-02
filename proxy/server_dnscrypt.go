@@ -36,6 +36,8 @@ func (p *Proxy) createDNSCryptListeners() error {
 // dnsCryptHandler - dnscrypt.Handler implementation
 type dnsCryptHandler struct {
 	proxy *Proxy
+
+	requestGoroutinesSema semaphore
 }
 
 // compile-time type check
@@ -49,6 +51,9 @@ func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, r *dns.Msg) error
 		Addr:                   rw.RemoteAddr(),
 		DNSCryptResponseWriter: rw,
 	}
+
+	h.requestGoroutinesSema.acquire()
+	defer h.requestGoroutinesSema.release()
 
 	return h.proxy.handleDNSRequest(d)
 }

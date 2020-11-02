@@ -32,9 +32,10 @@ func (p *Proxy) createQUICListeners() error {
 	return nil
 }
 
-// quicPacketLoop listens for incoming TCP packets
-// proto is either "tcp" or "tls"
-func (p *Proxy) quicPacketLoop(l quic.Listener) {
+// quicPacketLoop listens for incoming QUIC packets.
+//
+// See also the comment on Proxy.requestGoroutinesSema.
+func (p *Proxy) quicPacketLoop(l quic.Listener, requestGoroutinesSema semaphore) {
 	log.Info("Entering the DNS-over-QUIC listener loop on %s", l.Addr())
 	for {
 		session, err := l.Accept(context.Background())
@@ -46,18 +47,20 @@ func (p *Proxy) quicPacketLoop(l quic.Listener) {
 			}
 			break
 		} else {
-			p.guardMaxGoroutines()
+			requestGoroutinesSema.acquire()
 			go func() {
-				p.handleQUICSession(session)
-				p.freeMaxGoroutines()
+				p.handleQUICSession(session, requestGoroutinesSema)
+				requestGoroutinesSema.release()
 			}()
 		}
 	}
 }
 
-// handleQUICSession handles a new QUIC session.
-// It waits for new streams and passes it to handleQUICStream
-func (p *Proxy) handleQUICSession(session quic.Session) {
+// handleQUICSession handles a new QUIC session.  It waits for new streams and
+// passes them to handleQUICStream.
+//
+// See also the comment on Proxy.requestGoroutinesSema.
+func (p *Proxy) handleQUICSession(session quic.Session, requestGoroutinesSema semaphore) {
 	for {
 		// The stub to resolver DNS traffic follows a simple pattern in which
 		// the client sends a query, and the server provides a response.  This
@@ -75,11 +78,12 @@ func (p *Proxy) handleQUICSession(session quic.Session) {
 			_ = session.CloseWithError(0, "")
 			return
 		}
-		p.guardMaxGoroutines()
+
+		requestGoroutinesSema.acquire()
 		go func() {
 			p.handleQUICStream(stream, session)
 			_ = stream.Close()
-			p.freeMaxGoroutines()
+			requestGoroutinesSema.release()
 		}()
 	}
 }

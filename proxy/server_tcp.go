@@ -38,9 +38,11 @@ func (p *Proxy) createTLSListeners() error {
 	return nil
 }
 
-// tcpPacketLoop listens for incoming TCP packets
-// proto is either "tcp" or "tls"
-func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
+// tcpPacketLoop listens for incoming TCP packets.  proto must be either "tcp"
+// or "tls".
+//
+// See also the comment on Proxy.requestGoroutinesSema.
+func (p *Proxy) tcpPacketLoop(l net.Listener, proto string, requestGoroutinesSema semaphore) {
 	log.Printf("Entering the %s listener loop on %s", proto, l.Addr())
 	for {
 		clientConn, err := l.Accept()
@@ -53,10 +55,10 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string) {
 			}
 			break
 		} else {
-			p.guardMaxGoroutines()
+			requestGoroutinesSema.acquire()
 			go func() {
 				p.handleTCPConnection(clientConn, proto)
-				p.freeMaxGoroutines()
+				requestGoroutinesSema.release()
 			}()
 		}
 	}

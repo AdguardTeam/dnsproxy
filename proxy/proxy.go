@@ -1,7 +1,9 @@
-// Package proxy implements a DNS proxy that supports all known DNS encryption protocols
+// Package proxy implements a DNS proxy that supports all known DNS
+// encryption protocols.
 package proxy
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -93,16 +95,25 @@ type Proxy struct {
 	// Other
 	// --
 
-	bytesPool     *sync.Pool // bytes pool to avoid unnecessary allocations when reading DNS packets
-	udpOOBSize    int        // size for received OOB data
-	maxGoroutines chan bool  // limits the number of parallel queries. if nil, there's no limit
-	sync.RWMutex             // protects parallel access to proxy structures
+	bytesPool    *sync.Pool // bytes pool to avoid unnecessary allocations when reading DNS packets
+	udpOOBSize   int        // size for received OOB data
+	sync.RWMutex            // protects parallel access to proxy structures
+
+	// requestGoroutinesSema limits the number of simultaneous requests.
+	//
+	// TODO(a.garipov): Currently we have to pass this exact semaphore to
+	// the workers, to prevent races on restart.  In the future we will need
+	// a better restarting mechanism that completely prevents such invalid
+	// states.
+	//
+	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
+	requestGoroutinesSema semaphore
 
 	Config // proxy configuration
 }
 
 // Init - initializes the proxy structures but does not start it
-func (p *Proxy) Init() {
+func (p *Proxy) Init() (err error) {
 	if p.CacheEnabled {
 		log.Printf("DNS cache is enabled")
 
@@ -126,12 +137,27 @@ func (p *Proxy) Init() {
 		p.TLSConfig.NextProtos = append(p.TLSConfig.NextProtos, compatProtoDQ...)
 	}
 
+	if p.MaxGoroutines > 0 {
+		log.Info("MaxGoroutines is set to %d", p.MaxGoroutines)
+
+		p.requestGoroutinesSema, err = newChanSemaphore(p.MaxGoroutines)
+		if err != nil {
+			return fmt.Errorf("can't init semaphore: %w", err)
+		}
+	} else {
+		p.requestGoroutinesSema = newNoopSemaphore()
+	}
+
 	if p.DNSCryptResolverCert != nil && p.DNSCryptProviderName != "" {
 		log.Info("Initializing DNSCrypt: %s", p.DNSCryptProviderName)
 		p.dnsCryptServer = &dnscrypt.Server{
 			ProviderName: p.DNSCryptProviderName,
 			ResolverCert: p.DNSCryptResolverCert,
-			Handler:      &dnsCryptHandler{proxy: p},
+			Handler: &dnsCryptHandler{
+				proxy: p,
+
+				requestGoroutinesSema: p.requestGoroutinesSema,
+			},
 		}
 	}
 
@@ -148,30 +174,25 @@ func (p *Proxy) Init() {
 		p.fastestAddr = fastip.NewFastestAddr()
 	}
 
-	if p.MaxGoroutines > 0 {
-		log.Info("MaxGoroutines is set to %d", p.MaxGoroutines)
-		p.maxGoroutines = make(chan bool, p.MaxGoroutines)
-	} else {
-		// nil means there's no limit
-		p.maxGoroutines = nil
-	}
+	return nil
 }
 
 // Start initializes the proxy server and starts listening
-func (p *Proxy) Start() error {
+func (p *Proxy) Start() (err error) {
 	p.Lock()
 	defer p.Unlock()
 
 	log.Info("Starting the DNS proxy server")
-	err := p.validateConfig()
+	err = p.validateConfig()
 	if err != nil {
 		return err
 	}
 
-	// Init proxy
-	p.Init()
+	err = p.Init()
+	if err != nil {
+		return err
+	}
 
-	// Start listeners
 	err = p.startListeners()
 	if err != nil {
 		return err
@@ -250,10 +271,6 @@ func (p *Proxy) Stop() error {
 		}
 	}
 	p.dnsCryptTCPListen = nil
-
-	if p.maxGoroutines != nil {
-		close(p.maxGoroutines)
-	}
 
 	p.started = false
 	log.Println("Stopped the DNS proxy server")

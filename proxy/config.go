@@ -114,7 +114,13 @@ type Config struct {
 	// Other settings
 	// --
 
-	MaxGoroutines int // maximum number of goroutines processing the DNS requests (important for mobile)
+	// MaxGoroutines is the maximum number of goroutines processing DNS
+	// requests.  Important for mobile users.
+	//
+	// TODO(a.garipov): Renamme this to something like
+	// “MaxDNSRequestGoroutines” in a later major version, as it doesn't
+	// actually limit all goroutines.
+	MaxGoroutines int
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

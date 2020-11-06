@@ -166,6 +166,7 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	// It's never actually used
 	_ = rawConn.Close()
 
 	udpConn, ok := rawConn.(*net.UDPConn)
@@ -179,7 +180,6 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 	}
 	session, err := quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {
-		_ = udpConn.Close()
 		return nil, errorx.Decorate(err, "failed to open QUIC session to %s", p.Address())
 	}
 

@@ -170,13 +170,23 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 
 	if err != nil {
-		if strings.HasSuffix(err.Error(), "use of closed network connection") {
-			// This case may happen while we're restarting DNS server
-			log.Debug("error while responding to a DNS request: %s", err)
+		if isNonCriticalError(err) {
+			// We're probably restarting, so log this with the debug
+			// level.
+			log.Debug("error while responding to a dns request: %s", err)
 		} else {
-			log.Printf("error while responding to a DNS request: %s", err)
+			log.Printf("error while responding to a dns request: %s", err)
 		}
 	}
+}
+
+func isNonCriticalError(err error) (ok bool) {
+	// TODO(a.garipov): When Go 1.16 is released, replace the error string
+	// check with proper error handling.
+	//
+	// See https://github.com/golang/go/issues/4373.
+	return isEPIPE(err) ||
+		strings.HasSuffix(err.Error(), "use of closed network connection")
 }
 
 // Set TTL value of all records according to our settings

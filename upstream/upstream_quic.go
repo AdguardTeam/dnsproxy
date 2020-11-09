@@ -14,6 +14,8 @@ import (
 	"github.com/lucas-clemente/quic-go"
 )
 
+const handshakeTimeout = time.Second
+
 //
 // DNS-over-QUIC
 //
@@ -113,7 +115,15 @@ func (p *dnsOverQUIC) getSession(useCached bool) (quic.Session, error) {
 	var err error
 	session, err = p.openSession()
 	if err != nil {
-		return nil, err
+		// This does not look too nice, but QUIC (or maybe quic-go)
+		// doesn't seem stable enough.
+		// Maybe retransmissions aren't fully implemented in quic-go?
+		// Anyways, the simple solution is to make a second try when
+		// it fails to open the QUIC session.
+		session, err = p.openSession()
+		if err != nil {
+			return nil, err
+		}
 	}
 	p.session = session
 	return session, nil
@@ -137,7 +147,7 @@ func (p *dnsOverQUIC) openStream(session quic.Session) (quic.Stream, error) {
 	// try to recreate the session
 	newSession, err := p.getSession(false)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	// open a new stream
 	return newSession.OpenStreamSync(ctx)
@@ -156,6 +166,7 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	// It's never actually used
 	_ = rawConn.Close()
 
 	udpConn, ok := rawConn.(*net.UDPConn)
@@ -164,7 +175,10 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 	}
 
 	addr := udpConn.RemoteAddr().String()
-	session, err := quic.DialAddrContext(context.Background(), addr, tlsConfig, nil)
+	quicConfig := &quic.Config{
+		HandshakeTimeout: handshakeTimeout,
+	}
+	session, err := quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to open QUIC session to %s", p.Address())
 	}

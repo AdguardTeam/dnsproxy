@@ -11,6 +11,7 @@ A simple DNS proxy server that supports all existing DNS protocols including `DN
 > Note that `DNS-over-QUIC` support is experimental, don't use it in production.
 
 - [How to build](#how-to-build)
+  - [OpenWRT](openwrt/README.md)
 - [Usage](#usage)
 - [Examples](#examples)
   - [Simple options](#simple-options)

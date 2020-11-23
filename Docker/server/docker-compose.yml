@@ -23,7 +23,7 @@ services:
             - 443:443
             - 1114:1111/udp
   dnsproxy_quic:
-    image: jithub/dnsproxy:latest
+    image: dnsproxy/AdguardHome:latest
     container_name: dnsproxy_quic
     restart: always
     depends_on: 
@@ -45,7 +45,7 @@ services:
             - 784:784/udp
             - 1112:1111/udp
   dnsproxy_tls:
-    image: jithub/dnsproxy:latest
+    image: dnsproxy/AdguardHome:latest
     container_name: dnsproxy_tls
     restart: always
     depends_on:

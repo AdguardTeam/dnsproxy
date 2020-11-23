@@ -24,7 +24,7 @@ case $MODE in
 		  if [[ ! -f $CERTPATH ]]
 		  then
 			  echo "Waiting for letsencrypt cert to be created"
-			  sleep 30;
+			  sleep 8;
 		  fi;;
 
 	"client") LISTENSWITCH=" ";

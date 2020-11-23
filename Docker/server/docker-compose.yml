@@ -1,0 +1,74 @@
+version: '3'
+
+services:
+  dnsproxy_https:
+    image: dnsproxy/AdguardHome:latest
+    container_name: dnsproxy_https
+    restart: always
+    volumes:
+            - dns_cert_keys:/etc/letsencrypt
+    environment:
+      LISTEN: "0.0.0.0" 
+      SRVPORT: "443"
+      DOMAIN: "example.org"
+      EMAIL: "email@example.org"
+      UPSTREAM_ADDR: "1.1.1.1:53"
+      RATELIMIT: "100"
+      EDNS: "ON"
+      LOCALPORT: "1111" # Any local port #
+      MODE: "server"
+      PROTO: "https"
+    ports:
+            - 80:80 # Port 80 is mandatory for letsencrypt to generate cert/keys successfully
+            - 443:443
+            - 1114:1111/udp
+  dnsproxy_quic:
+    image: jithub/dnsproxy:latest
+    container_name: dnsproxy_quic
+    restart: always
+    depends_on: 
+        - dnsproxy_https
+    volumes:
+            - dns_cert_keys:/etc/letsencrypt
+    environment:
+      LISTEN: "0.0.0.0" 
+      SRVPORT: "784"
+      DOMAIN: "jiteuhub.ddns.net"
+      EMAIL: "email@example.org"
+      UPSTREAM_ADDR: "1.1.1.1:53"
+      RATELIMIT: "100"
+      EDNS: "ON"
+      LOCALPORT: "1111" # Any local port #
+      MODE: "server"
+      PROTO: "quic"
+    ports:
+            - 784:784/udp
+            - 1112:1111/udp
+  dnsproxy_tls:
+    image: jithub/dnsproxy:latest
+    container_name: dnsproxy_tls
+    restart: always
+    depends_on:
+        - dnsproxy_https
+    volumes: 
+            - dns_cert_keys:/etc/letsencrypt # Uncomment this line to reuse existing cert and key
+    environment:
+      LISTEN: "0.0.0.0" 
+      SRVPORT: "853"
+      DOMAIN: "jiteuhub.ddns.net"
+      EMAIL: "email@example.org"
+      UPSTREAM_ADDR: "1.1.1.1:53"
+      RATELIMIT: "100"
+      EDNS: "ON"
+      LOCALPORT: "1111" # Any local port #
+      MODE: "server"
+      PROTO: "tls"
+    ports:
+            - 853:853
+            - 1113:1111/udp
+
+  # Create this volume by running "docker volume create dns_cert_keys" command
+volumes:
+        dns_cert_keys:
+                external:
+                        name: dns_cert_keys

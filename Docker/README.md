@@ -8,32 +8,45 @@ Default version of docker-compose runs dnsproxy as quic server with upstream 1.1
 
 Functionalities supported by the docker image will be sub-set of the functionalities supported by dnsproxy current code
 
+### To start the dnsproxy as `DNS-over-TLS, `DNS-over-HTTPS` and `DNS-over-QUIC` server 
 ```
+# cd dnsproxy/Docker/server
+# docker volume create dns_cert_keys
 # docker-compose up -d
 ```
 
-### Following changes required in docker-compose.yml. to start dnsproxy as `DNS-over-HTTPS`
+If dnsproxy server creation fails, run this command, and chances are it will be okay
+```
+# docker-compose up -d --force-recreate
+```
+
+### To start the dnsproxy as client, with upstream to Adguard `DNS-over-TLS, `DNS-over-HTTPS` and `DNS-over-QUIC` server
+```
+# cd dnsproxy/Docker/client
+# docker-compose up -d
+```
+
+### Following changes required in server/docker-compose.yml. to start dnsproxy as `DNS-over-HTTPS`
 ```
 SRVPORT: "443"
 MODE: "server"
 PROTO: "https"
 ```
 
-### Following changes required in docker-compose.yml. to start dnsproxy as `DNS-over-QUIC`
+### Following changes required in server/docker-compose.yml. to start dnsproxy as `DNS-over-QUIC`
 ```
 SRVPORT: "784"
 MODE: "server"
 PROTO: "quic"
 ```
 
-
-### Following changes required in docker-compose.yml. to start dnsproxy as `DNS-over-TLS`
+### Following changes required in server/docker-compose.yml. to start dnsproxy as `DNS-over-TLS`
 ```
 SRVPORT: "853"
 MODE: "server"
 PROTO: "tls"
 ```
-### Following changes required in docker-compose.yml. to start dnsproxy as `client`
+### Following changes required in client/docker-compose.yml. to start dnsproxy as `client`
 ```
 MODE: "client"
 LOCALPORT: "1234" # Any local port number

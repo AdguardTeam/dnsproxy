@@ -72,7 +72,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't do a POST request to '%s'", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't do a GET request to '%s'", p.boot.address)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)

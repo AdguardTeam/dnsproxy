@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
@@ -16,13 +17,18 @@ import (
 // Current draft version: https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-00
 const NextProtoDQ = "doq-i00"
 
+// maxQuicIdleTimeout - maximum QUIC idle timeout.
+// Default value in quic-go is 30, but our internal tests show that
+// a higher value works better for clients written with ngtcp2
+const maxQuicIdleTimeout = 5 * time.Minute
+
 // compatProtoDQ - ALPNs for backwards compatibility
 var compatProtoDQ = []string{"dq", "doq"}
 
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
 		log.Info("Creating a QUIC listener")
-		quicListen, err := quic.ListenAddr(a.String(), p.TLSConfig, nil)
+		quicListen, err := quic.ListenAddr(a.String(), p.TLSConfig, &quic.Config{MaxIdleTimeout: maxQuicIdleTimeout})
 		if err != nil {
 			return errorx.Decorate(err, "could not start QUIC listener")
 		}

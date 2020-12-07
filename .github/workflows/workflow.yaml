@@ -1,0 +1,18 @@
+on: push
+name: Build DNSproxy
+
+jobs:
+  pre-build
+
+
+
+
+
+
+  build:
+    runs-on:
+      - ubuntu-latest
+      - windows-latest
+      - macos-latest
+    env:
+      - GO111MODULE=on

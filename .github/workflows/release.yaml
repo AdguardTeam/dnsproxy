@@ -51,7 +51,7 @@ jobs:
           go-version: 1.14.x
 #      - name: Get the version
 #        id: get_version
-        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+#        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
       - name: Set env
         run: |-
           echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"

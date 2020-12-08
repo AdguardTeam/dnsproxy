@@ -87,7 +87,7 @@ jobs:
 #        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            dnsproxy-*
+            ./dnsproxy-*
 #            dnsproxy-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

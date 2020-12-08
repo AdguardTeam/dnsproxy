@@ -1,24 +1,24 @@
-name: golangci-lint
-on:
-  push:
-
-jobs:
-  golangci:
-    runs-on:
-      ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v2.3.0
-        with:
-        # This field is required.  Dont set the patch version to always use
-        # the latest patch version.
-          version: v1.32
+#name: golangci-lint
+#on:
+#  push:
+#
+#jobs:
+#  golangci:
+#    runs-on:
+#      ${{ matrix.os }}
+#    strategy:
+#      matrix:
+#        os:
+#          - ubuntu-latest
+#          - macos-latest
+#    steps:
+#      - uses: actions/checkout@v2
+#      - name: golangci-lint
+#        uses: golangci/golangci-lint-action@v2.3.0
+#        with:
+#        # This field is required.  Dont set the patch version to always use
+#        # the latest patch version.
+#          version: v1.32
 #  notify:
 #    needs:
 #      - golangci

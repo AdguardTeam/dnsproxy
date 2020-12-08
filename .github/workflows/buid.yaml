@@ -26,5 +26,6 @@ jobs:
           GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
           ls -l build/dnsproxy-*
       - name: Codecover
-        run: bash <(curl -s https://codecov.io/bash)
+        run: |
+          bash <(curl -s https://codecov.io/bash)
         needs: Build

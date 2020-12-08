@@ -55,11 +55,9 @@ jobs:
       - name: Set env
         run: |-
           echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
-          echo ${RELEASE_VERSION}
-          echo $RELEASE_VERSION
       - name: Build
         run: |-
-          GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=windows GOARCH=386 VERSION=${GITHUB_REF#refs\/*\//:-dev} make release
           ls -l build/dnsproxy-*
 #          GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
 #          GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
@@ -100,9 +98,8 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: |
-            target/release//dnsproxy-*.zip
-            target/release/dnsproxy-*.tar.gz
+          file: target/release//dnsproxy-*
+#            target/release/dnsproxy-*.tar.gz
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true

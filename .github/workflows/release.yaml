@@ -52,8 +52,8 @@ jobs:
 #      - name: Get the version
 #        id: get_version
 #        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-      - name: Set env
-        run: echo ::set-env name=RELEASE_VERSION::$(echo ${GITHUB_REF:10})
+#      - name: Set env
+#        run: echo ::set-env name=RELEASE_VERSION::$(echo ${GITHUB_REF:10})
 #          echo ::set-env name=RELEASE_VERSION::$(echo ${GITHUB_REF:10})
 #          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
       - name: Build

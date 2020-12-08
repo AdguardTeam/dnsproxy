@@ -82,15 +82,15 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Release
-        uses: softprops/action-gh-release@v1
+#      - name: Release
+#        uses: softprops/action-gh-release@v1
 #        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            ./dnsproxy-*
+#        with:
+#          files: |
+#            ./dnsproxy-*
 #            dnsproxy-*.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
 #      - name: Upload
@@ -103,12 +103,12 @@ jobs:
 #          overwrite: true
 #          file_glob: true
 
-#      - name: Upload
-#        uses: AButler/upload-release-assets@v2.0
-#        with:
+      - name: Upload
+        uses: AButler/upload-release-assets@v2.0
+        with:
 #          release-tag: ${GITHUB_REF#refs/*/}
-#          files: 'dnsproxy-*.zip;dnsproxy-*.tar.gz'
-#          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          files: 'build/dnsproxy-*.zip;build/dnsproxy-*.tar.gz'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 #      - name: Upload Release Asset
 #        id: upload-release-asset

@@ -58,7 +58,7 @@ jobs:
 #          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
       - name: Build
         run: |-
-          GOOS=windows GOARCH=386 VERSION=${${GITHUB_REF#refs/*/}:-dev} make release
+          GOOS=windows GOARCH=386 VERSION=${GITHUB_REF#refs/*/} make release
           ls -l build/dnsproxy-*
 #          GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
 #          GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release

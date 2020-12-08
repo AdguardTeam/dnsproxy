@@ -53,13 +53,9 @@ jobs:
 #          token: ${{secrets.github_token}}
       - name: Set env
         run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      - name: Test
-        run: |
-          echo $RELEASE_VERSION
-          echo ${{ env.RELEASE_VERSION }}
-#      - name: Build
-#        run: |-
-#          GOOS=windows GOARCH=386 VERSION=${GITHUB_REF##*/:-dev} make release
+      - name: Build
+        run: |-
+          GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
 #          GOOS=windows GOARCH=amd64 VERSION=${GITHUB_REF##*/:-dev} make release
 #          GOOS=linux GOARCH=386 VERSION=${GITHUB_REF##*/:-dev} make release
 #          GOOS=linux GOARCH=amd64 VERSION=${GITHUB_REF##*/:-dev} make release

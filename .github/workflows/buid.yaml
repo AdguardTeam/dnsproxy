@@ -4,13 +4,7 @@ on: push
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+    runs-on: ubuntu-latest
     env:
       GO111MODULE: "on"
     steps:
@@ -19,9 +13,7 @@ jobs:
         with:
           token: ${{secrets.github_token}}
       - name: Build
-        if: runner.os == 'Linux'
         run: |-
-
               GOOS=linux GOARCH=386 VERSION=${{ BUILD_NUMBER }} make release
               GOOS=linux GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
               GOOS=linux GOARCH=arm64 VERSION=${{ BUILD_NUMBER }} make release
@@ -33,4 +25,3 @@ jobs:
               GOOS=windows GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
               GOOS=darwin GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
               ls -l build/dnsproxy-*
-

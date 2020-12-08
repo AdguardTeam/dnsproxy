@@ -13,6 +13,8 @@ jobs:
           - macos-latest
     steps:
       - name: Build
+        env:
+          GO111MODULE: "on"
         run: |
           case ${{ runner.os }} in
           Linux | macOS)
@@ -29,7 +31,7 @@ jobs:
           GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
           ls -l build/dnsproxy-*
           ;;
-          windows-latest)
+          Windows)
           go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
           ;;
           esac

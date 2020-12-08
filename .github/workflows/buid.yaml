@@ -9,8 +9,8 @@ jobs:
       - windows-latest
       - macos-latest
     steps:
-      name: Build
-      run: |
+      - name: Build
+        run: |
           case ${{ os.runner }} in
           ubuntu-latest | macos-latest)
           go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...

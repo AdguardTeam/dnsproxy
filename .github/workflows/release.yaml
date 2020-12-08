@@ -66,6 +66,7 @@ jobs:
           ls -l build/dnsproxy-*
 
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

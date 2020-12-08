@@ -49,10 +49,12 @@ jobs:
       - uses: actions/setup-go@v1
         with:
           go-version: 1.14.x
-      - name: Set env
-        run: |-
-          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
-          echo ${{ github.ref }}
+      - name: Get the version
+        id: get_version
+        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+#      - name: Set env
+#        run: |-
+#          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
 #      - name: Build
 #        run: |-
 #          GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release

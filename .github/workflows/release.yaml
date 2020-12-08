@@ -101,8 +101,8 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: |
-            ./dnsproxy-*.zip
-            ./dnsproxy-*.tar.gz
+            ./dnsproxy-*
+#            ./dnsproxy-*.tar.gz
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true

@@ -6,10 +6,11 @@ jobs:
   golangci:
     runs-on:
       ${{ matrix.os }}
-    matrix:
-      os:
-        - ubuntu-latest
-        - macos-latest
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v2
       - name: golangci-lint

@@ -28,4 +28,5 @@ jobs:
       - name: Codecover
         run: |
           bash <(curl -s https://codecov.io/bash)
-        needs: Build
+        needs:
+          - Build

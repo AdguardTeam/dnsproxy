@@ -82,6 +82,15 @@ jobs:
           draft: false
           prerelease: false
 
+      - name: Upload
+        uses: xresloader/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: "dnsproxy-*"
+          tags: true
+          draft: false
+
 #      - name: Upload release binaries
 #        uses: alexellis/upload-assets@0.2.2
 #        env:
@@ -110,12 +119,12 @@ jobs:
 #          overwrite: true
 #          file_glob: true
 
-      - name: Upload
-        uses: AButler/upload-release-assets@v2.0
-        with:
-          release-tag: ${GITHUB_REF#refs/*/}
-          files: ./dnsproxy-*.zip;./dnsproxy-*.tar.gz
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+#      - name: Upload
+#        uses: AButler/upload-release-assets@v2.0
+#        with:
+#          release-tag: ${GITHUB_REF#refs/*/}
+#          files: ./dnsproxy-*.zip;./dnsproxy-*.tar.gz
+#          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 #      - name: Upload Release Asset
 #        id: upload-release-asset

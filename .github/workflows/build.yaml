@@ -32,8 +32,8 @@ jobs:
           go-version: 1.x
       - name: tests
         run: |-
-        bash <(curl -s https://codecov.io/bash)
-        go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+          bash <(curl -s https://codecov.io/bash)
+          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
 
   build:
     needs:

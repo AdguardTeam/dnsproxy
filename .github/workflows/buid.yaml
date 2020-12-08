@@ -1,0 +1,48 @@
+name: Build DNSproxy
+
+on: push
+
+jobs:
+  build_linux:
+    runs-on:
+      - ubuntu-latest
+      - windows-latest
+      - macos-latest
+    steps:
+      run: |-
+
+
+      case $TRAVIS_OS_NAME in
+        linux | osx)
+# Run linter
+          #golangci-lint run
+          # Run tests
+          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+          # Windows-386 build
+          GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+          # Windows-amd64 build
+          GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          # Linux-386 build
+          GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+          # Linux-amd64 build
+          GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          # Linux-arm64 build
+          GOOS=linux GOARCH=arm64 VERSION=${TRAVIS_TAG:-dev} make release
+          # Linux-armv6 build
+          GOOS=linux GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
+          # Linux-mips build
+          GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
+          # Linux-mipsle build
+          GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
+          # freebsd-armv6 build
+          GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
+          # Darwin-amd64 build
+          GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          # List build output
+          ls -l build/dnsproxy-*
+          ;;
+        windows)
+          # Run tests
+          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+          ;;
+      esac

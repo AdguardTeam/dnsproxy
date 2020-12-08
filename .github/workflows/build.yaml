@@ -3,12 +3,12 @@ name: Build DNSproxy
 on: push
 
 jobs:
-  tests:
+  tests_win_mac:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os:
-          - ubuntu-latest
+#          - ubuntu-latest
           - windows-latest
 #          - macos-latest
     env:
@@ -18,10 +18,22 @@ jobs:
       - uses: actions/setup-go@v1
         with:
           go-version: 1.x
-      - name: Test
-        run: |
-          bash <(curl -s https://codecov.io/bash)
-          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+      - name: tests
+        run: go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+
+  test_linux:
+    runs-on: ubuntu-latest
+    env:
+      GO111MODULE: "on"
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/setup-go@v1
+        with:
+          go-version: 1.x
+      - name: tests
+        run: |-
+        bash <(curl -s https://codecov.io/bash)
+        go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
 
   build:
     needs:

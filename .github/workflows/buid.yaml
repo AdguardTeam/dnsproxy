@@ -8,20 +8,20 @@ jobs:
     env:
       GO111MODULE: "on"
     steps:
-      - name: Generate build number
-        uses: einaregilsson/build-number@v3
-        with:
-          token: ${{secrets.github_token}}
+#      - name: Generate build number
+#        uses: einaregilsson/build-number@v3
+#        with:
+#          token: ${{secrets.github_token}}
       - name: Build
         run: |-
-              GOOS=linux GOARCH=386 VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=linux GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=linux GOARCH=arm64 VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=linux GOARCH=arm GOARM=6 VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=windows GOARCH=386 VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=windows GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
-              GOOS=darwin GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
-              ls -l build/dnsproxy-*
+          GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=linux GOARCH=arm64 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=linux GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          ls -l build/dnsproxy-*

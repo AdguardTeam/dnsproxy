@@ -50,11 +50,13 @@ jobs:
         with:
           go-version: 1.14.x
       - name: Set env
-        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
-      - name: Build
         run: |-
-          GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
-          ls -l build/dnsproxy-*
+          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
+          echo ${{ github.ref }}
+#      - name: Build
+#        run: |-
+#          GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
+#          ls -l build/dnsproxy-*
 #          GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
 #          GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
 #          GOOS=linux GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
@@ -66,24 +68,24 @@ jobs:
 #          GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
 #          ls -l build/dnsproxy-*
 
-      - name: Create release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: |
-            /build/dnsproxy-*.zip
+#      - name: Create release
+#        id: create_release
+#        uses: actions/create-release@v1
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#        with:
+#          tag_name: ${{ github.ref }}
+#          release_name: Release ${{ github.ref }}
+#          draft: false
+#          prerelease: false
+#
+#      - name: Upload binaries to release
+#        uses: svenstaro/upload-release-action@v2
+#        with:
+#          repo_token: ${{ secrets.GITHUB_TOKEN }}
+#          file: |
+#            /build/dnsproxy-*.zip
 #            ./build/dnsproxy-*.tar.gz
-          tag: ${{ github.ref }}
-          overwrite: true
-          file_glob: true
+#          tag: ${{ github.ref }}
+#          overwrite: true
+#          file_glob: true

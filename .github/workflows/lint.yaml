@@ -5,8 +5,11 @@ on:
 jobs:
   golangci:
     runs-on:
-      - ubuntu-latest
-      - macos-latest
+      ${{ matrix.os }}
+    matrix:
+      os:
+        - ubuntu-latest
+        - macos-latest
     steps:
       - uses: actions/checkout@v2
       - name: golangci-lint

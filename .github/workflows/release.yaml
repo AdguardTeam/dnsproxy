@@ -38,7 +38,7 @@ jobs:
 #          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
 
   build:
-    needs:
+#    needs:
 #      - tests_win_mac
 #      - tests_linux
     runs-on: ubuntu-latest

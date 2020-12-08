@@ -106,7 +106,7 @@ jobs:
       - name: Upload
         uses: AButler/upload-release-assets@v2.0
         with:
-#          release-tag: ${GITHUB_REF#refs/*/}
+          release-tag: ${GITHUB_REF#refs/*/}
           files: 'build/dnsproxy-*.zip;build/dnsproxy-*.tar.gz'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 

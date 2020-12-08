@@ -83,11 +83,21 @@ jobs:
           prerelease: false
 
       - name: Upload
-        uses: AButler/upload-release-assets@v2.0
+        uses: svenstaro/upload-release-action@v2
         with:
-          release-tag: ${GITHUB_REF#refs/*/}
-          files: 'dnsproxy-*.zip;dnsproxy-*.tar.gz'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/dnsproxy-*
+#            target/release/dnsproxy-*.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
+
+#      - name: Upload
+#        uses: AButler/upload-release-assets@v2.0
+#        with:
+#          release-tag: ${GITHUB_REF#refs/*/}
+#          files: 'dnsproxy-*.zip;dnsproxy-*.tar.gz'
+#          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 #      - name: Upload Release Asset
 #        id: upload-release-asset
@@ -106,6 +116,7 @@ jobs:
 #          asset_content_type: |
 #            application/zip
 #            application/tar.gz
+
 #      - name: Upload binaries to release
 #        uses: svenstaro/upload-release-action@v2
 #        with:

@@ -1,8 +1,9 @@
-name: Build DNSproxy
+name: Create release
 
 on:
   push:
-    tags != '666'
+    tags:
+      - '666'
 
 jobs:
   tests_win_mac:
@@ -63,3 +64,19 @@ jobs:
           GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION:-dev} make release
           GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
           ls -l build/dnsproxy-*
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false

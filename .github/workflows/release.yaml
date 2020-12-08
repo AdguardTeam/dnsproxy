@@ -88,5 +88,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           file: "build/dnsproxy-*.zip;/build/dnsproxy-tar.gz"
-#          tags: true
+          tags: true
 #          draft: false

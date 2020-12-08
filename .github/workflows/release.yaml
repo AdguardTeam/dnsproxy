@@ -87,7 +87,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          file: "build/dnsproxy-*"
+          file: "build/dnsproxy-*.zip;/build/dnsproxy-tar.gz"
           tags: true
           draft: false
 
@@ -109,15 +109,16 @@ jobs:
 #          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
-#      - name: Upload
-#        uses: svenstaro/upload-release-action@v2
-#        with:
-#          repo_token: ${{ secrets.GITHUB_TOKEN }}
-#          file: ./dnsproxy-*
-##            target/release/dnsproxy-*.tar.gz
-#          tag: ${{ github.ref }}
-#          overwrite: true
-#          file_glob: true
+      - name: Upload
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: |
+            build/dnsproxy-*.zip
+            build/dnsproxy-*.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
 
 #      - name: Upload
 #        uses: AButler/upload-release-assets@v2.0

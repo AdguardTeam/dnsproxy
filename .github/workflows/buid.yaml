@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Build
         run: |
-          case ${{ os.runner }} in
+          case ${{ runner.os }} in
           ubuntu-latest | macos-latest)
           go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
           GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release

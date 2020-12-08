@@ -27,4 +27,4 @@ jobs:
           ls -l build/dnsproxy-*
       - name: Codecover
         run: bash <(curl -s https://codecov.io/bash)
-          needs: Build
+        needs: Build

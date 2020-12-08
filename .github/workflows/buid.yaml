@@ -29,6 +29,8 @@ jobs:
     env:
       GO111MODULE: "on"
     steps:
+      - uses: actions/checkout@master
+      - uses: actions/setup-go@v1
 #      - name: Generate build number
 #        uses: einaregilsson/build-number@v3
 #        with:

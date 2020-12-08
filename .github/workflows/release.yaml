@@ -87,7 +87,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          file: "./dnsproxy-*"
+          file: "build/dnsproxy-*"
           tags: true
           draft: false
 

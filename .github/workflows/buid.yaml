@@ -3,7 +3,7 @@ name: Build DNSproxy
 on: push
 
 jobs:
-  build_linux:
+  build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -15,12 +15,9 @@ jobs:
       - name: Build
         env:
           GO111MODULE: "on"
+        if: runner.os == 'Linux'
         run: |
-          case ${{ runner.os }} in
-            Linux | macOS)
               go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
-              GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
               GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
               GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
               GOOS=linux GOARCH=arm64 VERSION=${TRAVIS_TAG:-dev} make release
@@ -28,10 +25,14 @@ jobs:
               GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
               GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
               GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
-            ls -l build/dnsproxy-*
-            ;;
-            Windows)
-              go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
-            ;;
-          esac
+              ls -l build/dnsproxy-*
+        if: runner.os == 'Windiws'
+        run: |
+          GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+          GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+          ls -l build/dnsproxy-*
+        if: runner.os == 'Macos'
+        run: |
+          GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+          ls -l build/dnsproxy-*

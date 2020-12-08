@@ -21,7 +21,7 @@ jobs:
       - name: tests
         run: go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
 
-  test_linux:
+  tests_linux:
     runs-on: ubuntu-latest
     env:
       GO111MODULE: "on"
@@ -37,7 +37,8 @@ jobs:
 
   build:
     needs:
-      - tests
+      - tests_win_mac
+      - tests_linux
     runs-on: ubuntu-latest
     env:
       GO111MODULE: "on"

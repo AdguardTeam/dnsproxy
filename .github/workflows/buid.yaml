@@ -26,6 +26,7 @@ jobs:
           GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
           ls -l build/dnsproxy-*
   Codecover:
+    runs-on: ubuntu-latest
     steps:
       - name: cover
         run: |

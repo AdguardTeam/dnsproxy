@@ -1,9 +1,7 @@
 name: Create release
 
-on:
-  push:
-    tags:
-      - 666
+on: push
+
 
 jobs:
   tests_win_mac:
@@ -81,6 +79,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          file: "build/dnsproxy-*.zip;/build/dnsproxy-tar.gz"
+          file: "build/dnsproxy-*.zip;/build/dnsproxy-*.tar.gz"
           tags: true
-#          draft: false
+          verbose: true

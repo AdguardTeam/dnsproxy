@@ -11,28 +11,26 @@ jobs:
           - ubuntu-latest
           - windows-latest
           - macos-latest
+    env:
+      GO111MODULE: "on"
     steps:
+      - name: Generate build number
+        uses: einaregilsson/build-number@v3
+        with:
+          token: ${{secrets.github_token}}
       - name: Build
-        env:
-          GO111MODULE: "on"
         if: runner.os == 'Linux'
-        run: |
-              go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
-              GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=linux GOARCH=arm64 VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=linux GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${TRAVIS_TAG:-dev} make release
-              GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${TRAVIS_TAG:-dev} make release
+        run: |-
+
+              GOOS=linux GOARCH=386 VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=linux GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=linux GOARCH=arm64 VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=linux GOARCH=arm GOARM=6 VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=windows GOARCH=386 VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=windows GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
+              GOOS=darwin GOARCH=amd64 VERSION=${{ BUILD_NUMBER }} make release
               ls -l build/dnsproxy-*
-        if: runner.os == 'Windiws'
-        run: |
-          GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
-          GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
-          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
-          ls -l build/dnsproxy-*
-        if: runner.os == 'Macos'
-        run: |
-          GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
-          ls -l build/dnsproxy-*
+

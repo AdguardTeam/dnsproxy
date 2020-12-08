@@ -1,0 +1,19 @@
+name: Tests
+
+on: push
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    env:
+      GO111MODULE: "on"
+    steps:
+      name: Test
+      run: |
+        go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...

@@ -82,12 +82,12 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Upload release binaries
-        uses: alexellis/upload-assets@0.2.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          asset_paths: '["./dnsproxy-*.zip, ./dnsproxy-*.tar.gz"]'
+#      - name: Upload release binaries
+#        uses: alexellis/upload-assets@0.2.2
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#        with:
+#          asset_paths: '["./dnsproxy-*.zip, ./dnsproxy-*.tar.gz"]'
 
 #      - name: Release
 #        uses: softprops/action-gh-release@v1
@@ -110,12 +110,12 @@ jobs:
 #          overwrite: true
 #          file_glob: true
 
-#      - name: Upload
-#        uses: AButler/upload-release-assets@v2.0
-#        with:
+      - name: Upload
+        uses: AButler/upload-release-assets@v2.0
+        with:
 #          release-tag: 666
-#          files: './dnsproxy-*.zip;./dnsproxy-*.tar.gz'
-#          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          files: ./dnsproxy-*.zip;./dnsproxy-*.tar.gz
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 #      - name: Upload Release Asset
 #        id: upload-release-asset

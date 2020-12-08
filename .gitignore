@@ -7,3 +7,4 @@ dnsproxy.exe
 example.crt
 example.key
 coverage.txt
+tests.yaml

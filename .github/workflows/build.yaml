@@ -3,42 +3,42 @@ name: Build DNSproxy
 on: push
 
 jobs:
-#  tests_win_mac:
-#    runs-on: ${{ matrix.os }}
-#    strategy:
-#      matrix:
-#        os:
-##          - ubuntu-latest
-#          - windows-latest
-##          - macos-latest
-#    env:
-#      GO111MODULE: "on"
-#    steps:
-#      - uses: actions/checkout@master
-#      - uses: actions/setup-go@v1
-#        with:
-#          go-version: 1.x
-#      - name: tests
-#        run: go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
-#
-#  tests_linux:
-#    runs-on: ubuntu-latest
-#    env:
-#      GO111MODULE: "on"
-#    steps:
-#      - uses: actions/checkout@master
-#      - uses: actions/setup-go@v1
-#        with:
-#          go-version: 1.x
-#      - name: tests
-#        run: |-
-#          bash <(curl -s https://codecov.io/bash)
-#          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+  tests_win_mac:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+#          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    env:
+      GO111MODULE: "on"
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/setup-go@v1
+        with:
+          go-version: 1.x
+      - name: tests
+        run: go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+
+  tests_linux:
+    runs-on: ubuntu-latest
+    env:
+      GO111MODULE: "on"
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/setup-go@v1
+        with:
+          go-version: 1.x
+      - name: tests
+        run: |-
+          bash <(curl -s https://codecov.io/bash)
+          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
 
   build:
-#    needs:
-#      - tests_win_mac
-#      - tests_linux
+    needs:
+      - tests_win_mac
+      - tests_linux
     runs-on: ubuntu-latest
     env:
       GO111MODULE: "on"
@@ -47,32 +47,18 @@ jobs:
       - uses: actions/setup-go@v1
         with:
           go-version: 1.14.x
-#      - name: Generate build number
-#        uses: einaregilsson/build-number@v3
-#        with:
-#          token: ${{secrets.github_token}}
       - name: Set env
         run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
-#        >> $GITHUB_ENV
       - name: Build
         run: |-
           GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=linux GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=linux GOARCH=arm64 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=linux GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION:-dev} make release
+          GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
           ls -l build/dnsproxy-*
-#          GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=linux GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=linux GOARCH=arm64 VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=linux GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION:-dev} make release
-#          GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
-#         ls -l build/dnsproxy-*
-#  Codecover:
-#    needs:
-#      - Build
-#    runs-on: ubuntu-latest
-#    steps:
-#      - name: cover
-#        run: |
-#          bash <(curl -s https://codecov.io/bash)

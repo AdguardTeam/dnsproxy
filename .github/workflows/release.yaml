@@ -12,7 +12,7 @@ jobs:
       matrix:
         os:
           - windows-latest
-#          - macos-latest
+#          - macos-latest because it fails
     env:
       GO111MODULE: "on"
     steps:

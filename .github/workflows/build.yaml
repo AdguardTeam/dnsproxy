@@ -8,34 +8,28 @@ on:
 jobs:
   tests_win_mac:
     runs-on: ${{ matrix.os }}
+    env:
+      GO111MODULE: "on"
     strategy:
       matrix:
         os:
           - windows-latest
-#          - macos-latest
-    env:
-      GO111MODULE: "on"
+#          - macos-latest because it fails
+          - ubuntu-latest
     steps:
       - uses: actions/checkout@master
       - uses: actions/setup-go@v1
         with:
-          go-version: 1.x
+          go-version: 1.14.x
       - name: tests
         run: go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
 
-  tests_linux:
-    runs-on: ubuntu-latest
-    env:
-      GO111MODULE: "on"
-    steps:
-      - uses: actions/checkout@master
-      - uses: actions/setup-go@v1
+      - name: Upload coverage
+        uses: codecov/codecov-action@v1
+        if: "success() && matrix.os == ubuntu-latest"
         with:
-          go-version: 1.x
-      - name: tests
-        run: |-
-          go test -mod=vendor -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
-          bash <(curl -s https://codecov.io/bash)
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.txt
 
   build:
     needs:
@@ -62,3 +56,31 @@ jobs:
           GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION:-dev} make release
           GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION:-dev} make release
           ls -l build/dnsproxy-*
+
+  notify:
+    needs:
+      - tests
+    # Secrets are not passed to workflows that are triggered by a pull request
+    # from a fork.
+    #
+    # Use always() to signal to the runner that this job must run even if the
+    # previous ones failed.
+    if:
+      ${{ always() &&
+        (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        )
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conclusion
+        uses: technote-space/workflow-conclusion-action@v1
+      - name: Send Slack notif
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ env.WORKFLOW_CONCLUSION }}
+          fields: repo, message, commit, author, job
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

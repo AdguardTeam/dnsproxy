@@ -5,7 +5,6 @@ on:
     tags:
       - 'v*'
 
-
 jobs:
   tests_win_mac:
     runs-on: ${{ matrix.os }}

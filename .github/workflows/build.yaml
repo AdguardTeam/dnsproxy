@@ -3,7 +3,7 @@ name: Build DNSproxy
 on:
   push:
     tags-ignore:
-      - '666'
+      - 'v*'
 
 jobs:
   tests_win_mac:

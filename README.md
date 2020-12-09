@@ -1,4 +1,3 @@
-[![Build Status](https://travis-ci.com/AdguardTeam/dnsproxy.svg?branch=master)](https://travis-ci.com/AdguardTeam/dnsproxy)
 [![Code Coverage](https://img.shields.io/codecov/c/github/AdguardTeam/dnsproxy/master.svg)](https://codecov.io/github/AdguardTeam/dnsproxy?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AdguardTeam/dnsproxy)](https://goreportcard.com/report/AdguardTeam/dnsproxy)
 [![GolangCI](https://golangci.com/badges/github.com/AdguardTeam/dnsproxy.svg)](https://golangci.com/r/github.com/AdguardTeam/dnsproxy)
@@ -81,7 +80,7 @@ Runs a DNS proxy on `0.0.0.0:53` with a single upstream - Google DNS.
 ./dnsproxy -u 8.8.8.8:53
 ```
 
-The same proxy with verbose logging enabled writing it to the file `log.txt`. 
+The same proxy with verbose logging enabled writing it to the file `log.txt`.
 ```
 ./dnsproxy -u 8.8.8.8:53 -v -o log.txt
 ```
@@ -132,17 +131,17 @@ DNS-over-TLS upstream with two fallback servers (to be used when the main upstre
 
 Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
 ```
-./dnsproxy -l 127.0.0.1 --tls-port=853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0 
+./dnsproxy -l 127.0.0.1 --tls-port=853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
 Runs a DNS-over-HTTPS proxy on `127.0.0.1:443`.
 ```
-./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0 
+./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
 Runs a DNS-over-QUIC proxy on `127.0.0.1:784`.
 ```
-./dnsproxy -l 127.0.0.1 --quic-port=784 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0 
+./dnsproxy -l 127.0.0.1 --quic-port=784 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
 Runs a DNSCrypt proxy on `127.0.0.1:443`.
@@ -160,7 +159,7 @@ Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `10 rps`, enabled DNS ca
 ./dnsproxy -u 8.8.8.8:53 -r 10 --cache --refuse-any
 ```
 
-Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel queries to all configured upstream servers  
+Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel queries to all configured upstream servers
 ```
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53 -u tls://dns.adguard.com --all-servers
 ```
@@ -181,7 +180,7 @@ Run a DNS proxy with two upstreams, min-TTL set to 10 minutes, fastest address d
 ./dnsproxy -u 8.8.8.8 -u 1.1.1.1 --cache --cache-min-ttl=600 --fastest-addr
 ```
 
- who run `dnsproxy` with multiple upstreams 
+ who run `dnsproxy` with multiple upstreams
 
 ### Specifying upstreams for domains
 

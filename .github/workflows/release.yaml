@@ -85,7 +85,6 @@ jobs:
           file: "build/dnsproxy-*.tar.gz;build/dnsproxy-*.zip"
           tags: true
           draft: false
-          verbose: true
 
   notify:
     needs:

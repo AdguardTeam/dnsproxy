@@ -1,0 +1,128 @@
+name: Build
+
+on:
+  push:
+
+jobs:
+  tests:
+    runs-on: ${{ matrix.os }}
+    env:
+      GO111MODULE: "on"
+    strategy:
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@master
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: 1.14.x
+
+      - name: Run tests
+        run: |-
+          go test -mod=vendor -race -v -bench="." -coverprofile="coverage.txt" -covermode=atomic ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v1
+        if: "success() && matrix.os == 'ubuntu-latest'"
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.txt
+
+  build:
+    needs:
+      - tests
+    runs-on: ubuntu-latest
+    env:
+      GO111MODULE: "on"
+    steps:
+      - uses: actions/checkout@master
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: 1.14.x
+
+      - name: Prepare environment
+        run: |-
+          RELEASE_VERSION="${GITHUB_REF##*/}"
+          if [[ "${RELEASE_VERSION}" != "v*" ]]; then RELEASE_VERSION='dev'; fi
+          echo "RELEASE_VERSION=\"${RELEASE_VERSION}\"" >> $GITHUB_ENV
+
+      # Win
+      - run: GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION} make release
+      - run: GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
+
+      # MacOS
+      - run: GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
+
+      # Linux X86
+      - run: GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION} make release
+      - run: GOOS=linux GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
+
+      # Linux ARM
+      - run: GOOS=linux GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION} make release
+      - run: GOOS=linux GOARCH=arm64 VERSION=${RELEASE_VERSION} make release
+
+      # Linux MIPS/MIPSLE
+      - run: GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${RELEASE_VERSION} make release
+      - run: GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${RELEASE_VERSION} make release
+
+      # FreeBSD X86
+      - run: GOOS=freebsd GOARCH=386 VERSION=${RELEASE_VERSION} make release
+      - run: GOOS=freebsd GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
+
+      # FreeBSD ARM/ARM64
+      - run: GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION} make release
+      - run: GOOS=freebsd GOARCH=arm64 VERSION=${RELEASE_VERSION} make release
+
+      - run: ls -l build/dnsproxy-*
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: xresloader/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: "build/dnsproxy-*.tar.gz;build/dnsproxy-*.zip"
+          tags: true
+          draft: false
+
+  notify:
+    needs:
+      - build
+    if:
+      ${{ always() &&
+        (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        )
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conclusion
+        uses: technote-space/workflow-conclusion-action@v1
+
+      - name: Send Slack notif
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ env.WORKFLOW_CONCLUSION }}
+          fields: workflow, repo, message, commit, author, eventName,ref
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

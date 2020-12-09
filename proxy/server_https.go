@@ -24,7 +24,7 @@ func (p *Proxy) createHTTPSListeners() error {
 		log.Info("Listening to https://%s", tcpListen.Addr())
 
 		srv := &http.Server{
-			TLSConfig:         p.TLSConfig,
+			TLSConfig:         p.TLSConfig.Clone(),
 			Handler:           p,
 			ReadHeaderTimeout: defaultTimeout,
 			WriteTimeout:      defaultTimeout,

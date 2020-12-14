@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
@@ -15,8 +14,6 @@ import (
 )
 
 type client struct {
-	mutex sync.Mutex
-
 	conn sendConn
 	// If the client is created with DialAddr, we create a packet conn.
 	// If it is started with Dial, we take a packet conn as a parameter.
@@ -71,7 +68,18 @@ func DialAddrEarly(
 	tlsConf *tls.Config,
 	config *Config,
 ) (EarlySession, error) {
-	sess, err := dialAddrContext(context.Background(), addr, tlsConf, config, true)
+	return DialAddrEarlyContext(context.Background(), addr, tlsConf, config)
+}
+
+// DialAddrEarlyContext establishes a new 0-RTT QUIC connection to a server using provided context.
+// See DialAddrEarly for details
+func DialAddrEarlyContext(
+	ctx context.Context,
+	addr string,
+	tlsConf *tls.Config,
+	config *Config,
+) (EarlySession, error) {
+	sess, err := dialAddrContext(ctx, addr, tlsConf, config, true)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +117,8 @@ func dialAddrContext(
 }
 
 // Dial establishes a new QUIC connection to a server using a net.PacketConn.
+// If the PacketConn satisfies the ECNCapablePacketConn interface (as a net.UDPConn does), ECN support will be enabled.
+// In this case, ReadMsgUDP will be used instead of ReadFrom to read packets.
 // The same PacketConn can be used for multiple calls to Dial and Listen,
 // QUIC connection IDs are used for demultiplexing the different connections.
 // The host parameter is used for SNI.
@@ -135,7 +145,20 @@ func DialEarly(
 	tlsConf *tls.Config,
 	config *Config,
 ) (EarlySession, error) {
-	return dialContext(context.Background(), pconn, remoteAddr, host, tlsConf, config, true, false)
+	return DialEarlyContext(context.Background(), pconn, remoteAddr, host, tlsConf, config)
+}
+
+// DialEarlyContext establishes a new 0-RTT QUIC connection to a server using a net.PacketConn using the provided context.
+// See DialEarly for details.
+func DialEarlyContext(
+	ctx context.Context,
+	pconn net.PacketConn,
+	remoteAddr net.Addr,
+	host string,
+	tlsConf *tls.Config,
+	config *Config,
+) (EarlySession, error) {
+	return dialContext(ctx, pconn, remoteAddr, host, tlsConf, config, true, false)
 }
 
 // DialContext establishes a new QUIC connection to a server using a net.PacketConn using the provided context.
@@ -250,7 +273,6 @@ func (c *client) dial(ctx context.Context) error {
 		c.tracer.StartedConnection(c.conn.LocalAddr(), c.conn.RemoteAddr(), c.version, c.srcConnID, c.destConnID)
 	}
 
-	c.mutex.Lock()
 	c.session = newClientSession(
 		c.conn,
 		c.packetHandlers,
@@ -266,7 +288,6 @@ func (c *client) dial(ctx context.Context) error {
 		c.logger,
 		c.version,
 	)
-	c.mutex.Unlock()
 	c.packetHandlers.Add(c.srcConnID, c.session)
 
 	errorChan := make(chan error, 1)

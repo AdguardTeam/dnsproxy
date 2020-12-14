@@ -35,9 +35,9 @@ type packetNumberSpace struct {
 	largestSent  protocol.PacketNumber
 }
 
-func newPacketNumberSpace(initialPN protocol.PacketNumber) *packetNumberSpace {
+func newPacketNumberSpace(initialPN protocol.PacketNumber, rttStats *utils.RTTStats) *packetNumberSpace {
 	return &packetNumberSpace{
-		history:      newSentPacketHistory(),
+		history:      newSentPacketHistory(rttStats),
 		pns:          newPacketNumberGenerator(initialPN, protocol.SkipPacketAveragePeriodLength),
 		largestSent:  protocol.InvalidPacketNumber,
 		largestAcked: protocol.InvalidPacketNumber,
@@ -88,8 +88,10 @@ type sentPacketHandler struct {
 	logger        utils.Logger
 }
 
-var _ SentPacketHandler = &sentPacketHandler{}
-var _ sentPacketTracker = &sentPacketHandler{}
+var (
+	_ SentPacketHandler = &sentPacketHandler{}
+	_ sentPacketTracker = &sentPacketHandler{}
+)
 
 func newSentPacketHandler(
 	initialPacketNumber protocol.PacketNumber,
@@ -109,9 +111,9 @@ func newSentPacketHandler(
 	return &sentPacketHandler{
 		peerCompletedAddressValidation: pers == protocol.PerspectiveServer,
 		peerAddressValidated:           pers == protocol.PerspectiveClient,
-		initialPackets:                 newPacketNumberSpace(initialPacketNumber),
-		handshakePackets:               newPacketNumberSpace(0),
-		appDataPackets:                 newPacketNumberSpace(0),
+		initialPackets:                 newPacketNumberSpace(initialPacketNumber, rttStats),
+		handshakePackets:               newPacketNumberSpace(0, rttStats),
+		appDataPackets:                 newPacketNumberSpace(0, rttStats),
 		rttStats:                       rttStats,
 		congestion:                     congestion,
 		perspective:                    pers,
@@ -131,6 +133,16 @@ func (h *sentPacketHandler) DropPackets(encLevel protocol.EncryptionLevel) {
 	h.dropPackets(encLevel)
 }
 
+func (h *sentPacketHandler) removeFromBytesInFlight(p *Packet) {
+	if p.includedInBytesInFlight {
+		if p.Length > h.bytesInFlight {
+			panic("negative bytes_in_flight")
+		}
+		h.bytesInFlight -= p.Length
+		p.includedInBytesInFlight = false
+	}
+}
+
 func (h *sentPacketHandler) dropPackets(encLevel protocol.EncryptionLevel) {
 	// The server won't await address validation after the handshake is confirmed.
 	// This applies even if we didn't receive an ACK for a Handshake packet.
@@ -141,13 +153,12 @@ func (h *sentPacketHandler) dropPackets(encLevel protocol.EncryptionLevel) {
 	if encLevel == protocol.EncryptionInitial || encLevel == protocol.EncryptionHandshake {
 		pnSpace := h.getPacketNumberSpace(encLevel)
 		pnSpace.history.Iterate(func(p *Packet) (bool, error) {
-			if p.includedInBytesInFlight {
-				h.bytesInFlight -= p.Length
-			}
+			h.removeFromBytesInFlight(p)
 			return true, nil
 		})
 	}
 	// drop the packet history
+	//nolint:exhaustive // Not every packet number space can be dropped.
 	switch encLevel {
 	case protocol.EncryptionInitial:
 		h.initialPackets = nil
@@ -156,13 +167,14 @@ func (h *sentPacketHandler) dropPackets(encLevel protocol.EncryptionLevel) {
 	case protocol.Encryption0RTT:
 		// TODO(#2067): invalidate sent data
 		h.appDataPackets.history.Iterate(func(p *Packet) (bool, error) {
+			if p.skippedPacket {
+				return true, nil
+			}
 			if p.EncryptionLevel != protocol.Encryption0RTT {
 				return false, nil
 			}
 			h.queueFramesForRetransmission(p)
-			if p.includedInBytesInFlight {
-				h.bytesInFlight -= p.Length
-			}
+			h.removeFromBytesInFlight(p)
 			h.appDataPackets.history.Remove(p.PacketNumber)
 			return true, nil
 		})
@@ -206,9 +218,7 @@ func (h *sentPacketHandler) SentPacket(packet *Packet) {
 		h.dropPackets(protocol.EncryptionInitial)
 	}
 	isAckEliciting := h.sentPacketImpl(packet)
-	if isAckEliciting {
-		h.getPacketNumberSpace(packet.EncryptionLevel).history.SentPacket(packet)
-	}
+	h.getPacketNumberSpace(packet.EncryptionLevel).history.SentPacket(packet, isAckEliciting)
 	if h.tracer != nil && isAckEliciting {
 		h.tracer.UpdatedMetrics(h.rttStats, h.congestion.GetCongestionWindow(), h.bytesInFlight, h.packetsInFlight())
 	}
@@ -265,10 +275,6 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 
 	pnSpace.largestAcked = utils.MaxPacketNumber(pnSpace.largestAcked, largestAcked)
 
-	if !pnSpace.pns.Validate(ack) {
-		return qerr.NewError(qerr.ProtocolViolation, "Received an ACK for a skipped packet number")
-	}
-
 	// Servers complete address validation when a protected packet is received.
 	if h.perspective == protocol.PerspectiveClient && !h.peerCompletedAddressValidation &&
 		(encLevel == protocol.EncryptionHandshake || encLevel == protocol.Encryption1RTT) {
@@ -278,29 +284,30 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 		h.setLossDetectionTimer()
 	}
 
-	// maybe update the RTT
-	if p := pnSpace.history.GetPacket(ack.LargestAcked()); p != nil {
-		// don't use the ack delay for Initial and Handshake packets
-		var ackDelay time.Duration
-		if encLevel == protocol.Encryption1RTT {
-			ackDelay = utils.MinDuration(ack.DelayTime, h.rttStats.MaxAckDelay())
-		}
-		h.rttStats.UpdateRTT(rcvTime.Sub(p.SendTime), ackDelay, rcvTime)
-		if h.logger.Debug() {
-			h.logger.Debugf("\tupdated RTT: %s (σ: %s)", h.rttStats.SmoothedRTT(), h.rttStats.MeanDeviation())
-		}
-		h.congestion.MaybeExitSlowStart()
-		if h.tracer != nil {
-			h.tracer.UpdatedMetrics(h.rttStats, h.congestion.GetCongestionWindow(), h.bytesInFlight, h.packetsInFlight())
-		}
-	}
-
 	priorInFlight := h.bytesInFlight
 	ackedPackets, err := h.detectAndRemoveAckedPackets(ack, encLevel)
 	if err != nil || len(ackedPackets) == 0 {
 		return err
 	}
-	lostPackets, err := h.detectAndRemoveLostPackets(rcvTime, encLevel)
+	// update the RTT, if the largest acked is newly acknowledged
+	if len(ackedPackets) > 0 {
+		if p := ackedPackets[len(ackedPackets)-1]; p.PacketNumber == ack.LargestAcked() {
+			// don't use the ack delay for Initial and Handshake packets
+			var ackDelay time.Duration
+			if encLevel == protocol.Encryption1RTT {
+				ackDelay = utils.MinDuration(ack.DelayTime, h.rttStats.MaxAckDelay())
+			}
+			h.rttStats.UpdateRTT(rcvTime.Sub(p.SendTime), ackDelay, rcvTime)
+			if h.logger.Debug() {
+				h.logger.Debugf("\tupdated RTT: %s (σ: %s)", h.rttStats.SmoothedRTT(), h.rttStats.MeanDeviation())
+			}
+			h.congestion.MaybeExitSlowStart()
+			if h.tracer != nil {
+				h.tracer.UpdatedMetrics(h.rttStats, h.congestion.GetCongestionWindow(), h.bytesInFlight, h.packetsInFlight())
+			}
+		}
+	}
+	lostPackets, err := h.detectLostPackets(rcvTime, encLevel)
 	if err != nil {
 		return err
 	}
@@ -308,9 +315,13 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 		h.congestion.OnPacketLost(p.PacketNumber, p.Length, priorInFlight)
 	}
 	for _, p := range ackedPackets {
-		if p.includedInBytesInFlight {
+		if p.skippedPacket {
+			return fmt.Errorf("received an ACK for skipped packet number: %d (%s)", p.PacketNumber, encLevel)
+		}
+		if p.includedInBytesInFlight && !p.declaredLost {
 			h.congestion.OnPacketAcked(p.PacketNumber, p.Length, priorInFlight, rcvTime)
 		}
+		h.removeFromBytesInFlight(p)
 	}
 
 	// Reset the pto_count unless the client is unsure if the server has validated the client's address.
@@ -322,6 +333,7 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 	}
 	h.numProbesToSend = 0
 
+	pnSpace.history.DeleteOldPackets(rcvTime)
 	h.setLossDetectionTimer()
 	return nil
 }
@@ -330,6 +342,7 @@ func (h *sentPacketHandler) GetLowestPacketNotConfirmedAcked() protocol.PacketNu
 	return h.lowestNotConfirmedAcked
 }
 
+// Packets are returned in ascending packet number order.
 func (h *sentPacketHandler) detectAndRemoveAckedPackets(ack *wire.AckFrame, encLevel protocol.EncryptionLevel) ([]*Packet, error) {
 	pnSpace := h.getPacketNumberSpace(encLevel)
 	var ackedPackets []*Packet
@@ -374,9 +387,6 @@ func (h *sentPacketHandler) detectAndRemoveAckedPackets(ack *wire.AckFrame, encL
 	}
 
 	for _, p := range ackedPackets {
-		if packet := pnSpace.history.GetPacket(p.PacketNumber); packet == nil {
-			continue
-		}
 		if p.LargestAcked != protocol.InvalidPacketNumber && encLevel == protocol.Encryption1RTT {
 			h.lowestNotConfirmedAcked = utils.MaxPacketNumber(h.lowestNotConfirmedAcked, p.LargestAcked+1)
 		}
@@ -385,9 +395,6 @@ func (h *sentPacketHandler) detectAndRemoveAckedPackets(ack *wire.AckFrame, encL
 			if f.OnAcked != nil {
 				f.OnAcked(f.Frame)
 			}
-		}
-		if p.includedInBytesInFlight {
-			h.bytesInFlight -= p.Length
 		}
 		if err := pnSpace.history.Remove(p.PacketNumber); err != nil {
 			return nil, err
@@ -501,7 +508,7 @@ func (h *sentPacketHandler) setLossDetectionTimer() {
 	}
 }
 
-func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel protocol.EncryptionLevel) ([]*Packet, error) {
+func (h *sentPacketHandler) detectLostPackets(now time.Time, encLevel protocol.EncryptionLevel) ([]*Packet, error) {
 	pnSpace := h.getPacketNumberSpace(encLevel)
 	pnSpace.lossTime = time.Time{}
 
@@ -518,6 +525,9 @@ func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel p
 	if err := pnSpace.history.Iterate(func(packet *Packet) (bool, error) {
 		if packet.PacketNumber > pnSpace.largestAcked {
 			return false, nil
+		}
+		if packet.declaredLost || packet.skippedPacket {
+			return true, nil
 		}
 
 		if packet.SendTime.Before(lostSendTime) {
@@ -552,14 +562,10 @@ func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel p
 	}
 
 	for _, p := range lostPackets {
+		p.declaredLost = true
 		h.queueFramesForRetransmission(p)
 		// the bytes in flight need to be reduced no matter if this packet will be retransmitted
-		if p.includedInBytesInFlight {
-			h.bytesInFlight -= p.Length
-		}
-		if err := pnSpace.history.Remove(p.PacketNumber); err != nil {
-			return nil, err
-		}
+		h.removeFromBytesInFlight(p)
 		if h.traceCallback != nil {
 			frames := make([]wire.Frame, 0, len(p.Frames))
 			for _, f := range p.Frames {
@@ -604,7 +610,7 @@ func (h *sentPacketHandler) onVerifiedLossDetectionTimeout() error {
 		}
 		// Early retransmit or time loss detection
 		priorInFlight := h.bytesInFlight
-		lostPackets, err := h.detectAndRemoveLostPackets(time.Now(), encLevel)
+		lostPackets, err := h.detectLostPackets(time.Now(), encLevel)
 		if err != nil {
 			return err
 		}
@@ -626,15 +632,18 @@ func (h *sentPacketHandler) onVerifiedLossDetectionTimeout() error {
 			h.tracer.UpdatedPTOCount(h.ptoCount)
 		}
 		h.numProbesToSend += 2
+		//nolint:exhaustive // We never arm a PTO timer for 0-RTT packets.
 		switch encLevel {
 		case protocol.EncryptionInitial:
 			h.ptoMode = SendPTOInitial
 		case protocol.EncryptionHandshake:
 			h.ptoMode = SendPTOHandshake
 		case protocol.Encryption1RTT:
+			// skip a packet number in order to elicit an immediate ACK
+			_ = h.PopPacketNumber(protocol.Encryption1RTT)
 			h.ptoMode = SendPTOAppData
 		default:
-			return fmt.Errorf("TPO timer in unexpected encryption level: %s", encLevel)
+			return fmt.Errorf("PTO timer in unexpected encryption level: %s", encLevel)
 		}
 	} else {
 		if h.perspective == protocol.PerspectiveServer {
@@ -683,7 +692,7 @@ func (h *sentPacketHandler) SendMode() SendMode {
 		numTrackedPackets += h.handshakePackets.history.Len()
 	}
 
-	if h.AmplificationWindow() == 0 {
+	if h.isAmplificationLimited() {
 		h.logger.Debugf("Amplification window limited. Received %d bytes, already sent out %d bytes", h.bytesReceived, h.bytesSent)
 		return SendNone
 	}
@@ -724,14 +733,11 @@ func (h *sentPacketHandler) HasPacingBudget() bool {
 	return h.congestion.HasPacingBudget()
 }
 
-func (h *sentPacketHandler) AmplificationWindow() protocol.ByteCount {
+func (h *sentPacketHandler) isAmplificationLimited() bool {
 	if h.peerAddressValidated {
-		return protocol.MaxByteCount
+		return false
 	}
-	if h.bytesSent >= amplificationFactor*h.bytesReceived {
-		return 0
-	}
-	return amplificationFactor*h.bytesReceived - h.bytesSent
+	return h.bytesSent >= amplificationFactor*h.bytesReceived
 }
 
 func (h *sentPacketHandler) QueueProbePacket(encLevel protocol.EncryptionLevel) bool {
@@ -741,22 +747,21 @@ func (h *sentPacketHandler) QueueProbePacket(encLevel protocol.EncryptionLevel) 
 		return false
 	}
 	h.queueFramesForRetransmission(p)
-	// TODO: don't remove the packet here
+	// TODO: don't declare the packet lost here.
 	// Keep track of acknowledged frames instead.
-	if p.includedInBytesInFlight {
-		h.bytesInFlight -= p.Length
-	}
-	if err := pnSpace.history.Remove(p.PacketNumber); err != nil {
-		// should never happen. We just got this packet from the history.
-		panic(err)
-	}
+	h.removeFromBytesInFlight(p)
+	p.declaredLost = true
 	return true
 }
 
 func (h *sentPacketHandler) queueFramesForRetransmission(p *Packet) {
+	if len(p.Frames) == 0 {
+		panic("no frames")
+	}
 	for _, f := range p.Frames {
 		f.OnLost(f.Frame)
 	}
+	p.Frames = nil
 }
 
 func (h *sentPacketHandler) ResetForRetry() error {
@@ -766,13 +771,18 @@ func (h *sentPacketHandler) ResetForRetry() error {
 		if firstPacketSendTime.IsZero() {
 			firstPacketSendTime = p.SendTime
 		}
+		if p.declaredLost || p.skippedPacket {
+			return true, nil
+		}
 		h.queueFramesForRetransmission(p)
 		return true, nil
 	})
 	// All application data packets sent at this point are 0-RTT packets.
 	// In the case of a Retry, we can assume that the server dropped all of them.
 	h.appDataPackets.history.Iterate(func(p *Packet) (bool, error) {
-		h.queueFramesForRetransmission(p)
+		if !p.declaredLost && !p.skippedPacket {
+			h.queueFramesForRetransmission(p)
+		}
 		return true, nil
 	})
 
@@ -788,8 +798,8 @@ func (h *sentPacketHandler) ResetForRetry() error {
 			h.tracer.UpdatedMetrics(h.rttStats, h.congestion.GetCongestionWindow(), h.bytesInFlight, h.packetsInFlight())
 		}
 	}
-	h.initialPackets = newPacketNumberSpace(h.initialPackets.pns.Pop())
-	h.appDataPackets = newPacketNumberSpace(h.appDataPackets.pns.Pop())
+	h.initialPackets = newPacketNumberSpace(h.initialPackets.pns.Pop(), h.rttStats)
+	h.appDataPackets = newPacketNumberSpace(h.appDataPackets.pns.Pop(), h.rttStats)
 	oldAlarm := h.alarm
 	h.alarm = time.Time{}
 	if h.tracer != nil {

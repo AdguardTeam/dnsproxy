@@ -3,6 +3,7 @@ package quic
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -102,8 +103,10 @@ type baseServer struct {
 	logger utils.Logger
 }
 
-var _ Listener = &baseServer{}
-var _ unknownPacketHandler = &baseServer{}
+var (
+	_ Listener             = &baseServer{}
+	_ unknownPacketHandler = &baseServer{}
+)
 
 type earlyServer struct{ *baseServer }
 
@@ -147,6 +150,8 @@ func listenAddr(addr string, tlsConf *tls.Config, config *Config, acceptEarly bo
 }
 
 // Listen listens for QUIC connections on a given net.PacketConn.
+// If the PacketConn satisfies the ECNCapablePacketConn interface (as a net.UDPConn does), ECN support will be enabled.
+// In this case, ReadMsgUDP will be used instead of ReadFrom to read packets.
 // A single net.PacketConn only be used for a single call to Listen.
 // The PacketConn can be used for simultaneous calls to Dial.
 // QUIC connection IDs are used for demultiplexing the different connections.
@@ -185,7 +190,7 @@ func listen(conn net.PacketConn, tlsConf *tls.Config, config *Config, acceptEarl
 	if err != nil {
 		return nil, err
 	}
-	tokenGenerator, err := handshake.NewTokenGenerator()
+	tokenGenerator, err := handshake.NewTokenGenerator(rand.Reader)
 	if err != nil {
 		return nil, err
 	}
@@ -269,12 +274,12 @@ func (s *baseServer) accept(ctx context.Context) (quicSession, error) {
 
 // Close the server
 func (s *baseServer) Close() error {
+	s.sessionHandler.CloseServer()
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.closed {
 		return nil
 	}
-	s.sessionHandler.CloseServer()
 	if s.serverError == nil {
 		s.serverError = errors.New("server closed")
 	}

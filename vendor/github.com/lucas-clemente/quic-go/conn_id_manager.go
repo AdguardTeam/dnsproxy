@@ -15,6 +15,7 @@ import (
 type connIDManager struct {
 	queue utils.NewConnectionIDList
 
+	handshakeComplete         bool
 	activeSequenceNumber      uint64
 	highestRetired            uint64
 	activeConnectionID        protocol.ConnectionID
@@ -29,7 +30,6 @@ type connIDManager struct {
 
 	addStatelessResetToken    func(protocol.StatelessResetToken)
 	removeStatelessResetToken func(protocol.StatelessResetToken)
-	retireStatelessResetToken func(protocol.StatelessResetToken)
 	queueControlFrame         func(wire.Frame)
 }
 
@@ -37,7 +37,6 @@ func newConnIDManager(
 	initialDestConnID protocol.ConnectionID,
 	addStatelessResetToken func(protocol.StatelessResetToken),
 	removeStatelessResetToken func(protocol.StatelessResetToken),
-	retireStatelessResetToken func(protocol.StatelessResetToken),
 	queueControlFrame func(wire.Frame),
 ) *connIDManager {
 	b := make([]byte, 8)
@@ -47,7 +46,6 @@ func newConnIDManager(
 		activeConnectionID:        initialDestConnID,
 		addStatelessResetToken:    addStatelessResetToken,
 		removeStatelessResetToken: removeStatelessResetToken,
-		retireStatelessResetToken: retireStatelessResetToken,
 		queueControlFrame:         queueControlFrame,
 		rand:                      mrand.New(mrand.NewSource(seed)),
 	}
@@ -149,7 +147,7 @@ func (h *connIDManager) updateConnectionID() {
 	})
 	h.highestRetired = utils.MaxUint64(h.highestRetired, h.activeSequenceNumber)
 	if h.activeStatelessResetToken != nil {
-		h.retireStatelessResetToken(*h.activeStatelessResetToken)
+		h.removeStatelessResetToken(*h.activeStatelessResetToken)
 	}
 
 	front := h.queue.Remove(h.queue.Front())
@@ -190,7 +188,10 @@ func (h *connIDManager) SentPacket() {
 }
 
 func (h *connIDManager) shouldUpdateConnID() bool {
-	// initiate the first change as early as possible
+	if !h.handshakeComplete {
+		return false
+	}
+	// initiate the first change as early as possible (after handshake completion)
 	if h.queue.Len() > 0 && h.activeSequenceNumber == 0 {
 		return true
 	}
@@ -206,4 +207,8 @@ func (h *connIDManager) Get() protocol.ConnectionID {
 		h.updateConnectionID()
 	}
 	return h.activeConnectionID
+}
+
+func (h *connIDManager) SetHandshakeComplete() {
+	h.handshakeComplete = true
 }

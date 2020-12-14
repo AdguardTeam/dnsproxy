@@ -112,9 +112,18 @@ func (t *Type) FullName() string {
 	return t.fullName
 }
 
+// Namespace returns a namespace this type belongs to.
+func (t *Type) Namespace() Namespace {
+	return t.namespace
+}
+
 // RootNamespace returns a base namespace this type belongs to.
 func (t *Type) RootNamespace() Namespace {
-	return t.namespace
+	n := t.namespace
+	for n.parent != nil {
+		n = *n.parent
+	}
+	return n
 }
 
 func (t *Type) String() string {

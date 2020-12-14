@@ -6,10 +6,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/logging"
-
 	"github.com/lucas-clemente/quic-go/internal/handshake"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/logging"
 	"github.com/lucas-clemente/quic-go/quictrace"
 )
 
@@ -28,6 +27,13 @@ type StreamID = protocol.StreamID
 
 // A VersionNumber is a QUIC version number.
 type VersionNumber = protocol.VersionNumber
+
+const (
+	// VersionDraft29 is IETF QUIC draft-29
+	VersionDraft29 = protocol.VersionDraft29
+	// VersionDraft32 is IETF QUIC draft-32
+	VersionDraft32 = protocol.VersionDraft32
+)
 
 // A Token can be used to verify the ownership of the client address.
 type Token struct {
@@ -256,8 +262,9 @@ type Config struct {
 	StatelessResetKey []byte
 	// KeepAlive defines whether this peer will periodically send a packet to keep the connection alive.
 	KeepAlive bool
-	// QUIC Event Tracer.
-	// Warning: Experimental. This API should not be considered stable and will change soon.
+	// QUIC Event Tracer (see https://github.com/google/quic-trace).
+	// Warning: Support for quic-trace will soon be dropped in favor of qlog.
+	// It is disabled by default. Use the "quictrace" build tag to enable (e.g. go build -tags quictrace).
 	QuicTracer quictrace.Tracer
 	Tracer     logging.Tracer
 }

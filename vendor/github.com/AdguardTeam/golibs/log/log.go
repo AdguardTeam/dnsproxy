@@ -50,6 +50,11 @@ func (t *Timer) LogElapsed(message string, args ...interface{}) {
 	writeLog(level, f.Name(), buf.String(), args...)
 }
 
+// Writer returns the output destination for the default logger.
+func Writer() io.Writer {
+	return log.Writer()
+}
+
 // SetLevel sets logging level
 func SetLevel(level int) {
 	logLevel = level
@@ -149,4 +154,37 @@ func writeLog(level string, funcName string, format string, args ...interface{})
 
 	buf.WriteString(fmt.Sprintf(format, args...))
 	log.Println(buf.String())
+}
+
+// StdLog returns a Go standard library logger that writes everything to logs
+// the way this library's logger would.  This is useful for cases that require
+// a stdlib logger, for example http.Server.ErrorLog.
+func StdLog(prefix string, level int) (std *log.Logger) {
+	slw := &stdLogWriter{
+		prefix: prefix,
+		level:  level,
+	}
+
+	return log.New(slw, "", 0)
+}
+
+type stdLogWriter struct {
+	prefix string
+	level  int
+}
+
+func (w *stdLogWriter) Write(p []byte) (n int, err error) {
+	levelStr := "info"
+	switch w.level {
+	case ERROR:
+		levelStr = "error"
+	case DEBUG:
+		levelStr = "debug"
+	default:
+		// Go on, "info" is the default.
+	}
+
+	writeLog(levelStr, "", "%s: %s", w.prefix, p)
+
+	return len(p), nil
 }

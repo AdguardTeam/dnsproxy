@@ -22,6 +22,8 @@ type (
 	EncryptionLevel = protocol.EncryptionLevel
 	// The KeyPhase is the key phase of the 1-RTT keys.
 	KeyPhase = protocol.KeyPhase
+	// The KeyPhaseBit is the value of the key phase bit of the 1-RTT packets.
+	KeyPhaseBit = protocol.KeyPhaseBit
 	// The PacketNumber is the packet number of a packet.
 	PacketNumber = protocol.PacketNumber
 	// The Perspective is the role of a QUIC endpoint (client or server).
@@ -43,6 +45,8 @@ type (
 	ExtendedHeader = wire.ExtendedHeader
 	// The TransportParameters are QUIC transport parameters.
 	TransportParameters = wire.TransportParameters
+	// The PreferredAddress is the preferred address sent in the transport parameters.
+	PreferredAddress = wire.PreferredAddress
 
 	// A TransportError is a transport-level error code.
 	TransportError = qerr.ErrorCode
@@ -51,6 +55,13 @@ type (
 
 	// The RTTStats contain statistics used by the congestion controller.
 	RTTStats = utils.RTTStats
+)
+
+const (
+	// KeyPhaseZero is key phase bit 0
+	KeyPhaseZero KeyPhaseBit = protocol.KeyPhaseZero
+	// KeyPhaseOne is key phase bit 1
+	KeyPhaseOne KeyPhaseBit = protocol.KeyPhaseOne
 )
 
 const (
@@ -69,8 +80,6 @@ const (
 	Encryption1RTT EncryptionLevel = protocol.Encryption1RTT
 	// Encryption0RTT is the 0-RTT encryption level
 	Encryption0RTT EncryptionLevel = protocol.Encryption0RTT
-	// EncryptionNone is no encryption
-	EncryptionNone EncryptionLevel = protocol.EncryptionUnspecified
 )
 
 const (
@@ -111,6 +120,7 @@ type ConnectionTracer interface {
 	UpdatedKeyFromTLS(EncryptionLevel, Perspective)
 	UpdatedKey(generation KeyPhase, remote bool)
 	DroppedEncryptionLevel(EncryptionLevel)
+	DroppedKey(generation KeyPhase)
 	SetLossTimer(TimerType, EncryptionLevel, time.Time)
 	LossTimerExpired(TimerType, EncryptionLevel)
 	LossTimerCanceled()

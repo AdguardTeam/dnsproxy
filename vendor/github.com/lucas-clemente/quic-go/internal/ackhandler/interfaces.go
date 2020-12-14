@@ -18,6 +18,8 @@ type Packet struct {
 	SendTime        time.Time
 
 	includedInBytesInFlight bool
+	declaredLost            bool
+	skippedPacket           bool
 }
 
 // SentPacketHandler handles ACKs received for outgoing packets
@@ -32,7 +34,6 @@ type SentPacketHandler interface {
 
 	// The SendMode determines if and what kind of packets can be sent.
 	SendMode() SendMode
-	AmplificationWindow() protocol.ByteCount
 	// TimeUntilSend is the time when the next packet should be sent.
 	// It is used for pacing packets.
 	TimeUntilSend() time.Time
@@ -60,7 +61,7 @@ type sentPacketTracker interface {
 // ReceivedPacketHandler handles ACKs needed to send for incoming packets
 type ReceivedPacketHandler interface {
 	IsPotentiallyDuplicate(protocol.PacketNumber, protocol.EncryptionLevel) bool
-	ReceivedPacket(pn protocol.PacketNumber, encLevel protocol.EncryptionLevel, rcvTime time.Time, shouldInstigateAck bool) error
+	ReceivedPacket(pn protocol.PacketNumber, ecn protocol.ECN, encLevel protocol.EncryptionLevel, rcvTime time.Time, shouldInstigateAck bool) error
 	DropPackets(protocol.EncryptionLevel)
 
 	GetAlarmTimeout() time.Time

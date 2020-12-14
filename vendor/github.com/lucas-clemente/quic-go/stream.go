@@ -1,7 +1,6 @@
 package quic
 
 import (
-	"net"
 	"sync"
 	"time"
 
@@ -54,8 +53,10 @@ type streamI interface {
 	handleMaxStreamDataFrame(*wire.MaxStreamDataFrame)
 }
 
-var _ receiveStreamI = (streamI)(nil)
-var _ sendStreamI = (streamI)(nil)
+var (
+	_ receiveStreamI = (streamI)(nil)
+	_ sendStreamI    = (streamI)(nil)
+)
 
 // A Stream assembles the data from StreamFrames and provides a super-convenient Read-Interface
 //
@@ -73,14 +74,6 @@ type stream struct {
 }
 
 var _ Stream = &stream{}
-
-type deadlineError struct{}
-
-func (deadlineError) Error() string   { return "deadline exceeded" }
-func (deadlineError) Temporary() bool { return true }
-func (deadlineError) Timeout() bool   { return true }
-
-var errDeadline net.Error = &deadlineError{}
 
 type streamCanceledError struct {
 	error

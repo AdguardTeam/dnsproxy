@@ -2,6 +2,9 @@ package protocol
 
 import "time"
 
+// DesiredReceiveBufferSize is the kernel UDP receive buffer size that we'd like to use.
+const DesiredReceiveBufferSize = (1 << 20) * 2 // 2 MB
+
 // MaxPacketSizeIPv4 is the maximum packet size that we use for sending IPv4 packets.
 const MaxPacketSizeIPv4 = 1252
 
@@ -47,9 +50,6 @@ const MaxSessionUnprocessedPackets = 256
 
 // SkipPacketAveragePeriodLength is the average period length in which one packet number is skipped to prevent an Optimistic ACK attack
 const SkipPacketAveragePeriodLength PacketNumber = 500
-
-// MaxTrackedSkippedPackets is the maximum number of skipped packet numbers the SentPacketHandler keep track of for Optimistic ACK attack mitigation
-const MaxTrackedSkippedPackets = 10
 
 // MaxAcceptQueueSize is the maximum number of sessions that the server queues for accepting.
 // If the queue is full, new connection attempts will be rejected.
@@ -163,7 +163,7 @@ const MaxAckDelay = 25 * time.Millisecond
 // This is the value that should be advertised to the peer.
 const MaxAckDelayInclGranularity = MaxAckDelay + TimerGranularity
 
-// KeyUpdateInterval is the maximum number of packets we send or receive before initiating a key udpate.
+// KeyUpdateInterval is the maximum number of packets we send or receive before initiating a key update.
 const KeyUpdateInterval = 100 * 1000
 
 // Max0RTTQueueingDuration is the maximum time that we store 0-RTT packets in order to wait for the corresponding Initial to be received.

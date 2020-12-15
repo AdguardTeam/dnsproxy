@@ -63,7 +63,7 @@ Application Options:
       --edns             Use EDNS Client Subnet extension
       --edns-addr=       Send EDNS Client Address
       --ipv6-disabled    If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --bogus-nxdomain=  Transform responses that contain at least on of the given IP addresses into NXDOMAIN. Can be specified multiple
+      --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple
                          times.
       --version          Prints the program version
 

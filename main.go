@@ -121,7 +121,7 @@ type Options struct {
 	IPv6Disabled bool `long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
 	// Transform responses that contain at least one of the given IP addresses into NXDOMAIN
-	BogusNXDomain []string `long:"bogus-nxdomain" description:"Transform responses that contain at least on of the given IP addresses into NXDOMAIN. Can be specified multiple times."`
+	BogusNXDomain []string `long:"bogus-nxdomain" description:"Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times."`
 
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`

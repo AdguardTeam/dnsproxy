@@ -63,7 +63,7 @@ Application Options:
       --edns             Use EDNS Client Subnet extension
       --edns-addr=       Send EDNS Client Address
       --ipv6-disabled    If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --bogus-nxdomain=  Transform responses that contain only given IP addresses into NXDOMAIN. Can be specified multiple
+      --bogus-nxdomain=  Transform responses that contain at least on of the given IP addresses into NXDOMAIN. Can be specified multiple
                          times.
       --version          Prints the program version
 
@@ -226,9 +226,9 @@ Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy w
 
 ### Bogus NXDomain
 
-This option is similar to dnsmasq `bogus-nxdomain`. If specified, `dnsproxy` transforms responses that contain only the given IP addresses into `NXDOMAIN`. Can be specified multiple times.
+This option is similar to dnsmasq `bogus-nxdomain`. If specified, `dnsproxy` transforms responses that contain at least one of the given IP addresses into `NXDOMAIN`. Can be specified multiple times.
 
-In the example below, we use AdGuard DNS server that returns `0.0.0.0` for blocked domains, and tranform them to `NXDOMAIN`.
+In the example below, we use AdGuard DNS server that returns `0.0.0.0` for blocked domains, and transform them to `NXDOMAIN`.
 
 ```
 ./dnsproxy -u 94.140.14.14:53 --bogus-nxdomain=0.0.0.0

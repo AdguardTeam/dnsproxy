@@ -6,7 +6,7 @@ import (
 )
 
 // isBogusNXDomain - checks if the specified DNS message
-// contains ONLY ip addresses from the Proxy.BogusNXDomain list
+// contains AT LEAST ONE ip address from the Proxy.BogusNXDomain list
 func (p *Proxy) isBogusNXDomain(reply *dns.Msg) bool {
 	if reply == nil ||
 		len(p.BogusNXDomain) == 0 ||
@@ -18,11 +18,11 @@ func (p *Proxy) isBogusNXDomain(reply *dns.Msg) bool {
 
 	for _, rr := range reply.Answer {
 		ip := proxyutil.GetIPFromDNSRecord(rr)
-		if !proxyutil.ContainsIP(p.BogusNXDomain, ip) {
-			return false
+		if proxyutil.ContainsIP(p.BogusNXDomain, ip) {
+			return true
 		}
 	}
 
-	// All IPs are bogus if we got here
-	return true
+	// No IPs are bogus if we got here
+	return false
 }

@@ -70,7 +70,7 @@ type Config struct {
 	Fallbacks      []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 	UpstreamMode   UpstreamModeType    // How to request the upstream servers
 
-	// BogusNXDomain - transforms responses that contain only given IP addresses into NXDOMAIN
+	// BogusNXDomain - transforms responses that contain at least one of the given IP addresses into NXDOMAIN
 	// Similar to dnsmasq's "bogus-nxdomain"
 	BogusNXDomain []net.IP
 

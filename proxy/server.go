@@ -225,6 +225,10 @@ func (p *Proxy) genNXDomain(req *dns.Msg) *dns.Msg {
 }
 
 func (p *Proxy) logDNSMessage(m *dns.Msg) {
+	if m == nil {
+		return
+	}
+
 	if m.Response {
 		log.Tracef("OUT: %s", m)
 	} else {

@@ -46,8 +46,7 @@ Application Options:
   -y, --dnscrypt-port=   Listening ports for DNSCrypt
   -c, --tls-crt=         Path to a file with the certificate chain
   -k, --tls-key=         Path to a file with the private key
-  -g, --dnscrypt-config= Path to a file with DNSCrypt configuration. You can generate one using
-                         https://github.com/ameshkov/dnscrypt
+  -g, --dnscrypt-config= Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
   -u, --upstream=        An upstream to be used (can be specified multiple times)
   -b, --bootstrap=       Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
   -f, --fallback=        Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
@@ -55,16 +54,16 @@ Application Options:
       --fastest-addr     Respond to A or AAAA requests only with the fastest IP address
       --cache            If specified, DNS cache is enabled
       --cache-size=      Cache size (in bytes). Default: 64k
-      --cache-min-ttl=   Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should
-                         only be done with careful consideration.
+      --cache-min-ttl=   Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration.
       --cache-max-ttl=   Maximum TTL value for DNS entries, in seconds.
   -r, --ratelimit=       Ratelimit (requests per second) (default: 0)
       --refuse-any       If specified, refuse ANY requests
       --edns             Use EDNS Client Subnet extension
       --edns-addr=       Send EDNS Client Address
       --ipv6-disabled    If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple
-                         times.
+      --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times.
+      --udp-buf-size=    Set the size of the UDP buffer in bytes. A value <= 0 will use the system default. (default: 0)
+      --max-go-routines= Set the maximum number of go routines. A value <= 0 will not not set a maximum. (default: 0)
       --version          Prints the program version
 
 Help Options:

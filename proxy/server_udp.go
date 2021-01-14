@@ -31,6 +31,14 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
 	}
 
+	if p.Config.UDPBufferSize > 0 {
+		err = udpListen.SetReadBuffer(p.Config.UDPBufferSize)
+		if err != nil {
+			_ = udpListen.Close()
+			return nil, errorx.Decorate(err, "setting UDP buffer size failed")
+		}
+	}
+
 	err = proxyutil.UDPSetOptions(udpListen)
 	if err != nil {
 		_ = udpListen.Close()

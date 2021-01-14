@@ -123,6 +123,12 @@ type Options struct {
 	// Transform responses that contain at least one of the given IP addresses into NXDOMAIN
 	BogusNXDomain []string `long:"bogus-nxdomain" description:"Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times."`
 
+	// UDP buffer size value
+	UDPBufferSize int `long:"udp-buf-size" description:"Set the size of the UDP buffer in bytes. A value <= 0 will use the system default." default:"0"`
+
+	// The maximum number of go routines
+	MaxGoRoutines int `long:"max-go-routines" description:"Set the maximum number of go routines. A value <= 0 will not not set a maximum." default:"0"`
+
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
 }
@@ -205,6 +211,8 @@ func createProxyConfig(options Options) proxy.Config {
 		CacheMaxTTL:            options.CacheMaxTTL,
 		RefuseAny:              options.RefuseAny,
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
+		UDPBufferSize:          options.UDPBufferSize,
+		MaxGoroutines:          options.MaxGoRoutines,
 	}
 
 	initUpstreams(&config, options)

@@ -13,22 +13,23 @@ import (
 	"golang.org/x/net/http2"
 )
 
-// DohMaxConnsPerHost controls the maximum number of connections per host
-// nolint
-var DohMaxConnsPerHost = 0
+// DoHMaxConnsPerHost controls the maximum number of connections per host.
+const DoHMaxConnsPerHost = 1
 
-//
-// DNS-over-https
-//
+// dnsOverHTTPS represents DNS-over-HTTPS upstream.
 type dnsOverHTTPS struct {
 	boot *bootstrapper
+
+	// mu exists for lazy initialization purposes and protects client from
+	// data race during lazy initialization.  It provides the exchange with
+	// invalid upstream possibility, which is needed for now. Should be
+	// refactored further.
+	mu sync.Mutex
 
 	// The Client's Transport typically has internal state (cached TCP
 	// connections), so Clients should be reused instead of created as
 	// needed. Clients are safe for concurrent use by multiple goroutines.
 	client *http.Client
-
-	sync.RWMutex // protects transport
 }
 
 func (p *dnsOverHTTPS) Address() string { return p.boot.address }
@@ -42,24 +43,20 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	logBegin(p.Address(), m)
 	r, err := p.exchangeHTTPSClient(m, client)
 	logFinish(p.Address(), err)
-	if err != nil {
-		p.Lock()
-		if client == p.client {
-			p.client = nil // this connection is no longer usable
-		}
-		p.Unlock()
-	}
+
 	return r, err
 }
 
-// exchangeHTTPSClient sends the DNS query to a DOH resolver using the specified http.Client instance
+// exchangeHTTPSClient sends the DNS query to a DOH resolver using the specified
+// http.Client instance.
 func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dns.Msg, error) {
 	buf, err := m.Pack()
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't pack request msg")
 	}
 
-	// It appears, that GET requests are more memory-efficient with Golang implementation of HTTP/2.
+	// It appears, that GET requests are more memory-efficient with Golang
+	// implementation of HTTP/2.
 	requestURL := p.boot.address + "?dns=" + base64.RawURLEncoding.EncodeToString(buf)
 	req, err := http.NewRequest("GET", requestURL, nil)
 	if err != nil {
@@ -93,12 +90,13 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	return &response, err
 }
 
-// getClient gets or lazily initializes an HTTP client (and transport) that will be used for this DOH resolver.
-func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
+// getClient gets or lazily initializes an HTTP client (and transport) that will
+// be used for this DOH resolver.
+func (p *dnsOverHTTPS) getClient() (c *http.Client, err error) {
 	startTime := time.Now()
 
-	p.Lock()
-	defer p.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.client != nil {
 		return p.client, nil
 	}
@@ -110,6 +108,12 @@ func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
 		return nil, fmt.Errorf("timeout exceeded: %d ms", int(elapsed/time.Millisecond))
 	}
 
+	p.client, err = p.createClient()
+
+	return p.client, err
+}
+
+func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
 	transport, err := p.createTransport()
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't initialize HTTP transport")
@@ -121,25 +125,13 @@ func (p *dnsOverHTTPS) getClient() (*http.Client, error) {
 		Jar:       nil,
 	}
 
-	// Warming up the HTTP client.
-	// This is actually important -- if there is no warmup, there's a race condition on the very first DNS query:
-	// http.Client will create numerous connections. During this warmup it'll create a new connection that will be used
-	// for processing further DNS queries.
-	req := dns.Msg{}
-	req.Id = dns.Id()
-	req.RecursionDesired = true
-	req.Question = []dns.Question{{Name: "ipv4only.arpa.", Qtype: dns.TypeA, Qclass: dns.ClassINET}}
-	_, err = p.exchangeHTTPSClient(&req, client)
-	if err != nil {
-		return nil, err
-	}
-
 	p.client = client
 	return p.client, nil
 }
 
-// createTransport initializes an HTTP transport that will be used specifically for this DOH resolver
-// This HTTP transport ensures that the HTTP requests will be sent exactly to the IP address got from the bootstrap resolver
+// createTransport initializes an HTTP transport that will be used specifically
+// for this DOH resolver. This HTTP transport ensures that the HTTP requests
+// will be sent exactly to the IP address got from the bootstrap resolver.
 func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 	tlsConfig, dialContext, err := p.boot.get()
 	if err != nil {
@@ -150,12 +142,12 @@ func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
 		DialContext:        dialContext,
-		MaxConnsPerHost:    DohMaxConnsPerHost,
+		MaxConnsPerHost:    DoHMaxConnsPerHost,
 		MaxIdleConns:       1,
 	}
 	// It appears that this is important to explicitly configure transport to use HTTP2
 	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11
-	http2.ConfigureTransport(transport) // nolint
+	http2.ConfigureTransports(transport) // nolint
 
 	return transport, nil
 }

@@ -1,6 +1,11 @@
 name: golangci-lint
-on:
-  push:
+'on':
+  'push':
+    'tags':
+      - 'v*'
+    'branches':
+      - '*'
+  'pull_request':
 
 jobs:
   golangci:
@@ -16,8 +21,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v2.3.0
         with:
-        # This field is required.  Dont set the patch version to always use
-        # the latest patch version.
+          # This field is required.  Dont set the patch version to always use
+          # the latest patch version.
           version: v1.32
   notify:
     needs:
@@ -29,10 +34,10 @@ jobs:
     # previous ones failed.
     if:
       ${{ always() &&
-        (
-          github.event_name == 'push' ||
-          github.event.pull_request.head.repo.full_name == github.repository
-        )
+      (
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+      )
       }}
     runs-on: ubuntu-latest
     steps:

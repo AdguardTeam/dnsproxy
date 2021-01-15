@@ -121,6 +121,10 @@ type Config struct {
 	// “MaxDNSRequestGoroutines” in a later major version, as it doesn't
 	// actually limit all goroutines.
 	MaxGoroutines int
+
+	// The size of the read buffer on the underlying socket. Larger read buffers can handle
+	// larger bursts of requests before packets get dropped.
+	UDPBufferSize int
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

@@ -26,7 +26,8 @@ type DNSContext struct {
 	// If set, Resolve() uses it instead of default servers
 	CustomUpstreamConfig *UpstreamConfig
 
-	// Conn - underlying client connection. Can be null in the case of DOH.
+	// Conn is the underlying client connection.  It is nil if Proto is
+	// ProtoDNSCrypt, ProtoHTTPS, or ProtoQUIC.
 	Conn net.Conn
 
 	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
@@ -40,8 +41,13 @@ type DNSContext struct {
 	// DNSCryptResponseWriter - necessary to respond to a DNSCrypt query
 	DNSCryptResponseWriter dnscrypt.ResponseWriter
 
-	// QUICStream - QUIC stream from which we got the query (for DOQ only)
+	// QUICStream is the QUIC stream from which we got the query.  For
+	// ProtoQUIC only.
 	QUICStream quic.Stream
+
+	// QUICSession is the QUIC session from which we got the query.  For
+	// ProtoQUIC only.
+	QUICSession quic.Session
 
 	ecsReqIP   net.IP // ECS IP used in request
 	ecsReqMask uint8  // ECS mask used in request

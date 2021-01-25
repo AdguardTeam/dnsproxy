@@ -138,10 +138,11 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	}
 
 	d := &DNSContext{
-		Proto:      ProtoQUIC,
-		Req:        &msg,
-		Addr:       session.RemoteAddr(),
-		QUICStream: stream,
+		Proto:       ProtoQUIC,
+		Req:         &msg,
+		Addr:        session.RemoteAddr(),
+		QUICStream:  stream,
+		QUICSession: session,
 	}
 
 	err = p.handleDNSRequest(d)

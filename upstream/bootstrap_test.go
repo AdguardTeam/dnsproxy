@@ -25,9 +25,9 @@ func TestDialContext(t *testing.T) {
 			host:      "1dot1dot1dot1.cloudflare-dns.com",
 		},
 	}
-	b := bootstrapper{}
+	b := bootstrapper{options: Options{Timeout: 2 * time.Second}}
 	for _, test := range resolved {
-		dialContext := b.createDialContext(test.addresses, 2*time.Second)
+		dialContext := b.createDialContext(test.addresses)
 		_, err := dialContext(context.TODO(), "tcp", "")
 		if err != nil {
 			t.Fatalf("Couldn't dial to %s: %s", test.host, err)

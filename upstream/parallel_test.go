@@ -51,7 +51,7 @@ func TestLookupParallel(t *testing.T) {
 	bootstraps := []string{"1.2.3.4:55", "8.8.8.1:555", "8.8.8.8:53"}
 
 	for _, boot := range bootstraps {
-		resolver, _ := NewResolver(boot, timeout)
+		resolver, _ := NewResolver(boot, Options{Timeout: timeout})
 		resolvers = append(resolvers, resolver)
 	}
 

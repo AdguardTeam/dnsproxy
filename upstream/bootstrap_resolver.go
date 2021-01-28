@@ -6,12 +6,10 @@ import (
 	"net"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
-	"github.com/miekg/dns"
-
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/miekg/dns"
 )
 
 // Resolver is wrapper for resolver and it's address
@@ -22,9 +20,10 @@ type Resolver struct {
 }
 
 // NewResolver creates an instance of a Resolver structure with defined net.Resolver and it's address
-// resolverAddress is address of net.Resolver
+// resolverAddress -- is address of net.Resolver
 // The host in the address parameter of Dial func will always be a literal IP address (from documentation)
-func NewResolver(resolverAddress string, timeout time.Duration) (*Resolver, error) {
+// options -- Upstream customization options
+func NewResolver(resolverAddress string, options Options) (*Resolver, error) {
 	r := &Resolver{}
 
 	// set default net.Resolver as a resolver if resolverAddress is empty
@@ -34,10 +33,11 @@ func NewResolver(resolverAddress string, timeout time.Duration) (*Resolver, erro
 	}
 
 	r.resolverAddress = resolverAddress
-	opts := Options{
-		Timeout: timeout,
-	}
 	var err error
+	opts := Options{
+		Timeout:                 options.Timeout,
+		VerifyServerCertificate: options.VerifyServerCertificate,
+	}
 	r.upstream, err = AddressToUpstream(resolverAddress, opts)
 	if err != nil {
 		log.Error("AddressToUpstream: %s", err)

@@ -8,10 +8,8 @@ import (
 	"time"
 
 	"github.com/joomcode/errorx"
-
-	"github.com/miekg/dns"
-
 	"github.com/lucas-clemente/quic-go"
+	"github.com/miekg/dns"
 )
 
 const handshakeTimeout = time.Second
@@ -132,8 +130,8 @@ func (p *dnsOverQUIC) getSession(useCached bool) (quic.Session, error) {
 func (p *dnsOverQUIC) openStream(session quic.Session) (quic.Stream, error) {
 	ctx := context.Background()
 
-	if p.boot.timeout > 0 {
-		deadline := time.Now().Add(p.boot.timeout)
+	if p.boot.options.Timeout > 0 {
+		deadline := time.Now().Add(p.boot.options.Timeout)
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithDeadline(context.Background(), deadline)
 		defer cancel() // avoid resource leak

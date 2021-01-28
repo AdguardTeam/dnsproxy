@@ -11,10 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/http2"
-
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
+	"golang.org/x/net/http2"
 )
 
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
@@ -31,21 +30,23 @@ var RootCAs *x509.CertPool
 var CipherSuites []uint16
 
 type bootstrapper struct {
-	address            string        // in form of "tls://one.one.one.one:853"
-	resolvers          []*Resolver   // list of Resolvers to use to resolve hostname, if necessary
-	timeout            time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
-	insecureSkipVerify bool          // if true - tls.Config will have InsecureSkipVerify set to true
-
+	address        string      // in form of "tls://one.one.one.one:853"
+	resolvers      []*Resolver // list of Resolvers to use to resolve hostname, if necessary
 	dialContext    dialHandler // specifies the dial function for creating unencrypted TCP connections.
 	resolvedConfig *tls.Config
 	sync.RWMutex
+
+	// stores options for AddressToUpstream func:
+	// callbacks for checking certificates, timeout,
+	// the need to verify the server certificate,
+	// the addresses of upstream servers, etc
+	options Options
 }
 
 // newBootstrapperResolved creates a new bootstrapper that already contains resolved config.
 // This can be done only in the case when we already know the resolver IP address.
-// timeout is also used for establishing TCP connections
-// insecureSkipVerify -- if true, disable TLS certs verification
-func newBootstrapperResolved(address string, serverIPAddrs []net.IP, timeout time.Duration, insecureSkipVerify bool) (*bootstrapper, error) {
+// options -- Upstream customization options
+func newBootstrapperResolved(address string, options Options) (*bootstrapper, error) {
 	// get a host without port
 	host, port, err := getAddressHostPort(address)
 	if err != nil {
@@ -53,17 +54,16 @@ func newBootstrapperResolved(address string, serverIPAddrs []net.IP, timeout tim
 	}
 
 	var resolverAddresses []string
-	for _, ip := range serverIPAddrs {
+	for _, ip := range options.ServerIPAddrs {
 		addr := net.JoinHostPort(ip.String(), port)
 		resolverAddresses = append(resolverAddresses, addr)
 	}
 
 	b := &bootstrapper{
-		address:            address,
-		timeout:            timeout,
-		insecureSkipVerify: insecureSkipVerify,
+		address: address,
+		options: options,
 	}
-	b.dialContext = b.createDialContext(resolverAddresses, timeout)
+	b.dialContext = b.createDialContext(resolverAddresses)
 	b.resolvedConfig = b.createTLSConfig(host)
 
 	return b, nil
@@ -71,31 +71,28 @@ func newBootstrapperResolved(address string, serverIPAddrs []net.IP, timeout tim
 
 // newBootstrapper initializes a new bootstrapper instance
 // address -- original resolver address string (i.e. tls://one.one.one.one:853)
-// bootstrapAddr -- a list of bootstrap DNS resolvers' addresses
-// timeout -- DNS query timeout
-// insecureSkipVerify -- if true, disable TLS certs verification
-func newBootstrapper(address string, bootstrapAddr []string, timeout time.Duration, insecureSkipVerify bool) (*bootstrapper, error) {
+// options -- Upstream customization options
+func newBootstrapper(address string, options Options) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
-	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
+	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
-		for _, boot := range bootstrapAddr {
-			r, err := NewResolver(boot, timeout)
+		for _, boot := range options.Bootstrap {
+			r, err := NewResolver(boot, options)
 			if err != nil {
 				return nil, err
 			}
 			resolvers = append(resolvers, r)
 		}
 	} else {
-		r, _ := NewResolver("", timeout) // NewResolver("") always succeeds
+		r, _ := NewResolver("", options) // NewResolver("") always succeeds
 		// nil resolver if the default one
 		resolvers = append(resolvers, r)
 	}
 
 	return &bootstrapper{
-		address:            address,
-		resolvers:          resolvers,
-		timeout:            timeout,
-		insecureSkipVerify: insecureSkipVerify,
+		address:   address,
+		resolvers: resolvers,
+		options:   options,
 	}, nil
 }
 
@@ -133,7 +130,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		n.Lock()
 		defer n.Unlock()
 
-		n.dialContext = n.createDialContext([]string{resolverAddress}, n.timeout)
+		n.dialContext = n.createDialContext([]string{resolverAddress})
 		n.resolvedConfig = n.createTLSConfig(host)
 		return n.resolvedConfig, n.dialContext, nil
 	}
@@ -148,8 +145,8 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	//
 
 	var ctx context.Context
-	if n.timeout > 0 {
-		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), n.timeout)
+	if n.options.Timeout > 0 {
+		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), n.options.Timeout)
 		defer cancel() // important to avoid a resource leak
 		ctx = ctxWithTimeout
 	} else {
@@ -178,7 +175,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	n.Lock()
 	defer n.Unlock()
 
-	n.dialContext = n.createDialContext(resolved, n.timeout)
+	n.dialContext = n.createDialContext(resolved)
 	n.resolvedConfig = n.createTLSConfig(host)
 	return n.resolvedConfig, n.dialContext, nil
 }
@@ -186,11 +183,12 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	tlsConfig := &tls.Config{
-		ServerName:         host,
-		RootCAs:            RootCAs,
-		CipherSuites:       CipherSuites,
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: n.insecureSkipVerify,
+		ServerName:            host,
+		RootCAs:               RootCAs,
+		CipherSuites:          CipherSuites,
+		MinVersion:            tls.VersionTLS12,
+		InsecureSkipVerify:    n.options.InsecureSkipVerify,
+		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
 	tlsConfig.NextProtos = []string{
@@ -201,9 +199,9 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 }
 
 // createDialContext returns dialContext function that tries to establish connection with all given addresses one by one
-func (n *bootstrapper) createDialContext(addresses []string, timeout time.Duration) (dialContext dialHandler) {
+func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHandler) {
 	dialer := &net.Dialer{
-		Timeout: timeout,
+		Timeout: n.options.Timeout,
 	}
 
 	dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {

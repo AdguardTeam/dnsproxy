@@ -2,6 +2,7 @@
 package upstream
 
 import (
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -37,6 +39,13 @@ type Options struct {
 
 	// InsecureSkipVerify - if true, do not verify the server certificate
 	InsecureSkipVerify bool
+
+	// VerifyServerCertificate will be set to crypto/tls Config.VerifyPeerCertificate for DoH, DoQ, DoT
+	VerifyServerCertificate func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
+
+	// VerifyDNSCryptCertificate is callback to which the DNSCrypt server certificate will be passed.
+	// is called in dnsCrypt.exchangeDNSCrypt; if error != nil then Upstream.Exchange() will return it
+	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 }
 
 // Parse "host:port" string and validate port number
@@ -61,13 +70,14 @@ func parseHostAndPort(addr string) (string, string, error) {
 // * tls://1.1.1.1 -- DNS-over-TLS
 // * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
 // * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
-func AddressToUpstream(address string, opts Options) (Upstream, error) {
+// options -- Upstream customization options
+func AddressToUpstream(address string, options Options) (Upstream, error) {
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
 			return nil, errorx.Decorate(err, "failed to parse %s", address)
 		}
-		return urlToUpstream(upstreamURL, opts)
+		return urlToUpstream(upstreamURL, options)
 	}
 
 	// we don't have scheme in the url, so it's just a plain DNS host:port
@@ -79,19 +89,21 @@ func AddressToUpstream(address string, opts Options) (Upstream, error) {
 		port = "53"
 	}
 
-	return &plainDNS{address: net.JoinHostPort(host, port), timeout: opts.Timeout}, nil
+	return &plainDNS{address: net.JoinHostPort(host, port), timeout: options.Timeout}, nil
 }
 
 // urlToBoot creates an instance of the bootstrapper with the specified options
+// options -- Upstream customization options
 func urlToBoot(resolverURL string, opts Options) (*bootstrapper, error) {
 	if len(opts.ServerIPAddrs) == 0 {
-		return newBootstrapper(resolverURL, opts.Bootstrap, opts.Timeout, opts.InsecureSkipVerify)
+		return newBootstrapper(resolverURL, opts)
 	}
 
-	return newBootstrapperResolved(resolverURL, opts.ServerIPAddrs, opts.Timeout, opts.InsecureSkipVerify)
+	return newBootstrapperResolved(resolverURL, opts)
 }
 
 // urlToUpstream converts a URL to an Upstream
+// options -- Upstream customization options
 func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 	switch upstreamURL.Scheme {
 	case "sdns":
@@ -146,6 +158,7 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 }
 
 // stampToUpstream converts a DNS stamp to an Upstream
+// options -- Upstream customization options
 func stampToUpstream(address string, opts Options) (Upstream, error) {
 	stamp, err := dnsstamps.NewServerStampFromString(address)
 	if err != nil {
@@ -170,7 +183,7 @@ func stampToUpstream(address string, opts Options) (Upstream, error) {
 	case dnsstamps.StampProtoTypePlain:
 		return &plainDNS{address: stamp.ServerAddrStr, timeout: opts.Timeout}, nil
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		b, err := newBootstrapper(address, opts.Bootstrap, opts.Timeout, opts.InsecureSkipVerify)
+		b, err := newBootstrapper(address, opts)
 		if err != nil {
 			return nil, fmt.Errorf("bootstrap server parse: %s", err)
 		}

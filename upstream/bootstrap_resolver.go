@@ -19,11 +19,11 @@ type Resolver struct {
 	upstream        Upstream
 }
 
-// NewResolver creates an instance of a Resolver structure with defined net.Resolver and it's address
+// newResolver creates an instance of a Resolver structure with defined net.Resolver and it's address
 // resolverAddress -- is address of net.Resolver
 // The host in the address parameter of Dial func will always be a literal IP address (from documentation)
 // options -- Upstream customization options
-func NewResolver(resolverAddress string, options Options) (*Resolver, error) {
+func newResolver(resolverAddress string, options Options) (*Resolver, error) {
 	r := &Resolver{}
 
 	// set default net.Resolver as a resolver if resolverAddress is empty

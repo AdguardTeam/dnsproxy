@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewResolver(t *testing.T) {
-	r, err := NewResolver("1.1.1.1:53", Options{Timeout: 3*time.Second})
+	r, err := newResolver("1.1.1.1:53", Options{Timeout: 3 * time.Second})
 	assert.Nil(t, err)
 
 	ipAddrs, err := r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
@@ -33,37 +33,37 @@ func TestNewResolver(t *testing.T) {
 }
 
 func TestNewResolverIsValid(t *testing.T) {
-	withTimeoutOpt := Options{Timeout: 3*time.Second}
+	withTimeoutOpt := Options{Timeout: 3 * time.Second}
 
-	r, err := NewResolver("1.1.1.1:53", withTimeoutOpt)
+	r, err := newResolver("1.1.1.1:53", withTimeoutOpt)
 	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err := r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	r, err = NewResolver("tls://1.1.1.1", withTimeoutOpt)
+	r, err = newResolver("tls://1.1.1.1", withTimeoutOpt)
 	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	r, err = NewResolver("https://1.1.1.1/dns-query", withTimeoutOpt)
+	r, err = newResolver("https://1.1.1.1/dns-query", withTimeoutOpt)
 	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	r, err = NewResolver("sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20", withTimeoutOpt)
+	r, err = newResolver("sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20", withTimeoutOpt)
 	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
 	assert.Nil(t, err)
 	assert.True(t, len(addrs) > 0)
 
-	r, err = NewResolver("tcp://9.9.9.9", withTimeoutOpt)
+	r, err = newResolver("tcp://9.9.9.9", withTimeoutOpt)
 	assert.Nil(t, err)
 	assert.NotNil(t, r.upstream)
 	addrs, err = r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
@@ -72,15 +72,15 @@ func TestNewResolverIsValid(t *testing.T) {
 
 	// not an IP address:
 
-	r, err = NewResolver("tls://dns.adguard.com", withTimeoutOpt)
+	r, err = newResolver("tls://dns.adguard.com", withTimeoutOpt)
 	assert.NotNil(t, err)
 
-	r, err = NewResolver("https://dns.adguard.com/dns-query", withTimeoutOpt)
+	r, err = newResolver("https://dns.adguard.com/dns-query", withTimeoutOpt)
 	assert.NotNil(t, err)
 
-	r, err = NewResolver("tcp://dns.adguard.com", Options{})
+	r, err = newResolver("tcp://dns.adguard.com", Options{})
 	assert.NotNil(t, err)
 
-	r, err = NewResolver("dns.adguard.com", Options{})
+	r, err = newResolver("dns.adguard.com", Options{})
 	assert.NotNil(t, err)
 }

@@ -77,14 +77,14 @@ func newBootstrapper(address string, options Options) (*bootstrapper, error) {
 	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
 		for _, boot := range options.Bootstrap {
-			r, err := newResolver(boot, options)
+			r, err := NewResolver(boot, options)
 			if err != nil {
 				return nil, err
 			}
 			resolvers = append(resolvers, r)
 		}
 	} else {
-		r, _ := newResolver("", options) // newResolver("") always succeeds
+		r, _ := NewResolver("", options) // NewResolver("") always succeeds
 		// nil resolver if the default one
 		resolvers = append(resolvers, r)
 	}

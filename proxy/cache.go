@@ -216,38 +216,29 @@ func packResponse(m *dns.Msg) []byte {
 	pm, _ := m.Pack()
 	actualTTL := findLowestTTL(m)
 	expire := uint32(time.Now().Unix()) + actualTTL
-	var d []byte
-	d = make([]byte, 4+len(pm))
+	d := make([]byte, 4+len(pm))
 	binary.BigEndian.PutUint32(d, expire)
 	copy(d[4:], pm)
 	return d
 }
 
-// Return nil if response has expired
+// unpackResponse returns the unpacked response if it exists and didn't expire,
+// nil otherwise.
 func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
-	now := time.Now().Unix()
 	expire := binary.BigEndian.Uint32(data[:4])
+	now := time.Now().Unix()
 	if int64(expire) <= now {
 		return nil
 	}
 	ttl := expire - uint32(now)
 
-	m := dns.Msg{}
-	err := m.Unpack(data[4:])
-	if err != nil {
+	m := &dns.Msg{}
+	if m.Unpack(data[4:]) != nil {
 		return nil
 	}
 
-	// check if DO flag is set in the request
-	reqOpt := request.IsEdns0()
-	reqDo := false
-	if reqOpt != nil {
-		reqDo = reqOpt.Do()
-	}
-
-	res := dns.Msg{}
+	res := &dns.Msg{}
 	res.SetReply(request)
-	res.Authoritative = false
 	res.AuthenticatedData = m.AuthenticatedData
 	res.RecursionAvailable = m.RecursionAvailable
 	res.Rcode = m.Rcode
@@ -262,20 +253,25 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 		ns.Header().Ttl = ttl
 		res.Ns = append(res.Ns, ns)
 	}
+
+	// According to RFC-6891 (https://tools.ietf.org/html/rfc6891#page-7)
+	// EDNS0 records mustn't be stored in cache so they should be recreated.
+	if rOpt := request.IsEdns0(); rOpt != nil {
+		udpSize := rOpt.UDPSize()
+		if mOpt := m.IsEdns0(); mOpt != nil {
+			udpSize = mOpt.UDPSize()
+		}
+		res.SetEdns0(udpSize, rOpt.Do())
+	}
+
 	for _, r := range m.Extra {
-		// don't return OPT records as these are hop-by-hop
+		// Skip OPT RRs as it is already handled separately.
 		if r.Header().Rrtype == dns.TypeOPT {
-			// unless DO was set in the request
-			// get it's value from the original header then
-			if reqDo {
-				opt := r.(*dns.OPT)
-				res.SetEdns0(opt.UDPSize(), opt.Do())
-			}
 			continue
 		}
 		extra := dns.Copy(r)
 		extra.Header().Ttl = ttl
 		res.Extra = append(res.Extra, extra)
 	}
-	return &res
+	return res
 }

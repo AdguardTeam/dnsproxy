@@ -376,13 +376,26 @@ func (p *Proxy) Addr(proto string) net.Addr {
 	}
 }
 
+// defaultUDPBufSize defines the default size of UDP buffer for EDNS0 RRs.
+const defaultUDPBufSize = 2048
+
 // Resolve is the default resolving method used by the DNS proxy to query upstreams
 func (p *Proxy) Resolve(d *DNSContext) error {
 	if p.Config.EnableEDNSClientSubnet {
 		p.processECS(d)
 	}
 
+	origReq := d.Req.Copy()
+	var do bool
+	var size uint16 = defaultUDPBufSize
+	if o := origReq.IsEdns0(); o != nil {
+		do = o.Do()
+		size = o.UDPSize()
+	}
+
 	if p.replyFromCache(d) {
+		d.Res.SetEdns0(size, do)
+
 		return nil
 	}
 
@@ -393,7 +406,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	if d.CustomUpstreamConfig != nil {
 		upstreams = d.CustomUpstreamConfig.getUpstreamsForDomain(host)
 	}
-
 	// If nothing found in the custom upstreams, start using the default ones
 	if upstreams == nil {
 		upstreams = p.UpstreamConfig.getUpstreamsForDomain(host)
@@ -424,8 +436,14 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 		p.setMinMaxTTL(reply)
 
-		// Saving cached response
+		// Cache the response.
 		p.setInCache(d, reply)
+
+		// Filter OPT and DNSSEC RRs if needed.
+		filterMsg(reply, reply, do)
+
+		// Restore the EDNS0 RR.
+		reply.SetEdns0(size, do)
 	}
 
 	if reply == nil {
@@ -433,8 +451,9 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	} else {
 		d.Res = reply
 	}
+	d.Req = origReq
 
-	// truncate and compress the response
+	// Truncate and compress the response.
 	d.scrub()
 
 	if p.ResponseHandler != nil {

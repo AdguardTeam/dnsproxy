@@ -5,9 +5,9 @@ import (
 	"github.com/miekg/dns"
 )
 
-// Get response from general or subnet cache
-// Return TRUE if response is found in cache
-func (p *Proxy) replyFromCache(d *DNSContext) bool {
+// replyFromCache tries to get the response from general or subnet cache.
+// Returns true on success.
+func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	if p.cache == nil || d.CustomUpstreamConfig != nil {
 		// Do not use cache if:
 		// it is disabled
@@ -15,13 +15,33 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 		return false
 	}
 
+	defer func() {
+		if hit {
+			return
+		}
+
+		// On cache miss perform DNSSEC lookup.
+		if o := d.Req.IsEdns0(); o != nil {
+			if o.Do() {
+				return
+			}
+
+			o.SetDo()
+			return
+		}
+
+		d.Req.SetEdns0(defaultUDPBufSize, true)
+	}()
+
 	if !p.Config.EnableEDNSClientSubnet {
 		val, ok := p.cache.Get(d.Req)
 		if ok && val != nil {
 			d.Res = val
 			log.Debug("Serving cached response")
+
 			return true
 		}
+
 		return false
 	}
 
@@ -30,6 +50,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 		if ok && val != nil {
 			d.Res = val
 			log.Debug("Serving response from subnet cache")
+
 			return true
 		}
 	} else if d.ecsReqMask == 0 && p.cache != nil {
@@ -37,6 +58,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 		if ok && val != nil {
 			d.Res = val
 			log.Debug("Serving response from general cache")
+
 			return true
 		}
 	}
@@ -44,7 +66,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) bool {
 	return false
 }
 
-// Store response in general or subnet cache
+// setInCache stores the response in general or subnet cache.
 func (p *Proxy) setInCache(d *DNSContext, resp *dns.Msg) {
 	if p.cache == nil || d.CustomUpstreamConfig != nil {
 		// Do not use cache if:

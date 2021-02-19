@@ -385,17 +385,14 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		p.processECS(d)
 	}
 
-	origReq := d.Req.Copy()
 	var do bool
 	var size uint16 = defaultUDPBufSize
-	if o := origReq.IsEdns0(); o != nil {
+	if o := d.Req.IsEdns0(); o != nil {
 		do = o.Do()
 		size = o.UDPSize()
 	}
 
-	if p.replyFromCache(d) {
-		d.Res.SetEdns0(size, do)
-
+	if p.replyFromCache(d, do, size) {
 		return nil
 	}
 
@@ -430,19 +427,23 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
 	}
 
-	// set Upstream that resolved DNS request to DNSContext
 	if reply != nil {
+		// This branch handles the successfully exchanged response.
+
+		// Set Upstream that resolved DNS request to DNSContext.
 		d.Upstream = u
 
 		p.setMinMaxTTL(reply)
 
-		// Cache the response.
+		// Cache the response with DNSSEC RRs.
 		p.setInCache(d, reply)
 
-		// Filter OPT and DNSSEC RRs if needed.
+		// Now if the request has DO bit set we only remove all the OPT
+		// RRs, and also all DNSSEC RRs otherwise.
 		filterMsg(reply, reply, do)
 
-		// Restore the EDNS0 RR.
+		// Generate new EDNS0 RR with appropriate DO bit and UDP buffer
+		// size.
 		reply.SetEdns0(size, do)
 	}
 
@@ -451,7 +452,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	} else {
 		d.Res = reply
 	}
-	d.Req = origReq
 
 	// Truncate and compress the response.
 	d.scrub()

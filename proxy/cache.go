@@ -234,10 +234,6 @@ func filterRRSlice(rrs []dns.RR, do bool, ttl ...uint32) (filtered []dns.RR) {
 // packResponse turns m into a byte slice where first 4 bytes contain the expire
 // value.
 func packResponse(m *dns.Msg) []byte {
-	// Don't cache OPT records since it's deprecated by RFC-6891
-	// (https://tools.ietf.org/html/rfc6891).
-	// m.Extra = filterRRSlice(m.Extra, true)
-
 	pm, _ := m.Pack()
 	actualTTL := findLowestTTL(m)
 	expire := uint32(time.Now().Unix()) + actualTTL

@@ -10,7 +10,7 @@ import (
 func TestGetUpstreamsForDomain(t *testing.T) {
 	upstreams := []string{"[/google.com/local/]4.3.2.1", "[/www.google.com//]1.2.3.4", "[/maps.google.com/]#", "[/www.google.com/]tls://1.1.1.1"}
 
-	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second)
+	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second, false)
 	if err != nil {
 		t.Fatalf("Error while upstream config parsing: %s", err)
 	}
@@ -24,7 +24,7 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 
 func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
-	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second)
+	config, err := ParseUpstreamsConfig(upstreams, []string{}, 1*time.Second, false)
 	assert.Nil(t, err)
 	assert.Len(t, config.Upstreams, 0)
 	assert.Len(t, config.DomainReservedUpstreams, 2)

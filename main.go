@@ -50,6 +50,9 @@ type Options struct {
 	// DNSCrypt listen ports
 	DNSCryptListenPorts []int `short:"y" long:"dnscrypt-port" description:"Listening ports for DNSCrypt"`
 
+	// Disable TLS certificate verification
+	Insecure bool `short:"i" long:"insecure" description:"Disable secure TLS certificate validation" optional:"yes" optional-value:"false"`
+
 	// Encryption config
 	// --
 
@@ -228,7 +231,7 @@ func createProxyConfig(options Options) proxy.Config {
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options Options) {
 	// Init upstreams
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout, options.Insecure)
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}

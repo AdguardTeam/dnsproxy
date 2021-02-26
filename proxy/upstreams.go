@@ -2,9 +2,10 @@ package proxy
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/utils"
-	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 )

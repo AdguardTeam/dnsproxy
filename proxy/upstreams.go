@@ -25,7 +25,7 @@ type UpstreamConfig struct {
 // So the following config: ["[/host.com/]1.2.3.4", "[/www.host.com/]2.3.4.5", "[/maps.host.com/]#", "3.4.5.6"]
 // will send queries for *.host.com to 1.2.3.4, except for *.www.host.com, which will go to 2.3.4.5 and *.maps.host.com,
 // which will go to default server 3.4.5.6 with all other domains
-func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Duration, insecureSkipVerify bool) (UpstreamConfig, error) {
+func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Duration, options upstream.Options) (UpstreamConfig, error) {
 	var upstreams []upstream.Upstream
 	domainReservedUpstreams := map[string][]upstream.Upstream{}
 
@@ -51,7 +51,7 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 			dnsUpstream, ok := upstreamsIndex[u]
 			if !ok {
 				// create an upstream
-				dnsUpstream, err = upstream.AddressToUpstream(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout, InsecureSkipVerify: insecureSkipVerify})
+				dnsUpstream, err = upstream.AddressToUpstream(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout, InsecureSkipVerify: options.InsecureSkipVerify})
 				if err != nil {
 					return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, bootstrapDNS, err)
 				}

@@ -2,11 +2,9 @@ package proxy
 
 import (
 	"fmt"
-	"strings"
-	"time"
-
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/utils"
+	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 )
@@ -25,12 +23,12 @@ type UpstreamConfig struct {
 // So the following config: ["[/host.com/]1.2.3.4", "[/www.host.com/]2.3.4.5", "[/maps.host.com/]#", "3.4.5.6"]
 // will send queries for *.host.com to 1.2.3.4, except for *.www.host.com, which will go to 2.3.4.5 and *.maps.host.com,
 // which will go to default server 3.4.5.6 with all other domains
-func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Duration, options upstream.Options) (UpstreamConfig, error) {
+func ParseUpstreamsConfig(upstreamConfig []string, options upstream.Options) (UpstreamConfig, error) {
 	var upstreams []upstream.Upstream
 	domainReservedUpstreams := map[string][]upstream.Upstream{}
 
-	if len(bootstrapDNS) > 0 {
-		log.Debug("Bootstraps: %v", bootstrapDNS)
+	if len(options.Bootstrap) > 0 {
+		log.Debug("Bootstraps: %v", options.Bootstrap)
 	}
 
 	// We use this index to avoid creating duplicates of upstreams
@@ -51,9 +49,9 @@ func ParseUpstreamsConfig(upstreamConfig, bootstrapDNS []string, timeout time.Du
 			dnsUpstream, ok := upstreamsIndex[u]
 			if !ok {
 				// create an upstream
-				dnsUpstream, err = upstream.AddressToUpstream(u, upstream.Options{Bootstrap: bootstrapDNS, Timeout: timeout, InsecureSkipVerify: options.InsecureSkipVerify})
+				dnsUpstream, err = upstream.AddressToUpstream(u, upstream.Options{Bootstrap: options.Bootstrap, Timeout: options.Timeout, InsecureSkipVerify: options.InsecureSkipVerify})
 				if err != nil {
-					return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, bootstrapDNS, err)
+					return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, options.Bootstrap, err)
 				}
 
 				// save to the index

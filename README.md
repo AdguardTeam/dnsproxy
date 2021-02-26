@@ -46,6 +46,7 @@ Application Options:
   -y, --dnscrypt-port=   Listening ports for DNSCrypt
   -c, --tls-crt=         Path to a file with the certificate chain
   -k, --tls-key=         Path to a file with the private key
+      --insecure         Disable secure TLS certificate validation
   -g, --dnscrypt-config= Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
   -u, --upstream=        An upstream to be used (can be specified multiple times)
   -b, --bootstrap=       Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)

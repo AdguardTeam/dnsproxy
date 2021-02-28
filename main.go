@@ -59,6 +59,9 @@ type Options struct {
 	// Path to the file with the private key
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
+	// Disable TLS certificate verification
+	Insecure bool `long:"insecure" description:"Disable secure TLS certificate validation" optional:"yes" optional-value:"false"`
+
 	// Path to the DNSCrypt configuration file
 	DNSCryptConfigPath string `short:"g" long:"dnscrypt-config" description:"Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt"`
 
@@ -228,7 +231,7 @@ func createProxyConfig(options Options) proxy.Config {
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options Options) {
 	// Init upstreams
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, options.BootstrapDNS, defaultTimeout)
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams, upstream.Options{InsecureSkipVerify: options.Insecure, Bootstrap: options.BootstrapDNS, Timeout: defaultTimeout})
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}

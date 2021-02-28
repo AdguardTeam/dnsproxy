@@ -37,6 +37,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
 	// this is a fatal error and the recipient of the defective message MUST forcibly abort
 	// the connection immediately.
+	// (https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2)
 	if opt := m.IsEdns0(); opt != nil {
 		for _, option := range opt.Option {
 			// Check for EDNS TCP keepalive option

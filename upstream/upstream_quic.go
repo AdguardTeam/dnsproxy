@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -31,6 +32,19 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	session, err := p.getSession(true)
 	if err != nil {
 		return nil, err
+	}
+
+	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
+	// this is a fatal error and the recipient of the defective message MUST forcibly abort
+	// the connection immediately.
+	if opt := m.IsEdns0(); opt != nil {
+		for _, option := range opt.Option {
+			// Check for EDNS TCP keepalive option
+			if option.Option() == dns.EDNS0TCPKEEPALIVE {
+				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
+				return nil, errors.New("EDNS0 TCP keepalive option is set")
+			}
+		}
 	}
 
 	stream, err := p.openStream(session)

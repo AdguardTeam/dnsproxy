@@ -190,6 +190,8 @@ func stampToUpstream(address string, opts Options) (Upstream, error) {
 		return &dnsCrypt{boot: b}, nil
 	case dnsstamps.StampProtoTypeDoH:
 		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), opts)
+	case dnsstamps.StampProtoTypeDoQ:
+		return AddressToUpstream(fmt.Sprintf("quic://%s%s", stamp.ProviderName, stamp.Path), opts)
 	case dnsstamps.StampProtoTypeTLS:
 		return AddressToUpstream(fmt.Sprintf("tls://%s", stamp.ProviderName), opts)
 	}

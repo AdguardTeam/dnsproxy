@@ -15,7 +15,7 @@ import (
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
 // by selecting the ALPN token "dq" in the crypto handshake.
 // Current draft version: https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-00
-const NextProtoDQ = "doq-i00"
+const NextProtoDQ = "doq-i02"
 
 // maxQuicIdleTimeout - maximum QUIC idle timeout.
 // Default value in quic-go is 30, but our internal tests show that
@@ -23,7 +23,7 @@ const NextProtoDQ = "doq-i00"
 const maxQuicIdleTimeout = 5 * time.Minute
 
 // compatProtoDQ - ALPNs for backwards compatibility
-var compatProtoDQ = []string{"dq", "doq"}
+var compatProtoDQ = []string{"doq-i00", "dq", "doq"}
 
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {

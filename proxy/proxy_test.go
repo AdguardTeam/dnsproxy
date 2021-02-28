@@ -105,7 +105,11 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 
 	// upstreams specification. Domains adguard.com and google.ru reserved with fake upstreams, maps.google.ru excluded from dnsmasq.
 	upstreams := []string{"[/adguard.com/]1.2.3.4", "[/google.ru/]2.3.4.5", "[/maps.google.ru/]#", "1.1.1.1"}
-	config, err := ParseUpstreamsConfig(upstreams, upstream.Options{InsecureSkipVerify: false, Bootstrap: []string{"8.8.8.8"}, Timeout: 1 * time.Second})
+	config, err := ParseUpstreamsConfig(upstreams,
+		upstream.Options{InsecureSkipVerify: false,
+			Bootstrap: []string{"8.8.8.8"},
+			Timeout:   1 * time.Second,
+		})
 	if err != nil {
 		t.Fatalf("Error while upstream config parsing: %s", err)
 	}
@@ -203,7 +207,11 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{}
 	for _, line := range upstreams {
 		var u upstream.Upstream
-		u, err = upstream.AddressToUpstream(line, upstream.Options{Bootstrap: []string{"8.8.8.8:53"}, Timeout: timeOut})
+		u, err = upstream.AddressToUpstream(line,
+			upstream.Options{
+				Bootstrap: []string{"8.8.8.8:53"},
+				Timeout:   timeOut,
+			})
 		if err != nil {
 			t.Fatalf("cannot create upstream %s cause %s", line, err)
 		}

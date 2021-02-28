@@ -50,9 +50,15 @@ func ParseUpstreamsConfig(upstreamConfig []string, options upstream.Options) (Up
 			dnsUpstream, ok := upstreamsIndex[u]
 			if !ok {
 				// create an upstream
-				dnsUpstream, err = upstream.AddressToUpstream(u, upstream.Options{Bootstrap: options.Bootstrap, Timeout: options.Timeout, InsecureSkipVerify: options.InsecureSkipVerify})
+				dnsUpstream, err = upstream.AddressToUpstream(u,
+					upstream.Options{
+						Bootstrap:          options.Bootstrap,
+						Timeout:            options.Timeout,
+						InsecureSkipVerify: options.InsecureSkipVerify,
+					})
 				if err != nil {
-					return UpstreamConfig{}, fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, options.Bootstrap, err)
+					err = fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, options.Bootstrap, err)
+					return UpstreamConfig{}, err
 				}
 
 				// save to the index
@@ -67,7 +73,8 @@ func ParseUpstreamsConfig(upstreamConfig []string, options upstream.Options) (Up
 					}
 					domainReservedUpstreams[host] = append(domainReservedUpstreams[host], dnsUpstream)
 				}
-				log.Debug("Upstream %d: %s is reserved for next domains: %s", i, dnsUpstream.Address(), strings.Join(hosts, ", "))
+				log.Debug("Upstream %d: %s is reserved for next domains: %s",
+					i, dnsUpstream.Address(), strings.Join(hosts, ", "))
 			} else {
 				log.Debug("Upstream %d: %s", i, dnsUpstream.Address())
 				upstreams = append(upstreams, dnsUpstream)

@@ -20,6 +20,9 @@ import (
 // by selecting the ALPN token "dq" in the crypto handshake.
 const NextProtoDQ = "doq-i02"
 
+// compatProtoDQ - ALPNs for backwards compatibility
+var compatProtoDQ = []string{"doq-i00", "dq", "doq"}
+
 // RootCAs is the CertPool that must be used by all upstreams
 // Redefining RootCAs makes sense on iOS to overcome the 15MB memory limit of the NEPacketTunnelProvider
 // nolint
@@ -191,9 +194,9 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
-	tlsConfig.NextProtos = []string{
+	tlsConfig.NextProtos = append([]string{
 		"http/1.1", http2.NextProtoTLS, NextProtoDQ,
-	}
+	}, compatProtoDQ...)
 
 	return tlsConfig
 }

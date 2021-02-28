@@ -185,7 +185,7 @@ func TestUpstreams(t *testing.T) {
 		},
 		{
 			// AdGuard DNS (DNS-over-QUIC)
-			address:   "sdns://BAcAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
+			address:   "sdns://BAcAAAAAAAAAAAATZG5zLmFkZ3VhcmQuY29tOjc4NA",
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
@@ -195,7 +195,7 @@ func TestUpstreams(t *testing.T) {
 		},
 		{
 			// Cloudflare DNS
-			address:   "quic://dns-unfiltered.adguard.com",
+			address:   "quic://dns-unfiltered.adguard.com:784",
 			bootstrap: []string{},
 		},
 	}

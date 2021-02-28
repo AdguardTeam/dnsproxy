@@ -47,6 +47,10 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		}
 	}
 
+	// https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.4
+	// When sending queries over a QUIC connection, the DNS Message ID MUST be set to zero.
+	m.Id = 0
+
 	stream, err := p.openStream(session)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to open new stream to %s", p.Address())

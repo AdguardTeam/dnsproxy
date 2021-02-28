@@ -137,6 +137,19 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 		log.Info("failed to unpack a DNS query: %v", err)
 	}
 
+	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
+	// this is a fatal error and the recipient of the defective message MUST forcibly abort
+	// the connection immediately.
+	if opt := msg.IsEdns0(); opt != nil {
+		for _, option := range opt.Option {
+			// Check for EDNS TCP keepalive option
+			if option.Option() == dns.EDNS0TCPKEEPALIVE {
+				log.Info("client sent EDNS0 TCP keepalive option")
+				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
+			}
+		}
+	}
+
 	d := &DNSContext{
 		Proto:       ProtoQUIC,
 		Req:         &msg,

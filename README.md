@@ -139,9 +139,9 @@ Runs a DNS-over-HTTPS proxy on `127.0.0.1:443`.
 ./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
-Runs a DNS-over-QUIC proxy on `127.0.0.1:784`.
+Runs a DNS-over-QUIC proxy on `127.0.0.1:8853`.
 ```
-./dnsproxy -l 127.0.0.1 --quic-port=784 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
+./dnsproxy -l 127.0.0.1 --quic-port=8853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
 Runs a DNSCrypt proxy on `127.0.0.1:443`.

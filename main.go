@@ -417,9 +417,8 @@ func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSConte
 // If caPath is empty, system CAs will be used
 func newTLSConfig(certPath, keyPath string, options Options) (*tls.Config, error) {
 	// Set default TLS min/max versions
-	var tlsMinVersion uint16
-	var tlsMaxVersion uint16
-
+	tlsMinVersion := tls.VersionTLS10 // Default for crypto/tls
+	tlsMaxVersion := tls.VersionTLS13 // Default for crypto/tls
 	switch options.TLSMinVersion {
 	case 1.1:
 		tlsMinVersion = tls.VersionTLS11
@@ -427,19 +426,14 @@ func newTLSConfig(certPath, keyPath string, options Options) (*tls.Config, error
 		tlsMinVersion = tls.VersionTLS12
 	case 1.3:
 		tlsMinVersion = tls.VersionTLS13
-	default: // Default for crypto/tls
-		tlsMinVersion = tls.VersionTLS10
 	}
-
-	switch options.TLSMinVersion {
+	switch options.TLSMaxVersion {
 	case 1.0:
-		tlsMinVersion = tls.VersionTLS12
+		tlsMaxVersion = tls.VersionTLS10
 	case 1.1:
-		tlsMinVersion = tls.VersionTLS11
+		tlsMaxVersion = tls.VersionTLS11
 	case 1.2:
-		tlsMinVersion = tls.VersionTLS12
-	default: // Default for crypto/tls
-		tlsMinVersion = tls.VersionTLS13
+		tlsMaxVersion = tls.VersionTLS12
 	}
 
 	cert, err := loadX509KeyPair(certPath, keyPath)

@@ -43,13 +43,6 @@ func (p *Proxy) replyFromCache(d *DNSContext, udpsize uint16) (hit bool) {
 
 // setInCache stores the response in general or subnet cache.
 func (p *Proxy) setInCache(d *DNSContext, resp *dns.Msg) {
-	if p.cache == nil || d.CustomUpstreamConfig != nil {
-		// Do not use cache if:
-		// it is disabled
-		// the query is with custom upstreams
-		return
-	}
-
 	if !p.Config.EnableEDNSClientSubnet {
 		p.cache.Set(resp)
 		return

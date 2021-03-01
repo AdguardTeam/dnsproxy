@@ -205,9 +205,9 @@ func isDNSSEC(r dns.RR) bool {
 	}
 }
 
-// filterRRSlice removes OPT RRs, DNSSEC RRs if do is false, sets TTL to ttl if
-// presented and returns the copy of the rrs.
-func filterRRSlice(rrs []dns.RR, do bool, ttl ...uint32) (filtered []dns.RR) {
+// filterRRSlice removes OPT RRs, DNSSEC RRs if do is false, sets TTL if ttl is
+// not equal to zero and returns the copy of the rrs.
+func filterRRSlice(rrs []dns.RR, do bool, ttl uint32) (filtered []dns.RR) {
 	if rrs == nil {
 		return nil
 	}
@@ -221,8 +221,8 @@ func filterRRSlice(rrs []dns.RR, do bool, ttl ...uint32) (filtered []dns.RR) {
 		if r.Header().Rrtype == dns.TypeOPT {
 			continue
 		}
-		if len(ttl) > 0 {
-			r.Header().Ttl = ttl[0]
+		if ttl != 0 {
+			r.Header().Ttl = ttl
 		}
 		rs[j] = dns.Copy(r)
 		j++
@@ -245,10 +245,10 @@ func packResponse(m *dns.Msg) []byte {
 
 // filterMsg removes OPT RRs, DNSSEC RRs if do is false, sets TTL to ttl if
 // presented and puts the results to appropriate fields of dst.
-func filterMsg(dst, m *dns.Msg, do bool, ttl ...uint32) {
-	dst.Answer = filterRRSlice(m.Answer, do, ttl...)
-	dst.Ns = filterRRSlice(m.Ns, do, ttl...)
-	dst.Extra = filterRRSlice(m.Extra, do, ttl...)
+func filterMsg(dst, m *dns.Msg, do bool, ttl uint32) {
+	dst.Answer = filterRRSlice(m.Answer, do, ttl)
+	dst.Ns = filterRRSlice(m.Ns, do, ttl)
+	dst.Extra = filterRRSlice(m.Extra, do, ttl)
 }
 
 // unpackResponse returns the unpacked response if it exists and didn't expire,
@@ -277,7 +277,7 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 	res.RecursionAvailable = m.RecursionAvailable
 	res.Rcode = m.Rcode
 
-	// Don't cache OPT records since it's deprecated by RFC-6891
+	// Don't return OPT records from cache since it's deprecated by RFC-6891
 	// (https://tools.ietf.org/html/rfc6891).
 	filterMsg(res, m, do, ttl)
 

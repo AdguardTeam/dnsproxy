@@ -382,9 +382,11 @@ func addDO(msg *dns.Msg) {
 		if !o.Do() {
 			o.SetDo()
 		}
-	} else {
-		msg.SetEdns0(defaultUDPBufSize, true)
+
+		return
 	}
+
+	msg.SetEdns0(defaultUDPBufSize, true)
 }
 
 // defaultUDPBufSize defines the default size of UDP buffer for EDNS0 RRs.
@@ -464,7 +466,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 			// Now if the request has DO bit set we only remove all the OPT
 			// RRs, and also all DNSSEC RRs otherwise.
-			filterMsg(reply, reply, do)
+			filterMsg(reply, reply, do, 0)
 
 			// Generate new EDNS0 RR with appropriate DO bit and UDP buffer
 			// size.

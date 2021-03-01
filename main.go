@@ -441,7 +441,7 @@ func newTLSConfig(certPath, keyPath string, options Options) (*tls.Config, error
 		return nil, fmt.Errorf("could not load TLS cert: %s", err)
 	}
 
-	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tlsMinVersion, MaxVersion: tlsMaxVersion}, nil
+	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: uint16(tlsMinVersion), MaxVersion: uint16(tlsMaxVersion)}, nil
 }
 
 // loadX509KeyPair reads and parses a public/private key pair from a pair

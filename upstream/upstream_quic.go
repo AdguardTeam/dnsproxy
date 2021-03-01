@@ -50,7 +50,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	// https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.4
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be set to zero.
-	m.Id = 0
+	// m.Id = 0  // This breaks compatibility with proxies, and therefore must be disabled for dnsproxy.
 
 	stream, err := p.openStream(session)
 	if err != nil {

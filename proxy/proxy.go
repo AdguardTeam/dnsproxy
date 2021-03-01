@@ -392,8 +392,25 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		size = o.UDPSize()
 	}
 
-	if p.replyFromCache(d, do, size) {
-		return nil
+	// Use cache only if it's enabled and the query doesn't use custom
+	// upstreams.
+	if p.cache != nil && d.CustomUpstreamConfig == nil {
+		if p.replyFromCache(d, size) {
+			// On cache hit add the EDNS0 OPT RR.
+			d.Res.SetEdns0(size, do)
+
+			return nil
+		}
+
+		// On cache miss request for DNSSEC from the upstream to cache it
+		// afterwards.
+		if o := d.Req.IsEdns0(); o != nil {
+			if !o.Do() {
+				o.SetDo()
+			}
+		} else {
+			d.Req.SetEdns0(defaultUDPBufSize, true)
+		}
 	}
 
 	host := d.Req.Question[0].Name

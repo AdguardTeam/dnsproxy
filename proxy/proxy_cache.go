@@ -7,36 +7,7 @@ import (
 
 // replyFromCache tries to get the response from general or subnet cache.
 // Returns true on success.
-func (p *Proxy) replyFromCache(d *DNSContext, do bool, udpsize uint16) (hit bool) {
-	if p.cache == nil || d.CustomUpstreamConfig != nil {
-		// Do not use cache if:
-		// it is disabled
-		// the query is with custom upstreams
-		return false
-	}
-
-	defer func() {
-		// On cache hit add the EDNS0 OPT RR.
-		if hit {
-			d.Res.SetEdns0(udpsize, do)
-
-			return
-		}
-
-		// On cache miss request for DNSSEC from the upstream to cache
-		// it afterwards.
-		if o := d.Req.IsEdns0(); o != nil {
-			if o.Do() {
-				return
-			}
-
-			o.SetDo()
-			return
-		}
-
-		d.Req.SetEdns0(defaultUDPBufSize, true)
-	}()
-
+func (p *Proxy) replyFromCache(d *DNSContext, udpsize uint16) (hit bool) {
 	if !p.Config.EnableEDNSClientSubnet {
 		val, ok := p.cache.Get(d.Req)
 		if ok && val != nil {

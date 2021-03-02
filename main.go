@@ -60,10 +60,10 @@ type Options struct {
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
 	// Minimum TLS version
-	TLSMinVersion float32 `long:"tls-min-version" description:"Minimum TLS version" optional:"yes"`
+	TLSMinVersion float32 `long:"tls-min-version" description:"Minimum TLS version, for example 1.0" optional:"yes"`
 
 	// Minimum TLS version
-	TLSMaxVersion float32 `long:"tls-max-version" description:"Maximum TLS version" optional:"yes"`
+	TLSMaxVersion float32 `long:"tls-max-version" description:"Maximum TLS version, for example 1.3" optional:"yes"`
 
 	// Disable TLS certificate verification
 	Insecure bool `long:"insecure" description:"Disable secure TLS certificate validation" optional:"yes" optional-value:"false"`

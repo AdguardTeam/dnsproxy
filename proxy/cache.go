@@ -179,103 +179,107 @@ func respectTTLOverrides(ttl uint32, cacheMinTTL uint32, cacheMaxTTL uint32) uin
 	return ttl
 }
 
-// Format:
-// uint8(do)
-// uint16(qtype)
-// uint16(qclass)
-// name
+// key constructs the cache key from type, class and question's name of m.
 func key(m *dns.Msg) []byte {
 	q := m.Question[0]
-	b := make([]byte, 1+2+2+len(q.Name))
-
-	// put do
-	opt := m.IsEdns0()
-	do := false
-	if opt != nil {
-		do = opt.Do()
-	}
-	if do {
-		b[0] = 1
-	} else {
-		b[0] = 0
-	}
+	name := q.Name
+	b := make([]byte, 2+2+len(name))
 
 	// put qtype, qclass, name
-	binary.BigEndian.PutUint16(b[1:], q.Qtype)
-	binary.BigEndian.PutUint16(b[3:], q.Qclass)
-	name := strings.ToLower(q.Name)
-	copy(b[5:], name)
+	binary.BigEndian.PutUint16(b, q.Qtype)
+	binary.BigEndian.PutUint16(b[2:], q.Qclass)
+	copy(b[4:], strings.ToLower(name))
 	return b
 }
 
-/*
-expire [4]byte
-dns_message []byte
-*/
+// isDNSSEC returns true if r is a DNSSEC record.  NSEC,NSEC3,DS and RRSIG/SIG
+// are DNSSEC records.  DNSKEYs is not in this list on the assumption that the
+// client explicitly asked for it.
+func isDNSSEC(r dns.RR) bool {
+	switch r.Header().Rrtype {
+	case dns.TypeNSEC, dns.TypeNSEC3, dns.TypeDS, dns.TypeRRSIG, dns.TypeSIG:
+		return true
+
+	default:
+		return false
+	}
+}
+
+// filterRRSlice removes OPT RRs, DNSSEC RRs if do is false, sets TTL if ttl is
+// not equal to zero and returns the copy of the rrs.
+func filterRRSlice(rrs []dns.RR, do bool, ttl uint32) (filtered []dns.RR) {
+	if rrs == nil {
+		return nil
+	}
+
+	j := 0
+	rs := make([]dns.RR, len(rrs))
+	for _, r := range rrs {
+		if !do && isDNSSEC(r) {
+			continue
+		}
+		if r.Header().Rrtype == dns.TypeOPT {
+			continue
+		}
+		if ttl != 0 {
+			r.Header().Ttl = ttl
+		}
+		rs[j] = dns.Copy(r)
+		j++
+	}
+
+	return rs[:j]
+}
+
+// packResponse turns m into a byte slice where first 4 bytes contain the expire
+// value.
 func packResponse(m *dns.Msg) []byte {
 	pm, _ := m.Pack()
 	actualTTL := findLowestTTL(m)
 	expire := uint32(time.Now().Unix()) + actualTTL
-	var d []byte
-	d = make([]byte, 4+len(pm))
+	d := make([]byte, 4+len(pm))
 	binary.BigEndian.PutUint32(d, expire)
 	copy(d[4:], pm)
 	return d
 }
 
-// Return nil if response has expired
+// filterMsg removes OPT RRs, DNSSEC RRs if do is false, sets TTL to ttl if
+// presented and puts the results to appropriate fields of dst.
+func filterMsg(dst, m *dns.Msg, do bool, ttl uint32) {
+	dst.Answer = filterRRSlice(m.Answer, do, ttl)
+	dst.Ns = filterRRSlice(m.Ns, do, ttl)
+	dst.Extra = filterRRSlice(m.Extra, do, ttl)
+}
+
+// unpackResponse returns the unpacked response if it exists and didn't expire,
+// nil otherwise.
 func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
-	now := time.Now().Unix()
 	expire := binary.BigEndian.Uint32(data[:4])
+	now := time.Now().Unix()
 	if int64(expire) <= now {
 		return nil
 	}
 	ttl := expire - uint32(now)
 
-	m := dns.Msg{}
-	err := m.Unpack(data[4:])
-	if err != nil {
+	m := &dns.Msg{}
+	if m.Unpack(data[4:]) != nil {
 		return nil
 	}
 
-	// check if DO flag is set in the request
-	reqOpt := request.IsEdns0()
-	reqDo := false
-	if reqOpt != nil {
-		reqDo = reqOpt.Do()
+	var do bool
+	if o := request.IsEdns0(); o != nil {
+		do = o.Do()
 	}
 
-	res := dns.Msg{}
+	res := &dns.Msg{}
 	res.SetReply(request)
-	res.Authoritative = false
 	res.AuthenticatedData = m.AuthenticatedData
 	res.RecursionAvailable = m.RecursionAvailable
 	res.Rcode = m.Rcode
 
-	for _, r := range m.Answer {
-		answer := dns.Copy(r)
-		answer.Header().Ttl = ttl
-		res.Answer = append(res.Answer, answer)
-	}
-	for _, r := range m.Ns {
-		ns := dns.Copy(r)
-		ns.Header().Ttl = ttl
-		res.Ns = append(res.Ns, ns)
-	}
-	for _, r := range m.Extra {
-		// don't return OPT records as these are hop-by-hop
-		if r.Header().Rrtype == dns.TypeOPT {
-			// unless DO was set in the request
-			// get it's value from the original header then
-			if reqDo {
-				opt := r.(*dns.OPT)
-				res.SetEdns0(opt.UDPSize(), opt.Do())
-			}
-			continue
-		}
-		extra := dns.Copy(r)
-		extra.Header().Ttl = ttl
-		res.Extra = append(res.Extra, extra)
-	}
-	return &res
+	// Don't return OPT records from cache since it's deprecated by RFC-6891
+	// (https://tools.ietf.org/html/rfc6891).
+	filterMsg(res, m, do, ttl)
+
+	return res
 }

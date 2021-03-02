@@ -59,6 +59,12 @@ type Options struct {
 	// Path to the file with the private key
 	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
+	// Minimum TLS version
+	TLSMinVersion float32 `long:"tls-min-version" description:"Minimum TLS version" optional:"yes"`
+
+	// Minimum TLS version
+	TLSMaxVersion float32 `long:"tls-max-version" description:"Maximum TLS version" optional:"yes"`
+
 	// Disable TLS certificate verification
 	Insecure bool `long:"insecure" description:"Disable secure TLS certificate validation" optional:"yes" optional-value:"false"`
 
@@ -298,7 +304,7 @@ func initBogusNXDomain(config *proxy.Config, options Options) {
 // initTLSConfig - inits TLS config
 func initTLSConfig(config *proxy.Config, options Options) {
 	if options.TLSCertPath != "" && options.TLSKeyPath != "" {
-		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath)
+		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath, options)
 		if err != nil {
 			log.Fatalf("failed to load TLS config: %s", err)
 		}
@@ -409,13 +415,33 @@ func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSConte
 // NewTLSConfig returns a TLS config that includes a certificate
 // Use for server TLS config or when using a client certificate
 // If caPath is empty, system CAs will be used
-func newTLSConfig(certPath, keyPath string) (*tls.Config, error) {
+func newTLSConfig(certPath, keyPath string, options Options) (*tls.Config, error) {
+	// Set default TLS min/max versions
+	tlsMinVersion := tls.VersionTLS10 // Default for crypto/tls
+	tlsMaxVersion := tls.VersionTLS13 // Default for crypto/tls
+	switch options.TLSMinVersion {
+	case 1.1:
+		tlsMinVersion = tls.VersionTLS11
+	case 1.2:
+		tlsMinVersion = tls.VersionTLS12
+	case 1.3:
+		tlsMinVersion = tls.VersionTLS13
+	}
+	switch options.TLSMaxVersion {
+	case 1.0:
+		tlsMaxVersion = tls.VersionTLS10
+	case 1.1:
+		tlsMaxVersion = tls.VersionTLS11
+	case 1.2:
+		tlsMaxVersion = tls.VersionTLS12
+	}
+
 	cert, err := loadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not load TLS cert: %s", err)
 	}
 
-	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
+	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: uint16(tlsMinVersion), MaxVersion: uint16(tlsMaxVersion)}, nil
 }
 
 // loadX509KeyPair reads and parses a public/private key pair from a pair

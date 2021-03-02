@@ -243,9 +243,16 @@ func packResponse(m *dns.Msg) []byte {
 	return d
 }
 
-// filterMsg removes OPT RRs, DNSSEC RRs if do is false, sets TTL to ttl if
-// presented and puts the results to appropriate fields of dst.
-func filterMsg(dst, m *dns.Msg, do bool, ttl uint32) {
+// filterMsg removes OPT RRs, DNSSEC RRs if do is false, sets TTL to ttl if it's
+// not equal to 0 and puts the results to appropriate fields of dst.  It also
+// filters the AD bit if both ad and do are false.
+func filterMsg(dst, m *dns.Msg, ad, do bool, ttl uint32) {
+	// As RFC-6840 (https://tools.ietf.org/html/rfc6840) says, validating
+	// resolvers should only set the AD bit when a response both meets the
+	// conditions listed in RFC-4035 (https://tools.ietf.org/html/rfc4035),
+	// and the request contained either a set DO bit or a set AD bit.
+	dst.AuthenticatedData = dst.AuthenticatedData && (ad || do)
+
 	dst.Answer = filterRRSlice(m.Answer, do, ttl)
 	dst.Ns = filterRRSlice(m.Ns, do, ttl)
 	dst.Extra = filterRRSlice(m.Extra, do, ttl)
@@ -266,9 +273,10 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 		return nil
 	}
 
-	var do bool
+	adBit := request.AuthenticatedData
+	var doBit bool
 	if o := request.IsEdns0(); o != nil {
-		do = o.Do()
+		doBit = o.Do()
 	}
 
 	res := &dns.Msg{}
@@ -279,7 +287,7 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 
 	// Don't return OPT records from cache since it's deprecated by RFC-6891
 	// (https://tools.ietf.org/html/rfc6891).
-	filterMsg(res, m, do, ttl)
+	filterMsg(res, m, adBit, doBit, ttl)
 
 	return res
 }

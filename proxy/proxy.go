@@ -398,10 +398,11 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		p.processECS(d)
 	}
 
-	var do bool
+	adBit := d.Req.AuthenticatedData
+	var doBit bool
 	var size uint16 = defaultUDPBufSize
 	if o := d.Req.IsEdns0(); o != nil {
-		do = o.Do()
+		doBit = o.Do()
 		size = o.UDPSize()
 	}
 
@@ -411,7 +412,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	if cacheWorks {
 		if p.replyFromCache(d, size) {
 			// On cache hit add the EDNS0 OPT RR.
-			d.Res.SetEdns0(size, do)
+			d.Res.SetEdns0(size, doBit)
 
 			return nil
 		}
@@ -466,11 +467,11 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 			// Now if the request has DO bit set we only remove all the OPT
 			// RRs, and also all DNSSEC RRs otherwise.
-			filterMsg(reply, reply, do, 0)
+			filterMsg(reply, reply, adBit, doBit, 0)
 
 			// Generate new EDNS0 RR with appropriate DO bit and UDP buffer
 			// size.
-			reply.SetEdns0(size, do)
+			reply.SetEdns0(size, doBit)
 		}
 	}
 

@@ -114,10 +114,10 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout, preferTCP: true}, nil
 	case "quic":
 		if upstreamURL.Port() == "" {
-			// https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-00#section-8.2.1
-			// Early experiments MAY use port 784.  This port is marked in the IANA
-			// registry as unassigned.
-			upstreamURL.Host += ":784"
+			//https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-10.2.1
+			// Early experiments MAY use port 8853. This port is marked in the IANA registry as unassigned.
+			// (Note that prior to version -02 of this draft, experiments were directed to use port 784.)
+			upstreamURL.Host += ":8853"
 		}
 		resolverURL := upstreamURL.String()
 		b, err := urlToBoot(resolverURL, opts)

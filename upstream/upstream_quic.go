@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -32,6 +33,24 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
+	// this is a fatal error and the recipient of the defective message MUST forcibly abort
+	// the connection immediately.
+	// (https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2)
+	if opt := m.IsEdns0(); opt != nil {
+		for _, option := range opt.Option {
+			// Check for EDNS TCP keepalive option
+			if option.Option() == dns.EDNS0TCPKEEPALIVE {
+				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
+				return nil, errors.New("EDNS0 TCP keepalive option is set")
+			}
+		}
+	}
+
+	// https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.4
+	// When sending queries over a QUIC connection, the DNS Message ID MUST be set to zero.
+	// m.Id = 0  // This breaks compatibility with proxies, and therefore must be disabled for dnsproxy.
 
 	stream, err := p.openStream(session)
 	if err != nil {

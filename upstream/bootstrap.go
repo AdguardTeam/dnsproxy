@@ -30,7 +30,7 @@ var RootCAs *x509.CertPool
 var CipherSuites []uint16
 
 type bootstrapper struct {
-	address        string      // in form of "tls://one.one.one.one:853"
+	URL            *url.URL
 	resolvers      []*Resolver // list of Resolvers to use to resolve hostname, if necessary
 	dialContext    dialHandler // specifies the dial function for creating unencrypted TCP connections.
 	resolvedConfig *tls.Config
@@ -46,11 +46,11 @@ type bootstrapper struct {
 // newBootstrapperResolved creates a new bootstrapper that already contains resolved config.
 // This can be done only in the case when we already know the resolver IP address.
 // options -- Upstream customization options
-func newBootstrapperResolved(address string, options Options) (*bootstrapper, error) {
+func newBootstrapperResolved(upsURL *url.URL, options Options) (*bootstrapper, error) {
 	// get a host without port
-	host, port, err := getAddressHostPort(address)
-	if err != nil {
-		return nil, fmt.Errorf("bootstrapper requires port in address %s", address)
+	host, port := upsURL.Hostname(), upsURL.Port()
+	if port == "" {
+		return nil, fmt.Errorf("bootstrapper requires port in address %s", upsURL.String())
 	}
 
 	var resolverAddresses []string
@@ -60,7 +60,7 @@ func newBootstrapperResolved(address string, options Options) (*bootstrapper, er
 	}
 
 	b := &bootstrapper{
-		address: address,
+		URL:     upsURL,
 		options: options,
 	}
 	b.dialContext = b.createDialContext(resolverAddresses)
@@ -72,7 +72,7 @@ func newBootstrapperResolved(address string, options Options) (*bootstrapper, er
 // newBootstrapper initializes a new bootstrapper instance
 // address -- original resolver address string (i.e. tls://one.one.one.one:853)
 // options -- Upstream customization options
-func newBootstrapper(address string, options Options) (*bootstrapper, error) {
+func newBootstrapper(address *url.URL, options Options) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
 	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
@@ -90,7 +90,7 @@ func newBootstrapper(address string, options Options) (*bootstrapper, error) {
 	}
 
 	return &bootstrapper{
-		address:   address,
+		URL:       address,
 		resolvers: resolvers,
 		options:   options,
 	}, nil
@@ -113,11 +113,11 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	//
 
 	// get a host without port
-	host, port, err := getAddressHostPort(n.address)
-	if err != nil {
-		addr := n.address
+	addr := n.URL
+	host, port := addr.Hostname(), addr.Port()
+	if port == "" {
 		n.RUnlock()
-		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr)
+		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr.String())
 	}
 
 	// if n.address's host is an IP, just use it right away
@@ -191,8 +191,12 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
-	tlsConfig.NextProtos = []string{
-		"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+	// The supported application level protocols should be specified only
+	// for DNS-over-HTTPS and DNS-over-QUIC connections.
+	if n.URL.Scheme != "tls" {
+		tlsConfig.NextProtos = []string{
+			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+		}
 	}
 
 	return tlsConfig

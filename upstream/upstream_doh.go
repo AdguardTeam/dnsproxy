@@ -32,7 +32,7 @@ type dnsOverHTTPS struct {
 	client *http.Client
 }
 
-func (p *dnsOverHTTPS) Address() string { return p.boot.address }
+func (p *dnsOverHTTPS) Address() string { return p.boot.URL.String() }
 
 func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	client, err := p.getClient()
@@ -57,10 +57,10 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.
-	requestURL := p.boot.address + "?dns=" + base64.RawURLEncoding.EncodeToString(buf)
+	requestURL := p.Address() + "?dns=" + base64.RawURLEncoding.EncodeToString(buf)
 	req, err := http.NewRequest("GET", requestURL, nil)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't create a HTTP request to %s", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't create a HTTP request to %s", p.boot.URL)
 	}
 	req.Header.Set("Accept", "application/dns-message")
 
@@ -69,20 +69,20 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't do a GET request to '%s'", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't do a GET request to '%s'", p.boot.URL)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't read body contents for '%s'", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't read body contents for '%s'", p.boot.URL)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("got an unexpected HTTP status code %d from '%s'", resp.StatusCode, p.boot.address)
+		return nil, fmt.Errorf("got an unexpected HTTP status code %d from '%s'", resp.StatusCode, p.boot.URL)
 	}
 	response := dns.Msg{}
 	err = response.Unpack(body)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't unpack DNS response from '%s': body is %s", p.boot.address, string(body))
+		return nil, errorx.Decorate(err, "couldn't unpack DNS response from '%s': body is %s", p.boot.URL, string(body))
 	}
 	if err == nil && response.Id != m.Id {
 		err = dns.ErrId
@@ -135,7 +135,7 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
 func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 	tlsConfig, dialContext, err := p.boot.get()
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't bootstrap %s", p.boot.address)
+		return nil, errorx.Decorate(err, "couldn't bootstrap %s", p.boot.URL)
 	}
 
 	transport := &http.Transport{

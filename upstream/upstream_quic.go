@@ -25,7 +25,7 @@ type dnsOverQUIC struct {
 	sync.RWMutex            // protects session and bytesPool
 }
 
-func (p *dnsOverQUIC) Address() string { return p.boot.address }
+func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 
 func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	session, err := p.getSession(true)
@@ -55,8 +55,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	_ = stream.Close()
 
 	pool := p.getBytesPool()
-	var respBuf []byte
-	respBuf = pool.Get().([]byte)
+	respBuf := pool.Get().([]byte)
 
 	// Linter says that the argument needs to be pointer-like
 	// But it's already pointer-like

@@ -192,6 +192,8 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 
 	// The supported application level protocols should be specified only
 	// for DNS-over-HTTPS and DNS-over-QUIC connections.
+	//
+	// See https://github.com/AdguardTeam/AdGuardHome/issues/2681.
 	if n.URL.Scheme != "tls" {
 		tlsConfig.NextProtos = []string{
 			"http/1.1", http2.NextProtoTLS, NextProtoDQ,

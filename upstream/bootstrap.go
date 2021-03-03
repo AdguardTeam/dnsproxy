@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,8 +47,8 @@ type bootstrapper struct {
 // options -- Upstream customization options
 func newBootstrapperResolved(upsURL *url.URL, options Options) (*bootstrapper, error) {
 	// get a host without port
-	host, port := upsURL.Hostname(), upsURL.Port()
-	if port == "" {
+	host, port, err := net.SplitHostPort(upsURL.Host)
+	if err != nil {
 		return nil, fmt.Errorf("bootstrapper requires port in address %s", upsURL.String())
 	}
 
@@ -114,8 +113,8 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 	// get a host without port
 	addr := n.URL
-	host, port := addr.Hostname(), addr.Port()
-	if port == "" {
+	host, port, err := net.SplitHostPort(addr.Host)
+	if err != nil {
 		n.RUnlock()
 		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr.String())
 	}
@@ -233,23 +232,4 @@ func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHa
 		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
 	}
 	return
-}
-
-// getAddressHostPort splits resolver address into host and port
-// returns host, port
-func getAddressHostPort(address string) (string, string, error) {
-	justHostPort := address
-	if strings.Contains(address, "://") {
-		parsedURL, err := url.Parse(address)
-		if err != nil {
-			return "", "", errorx.Decorate(err, "failed to parse %s", address)
-		}
-
-		justHostPort = parsedURL.Host
-	}
-
-	// convert host to IP if necessary, we know that it's scheme://hostname:port/
-
-	// get a host without port
-	return net.SplitHostPort(justHostPort)
 }

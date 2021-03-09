@@ -414,6 +414,9 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 			// On cache hit add the EDNS0 OPT RR.
 			d.Res.SetEdns0(size, doBit)
 
+			// Also truncate and compress the respnose.
+			d.scrub()
+
 			return nil
 		}
 

@@ -392,19 +392,20 @@ func addDO(msg *dns.Msg) {
 // defaultUDPBufSize defines the default size of UDP buffer for EDNS0 RRs.
 const defaultUDPBufSize = 2048
 
-// Resolve is the default resolving method used by the DNS proxy to query upstreams
+// Resolve is the default resolving method used by the DNS proxy to query
+// upstreams.
 func (p *Proxy) Resolve(d *DNSContext) error {
 	if p.Config.EnableEDNSClientSubnet {
 		p.processECS(d)
 	}
 
-	d.size()
+	d.calcFlagsAndSize()
 
 	// Use cache only if it's enabled and the query doesn't use custom
 	// upstreams.
 	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
 	if cacheWorks {
-		if p.replyFromCache(d, d.udpSize) {
+		if p.replyFromCache(d) {
 			// Complete the response from cache.
 			d.scrub()
 
@@ -458,15 +459,12 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		if cacheWorks {
 			// Cache the response with DNSSEC RRs.
 			p.setInCache(d, reply)
-
-			// Now if the request has DO bit set we only remove all the OPT
-			// RRs, and also all DNSSEC RRs otherwise.
-			filterMsg(reply, reply, d.adBit, d.doBit, 0)
 		}
 	}
 
 	if reply == nil {
 		d.Res = p.genServerFailure(d.Req)
+		d.hasEDNS0 = false
 	} else {
 		d.Res = reply
 	}

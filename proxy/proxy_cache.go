@@ -7,7 +7,7 @@ import (
 
 // replyFromCache tries to get the response from general or subnet cache.
 // Returns true on success.
-func (p *Proxy) replyFromCache(d *DNSContext, udpsize uint16) (hit bool) {
+func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	if !p.Config.EnableEDNSClientSubnet {
 		val, ok := p.cache.Get(d.Req)
 		if ok && val != nil {

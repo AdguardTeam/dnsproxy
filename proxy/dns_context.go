@@ -54,8 +54,8 @@ type DNSContext struct {
 
 	// adBit is the authenticated data flag from the request.
 	adBit bool
-	// haveEDNS0 reflects if the request has EDNS0 RRs.
-	haveEDNS0 bool
+	// hasEDNS0 reflects if the request has EDNS0 RRs.
+	hasEDNS0 bool
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
 	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
@@ -63,8 +63,8 @@ type DNSContext struct {
 	udpSize uint16
 }
 
-// size lazily calculates some values required for Resolve method.
-func (ctx *DNSContext) size() {
+// calcFlagsAndSize lazily calculates some values required for Resolve method.
+func (ctx *DNSContext) calcFlagsAndSize() {
 	if ctx.udpSize != 0 {
 		return
 	}
@@ -75,7 +75,7 @@ func (ctx *DNSContext) size() {
 
 	ctx.adBit = ctx.Req.AuthenticatedData
 	if o := ctx.Req.IsEdns0(); o != nil {
-		ctx.haveEDNS0 = true
+		ctx.hasEDNS0 = true
 		ctx.doBit = o.Do()
 		ctx.udpSize = o.UDPSize()
 
@@ -91,16 +91,19 @@ func (ctx *DNSContext) scrub() {
 		return
 	}
 
-	ctx.size()
+	// We should guarantee that all the values we need are calculated.
+	ctx.calcFlagsAndSize()
+
+	// Now if the request has DO bit set we only remove all the OPT
+	// RRs, and also all DNSSEC RRs otherwise.
+	filterMsg(ctx.Res, ctx.Res, ctx.adBit, ctx.doBit, 0)
 
 	// RFC-6891 (https://tools.ietf.org/html/rfc6891) states that response
 	// mustn't contain an EDNS0 RR if the request doesn't include it.
 	//
 	// See https://github.com/AdguardTeam/dnsproxy/issues/132.
-	if ctx.haveEDNS0 && ctx.Res.Rcode == dns.RcodeSuccess {
-		if ctx.Res.IsEdns0() == nil {
-			ctx.Res.SetEdns0(ctx.udpSize, ctx.doBit)
-		}
+	if ctx.hasEDNS0 && ctx.Res.IsEdns0() == nil {
+		ctx.Res.SetEdns0(ctx.udpSize, ctx.doBit)
 	}
 
 	ctx.Res.Truncate(proxyutil.DNSSize(ctx.Proto, ctx.Req))

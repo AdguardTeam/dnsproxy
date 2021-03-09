@@ -398,32 +398,14 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		p.processECS(d)
 	}
 
-	adBit := d.Req.AuthenticatedData
-	var doBit, haveEDNS0 bool
-	var size uint16 = defaultUDPBufSize
-	if o := d.Req.IsEdns0(); o != nil {
-		haveEDNS0 = true
-		doBit = o.Do()
-		size = o.UDPSize()
-	}
+	d.size()
 
 	// Use cache only if it's enabled and the query doesn't use custom
 	// upstreams.
 	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
 	if cacheWorks {
-		if p.replyFromCache(d, size) {
-			// On cache hit add the EDNS0 OPT RR if needed. RFC-6891
-			// (https://tools.ietf.org/html/rfc6891) states that
-			// responder's answer mustn't contain an EDNS0 RR if the
-			// request doesn't include it.
-			//
-			// See
-			// https://github.com/AdguardTeam/dnsproxy/issues/132.
-			if haveEDNS0 {
-				d.Res.SetEdns0(size, doBit)
-			}
-
-			// Also truncate and compress the respnose.
+		if p.replyFromCache(d, d.udpSize) {
+			// Complete the response from cache.
 			d.scrub()
 
 			return nil
@@ -468,7 +450,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	if reply != nil {
 		// This branch handles the successfully exchanged response.
 
-		// Set Upstream that resolved DNS request to DNSContext.
+		// Set upstream that have resolved the request to DNSContext.
 		d.Upstream = u
 
 		p.setMinMaxTTL(reply)
@@ -479,13 +461,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 			// Now if the request has DO bit set we only remove all the OPT
 			// RRs, and also all DNSSEC RRs otherwise.
-			filterMsg(reply, reply, adBit, doBit, 0)
-
-			// Generate new EDNS0 RR with appropriate DO bit and UDP buffer
-			// size if it was requested.
-			if haveEDNS0 {
-				reply.SetEdns0(size, doBit)
-			}
+			filterMsg(reply, reply, d.adBit, d.doBit, 0)
 		}
 	}
 
@@ -495,7 +471,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		d.Res = reply
 	}
 
-	// Truncate and compress the response.
+	// Complete the response.
 	d.scrub()
 
 	if p.ResponseHandler != nil {

@@ -399,9 +399,10 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 
 	adBit := d.Req.AuthenticatedData
-	var doBit bool
+	var doBit, haveEDNS0 bool
 	var size uint16 = defaultUDPBufSize
 	if o := d.Req.IsEdns0(); o != nil {
+		haveEDNS0 = true
 		doBit = o.Do()
 		size = o.UDPSize()
 	}
@@ -411,8 +412,16 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
 	if cacheWorks {
 		if p.replyFromCache(d, size) {
-			// On cache hit add the EDNS0 OPT RR.
-			d.Res.SetEdns0(size, doBit)
+			// On cache hit add the EDNS0 OPT RR if needed. RFC-6891
+			// (https://tools.ietf.org/html/rfc6891) states that
+			// responder's answer mustn't contain an EDNS0 RR if the
+			// request doesn't include it.
+			//
+			// See
+			// https://github.com/AdguardTeam/dnsproxy/issues/132.
+			if haveEDNS0 {
+				d.Res.SetEdns0(size, doBit)
+			}
 
 			// Also truncate and compress the respnose.
 			d.scrub()
@@ -473,8 +482,10 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 			filterMsg(reply, reply, adBit, doBit, 0)
 
 			// Generate new EDNS0 RR with appropriate DO bit and UDP buffer
-			// size.
-			reply.SetEdns0(size, doBit)
+			// size if it was requested.
+			if haveEDNS0 {
+				reply.SetEdns0(size, doBit)
+			}
 		}
 	}
 

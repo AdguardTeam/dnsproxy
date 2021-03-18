@@ -130,11 +130,8 @@ func (p *Proxy) Init() (err error) {
 
 	if p.TLSConfig != nil && len(p.TLSConfig.NextProtos) == 0 {
 		p.TLSConfig.NextProtos = append([]string{
-			"http/1.1",
-			http2.NextProtoTLS,
-			NextProtoDQ,
+			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
 		}, compatProtoDQ...)
-		p.TLSConfig.NextProtos = append(p.TLSConfig.NextProtos, compatProtoDQ...)
 	}
 
 	if p.MaxGoroutines > 0 {

@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -33,6 +34,33 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, err
 	}
 
+	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
+	// this is a fatal error and the recipient of the defective message MUST forcibly abort
+	// the connection immediately.
+	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2
+	if opt := m.IsEdns0(); opt != nil {
+		for _, option := range opt.Option {
+			// Check for EDNS TCP keepalive option
+			if option.Option() == dns.EDNS0TCPKEEPALIVE {
+				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
+				return nil, errors.New("EDNS0 TCP keepalive option is set")
+			}
+		}
+	}
+
+	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.4
+	// When sending queries over a QUIC connection, the DNS Message ID MUST be set to zero.
+	id := m.Id
+	var reply *dns.Msg
+	m.Id = 0
+	defer func() {
+		// Restore the original ID to not break compatibility with proxies
+		m.Id = id
+		if reply != nil {
+			reply.Id = id
+		}
+	}()
+
 	stream, err := p.openStream(session)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to open new stream to %s", p.Address())
@@ -57,8 +85,8 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	pool := p.getBytesPool()
 	respBuf := pool.Get().([]byte)
 
-	// Linter says that the argument needs to be pointer-like
-	// But it's already pointer-like
+	// linter is not happy about allocating slice struct every time
+	// ignore it for now
 	// nolint
 	defer pool.Put(respBuf)
 
@@ -67,7 +95,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, errorx.Decorate(err, "failed to read response from %s due to %v", p.Address(), err)
 	}
 
-	reply := new(dns.Msg)
+	reply = new(dns.Msg)
 	err = reply.Unpack(respBuf)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to unpack response from %s", p.Address())

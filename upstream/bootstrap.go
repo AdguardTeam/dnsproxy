@@ -17,7 +17,10 @@ import (
 
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
 // by selecting the ALPN token "dq" in the crypto handshake.
-const NextProtoDQ = "doq-i00"
+const NextProtoDQ = "doq-i02"
+
+// compatProtoDQ - ALPNs for backwards compatibility
+var compatProtoDQ = []string{"doq-i00", "dq", "doq"}
 
 // RootCAs is the CertPool that must be used by all upstreams
 // Redefining RootCAs makes sense on iOS to overcome the 15MB memory limit of the NEPacketTunnelProvider
@@ -195,9 +198,9 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	//
 	// See https://github.com/AdguardTeam/AdGuardHome/issues/2681.
 	if n.URL.Scheme != "tls" {
-		tlsConfig.NextProtos = []string{
+		tlsConfig.NextProtos = append([]string{
 			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
-		}
+		}, compatProtoDQ...)
 	}
 
 	return tlsConfig

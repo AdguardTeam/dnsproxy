@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +32,7 @@ var RootCAs *x509.CertPool
 var CipherSuites []uint16
 
 type bootstrapper struct {
-	address        string      // in form of "tls://one.one.one.one:853"
+	URL            *url.URL
 	resolvers      []*Resolver // list of Resolvers to use to resolve hostname, if necessary
 	dialContext    dialHandler // specifies the dial function for creating unencrypted TCP connections.
 	resolvedConfig *tls.Config
@@ -49,11 +48,11 @@ type bootstrapper struct {
 // newBootstrapperResolved creates a new bootstrapper that already contains resolved config.
 // This can be done only in the case when we already know the resolver IP address.
 // options -- Upstream customization options
-func newBootstrapperResolved(address string, options Options) (*bootstrapper, error) {
+func newBootstrapperResolved(upsURL *url.URL, options Options) (*bootstrapper, error) {
 	// get a host without port
-	host, port, err := getAddressHostPort(address)
+	host, port, err := net.SplitHostPort(upsURL.Host)
 	if err != nil {
-		return nil, fmt.Errorf("bootstrapper requires port in address %s", address)
+		return nil, fmt.Errorf("bootstrapper requires port in address %s", upsURL.String())
 	}
 
 	var resolverAddresses []string
@@ -63,7 +62,7 @@ func newBootstrapperResolved(address string, options Options) (*bootstrapper, er
 	}
 
 	b := &bootstrapper{
-		address: address,
+		URL:     upsURL,
 		options: options,
 	}
 	b.dialContext = b.createDialContext(resolverAddresses)
@@ -75,7 +74,7 @@ func newBootstrapperResolved(address string, options Options) (*bootstrapper, er
 // newBootstrapper initializes a new bootstrapper instance
 // address -- original resolver address string (i.e. tls://one.one.one.one:853)
 // options -- Upstream customization options
-func newBootstrapper(address string, options Options) (*bootstrapper, error) {
+func newBootstrapper(address *url.URL, options Options) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
 	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
@@ -93,7 +92,7 @@ func newBootstrapper(address string, options Options) (*bootstrapper, error) {
 	}
 
 	return &bootstrapper{
-		address:   address,
+		URL:       address,
 		resolvers: resolvers,
 		options:   options,
 	}, nil
@@ -116,11 +115,11 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	//
 
 	// get a host without port
-	host, port, err := getAddressHostPort(n.address)
+	addr := n.URL
+	host, port, err := net.SplitHostPort(addr.Host)
 	if err != nil {
-		addr := n.address
 		n.RUnlock()
-		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr)
+		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr.String())
 	}
 
 	// if n.address's host is an IP, just use it right away
@@ -194,9 +193,15 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
-	tlsConfig.NextProtos = append([]string{
-		"http/1.1", http2.NextProtoTLS, NextProtoDQ,
-	}, compatProtoDQ...)
+	// The supported application level protocols should be specified only
+	// for DNS-over-HTTPS and DNS-over-QUIC connections.
+	//
+	// See https://github.com/AdguardTeam/AdGuardHome/issues/2681.
+	if n.URL.Scheme != "tls" {
+		tlsConfig.NextProtos = append([]string{
+			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+		}, compatProtoDQ...)
+	}
 
 	return tlsConfig
 }
@@ -232,23 +237,4 @@ func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHa
 		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
 	}
 	return
-}
-
-// getAddressHostPort splits resolver address into host and port
-// returns host, port
-func getAddressHostPort(address string) (string, string, error) {
-	justHostPort := address
-	if strings.Contains(address, "://") {
-		parsedURL, err := url.Parse(address)
-		if err != nil {
-			return "", "", errorx.Decorate(err, "failed to parse %s", address)
-		}
-
-		justHostPort = parsedURL.Host
-	}
-
-	// convert host to IP if necessary, we know that it's scheme://hostname:port/
-
-	// get a host without port
-	return net.SplitHostPort(justHostPort)
 }

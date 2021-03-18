@@ -14,7 +14,7 @@ import (
 
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
 // by selecting the ALPN token "dq" in the crypto handshake.
-// Current draft version: https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-00
+// Current draft version: https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02
 const NextProtoDQ = "doq-i02"
 
 // maxQuicIdleTimeout - maximum QUIC idle timeout.
@@ -140,13 +140,14 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
 	// this is a fatal error and the recipient of the defective message MUST forcibly abort
 	// the connection immediately.
-	// (https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2)
+	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2
 	if opt := msg.IsEdns0(); opt != nil {
 		for _, option := range opt.Option {
 			// Check for EDNS TCP keepalive option
 			if option.Option() == dns.EDNS0TCPKEEPALIVE {
-				log.Info("client sent EDNS0 TCP keepalive option")
-				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
+				log.Debug("client sent EDNS0 TCP keepalive option")
+				// Already closing the connection so we don't care about the error
+				_ = session.CloseWithError(0, "")
 			}
 		}
 	}

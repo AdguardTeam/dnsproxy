@@ -41,7 +41,7 @@ func TestServeCached(t *testing.T) {
 	reply.SetQuestion("google.com.", dns.TypeA)
 	reply.Response = true
 	reply.Answer = []dns.RR{newRR("google.com. 3600 IN A 8.8.8.8")}
-	reply.SetEdns0(defaultUDPBufSize, false)
+	reply.SetEdns0(512, false)
 	dnsProxy.cache.Set(&reply)
 
 	// Create a DNS-over-UDP client connection
@@ -53,6 +53,7 @@ func TestServeCached(t *testing.T) {
 	request.Id = dns.Id()
 	request.RecursionDesired = true
 	request.SetQuestion("google.com.", dns.TypeA)
+	request.SetEdns0(512, false)
 
 	r, _, err := client.Exchange(&request, addr.String())
 	if err != nil {

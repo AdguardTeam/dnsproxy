@@ -26,7 +26,7 @@ type dnsOverQUIC struct {
 	sync.RWMutex            // protects session and bytesPool
 }
 
-func (p *dnsOverQUIC) Address() string { return p.boot.address }
+func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 
 func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	session, err := p.getSession(true)
@@ -37,7 +37,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
 	// this is a fatal error and the recipient of the defective message MUST forcibly abort
 	// the connection immediately.
-	// (https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2)
+	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2
 	if opt := m.IsEdns0(); opt != nil {
 		for _, option := range opt.Option {
 			// Check for EDNS TCP keepalive option
@@ -48,9 +48,18 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		}
 	}
 
-	// https://tools.ietf.org/html/draft-ietf-dprive-dnsoquic-02#section-6.4
+	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.4
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be set to zero.
-	// m.Id = 0  // This breaks compatibility with proxies, and therefore must be disabled for dnsproxy.
+	id := m.Id
+	var reply *dns.Msg
+	m.Id = 0
+	defer func() {
+		// Restore the original ID to not break compatibility with proxies
+		m.Id = id
+		if reply != nil {
+			reply.Id = id
+		}
+	}()
 
 	stream, err := p.openStream(session)
 	if err != nil {
@@ -74,11 +83,10 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	_ = stream.Close()
 
 	pool := p.getBytesPool()
-	var respBuf []byte
-	respBuf = pool.Get().([]byte)
+	respBuf := pool.Get().([]byte)
 
-	// Linter says that the argument needs to be pointer-like
-	// But it's already pointer-like
+	// linter is not happy about allocating slice struct every time
+	// ignore it for now
 	// nolint
 	defer pool.Put(respBuf)
 
@@ -87,7 +95,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, errorx.Decorate(err, "failed to read response from %s due to %v", p.Address(), err)
 	}
 
-	reply := new(dns.Msg)
+	reply = new(dns.Msg)
 	err = reply.Unpack(respBuf)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to unpack response from %s", p.Address())

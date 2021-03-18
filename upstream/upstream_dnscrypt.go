@@ -23,7 +23,7 @@ type dnsCrypt struct {
 	sync.RWMutex // protects DNSCrypt client
 }
 
-func (p *dnsCrypt) Address() string { return p.boot.address }
+func (p *dnsCrypt) Address() string { return p.boot.URL.String() }
 
 func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	reply, err := p.exchangeDNSCrypt(m)
@@ -60,8 +60,7 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (*dns.Msg, error) {
 
 		// Using "udp" for DNSCrypt upstreams by default
 		client = &dnscrypt.Client{Timeout: p.boot.options.Timeout}
-		ri, err := client.Dial(p.boot.address)
-
+		ri, err := client.Dial(p.Address())
 		if err != nil {
 			p.Unlock()
 			return nil, errorx.Decorate(err, "failed to fetch certificate info from %s", p.Address())

@@ -94,7 +94,7 @@ func AddressToUpstream(address string, options Options) (Upstream, error) {
 
 // urlToBoot creates an instance of the bootstrapper with the specified options
 // options -- Upstream customization options
-func urlToBoot(resolverURL string, opts Options) (*bootstrapper, error) {
+func urlToBoot(resolverURL *url.URL, opts Options) (*bootstrapper, error) {
 	if len(opts.ServerIPAddrs) == 0 {
 		return newBootstrapper(resolverURL, opts)
 	}
@@ -107,11 +107,14 @@ func urlToBoot(resolverURL string, opts Options) (*bootstrapper, error) {
 func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 	switch upstreamURL.Scheme {
 	case "sdns":
-		return stampToUpstream(upstreamURL.String(), opts)
+		return stampToUpstream(upstreamURL, opts)
+
 	case "dns":
 		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout}, nil
+
 	case "tcp":
 		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout, preferTCP: true}, nil
+
 	case "quic":
 		if upstreamURL.Port() == "" {
 			//https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-10.2.1
@@ -119,8 +122,8 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 			// (Note that prior to version -02 of this draft, experiments were directed to use port 784.)
 			upstreamURL.Host += ":8853"
 		}
-		resolverURL := upstreamURL.String()
-		b, err := urlToBoot(resolverURL, opts)
+
+		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {
 			return nil, errorx.Decorate(err, "couldn't create quic bootstrapper")
 		}
@@ -131,8 +134,8 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 		if upstreamURL.Port() == "" {
 			upstreamURL.Host += ":853"
 		}
-		resolverURL := upstreamURL.String()
-		b, err := urlToBoot(resolverURL, opts)
+
+		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {
 			return nil, errorx.Decorate(err, "couldn't create tls bootstrapper")
 		}
@@ -144,8 +147,7 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 			upstreamURL.Host += ":443"
 		}
 
-		resolverURL := upstreamURL.String()
-		b, err := urlToBoot(resolverURL, opts)
+		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {
 			return nil, errorx.Decorate(err, "couldn't create tls bootstrapper")
 		}
@@ -159,10 +161,10 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 
 // stampToUpstream converts a DNS stamp to an Upstream
 // options -- Upstream customization options
-func stampToUpstream(address string, opts Options) (Upstream, error) {
-	stamp, err := dnsstamps.NewServerStampFromString(address)
+func stampToUpstream(upsURL *url.URL, opts Options) (Upstream, error) {
+	stamp, err := dnsstamps.NewServerStampFromString(upsURL.String())
 	if err != nil {
-		return nil, errorx.Decorate(err, "failed to parse %s", address)
+		return nil, errorx.Decorate(err, "failed to parse %s", upsURL)
 	}
 
 	if stamp.ServerAddrStr != "" {
@@ -183,7 +185,7 @@ func stampToUpstream(address string, opts Options) (Upstream, error) {
 	case dnsstamps.StampProtoTypePlain:
 		return &plainDNS{address: stamp.ServerAddrStr, timeout: opts.Timeout}, nil
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		b, err := newBootstrapper(address, opts)
+		b, err := newBootstrapper(upsURL, opts)
 		if err != nil {
 			return nil, fmt.Errorf("bootstrap server parse: %s", err)
 		}
@@ -196,7 +198,7 @@ func stampToUpstream(address string, opts Options) (Upstream, error) {
 		return AddressToUpstream(fmt.Sprintf("tls://%s", stamp.ProviderName), opts)
 	}
 
-	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, address)
+	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, upsURL)
 }
 
 // getHostWithPort is a helper function that appends port if needed

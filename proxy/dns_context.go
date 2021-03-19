@@ -61,6 +61,8 @@ type DNSContext struct {
 	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
 	// or default otherwise.
 	udpSize uint16
+	// Temporarily disable cache reads for prefetching
+	disableCacheReading bool
 }
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.

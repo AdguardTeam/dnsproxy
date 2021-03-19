@@ -401,8 +401,21 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// Use cache only if it's enabled and the query doesn't use custom
 	// upstreams.
 	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
-	if cacheWorks {
-		if p.replyFromCache(d) {
+	if cacheWorks && !d.disableCacheReading {
+		hit, isNotExpired := p.replyFromCache(d)
+		hit = hit && (p.Config.CachePrefetch || isNotExpired)
+		if hit {
+			if p.Config.CachePrefetch && !isNotExpired {
+				d2 := &DNSContext{
+					Req:                 d.Req.Copy(),
+					disableCacheReading: true,
+				}
+				go func() {
+					p.requestGoroutinesSema.acquire()
+					p.Resolve(d2)
+					p.requestGoroutinesSema.release()
+				}()
+			}
 			// Complete the response from cache.
 			d.scrub()
 

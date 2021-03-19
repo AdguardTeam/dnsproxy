@@ -22,7 +22,7 @@ type cache struct {
 	sync.RWMutex               // lock
 }
 
-func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
+func (c *cache) Get(request *dns.Msg) (msg *dns.Msg, isNotExpired bool) {
 	if request == nil || len(request.Question) != 1 {
 		return nil, false
 	}
@@ -39,12 +39,12 @@ func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 		return nil, false
 	}
 
-	res := unpackResponse(data, request)
+	res, isNotExpired := unpackResponse(data, request)
 	if res == nil {
-		c.items.Del(key)
+		//c.items.Del(key)	no need to delete it
 		return nil, false
 	}
-	return res, true
+	return res, isNotExpired
 }
 
 func (c *cache) Set(m *dns.Msg) {
@@ -258,19 +258,22 @@ func filterMsg(dst, m *dns.Msg, ad, do bool, ttl uint32) {
 	dst.Extra = filterRRSlice(m.Extra, do, ttl)
 }
 
-// unpackResponse returns the unpacked response if it exists and didn't expire,
-// nil otherwise.
-func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
+// unpackResponse returns the unpacked response if it exists and if it is expired,
+func unpackResponse(data []byte, request *dns.Msg) (*dns.Msg, bool) {
 	expire := binary.BigEndian.Uint32(data[:4])
 	now := time.Now().Unix()
-	if int64(expire) <= now {
-		return nil
+
+	ttl := int64(expire) - now
+	isNotExpired := ttl > 0
+
+	// if expired,set the ttl to 60
+	if !isNotExpired {
+		ttl = 60
 	}
-	ttl := expire - uint32(now)
 
 	m := &dns.Msg{}
 	if m.Unpack(data[4:]) != nil {
-		return nil
+		return nil, false
 	}
 
 	adBit := request.AuthenticatedData
@@ -287,7 +290,7 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 
 	// Don't return OPT records from cache since it's deprecated by RFC-6891
 	// (https://tools.ietf.org/html/rfc6891).
-	filterMsg(res, m, adBit, doBit, ttl)
+	filterMsg(res, m, adBit, doBit, uint32(ttl))
 
-	return res
+	return res, isNotExpired
 }

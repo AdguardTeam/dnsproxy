@@ -103,6 +103,7 @@ type Config struct {
 	CacheSizeBytes int    // Cache size (in bytes). Default: 64k
 	CacheMinTTL    uint32 // Minimum TTL for DNS entries (in seconds).
 	CacheMaxTTL    uint32 // Maximum TTL for DNS entries (in seconds).
+	CachePrefetch  bool   // Cache prefetch status
 
 	// Handlers (for the case when dnsproxy is used as a library)
 	// --

@@ -411,9 +411,8 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 					disableCacheReading: true,
 				}
 				go func() {
-					p.requestGoroutinesSema.acquire()
-					p.Resolve(d2)
-					p.requestGoroutinesSema.release()
+					err := p.Resolve(d2)
+					log.Debug("Reresolve failed %s", err)
 				}()
 			}
 			// Complete the response from cache.

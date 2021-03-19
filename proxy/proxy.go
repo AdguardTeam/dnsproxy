@@ -405,7 +405,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		hit, isExpired := p.replyFromCache(d)
 		if hit && (p.Config.CacheOptimistic || !isExpired) {
 			if isExpired {
-				go p.ResolveAndUpdateCache(d)
+				go p.resolveAndUpdateCache(d)
 			}
 			// Complete the response from cache.
 			d.scrub()
@@ -479,7 +479,8 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	return err
 }
 
-func (p *Proxy) ResolveAndUpdateCache(d *DNSContext) {
+// Resolve and update the DNS cache.
+func (p *Proxy) resolveAndUpdateCache(d *DNSContext) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error("Recovered in f", r)

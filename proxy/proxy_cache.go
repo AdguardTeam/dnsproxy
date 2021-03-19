@@ -7,34 +7,34 @@ import (
 
 // replyFromCache tries to get the response from general or subnet cache.
 // Returns true on success.
-func (p *Proxy) replyFromCache(d *DNSContext) (hit bool, isNotExpired bool) {
+func (p *Proxy) replyFromCache(d *DNSContext) (hit bool, isExpired bool) {
 	if !p.Config.EnableEDNSClientSubnet {
-		val, notExpired := p.cache.Get(d.Req)
+		val, ok := p.cache.Get(d.Req)
 		if val != nil {
 			d.Res = val
 			log.Debug("Serving cached response")
 
-			return true, notExpired
+			return true, !ok
 		}
 
 		return false, false
 	}
 
 	if d.ecsReqMask != 0 && p.cacheSubnet != nil {
-		val, notExpired := p.cacheSubnet.GetWithSubnet(d.Req, d.ecsReqIP, d.ecsReqMask)
+		val, ok := p.cacheSubnet.GetWithSubnet(d.Req, d.ecsReqIP, d.ecsReqMask)
 		if val != nil {
 			d.Res = val
 			log.Debug("Serving response from subnet cache")
 
-			return true, notExpired
+			return true, !ok
 		}
 	} else if d.ecsReqMask == 0 && p.cache != nil {
-		val, notExpired := p.cache.Get(d.Req)
+		val, ok := p.cache.Get(d.Req)
 		if val != nil {
 			d.Res = val
 			log.Debug("Serving response from general cache")
 
-			return true, notExpired
+			return true, !ok
 		}
 	}
 

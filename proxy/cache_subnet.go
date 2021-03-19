@@ -70,7 +70,7 @@ func keyWithSubnet(m *dns.Msg, ip net.IP, mask uint8) []byte {
 //  or (nil, false) on error
 // Note: it's a slow longest-prefix-match algorithm -
 //  we search in cache up to 'mask+1' times, decrementing the value with each iteration.
-func (c *cacheSubnet) GetWithSubnet(request *dns.Msg, ip net.IP, mask uint8) (msg *dns.Msg, isNotExpired bool) {
+func (c *cacheSubnet) GetWithSubnet(request *dns.Msg, ip net.IP, mask uint8) (*dns.Msg, bool) {
 	if request == nil || len(request.Question) != 1 {
 		return nil, false
 	}
@@ -95,12 +95,11 @@ func (c *cacheSubnet) GetWithSubnet(request *dns.Msg, ip net.IP, mask uint8) (ms
 		mask--
 	}
 
-	res, isNotExpired := unpackResponse(data, request)
+	res, isExpired := unpackResponse(data, request)
 	if res == nil {
-		//c.items.Del(key)	no need to delete it
 		return nil, false
 	}
-	return res, isNotExpired
+	return res, !isExpired
 }
 
 // SetWithSubnet - store DNS response

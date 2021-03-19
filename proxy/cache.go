@@ -22,7 +22,7 @@ type cache struct {
 	sync.RWMutex               // lock
 }
 
-func (c *cache) Get(request *dns.Msg) (msg *dns.Msg, isNotExpired bool) {
+func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
 	if request == nil || len(request.Question) != 1 {
 		return nil, false
 	}
@@ -39,12 +39,11 @@ func (c *cache) Get(request *dns.Msg) (msg *dns.Msg, isNotExpired bool) {
 		return nil, false
 	}
 
-	res, isNotExpired := unpackResponse(data, request)
+	res, isExpired := unpackResponse(data, request)
 	if res == nil {
-		//c.items.Del(key)	no need to delete it
 		return nil, false
 	}
-	return res, isNotExpired
+	return res, !isExpired
 }
 
 func (c *cache) Set(m *dns.Msg) {
@@ -264,10 +263,10 @@ func unpackResponse(data []byte, request *dns.Msg) (*dns.Msg, bool) {
 	now := time.Now().Unix()
 
 	ttl := int64(expire) - now
-	isNotExpired := ttl > 0
+	isExpired := ttl <= 0
 
 	// if expired,set the ttl to 60
-	if !isNotExpired {
+	if isExpired {
 		ttl = 60
 	}
 
@@ -292,5 +291,5 @@ func unpackResponse(data []byte, request *dns.Msg) (*dns.Msg, bool) {
 	// (https://tools.ietf.org/html/rfc6891).
 	filterMsg(res, m, adBit, doBit, uint32(ttl))
 
-	return res, isNotExpired
+	return res, isExpired
 }

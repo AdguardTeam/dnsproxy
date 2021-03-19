@@ -402,22 +402,13 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// upstreams.
 	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
 	if cacheWorks && !d.disableCacheReading {
-		hit, isNotExpired := p.replyFromCache(d)
-		hit = hit && (p.Config.CachePrefetch || isNotExpired)
-		if hit {
-			if p.Config.CachePrefetch && !isNotExpired {
-				d2 := &DNSContext{
-					Req:                 d.Req.Copy(),
-					disableCacheReading: true,
-				}
-				go func() {
-					err := p.Resolve(d2)
-					log.Debug("Reresolve failed %s", err)
-				}()
+		hit, isExpired := p.replyFromCache(d)
+		if hit && (p.Config.CacheOptimistic || !isExpired) {
+			if isExpired {
+				go p.ResolveAndUpdateCache(d)
 			}
 			// Complete the response from cache.
 			d.scrub()
-
 			return nil
 		}
 
@@ -486,6 +477,20 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	}
 
 	return err
+}
+
+func (p *Proxy) ResolveAndUpdateCache(d *DNSContext) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("Recovered in f", r)
+		}
+	}()
+	d2 := &DNSContext{
+		Req:                 d.Req.Copy(),
+		disableCacheReading: true,
+	}
+	err := p.Resolve(d2)
+	log.Debug("Reresolve failed %s", err)
 }
 
 // Set EDNS Client-Subnet data in DNS request

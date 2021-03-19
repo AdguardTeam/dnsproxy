@@ -105,8 +105,8 @@ type Options struct {
 	// DNS cache maximum TTL value - overrides record value
 	CacheMaxTTL uint32 `long:"cache-max-ttl" description:"Maximum TTL value for DNS entries, in seconds."`
 
-	// If true, DNS cache prefetch is enabled
-	CachePrefetch bool `long:"cache-prefetch" description:"If specified, DNS cache prefetch is enabled" optional:"yes" optional-value:"true"`
+	// If true, optimistic DNS cache is enabled
+	CacheOptimistic bool `long:"cache-optimistic" description:"If specified, optimistic DNS cache is enabled" optional:"yes" optional-value:"true"`
 
 	// Anti-DNS amplification measures
 	// --
@@ -221,7 +221,7 @@ func createProxyConfig(options Options) proxy.Config {
 		CacheSizeBytes:         options.CacheSizeBytes,
 		CacheMinTTL:            options.CacheMinTTL,
 		CacheMaxTTL:            options.CacheMaxTTL,
-		CachePrefetch:          options.CachePrefetch,
+		CacheOptimistic:        options.CacheOptimistic,
 		RefuseAny:              options.RefuseAny,
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
 		UDPBufferSize:          options.UDPBufferSize,

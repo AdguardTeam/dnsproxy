@@ -483,7 +483,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 func (p *Proxy) resolveAndUpdateCache(d *DNSContext) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("Recovered in f", r)
+			log.Error("Recovered in %s", r)
 		}
 	}()
 	d2 := &DNSContext{

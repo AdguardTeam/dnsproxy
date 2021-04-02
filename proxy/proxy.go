@@ -483,7 +483,7 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 func (p *Proxy) resolveAndUpdateCache(d *DNSContext) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("Recovered in %s", r)
+			log.Error("resolveAndUpdateCache: recovered from panic: %v", r)
 		}
 	}()
 	d2 := &DNSContext{
@@ -491,7 +491,9 @@ func (p *Proxy) resolveAndUpdateCache(d *DNSContext) {
 		disableCacheReading: true,
 	}
 	err := p.Resolve(d2)
-	log.Debug("Reresolve failed %s", err)
+	if err != nil {
+		log.Debug("Resolve failed %s", err)
+	}
 }
 
 // Set EDNS Client-Subnet data in DNS request

@@ -39,7 +39,7 @@ type Options struct {
 	ListenPorts []int `short:"p" long:"port" description:"Listening ports. Zero value disables TCP and UDP listeners" default:"53"`
 
 	// HTTPS listen ports
-	HTTPSListenPorts []int `short:"h" long:"https-port" description:"Listening ports for DNS-over-HTTPS"`
+	HTTPSListenPorts []int `short:"s" long:"https-port" description:"Listening ports for DNS-over-HTTPS"`
 
 	// TLS listen ports
 	TLSListenPorts []int `short:"t" long:"tls-port" description:"Listening ports for DNS-over-TLS"`

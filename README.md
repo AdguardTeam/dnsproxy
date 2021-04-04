@@ -40,7 +40,7 @@ Application Options:
   -o, --output=          Path to the log file. If not set, write to stdout.
   -l, --listen=          Listening addresses (default: 0.0.0.0)
   -p, --port=            Listening ports. Zero value disables TCP and UDP listeners (default: 53)
-  -h, --https-port=      Listening ports for DNS-over-HTTPS
+  -s, --https-port=      Listening ports for DNS-over-HTTPS
   -t, --tls-port=        Listening ports for DNS-over-TLS
   -q, --quic-port=       Listening ports for DNS-over-QUIC
   -y, --dnscrypt-port=   Listening ports for DNSCrypt

@@ -201,7 +201,7 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 
 	addr := udpConn.RemoteAddr().String()
 	quicConfig := &quic.Config{
-		HandshakeTimeout: handshakeTimeout,
+		HandshakeIdleTimeout: handshakeTimeout,
 	}
 	session, err := quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {

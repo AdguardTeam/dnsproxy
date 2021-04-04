@@ -284,7 +284,8 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			}
 
 			if sessionState.alpn == c.clientProtocol &&
-				c.extraConfig != nil && c.extraConfig.Accept0RTT != nil && c.extraConfig.Accept0RTT(sessionState.appData) {
+				c.extraConfig != nil && c.extraConfig.MaxEarlyData > 0 &&
+				c.extraConfig.Accept0RTT != nil && c.extraConfig.Accept0RTT(sessionState.appData) {
 				hs.encryptedExtensions.earlyData = true
 				c.used0RTT = true
 			}
@@ -340,7 +341,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 
 		h := cloneHash(hs.transcript, hs.suite.hash)
 		h.Write(hs.clientHello.marshal())
-		if sessionState.maxEarlyData > 0 && c.extraConfig != nil && c.extraConfig.MaxEarlyData > 0 {
+		if hs.encryptedExtensions.earlyData {
 			clientEarlySecret := hs.suite.deriveSecret(hs.earlySecret, "c e traffic", h)
 			c.in.exportKey(Encryption0RTT, hs.suite, clientEarlySecret)
 			if err := c.config.writeKeyLog(keyLogLabelEarlyTraffic, hs.clientHello.random, clientEarlySecret); err != nil {

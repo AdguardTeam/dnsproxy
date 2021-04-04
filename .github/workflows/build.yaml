@@ -1,5 +1,8 @@
 name: Build
 
+'env':
+  'GO_VERSION': '1.15'
+
 'on':
   'push':
     'tags':
@@ -25,7 +28,7 @@ jobs:
 
       - uses: actions/setup-go@v2
         with:
-          go-version: 1.14.x
+          go-version: '${{ env.GO_VERSION }}'
 
       - name: Run tests
         run: |-
@@ -49,7 +52,7 @@ jobs:
 
       - uses: actions/setup-go@v2
         with:
-          go-version: 1.14.x
+          go-version: '${{ env.GO_VERSION }}'
 
       - name: Prepare environment
         run: |-

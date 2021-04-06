@@ -3,14 +3,14 @@ version: 2
 plan:
   project-key: AGH
   key: DNSPROXYSPECS
-  name: dns proxy - Build and run tests
+  name: dnsproxy - Build and run tests
 variables:
   dockerGo: adguard/golang-ubuntu:2.0
 
 stages:
   - Tests:
-      manual: 'false'
-      final: 'false'
+      manual: false
+      final: false
       jobs:
         - Test
 
@@ -47,9 +47,9 @@ Test:
 branches:
   create: for-pull-request
   delete:
-    after-deleted-days: '1'
-    after-inactive-days: '5'
-  link-to-jira: 'true'
+    after-deleted-days: 1
+    after-inactive-days: 5
+  link-to-jira: true
 
 notifications:
   - events:

@@ -38,7 +38,7 @@ Test:
             golangci-lint run
 
             # Run tests
-            go test -race -v -bench=. -coverprofile=coverage.txt ./...
+            go test -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
   final-tasks:
     - clean
   requirements:

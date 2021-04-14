@@ -12,7 +12,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-// Client - DNSCrypt resolver client
+// Client is a DNSCrypt resolver client
 type Client struct {
 	Net     string        // protocol (can be "udp" or "tcp", by default - "udp")
 	Timeout time.Duration // read/write timeout
@@ -124,7 +124,7 @@ func (c *Client) ExchangeConn(conn net.Conn, m *dns.Msg, resolverInfo *ResolverI
 	return res, nil
 }
 
-// writeQuery - writes query to the network connection
+// writeQuery writes query to the network connection
 // depending on the protocol we may write a 2-byte prefix or not
 func (c *Client) writeQuery(conn net.Conn, query []byte) error {
 	var err error
@@ -145,7 +145,7 @@ func (c *Client) writeQuery(conn net.Conn, query []byte) error {
 	return err
 }
 
-// readResponse - reads response from the network connection
+// readResponse reads response from the network connection
 // depending on the protocol, we may read a 2-byte prefix or not
 func (c *Client) readResponse(conn net.Conn) ([]byte, error) {
 	if c.Timeout > 0 {
@@ -171,7 +171,7 @@ func (c *Client) readResponse(conn net.Conn) ([]byte, error) {
 	return readPrefixed(conn)
 }
 
-// encrypt - encrypts a DNS message using shared key from the resolver info
+// encrypt encrypts a DNS message using shared key from the resolver info
 func (c *Client) encrypt(m *dns.Msg, resolverInfo *ResolverInfo) ([]byte, error) {
 	q := EncryptedQuery{
 		EsVersion:   resolverInfo.ResolverCert.EsVersion,
@@ -185,7 +185,7 @@ func (c *Client) encrypt(m *dns.Msg, resolverInfo *ResolverInfo) ([]byte, error)
 	return q.Encrypt(query, resolverInfo.SharedKey)
 }
 
-// decrypts - decrypts a DNS message using shared key from the resolver info
+// decrypts decrypts a DNS message using a shared key from the resolver info
 func (c *Client) decrypt(b []byte, resolverInfo *ResolverInfo) (*dns.Msg, error) {
 	dr := EncryptedResponse{
 		EsVersion: resolverInfo.ResolverCert.EsVersion,
@@ -203,7 +203,7 @@ func (c *Client) decrypt(b []byte, resolverInfo *ResolverInfo) (*dns.Msg, error)
 	return res, nil
 }
 
-// fetchCert - loads DNSCrypt cert from the specified server
+// fetchCert loads DNSCrypt cert from the specified server
 func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (*Cert, error) {
 	providerName := stamp.ProviderName
 	if !strings.HasSuffix(providerName, ".") {

@@ -4,7 +4,7 @@ go 1.15
 
 require (
 	github.com/AdguardTeam/golibs v0.4.4
-	github.com/ameshkov/dnscrypt/v2 v2.0.1
+	github.com/ameshkov/dnscrypt/v2 v2.1.3
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20200827232406-6cde80facd47
 	github.com/go-test/deep v1.0.5
@@ -13,7 +13,7 @@ require (
 	github.com/joomcode/errorx v1.0.3
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lucas-clemente/quic-go v0.20.1
-	github.com/miekg/dns v1.1.35
+	github.com/miekg/dns v1.1.40
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/stretchr/testify v1.6.1

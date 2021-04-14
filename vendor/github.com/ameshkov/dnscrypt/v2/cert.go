@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// Cert - DNSCrypt server certificate
+// Cert is a DNSCrypt server certificate
 // See ResolverConfig for more info on how to create one
 type Cert struct {
-	// Serial - a 4 byte serial number in big-endian format. If more than
+	// Serial is a 4 byte serial number in big-endian format. If more than
 	// one certificates are valid, the client must prefer the certificate
 	// with a higher serial number.
 	Serial uint32
@@ -22,36 +22,36 @@ type Cert struct {
 	// For X25519-XChacha20Poly1305, <es-version> must be 0x00 0x02.
 	EsVersion CryptoConstruction
 
-	// Signature - a 64-byte signature of (<resolver-pk> <client-magic>
+	// Signature is a 64-byte signature of (<resolver-pk> <client-magic>
 	// <serial> <ts-start> <ts-end> <extensions>) using the Ed25519 algorithm and the
 	// provider secret key. Ed25519 must be used in this version of the
 	// protocol.
 	Signature [ed25519.SignatureSize]byte
 
-	// ResolverPk - the resolver's short-term public key, which is 32 bytes when using X25519.
+	// ResolverPk is the resolver's short-term public key, which is 32 bytes when using X25519.
 	// This key is used to encrypt/decrypt DNS queries
 	ResolverPk [keySize]byte
 
-	// ResolverSk - the resolver's short-term private key, which is 32 bytes when using X25519.
+	// ResolverSk is the resolver's short-term private key, which is 32 bytes when using X25519.
 	// Note that it's only used in the server implementation and never serialized/deserialized.
 	// This key is used to encrypt/decrypt DNS queries
 	ResolverSk [keySize]byte
 
-	// ClientMagic - the first 8 bytes of a client query that is to be built
+	// ClientMagic is the first 8 bytes of a client query that is to be built
 	// using the information from this certificate. It may be a truncated
 	// public key. Two valid certificates cannot share the same <client-magic>.
 	ClientMagic [clientMagicSize]byte
 
-	// NotAfter - the date the certificate is valid from, as a big-endian
+	// NotAfter is the date the certificate is valid from, as a big-endian
 	// 4-byte unsigned Unix timestamp.
 	NotBefore uint32
 
-	// NotAfter - the date the certificate is valid until (inclusive), as a
+	// NotAfter is the date the certificate is valid until (inclusive), as a
 	// big-endian 4-byte unsigned Unix timestamp.
 	NotAfter uint32
 }
 
-// Serialize - serializes the cert to bytes
+// Serialize serializes the cert to bytes
 // <cert> ::= <cert-magic> <es-version> <protocol-minor-version> <signature>
 //           <resolver-pk> <client-magic> <serial> <ts-start> <ts-end>
 //           <extensions>
@@ -86,7 +86,7 @@ func (c *Cert) Serialize() ([]byte, error) {
 	return b, nil
 }
 
-// Deserialize - deserializes certificate from a byte array
+// Deserialize deserializes certificate from a byte array
 // <cert> ::= <cert-magic> <es-version> <protocol-minor-version> <signature>
 //           <resolver-pk> <client-magic> <serial> <ts-start> <ts-end>
 //           <extensions>
@@ -127,7 +127,7 @@ func (c *Cert) Deserialize(b []byte) error {
 	return nil
 }
 
-// VerifyDate - checks that cert is valid at this moment
+// VerifyDate checks that the cert is valid at this moment
 func (c *Cert) VerifyDate() bool {
 	if c.NotBefore >= c.NotAfter {
 		return false
@@ -139,14 +139,14 @@ func (c *Cert) VerifyDate() bool {
 	return true
 }
 
-// VerifySignature - checks if the cert is properly signed with the specified signature
+// VerifySignature checks if the cert is properly signed with the specified signature
 func (c *Cert) VerifySignature(publicKey ed25519.PublicKey) bool {
 	b := make([]byte, 52)
 	c.writeSigned(b)
 	return ed25519.Verify(publicKey, b, c.Signature[:])
 }
 
-// Sign - creates cert.Signature
+// Sign creates cert.Signature
 func (c *Cert) Sign(privateKey ed25519.PrivateKey) {
 	b := make([]byte, 52)
 	c.writeSigned(b)
@@ -154,14 +154,14 @@ func (c *Cert) Sign(privateKey ed25519.PrivateKey) {
 	copy(c.Signature[:64], signature[:64])
 }
 
-// String - Cert's string representation
+// String Cert's string representation
 func (c *Cert) String() string {
 	return fmt.Sprintf("Certificate Serial=%d NotBefore=%s NotAfter=%s EsVersion=%s",
 		c.Serial, time.Unix(int64(c.NotBefore), 0).String(),
 		time.Unix(int64(c.NotAfter), 0).String(), c.EsVersion.String())
 }
 
-// writeSigned - writes (<resolver-pk> <client-magic> <serial> <ts-start> <ts-end> <extensions>)
+// writeSigned writes (<resolver-pk> <client-magic> <serial> <ts-start> <ts-end> <extensions>)
 func (c *Cert) writeSigned(dst []byte) {
 	// <resolver-pk>
 	copy(dst[:32], c.ResolverPk[:keySize])

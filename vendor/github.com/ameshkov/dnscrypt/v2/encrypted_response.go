@@ -10,12 +10,12 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 )
 
-// EncryptedResponse - structure for encrypting/decrypting server responses
+// EncryptedResponse is a structure for encrypting/decrypting server responses
 //
 // <dnscrypt-response> ::= <resolver-magic> <nonce> <encrypted-response>
 // <encrypted-response> ::= AE(<shared-key>, <nonce>, <resolver-response> <resolver-response-pad>)
 type EncryptedResponse struct {
-	// EsVersion - encryption to use
+	// EsVersion is the encryption to use
 	EsVersion CryptoConstruction
 
 	// Nonce - <nonce> ::= <client-nonce> <resolver-nonce>
@@ -23,7 +23,7 @@ type EncryptedResponse struct {
 	Nonce [nonceSize]byte
 }
 
-// Encrypt - encrypts the server response
+// Encrypt encrypts the server response
 //
 // EsVersion must be set.
 // Nonce needs to be set to "client-nonce".
@@ -57,7 +57,7 @@ func (r *EncryptedResponse) Encrypt(packet []byte, sharedKey [sharedKeySize]byte
 	return response, nil
 }
 
-// Decrypt - decrypts the server response
+// Decrypt decrypts the server response
 //
 // EsVersion must be set.
 func (r *EncryptedResponse) Decrypt(response []byte, sharedKey [sharedKeySize]byte) ([]byte, error) {

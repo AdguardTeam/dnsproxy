@@ -126,26 +126,35 @@ func parseUpstreamLine(l string) (string, []string, error) {
 // If we are looking for domain mail.host.com, this method will return value of host.com key
 // If we are looking for domain www.host.com, this method will return value of www.host.com key
 // If more specific domain value is nil, it means that domain was excluded and should be exchanged with default upstreams
-func (uc *UpstreamConfig) getUpstreamsForDomain(host string) []upstream.Upstream {
+func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Upstream) {
 	if len(uc.DomainReservedUpstreams) == 0 {
 		return uc.Upstreams
 	}
 
 	dotsCount := strings.Count(host, ".")
 	if dotsCount < 2 {
-		return uc.DomainReservedUpstreams[UnqualifiedNames]
+		host = UnqualifiedNames
+	} else {
+		host = strings.ToLower(host)
 	}
 
 	for i := 1; i <= dotsCount; i++ {
 		h := strings.SplitAfterN(host, ".", i)
 		name := h[i-1]
-		if u, ok := uc.DomainReservedUpstreams[strings.ToLower(name)]; ok {
-			if u == nil {
-				// domain was excluded from reserved upstreams querying
-				return uc.Upstreams
-			}
-			return u
+
+		var ok bool
+		ups, ok = uc.DomainReservedUpstreams[name]
+		if !ok {
+			continue
 		}
+
+		if len(ups) == 0 {
+			// The domain has been excluded from reserved upstreams
+			// querying.
+			return uc.Upstreams
+		}
+
+		return ups
 	}
 
 	return uc.Upstreams

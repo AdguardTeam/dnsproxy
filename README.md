@@ -25,7 +25,7 @@ A simple DNS proxy server that supports all existing DNS protocols including `DN
 
 You will need go v1.15 or later.
 
-```
+```shell
 $ go build -mod=vendor
 ```
 
@@ -49,22 +49,27 @@ Application Options:
       --tls-min-version= Minimum TLS version, for example 1.0
       --tls-max-version= Maximum TLS version, for example 1.3
       --insecure         Disable secure TLS certificate validation
-  -g, --dnscrypt-config= Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
-  -u, --upstream=        An upstream to be used (can be specified multiple times)
+  -g, --dnscrypt-config= Path to a file with DNSCrypt configuration. You can generate one using
+                         https://github.com/ameshkov/dnscrypt
+  -u, --upstream=        An upstream to be used (can be specified multiple times). You can also specify path to a file with
+                         the list of servers
   -b, --bootstrap=       Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
-  -f, --fallback=        Fallback resolvers to use when regular ones are unavailable, can be specified multiple times
+  -f, --fallback=        Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can
+                         also specify path to a file with the list of servers
       --all-servers      If specified, parallel queries to all configured upstream servers are enabled
       --fastest-addr     Respond to A or AAAA requests only with the fastest IP address
       --cache            If specified, DNS cache is enabled
       --cache-size=      Cache size (in bytes). Default: 64k
-      --cache-min-ttl=   Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration.
+      --cache-min-ttl=   Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should
+                         only be done with careful consideration.
       --cache-max-ttl=   Maximum TTL value for DNS entries, in seconds.
   -r, --ratelimit=       Ratelimit (requests per second) (default: 0)
       --refuse-any       If specified, refuse ANY requests
       --edns             Use EDNS Client Subnet extension
       --edns-addr=       Send EDNS Client Address
       --ipv6-disabled    If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times.
+      --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be
+                         specified multiple times.
       --udp-buf-size=    Set the size of the UDP buffer in bytes. A value <= 0 will use the system default. (default: 0)
       --max-go-routines= Set the maximum number of go routines. A value <= 0 will not not set a maximum. (default: 0)
       --version          Prints the program version
@@ -78,77 +83,77 @@ Help Options:
 ### Simple options
 
 Runs a DNS proxy on `0.0.0.0:53` with a single upstream - Google DNS.
-```
+```shell
 ./dnsproxy -u 8.8.8.8:53
 ```
 
 The same proxy with verbose logging enabled writing it to the file `log.txt`.
-```
+```shell
 ./dnsproxy -u 8.8.8.8:53 -v -o log.txt
 ```
 
 Runs a DNS proxy on `127.0.0.1:5353` with multiple upstreams.
-```
+```shell
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53
 ```
 
 Listen on multiple interfaces and ports:
-```
+```shell
 ./dnsproxy -l 127.0.0.1 -l 192.168.1.10 -p 5353 -p 5354 -u 1.1.1.1
 ```
 
 ### Encrypted upstreams
 
 DNS-over-TLS upstream:
-```
+```shell
 ./dnsproxy -u tls://dns.adguard.com
 ```
 
 DNS-over-HTTPS upstream with specified bootstrap DNS:
-```
+```shell
 ./dnsproxy -u https://dns.adguard.com/dns-query -b 1.1.1.1:53
 ```
 
 DNS-over-QUIC upstream:
-```
+```shell
 ./dnsproxy -u quic://dns.adguard.com
 ```
 
 DNSCrypt upstream ([DNS Stamp](https://dnscrypt.info/stamps) of AdGuard DNS):
-```
+```shell
 ./dnsproxy -u sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20
 ```
 
 DNS-over-HTTPS upstream ([DNS Stamp](https://dnscrypt.info/stamps) of Cloudflare DNS):
-```
+```shell
 ./dnsproxy -u sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk
 ```
 
 DNS-over-TLS upstream with two fallback servers (to be used when the main upstream is not available):
-```
+```shell
 ./dnsproxy -u tls://dns.adguard.com -f 8.8.8.8:53 -f 1.1.1.1:53
 ```
 
 ### Encrypted DNS server
 
 Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
-```
+```shell
 ./dnsproxy -l 127.0.0.1 --tls-port=853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
 Runs a DNS-over-HTTPS proxy on `127.0.0.1:443`.
-```
+```shell
 ./dnsproxy -l 127.0.0.1 --https-port=443 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
 Runs a DNS-over-QUIC proxy on `127.0.0.1:8853`.
-```
+```shell
 ./dnsproxy -l 127.0.0.1 --quic-port=8853 --tls-crt=example.crt --tls-key=example.key -u 8.8.8.8:53 -p 0
 ```
 
 Runs a DNSCrypt proxy on `127.0.0.1:443`.
 
-```
+```shell
 ./dnsproxy -l 127.0.0.1 --dnscrypt-config=./dnscrypt-config.yaml --dnscrypt-port=443 --upstream=8.8.8.8:53 -p 0
 ```
 
@@ -157,13 +162,18 @@ Runs a DNSCrypt proxy on `127.0.0.1:443`.
 ### Additional features
 
 Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `10 rps`, enabled DNS cache, and that refuses type=ANY requests.
-```
+```shell
 ./dnsproxy -u 8.8.8.8:53 -r 10 --cache --refuse-any
 ```
 
-Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel queries to all configured upstream servers
-```
+Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel queries to all configured upstream servers.
+```shell
 ./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53 -u tls://dns.adguard.com --all-servers
+```
+
+Loads upstreams list from a file.
+```shell
+./dnsproxy -l 127.0.0.1 -p 5353 -u ./upstreams.txt
 ```
 
 ### Fastest addr + cache-min-ttl

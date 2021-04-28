@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -75,13 +76,13 @@ type Options struct {
 	// --
 
 	// DNS upstreams
-	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times)" required:"true"`
+	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" required:"true"`
 
 	// Bootstrap DNS
 	BootstrapDNS []string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)"`
 
 	// Fallback DNS resolver
-	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times"`
+	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
 
 	// If true, parallel queries to all configured upstream servers
 	AllServers bool `long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
@@ -237,7 +238,8 @@ func createProxyConfig(options Options) proxy.Config {
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options Options) {
 	// Init upstreams
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(options.Upstreams,
+	upstreams := loadServersList(options.Upstreams)
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(upstreams,
 		upstream.Options{
 			InsecureSkipVerify: options.Insecure,
 			Bootstrap:          options.BootstrapDNS,
@@ -258,7 +260,7 @@ func initUpstreams(config *proxy.Config, options Options) {
 
 	if options.Fallbacks != nil {
 		fallbacks := []upstream.Upstream{}
-		for i, f := range options.Fallbacks {
+		for i, f := range loadServersList(options.Fallbacks) {
 			fallback, err := upstream.AddressToUpstream(f, upstream.Options{Timeout: defaultTimeout})
 			if err != nil {
 				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)
@@ -459,4 +461,37 @@ func loadX509KeyPair(certFile, keyFile string) (tls.Certificate, error) {
 		return tls.Certificate{}, err
 	}
 	return tls.X509KeyPair(certPEMBlock, keyPEMBlock)
+}
+
+// loadServersList loads a list of DNS servers from the specified list.
+// the thing is that the user may specify either a server address
+// or path to a file with a list of addresses. This method takes care of it,
+// reads the file, loads servers from it if needed.
+func loadServersList(sources []string) []string {
+	var servers []string
+
+	for _, source := range sources {
+		data, err := ioutil.ReadFile(source)
+		if err != nil {
+			// Ignore errors, just consider it a server address
+			// and not a file
+			servers = append(servers, source)
+		}
+
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+
+			// Ignore comments in the file
+			if line == "" ||
+				strings.HasPrefix(line, "!") ||
+				strings.HasPrefix(line, "#") {
+				continue
+			}
+
+			servers = append(servers, line)
+		}
+	}
+
+	return servers
 }

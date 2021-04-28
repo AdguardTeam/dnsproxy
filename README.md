@@ -16,6 +16,7 @@ A simple DNS proxy server that supports all existing DNS protocols including `DN
   - [Encrypted upstreams](#encrypted-upstreams)
   - [Encrypted DNS server](#encrypted-dns-server)
   - [Additional features](#additional-features)
+  - [DNS64 server](#dns64-server)
   - [Fastest addr + cache-min-ttl](#fastest-addr--cache-min-ttl)
   - [Specifying upstreams for domains](#specifying-upstreams-for-domains)
   - [EDNS Client Subnet](#edns-client-subnet)

@@ -67,6 +67,9 @@ Application Options:
       --refuse-any       If specified, refuse ANY requests
       --edns             Use EDNS Client Subnet extension
       --edns-addr=       Send EDNS Client Address
+      --dns64            If specified, dnsproxy will act as a DNS64 server
+      --dns64-prefix=    If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not
+                         specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::
       --ipv6-disabled    If specified, all AAAA requests will be replied with NoError RCode and empty answer
       --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be
                          specified multiple times.
@@ -174,6 +177,29 @@ Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel q
 Loads upstreams list from a file.
 ```shell
 ./dnsproxy -l 127.0.0.1 -p 5353 -u ./upstreams.txt
+```
+
+### DNS64 server
+
+`dnsproxy` is capable of working as a DNS64 server.
+
+> **What is DNS64/NAT64**
+> This is a mechanism of providing IPv6 access to IPv4. Using a NAT64 gateway
+> with IPv4-IPv6 translation capability lets IPv6-only clients connect to
+> IPv4-only services via synthetic IPv6 addresses starting with a prefix that
+> routes them to the NAT64 gateway. DNS64 is a DNS service that returns AAAA
+> records with these synthetic IPv6 addresses for IPv4-only destinations
+> (with A but not AAAA records in the DNS). This lets IPv6-only clients use
+> NAT64 gateways without any other configuration.
+
+Enables DNS64 with the default "Well-Known Prefix" `64:ff9b::/96`:
+```shell
+./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8 --dns64
+```
+
+You can also specify a custom DNS64 prefix:
+```shell
+./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8 --dns64 --dns64-prefix=64:ffff::
 ```
 
 ### Fastest addr + cache-min-ttl

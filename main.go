@@ -124,6 +124,15 @@ type Options struct {
 	// Use Custom EDNS Client Address
 	EDNSAddr string `long:"edns-addr" description:"Send EDNS Client Address"`
 
+	// DNS64 settings
+	// --
+
+	// Defines whether DNS64 functionality is enabled or not
+	DNS64 bool `long:"dns64" description:"If specified, dnsproxy will act as a DNS64 server" optional:"yes" optional-value:"true"`
+
+	// DNS64Prefix defines the DNS64 prefix that dnsproxy should use when it acts as a DNS64 server
+	DNS64Prefix string `long:"dns64-prefix" description:"If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::" required:"false"`
+
 	// Other settings and options
 	// --
 
@@ -147,6 +156,10 @@ type Options struct {
 var VersionString = "undefined" // nolint:gochecknoglobals
 
 const defaultTimeout = 10 * time.Second
+
+// defaultDNS64Prefix is a so-called "Well-Known Prefix" for DNS64.
+// if dnsproxy operates as a DNS64 server, we'll be using it.
+const defaultDNS64Prefix = "64:ff9b::/96"
 
 func main() {
 	var options Options
@@ -185,7 +198,10 @@ func run(options Options) {
 
 	// Prepare the proxy server
 	config := createProxyConfig(options)
-	dnsProxy := proxy.Proxy{Config: config}
+	dnsProxy := &proxy.Proxy{Config: config}
+
+	// Init DNS64 if needed
+	initDNS64(dnsProxy, options)
 
 	// Add extra handler if needed
 	if options.IPv6Disabled {
@@ -272,7 +288,7 @@ func initUpstreams(config *proxy.Config, options Options) {
 	}
 }
 
-// initEDNS - init EDNS-related config
+// initEDNS inits EDNS-related config
 func initEDNS(config *proxy.Config, options Options) {
 	if options.EDNSAddr != "" {
 		if options.EnableEDNSSubnet {
@@ -287,7 +303,7 @@ func initEDNS(config *proxy.Config, options Options) {
 	}
 }
 
-// initBogusNXDomain - inits BogusNXDomain structure
+// initBogusNXDomain inits BogusNXDomain structure
 func initBogusNXDomain(config *proxy.Config, options Options) {
 	if len(options.BogusNXDomain) > 0 {
 		bogusIP := []net.IP{}
@@ -303,7 +319,7 @@ func initBogusNXDomain(config *proxy.Config, options Options) {
 	}
 }
 
-// initTLSConfig - inits TLS config
+// initTLSConfig inits the TLS config
 func initTLSConfig(config *proxy.Config, options Options) {
 	if options.TLSCertPath != "" && options.TLSKeyPath != "" {
 		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath, options)
@@ -314,7 +330,7 @@ func initTLSConfig(config *proxy.Config, options Options) {
 	}
 }
 
-// initDNSCryptConfig - inits DNSCrypt config
+// initDNSCryptConfig inits the DNSCrypt config
 func initDNSCryptConfig(config *proxy.Config, options Options) {
 	if options.DNSCryptConfigPath == "" {
 		return
@@ -340,7 +356,7 @@ func initDNSCryptConfig(config *proxy.Config, options Options) {
 	config.DNSCryptProviderName = rc.ProviderName
 }
 
-// initListenAddrs - inits listen addrs
+// initListenAddrs inits listen addrs
 func initListenAddrs(config *proxy.Config, options Options) {
 	listenIPs := []net.IP{}
 	for _, a := range options.ListenAddrs {
@@ -398,6 +414,32 @@ func initListenAddrs(config *proxy.Config, options Options) {
 			}
 		}
 	}
+}
+
+// initDNS64 inits the DNS64 configuration for dnsproxy
+func initDNS64(p *proxy.Proxy, options Options) {
+	if !options.DNS64 {
+		return
+	}
+
+	dns64Prefix := options.DNS64Prefix
+	if dns64Prefix == "" {
+		dns64Prefix = defaultDNS64Prefix
+	}
+
+	// DNS64 prefix may be specified as a CIDR: "64:ff9b::/96"
+	ip, _, err := net.ParseCIDR(dns64Prefix)
+	if err != nil {
+		// Or it could be specified as an IP address: "64:ff9b::"
+		ip = net.ParseIP(dns64Prefix)
+	}
+
+	if ip == nil || len(ip) < net.IPv6len {
+		log.Fatalf("Invalid DNS64 prefix: %s", dns64Prefix)
+		return
+	}
+
+	p.SetNAT64Prefix(ip[:proxy.NAT64PrefixLength])
 }
 
 // IPv6 configuration

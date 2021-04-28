@@ -8,15 +8,15 @@ import (
 	"github.com/miekg/dns"
 )
 
-const ipv4OnlyHost = "and.ru"
+const ipv4OnlyHost = "ipv4only.arpa"
 
 // Valid NAT-64 prefix for 2001:67c:27e4:15::64 server
-var prefix = []byte{32, 1, 6, 124, 39, 228, 16, 100, 0, 0, 0, 0} //nolint
+var testNAT64Prefix = []byte{32, 1, 6, 124, 39, 228, 16, 100, 0, 0, 0, 0} //nolint
 
 func TestProxyWithDNS64(t *testing.T) {
 	// Create test proxy and manually set NAT64 prefix
 	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.nat64Prefix = prefix
+	dnsProxy.SetNAT64Prefix(testNAT64Prefix)
 
 	err := dnsProxy.Start()
 	if err != nil {
@@ -32,14 +32,14 @@ func TestProxyWithDNS64(t *testing.T) {
 
 	a, ok := resp.Answer[0].(*dns.A)
 	if !ok {
-		t.Fatalf("Answer for %s is not A record!", ipv4OnlyHost)
+		t.Fatalf("Answer for %s is not an A record!", ipv4OnlyHost)
 	}
 
 	// Let's manually add NAT64 prefix to IPv4 response
 	mappedIP := make(net.IP, net.IPv6len)
-	copy(mappedIP, dnsProxy.nat64Prefix)
+	copy(mappedIP, testNAT64Prefix)
 	for index, b := range a.A {
-		mappedIP[12+index] = b
+		mappedIP[NAT64PrefixLength+index] = b
 	}
 
 	// Create test context with AAAA request to ipv4OnlyHost and resolve it
@@ -73,7 +73,7 @@ func TestProxyWithDNS64(t *testing.T) {
 
 func TestDNS64Race(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.nat64Prefix = prefix
+	dnsProxy.SetNAT64Prefix(testNAT64Prefix)
 	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, dnsProxy.UpstreamConfig.Upstreams[0])
 
 	// Start listening

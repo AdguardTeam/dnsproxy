@@ -72,8 +72,8 @@ type Proxy struct {
 	// DNS64 (in case dnsproxy works in a NAT64/DNS64 network)
 	// --
 
-	nat64Prefix []byte     // NAT 64 prefix
-	nat64Lock   sync.Mutex // Prefix lock
+	nat64Prefix     []byte     // NAT 64 prefix
+	nat64PrefixLock sync.Mutex // Prefix lock
 
 	// Ratelimit
 	// --
@@ -429,8 +429,8 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 	// execute the DNS request
 	startTime := time.Now()
 	reply, u, err := p.exchange(d.Req, upstreams)
-	if p.isEmptyAAAAResponse(reply, d.Req) {
-		log.Tracef("Received empty AAAA response, checking DNS64")
+	if p.isNAT64PrefixAvailable() && p.isEmptyAAAAResponse(reply, d.Req) {
+		log.Tracef("Received an empty AAAA response, checking DNS64")
 		reply, u, err = p.checkDNS64(d.Req, reply, upstreams)
 	} else if p.isBogusNXDomain(reply) {
 		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")

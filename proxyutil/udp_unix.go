@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/AdguardTeam/golibs/log"
+
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
@@ -44,7 +46,12 @@ func UDPRead(c *net.UDPConn, buf []byte, udpOOBSize int) (int, net.IP, *net.UDPA
 		return -1, nil, nil, err
 	}
 
+	b := oob[:oobn]
+	log.Info("Received OOB data")
+	log.Info("%v", b)
+
 	localIP := udpGetDstFromOOB(oob[:oobn])
+	log.Info("Parsed dst IP: %v", localIP)
 	return n, localIP, remoteAddr, nil
 }
 

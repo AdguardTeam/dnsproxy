@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/fastip"
-	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -96,7 +95,6 @@ type Proxy struct {
 	// --
 
 	bytesPool    *sync.Pool // bytes pool to avoid unnecessary allocations when reading DNS packets
-	udpOOBSize   int        // size for received OOB data
 	sync.RWMutex            // protects parallel access to proxy structures
 
 	// requestGoroutinesSema limits the number of simultaneous requests.
@@ -158,7 +156,6 @@ func (p *Proxy) Init() (err error) {
 		}
 	}
 
-	p.udpOOBSize = proxyutil.UDPGetOOBSize()
 	p.bytesPool = &sync.Pool{
 		New: func() interface{} {
 			// 2 bytes may be used to store packet length (see TCP/TLS)

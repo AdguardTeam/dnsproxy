@@ -30,8 +30,9 @@ type DNSContext struct {
 	// ProtoDNSCrypt, ProtoHTTPS, or ProtoQUIC.
 	Conn net.Conn
 
-	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
-	localIP net.IP
+	// SessionUDP holds the remote address and the associated
+	// out-of-band data.
+	sessionUDP *dns.SessionUDP
 
 	// HTTPRequest - HTTP request (for DOH only)
 	HTTPRequest *http.Request

@@ -27,10 +27,36 @@ func (p *Proxy) createUDPListeners() error {
 	return nil
 }
 
-// udpCreate - create a UDP listening socket
+// supportsIPv4Mapping returns true if the OS we're running
+// supports IPv4 mapping for listening UDP sockets with no issues
+// Details: https://github.com/AdguardTeam/AdGuardHome/issues/3015
+func (p *Proxy) supportsIPv4Mapping() bool {
+	return !(runtime.GOOS == "freebsd" ||
+		runtime.GOOS == "openbsd" ||
+		runtime.GOOS == "netbsd" ||
+		runtime.GOOS == "darwin")
+}
+
+// getUDPFamily depending on the IP address it either returns "udp" or "udp4"
+// "udp4" is necessary on BSD when we listen to 0.0.0.0, check the details here:
+// https://github.com/AdguardTeam/AdGuardHome/issues/3015
+func (p *Proxy) getUDPFamily(udpAddr *net.UDPAddr) string {
+	if p.supportsIPv4Mapping() {
+		return "udp"
+	}
+
+	if udpAddr.IP.To4() != nil {
+		return "udp4"
+	}
+
+	return "udp"
+}
+
+// udpCreate creates a UDP listening socket
 func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 	log.Info("Creating the UDP server socket")
-	udpListen, err := net.ListenUDP("udp", udpAddr)
+	network := p.getUDPFamily(udpAddr)
+	udpListen, err := net.ListenUDP(network, udpAddr)
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
 	}

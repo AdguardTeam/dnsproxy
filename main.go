@@ -361,16 +361,12 @@ func initListenAddrs(config *proxy.Config, options Options) {
 	listenIPs := []net.IP{}
 	for _, a := range options.ListenAddrs {
 		ip := net.ParseIP(a)
-		if ip == nil {
-			log.Fatalf("cannot parse %s", a)
-		}
 		listenIPs = append(listenIPs, ip)
 	}
 
 	if len(options.ListenPorts) != 0 && options.ListenPorts[0] != 0 {
 		for _, port := range options.ListenPorts {
 			for _, ip := range listenIPs {
-
 				ua := &net.UDPAddr{Port: port, IP: ip}
 				config.UDPListenAddr = append(config.UDPListenAddr, ua)
 

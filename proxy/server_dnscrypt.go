@@ -12,7 +12,8 @@ import (
 func (p *Proxy) createDNSCryptListeners() error {
 	for _, a := range p.DNSCryptUDPListenAddr {
 		log.Info("Creating a DNSCrypt UDP listener")
-		udpListen, err := net.ListenUDP("udp", a)
+		network := p.getUDPFamily(a)
+		udpListen, err := net.ListenUDP(network, a)
 		if err != nil {
 			return err
 		}

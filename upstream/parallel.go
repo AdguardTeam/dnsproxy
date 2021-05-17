@@ -115,7 +115,7 @@ func ExchangeAll(upstreams []Upstream, req *dns.Msg) ([]ExchangeAllResult, error
 
 // exchangeAsync tries to resolve DNS request with one upstream and send result to resp channel
 func exchangeAsync(u Upstream, req *dns.Msg, resp chan *exchangeResult) {
-	reply, err := u.Exchange(req)
+	reply, err := u.Exchange(req.Copy())
 	resp <- &exchangeResult{
 		reply:    reply,
 		upstream: u,

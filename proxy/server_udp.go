@@ -33,8 +33,7 @@ func (p *Proxy) createUDPListeners() error {
 func (p *Proxy) supportsIPv4Mapping() bool {
 	return !(runtime.GOOS == "freebsd" ||
 		runtime.GOOS == "openbsd" ||
-		runtime.GOOS == "netbsd" ||
-		runtime.GOOS == "darwin")
+		runtime.GOOS == "netbsd")
 }
 
 // getUDPFamily depending on the IP address it either returns "udp" or "udp4"

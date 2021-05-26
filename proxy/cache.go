@@ -287,6 +287,8 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 
 	// Don't return OPT records from cache since it's deprecated by RFC-6891
 	// (https://tools.ietf.org/html/rfc6891).
+	// Also, if the request has DO bit set we only remove all the OPT
+	// RRs, and also all DNSSEC RRs otherwise.
 	filterMsg(res, m, adBit, doBit, ttl)
 
 	return res

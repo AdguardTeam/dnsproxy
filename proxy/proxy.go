@@ -405,7 +405,6 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		if p.replyFromCache(d) {
 			// Complete the response from cache.
 			d.scrub()
-
 			return nil
 		}
 

@@ -19,6 +19,9 @@ type dnsOverTLS struct {
 	sync.RWMutex // protects pool
 }
 
+// type check
+var _ Upstream = &dnsOverTLS{}
+
 func (p *dnsOverTLS) Address() string { return p.boot.URL.String() }
 
 func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {

@@ -16,6 +16,9 @@ type plainDNS struct {
 	preferTCP bool
 }
 
+// type check
+var _ Upstream = &plainDNS{}
+
 // Address returns the original address that we've put in initially, not resolved one
 func (p *plainDNS) Address() string {
 	if p.preferTCP {

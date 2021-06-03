@@ -26,6 +26,9 @@ type dnsOverQUIC struct {
 	sync.RWMutex            // protects session and bytesPool
 }
 
+// type check
+var _ Upstream = &dnsOverQUIC{}
+
 func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 
 func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {

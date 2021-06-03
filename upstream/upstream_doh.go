@@ -13,9 +13,6 @@ import (
 	"golang.org/x/net/http2"
 )
 
-// DoHMaxConnsPerHost controls the maximum number of connections per host.
-const DoHMaxConnsPerHost = 1
-
 // dnsOverHTTPS represents DNS-over-HTTPS upstream.
 type dnsOverHTTPS struct {
 	boot *bootstrapper
@@ -31,6 +28,9 @@ type dnsOverHTTPS struct {
 	// needed. Clients are safe for concurrent use by multiple goroutines.
 	client *http.Client
 }
+
+// type check
+var _ Upstream = &dnsOverHTTPS{}
 
 func (p *dnsOverHTTPS) Address() string { return p.boot.URL.String() }
 
@@ -84,7 +84,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	if err != nil {
 		return nil, errorx.Decorate(err, "couldn't unpack DNS response from '%s': body is %s", p.boot.URL, string(body))
 	}
-	if err == nil && response.Id != m.Id {
+	if response.Id != m.Id {
 		err = dns.ErrId
 	}
 	return &response, err
@@ -142,12 +142,13 @@ func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
 		DialContext:        dialContext,
-		MaxConnsPerHost:    DoHMaxConnsPerHost,
-		MaxIdleConns:       1,
 	}
 	// It appears that this is important to explicitly configure transport to use HTTP2
 	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11
-	http2.ConfigureTransports(transport) // nolint
+	_, err = http2.ConfigureTransports(transport)
+	if err != nil {
+		return nil, err
+	}
 
 	return transport, nil
 }

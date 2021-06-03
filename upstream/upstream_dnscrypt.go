@@ -23,6 +23,9 @@ type dnsCrypt struct {
 	sync.RWMutex // protects DNSCrypt client
 }
 
+// type check
+var _ Upstream = &dnsCrypt{}
+
 func (p *dnsCrypt) Address() string { return p.boot.URL.String() }
 
 func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {

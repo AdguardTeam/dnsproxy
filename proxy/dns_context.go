@@ -65,24 +65,17 @@ type DNSContext struct {
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.
 func (ctx *DNSContext) calcFlagsAndSize() {
-	if ctx.udpSize != 0 {
-		return
-	}
-
-	if ctx.Req == nil {
+	if ctx.udpSize != 0 || ctx.Req == nil {
 		return
 	}
 
 	ctx.adBit = ctx.Req.AuthenticatedData
+	ctx.udpSize = defaultUDPBufSize
 	if o := ctx.Req.IsEdns0(); o != nil {
 		ctx.hasEDNS0 = true
 		ctx.doBit = o.Do()
 		ctx.udpSize = o.UDPSize()
-
-		return
 	}
-
-	ctx.udpSize = defaultUDPBufSize
 }
 
 // scrub - prepares the d.Res to be written (truncates if necessary)

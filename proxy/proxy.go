@@ -405,11 +405,12 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		if p.replyFromCache(d) {
 			// Complete the response from cache.
 			d.scrub()
+
 			return nil
 		}
 
-		// On cache miss request for DNSSEC from the upstream to cache it
-		// afterwards.
+		// On cache miss request for DNSSEC from the upstream to cache
+		// it afterwards.
 		addDO(d.Req)
 	}
 
@@ -449,21 +450,18 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 
 		// Set upstream that have resolved the request to DNSContext.
 		d.Upstream = u
-
 		p.setMinMaxTTL(reply)
-
 		if cacheWorks {
 			// Cache the response with DNSSEC RRs.
 			p.setInCache(d, reply)
 		}
+	} else {
+		reply = p.genServerFailure(d.Req)
+		d.hasEDNS0 = false
 	}
 
-	if reply == nil {
-		d.Res = p.genServerFailure(d.Req)
-		d.hasEDNS0 = false
-	} else {
-		d.Res = reply
-	}
+	filterMsg(reply, reply, d.adBit, d.doBit, 0)
+	d.Res = reply
 
 	// Complete the response.
 	d.scrub()

@@ -45,6 +45,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 func (p *Proxy) setInCache(d *DNSContext, resp *dns.Msg) {
 	if !p.Config.EnableEDNSClientSubnet {
 		p.cache.Set(resp)
+
 		return
 	}
 

@@ -90,19 +90,18 @@ func isCacheable(m *dns.Msg) bool {
 		return false
 	}
 
-	qName := m.Question[0].Name
-	qType := m.Question[0].Qtype
-
 	ttl := findLowestTTL(m)
 	if ttl == 0 {
 		return false
 	}
 
+	qName := m.Question[0].Name
 	if m.Rcode != dns.RcodeSuccess && m.Rcode != dns.RcodeNameError {
 		log.Tracef("%s: refusing to cache message with response type %s", qName, dns.RcodeToString[m.Rcode])
 		return false
 	}
 
+	qType := m.Question[0].Qtype
 	if m.Rcode == dns.RcodeSuccess && (qType == dns.TypeA || qType == dns.TypeAAAA) {
 		// Now verify that it contains at least one A or AAAA record
 		if len(m.Answer) == 0 {
@@ -127,8 +126,8 @@ func isCacheable(m *dns.Msg) bool {
 	return true
 }
 
-func findLowestTTL(m *dns.Msg) uint32 {
-	var ttl uint32 = math.MaxUint32
+func findLowestTTL(m *dns.Msg) (ttl uint32) {
+	ttl = math.MaxUint32
 
 	if m.Answer != nil {
 		for _, r := range m.Answer {
@@ -192,30 +191,30 @@ func key(m *dns.Msg) []byte {
 	return b
 }
 
-// isDNSSEC returns true if r is a DNSSEC record.  NSEC,NSEC3,DS and RRSIG/SIG
-// are DNSSEC records.  DNSKEYs is not in this list on the assumption that the
-// client explicitly asked for it.
+// isDNSSEC returns true if r is a DNSSEC RR.  NSEC, NSEC3, DS, DNSKEY and
+// RRSIG/SIG are DNSSEC records.
 func isDNSSEC(r dns.RR) bool {
 	switch r.Header().Rrtype {
-	case dns.TypeNSEC, dns.TypeNSEC3, dns.TypeDS, dns.TypeRRSIG, dns.TypeSIG:
+	case dns.TypeNSEC, dns.TypeNSEC3, dns.TypeDS, dns.TypeRRSIG, dns.TypeSIG, dns.TypeDNSKEY:
 		return true
-
 	default:
 		return false
 	}
 }
 
-// filterRRSlice removes OPT RRs, DNSSEC RRs if do is false, sets TTL if ttl is
-// not equal to zero and returns the copy of the rrs.
-func filterRRSlice(rrs []dns.RR, do bool, ttl uint32) (filtered []dns.RR) {
-	if rrs == nil {
+// filterRRSlice removes OPT RRs, DNSSEC RRs except the specified type if do is
+// false, sets TTL if ttl is not equal to zero and returns the copy of the rrs.
+// The except parameter defines RR of which type should not be filtered out.
+func filterRRSlice(rrs []dns.RR, do bool, ttl uint32, except uint16) (filtered []dns.RR) {
+	rrsLen := len(rrs)
+	if rrsLen == 0 {
 		return nil
 	}
 
 	j := 0
-	rs := make([]dns.RR, len(rrs))
+	rs := make([]dns.RR, rrsLen)
 	for _, r := range rrs {
-		if !do && isDNSSEC(r) {
+		if !do && isDNSSEC(r) && r.Header().Rrtype != except {
 			continue
 		}
 		if r.Header().Rrtype == dns.TypeOPT {
@@ -253,14 +252,19 @@ func filterMsg(dst, m *dns.Msg, ad, do bool, ttl uint32) {
 	// and the request contained either a set DO bit or a set AD bit.
 	dst.AuthenticatedData = dst.AuthenticatedData && (ad || do)
 
-	dst.Answer = filterRRSlice(m.Answer, do, ttl)
-	dst.Ns = filterRRSlice(m.Ns, do, ttl)
-	dst.Extra = filterRRSlice(m.Extra, do, ttl)
+	// It's important to filter out only DNSSEC RRs that aren't explicitly
+	// requested.
+	//
+	// See https://datatracker.ietf.org/doc/html/rfc4035#section-3.2.1 and
+	// https://github.com/AdguardTeam/dnsproxy/issues/144.
+	dst.Answer = filterRRSlice(m.Answer, do, ttl, m.Question[0].Qtype)
+	dst.Ns = filterRRSlice(m.Ns, do, ttl, dns.TypeNone)
+	dst.Extra = filterRRSlice(m.Extra, do, ttl, dns.TypeNone)
 }
 
 // unpackResponse returns the unpacked response if it exists and didn't expire,
 // nil otherwise.
-func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
+func unpackResponse(data []byte, req *dns.Msg) *dns.Msg {
 	expire := binary.BigEndian.Uint32(data[:4])
 	now := time.Now().Unix()
 	if int64(expire) <= now {
@@ -273,14 +277,14 @@ func unpackResponse(data []byte, request *dns.Msg) *dns.Msg {
 		return nil
 	}
 
-	adBit := request.AuthenticatedData
+	adBit := req.AuthenticatedData
 	var doBit bool
-	if o := request.IsEdns0(); o != nil {
+	if o := req.IsEdns0(); o != nil {
 		doBit = o.Do()
 	}
 
 	res := &dns.Msg{}
-	res.SetReply(request)
+	res.SetReply(req)
 	res.AuthenticatedData = m.AuthenticatedData
 	res.RecursionAvailable = m.RecursionAvailable
 	res.Rcode = m.Rcode

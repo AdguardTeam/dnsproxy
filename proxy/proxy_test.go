@@ -15,9 +15,11 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -55,6 +57,234 @@ func TestProxyRace(t *testing.T) {
 	err = dnsProxy.Stop()
 	if err != nil {
 		t.Fatalf("cannot stop the DNS proxy: %s", err)
+	}
+}
+
+// defaultTestTTL used to guarantee caching.
+const defaultTestTTL = 1000
+
+type testDNSSECUpstream struct {
+	a     dns.RR
+	txt   dns.RR
+	ds    dns.RR
+	rrsig dns.RR
+}
+
+func (u *testDNSSECUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+	resp = &dns.Msg{}
+	resp.SetReply(m)
+
+	q := m.Question[0]
+	switch q.Qtype {
+	case dns.TypeA:
+		resp.Answer = append(resp.Answer, u.a)
+	case dns.TypeTXT:
+		resp.Answer = append(resp.Answer, u.txt)
+	case dns.TypeDS:
+		resp.Answer = append(resp.Answer, u.ds)
+	default:
+		// Go on.  The RRSIG resource record is added afterward.  This
+		// upstream.Upstream implementation doesn't handle explicit
+		// requests for it.
+	}
+
+	if len(resp.Answer) > 0 {
+		resp.Answer[0].Header().Ttl = defaultTestTTL
+	}
+
+	if o := m.IsEdns0(); o != nil {
+		resp.Answer = append(resp.Answer, u.rrsig)
+
+		resp.SetEdns0(defaultUDPBufSize, o.Do())
+	}
+
+	return resp, nil
+}
+
+func (u *testDNSSECUpstream) Address() string {
+	return ""
+}
+
+func TestProxy_Resolve_dnssecCache(t *testing.T) {
+	const host = "example.com"
+
+	const (
+		// Larger than UDP buffer size to invoke truncation.
+		txtDataLen      = 1024
+		txtDataChunkLen = 255
+	)
+
+	txtDataChunkNum := txtDataLen / txtDataChunkLen
+	if txtDataLen%txtDataChunkLen > 0 {
+		txtDataChunkNum += 1
+	}
+	txts := make([]string, txtDataChunkNum)
+	randData := make([]byte, txtDataLen)
+	n, err := rand.Read(randData)
+	require.NoError(t, err)
+	require.Equal(t, txtDataLen, n)
+	for i, c := range randData {
+		randData[i] = c%26 + 'a'
+	}
+	// *dns.TXT requires splitting the actual data into
+	// 256-byte chunks.
+	for i := 0; i < txtDataChunkNum; i++ {
+		r := txtDataChunkLen * (i + 1)
+		if r > txtDataLen {
+			r = txtDataLen
+		}
+		txts[i] = string(randData[txtDataChunkLen*i : r])
+	}
+	txt := &dns.TXT{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeTXT,
+			Class:  dns.ClassINET,
+		},
+		Txt: txts,
+	}
+
+	a := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+		},
+		A: net.IP{1, 2, 3, 4},
+	}
+
+	ds := &dns.DS{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeDS,
+			Class:  dns.ClassINET,
+		},
+		Digest: "736f6d652064656c65676174696f6e207369676e6572",
+	}
+
+	rrsig := &dns.RRSIG{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeRRSIG,
+			Class:  dns.ClassINET,
+			Ttl:    defaultTestTTL,
+		},
+		TypeCovered: dns.TypeA,
+		Algorithm:   8,
+		Labels:      2,
+		SignerName:  dns.Fqdn(host),
+		Signature:   "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm",
+	}
+
+	p := &Proxy{}
+	p.UpstreamConfig = &UpstreamConfig{
+		Upstreams: []upstream.Upstream{&testDNSSECUpstream{
+			a:     a,
+			txt:   txt,
+			ds:    ds,
+			rrsig: rrsig,
+		}},
+	}
+	p.cache = &cache{
+		items: glcache.New(glcache.Config{
+			MaxSize:   defaultCacheSize,
+			EnableLRU: true,
+		}),
+	}
+
+	testCases := []struct {
+		wantAns dns.RR
+		name    string
+		wantLen int
+		edns    bool
+	}{{
+		wantAns: a,
+		name:    "a_noedns",
+		wantLen: 1,
+		edns:    false,
+	}, {
+		wantAns: a,
+		name:    "a_ends",
+		wantLen: 2,
+		edns:    true,
+	}, {
+		wantAns: txt,
+		name:    "txt_noedns",
+		wantLen: 1,
+		edns:    false,
+	}, {
+		wantAns: txt,
+		name:    "txt_edns",
+		// Truncated.
+		wantLen: 0,
+		edns:    true,
+	}, {
+		wantAns: ds,
+		name:    "ds_noedns",
+		wantLen: 1,
+		edns:    false,
+	}, {
+		wantAns: ds,
+		name:    "ds_edns",
+		wantLen: 2,
+		edns:    true,
+	}}
+
+	for _, tc := range testCases {
+		req := &dns.Msg{
+			MsgHdr: dns.MsgHdr{
+				Id: dns.Id(),
+			},
+			Compress: true,
+			Question: []dns.Question{{
+				Name:   dns.Fqdn(tc.wantAns.Header().Name),
+				Qtype:  tc.wantAns.Header().Rrtype,
+				Qclass: tc.wantAns.Header().Class,
+			}},
+		}
+		if tc.edns {
+			req.SetEdns0(txtDataLen/2, true)
+		}
+
+		dctx := &DNSContext{
+			Req:   req,
+			Proto: ProtoUDP,
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(p.cache.items.Clear)
+			err = p.Resolve(dctx)
+			require.NoError(t, err)
+
+			res := dctx.Res
+			require.NotNil(t, res)
+
+			require.Len(t, res.Answer, tc.wantLen, res.Answer)
+			switch tc.wantLen {
+			case 0:
+				assert.True(t, res.Truncated)
+			case 1:
+				res.Answer[0].Header().Ttl = defaultTestTTL
+				assert.Equal(t, tc.wantAns.String(), res.Answer[0].String())
+			case 2:
+				res.Answer[0].Header().Ttl = defaultTestTTL
+				assert.Equal(t, tc.wantAns.String(), res.Answer[0].String())
+				assert.Equal(t, rrsig.String(), res.Answer[1].String())
+			default:
+				t.Fatalf("wanted length has unexpected value %d", tc.wantLen)
+			}
+
+			cached, ok := p.cache.Get(dctx.Req)
+			require.True(t, ok)
+			require.NotNil(t, cached)
+			require.Len(t, cached.Answer, 2)
+
+			// Just make it match.
+			cached.Answer[0].Header().Ttl = defaultTestTTL
+			assert.Equal(t, tc.wantAns.String(), cached.Answer[0].String())
+			assert.Equal(t, rrsig.String(), cached.Answer[1].String())
+		})
+
 	}
 }
 
@@ -106,9 +336,10 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	// upstreams specification. Domains adguard.com and google.ru reserved with fake upstreams, maps.google.ru excluded from dnsmasq.
 	upstreams := []string{"[/adguard.com/]1.2.3.4", "[/google.ru/]2.3.4.5", "[/maps.google.ru/]#", "1.1.1.1"}
 	config, err := ParseUpstreamsConfig(upstreams,
-		upstream.Options{InsecureSkipVerify: false,
-			Bootstrap: []string{"8.8.8.8"},
-			Timeout:   1 * time.Second,
+		upstream.Options{
+			InsecureSkipVerify: false,
+			Bootstrap:          []string{"8.8.8.8"},
+			Timeout:            1 * time.Second,
 		})
 	if err != nil {
 		t.Fatalf("Error while upstream config parsing: %s", err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -17,16 +18,11 @@ import (
 type dnsOverHTTPS struct {
 	boot *bootstrapper
 
-	// mu exists for lazy initialization purposes and protects client from
-	// data race during lazy initialization.  It provides the exchange with
-	// invalid upstream possibility, which is needed for now. Should be
-	// refactored further.
-	mu sync.Mutex
-
 	// The Client's Transport typically has internal state (cached TCP
 	// connections), so Clients should be reused instead of created as
 	// needed. Clients are safe for concurrent use by multiple goroutines.
-	client *http.Client
+	client      *http.Client
+	clientGuard sync.Mutex
 }
 
 // type check
@@ -69,6 +65,15 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 		defer resp.Body.Close()
 	}
 	if err != nil {
+		// TODO: consider using errors.As
+		if os.IsTimeout(err) {
+			// If this is a timeout error, trying to forcibly re-create the HTTP client instance
+			// See https://github.com/AdguardTeam/AdGuardHome/issues/3217 for more details on this
+			p.clientGuard.Lock()
+			p.client = nil
+			p.clientGuard.Unlock()
+		}
+
 		return nil, errorx.Decorate(err, "couldn't do a GET request to '%s'", p.boot.URL)
 	}
 
@@ -95,8 +100,8 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 func (p *dnsOverHTTPS) getClient() (c *http.Client, err error) {
 	startTime := time.Now()
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.clientGuard.Lock()
+	defer p.clientGuard.Unlock()
 	if p.client != nil {
 		return p.client, nil
 	}

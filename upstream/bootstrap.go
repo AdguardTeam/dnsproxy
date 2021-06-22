@@ -31,6 +31,7 @@ var RootCAs *x509.CertPool
 // nolint
 var CipherSuites []uint16
 
+// TODO: refactor bootstrapper, it's overcomplicated and hard to understand what it does
 type bootstrapper struct {
 	URL            *url.URL
 	resolvers      []*Resolver // list of Resolvers to use to resolve hostname, if necessary

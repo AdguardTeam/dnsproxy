@@ -19,7 +19,7 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 
 	config, err := ParseUpstreamsConfig(
 		upstreams,
-		upstream.Options{
+		&upstream.Options{
 			InsecureSkipVerify: false,
 			Bootstrap:          []string{},
 			Timeout:            1 * time.Second,
@@ -36,12 +36,14 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 
 func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
-	config, err := ParseUpstreamsConfig(upstreams,
-		upstream.Options{
+	config, err := ParseUpstreamsConfig(
+		upstreams,
+		&upstream.Options{
 			InsecureSkipVerify: false,
 			Bootstrap:          []string{},
 			Timeout:            1 * time.Second,
-		})
+		},
+	)
 	assert.NoError(t, err)
 	assert.Len(t, config.Upstreams, 0)
 	assert.Len(t, config.DomainReservedUpstreams, 2)
@@ -55,7 +57,7 @@ func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 
 // assertUpstreamsForDomain checks the addresses of the specified domain
 // upstreams and their number.
-func assertUpstreamsForDomain(t *testing.T, config UpstreamConfig, count int, domain string, address []string) {
+func assertUpstreamsForDomain(t *testing.T, config *UpstreamConfig, count int, domain string, address []string) {
 	t.Helper()
 
 	u := config.getUpstreamsForDomain(domain)

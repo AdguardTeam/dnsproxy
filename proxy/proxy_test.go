@@ -8,19 +8,32 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"io/ioutil"
 	"math/big"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	// Disable logging in tests.
+	//
+	// TODO(a.garipov): Move to io.Discard after we drop Go 1.15
+	// compatibility.
+	log.SetOutput(ioutil.Discard)
+
+	os.Exit(m.Run())
+}
 
 const (
 	listenIP          = "127.0.0.1"
@@ -295,7 +308,7 @@ func TestUpstreamsSort(t *testing.T) {
 	// there are 4 upstreams in configuration
 	config := []string{"1.2.3.4", "1.1.1.1", "2.3.4.5", "8.8.8.8"}
 	for _, u := range config {
-		up, err := upstream.AddressToUpstream(u, upstream.Options{Timeout: 1 * time.Second})
+		up, err := upstream.AddressToUpstream(u, &upstream.Options{Timeout: 1 * time.Second})
 		if err != nil {
 			t.Fatalf("Failed to create %s upstream: %s", u, err)
 		}
@@ -335,8 +348,9 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 
 	// upstreams specification. Domains adguard.com and google.ru reserved with fake upstreams, maps.google.ru excluded from dnsmasq.
 	upstreams := []string{"[/adguard.com/]1.2.3.4", "[/google.ru/]2.3.4.5", "[/maps.google.ru/]#", "1.1.1.1"}
-	config, err := ParseUpstreamsConfig(upstreams,
-		upstream.Options{
+	config, err := ParseUpstreamsConfig(
+		upstreams,
+		&upstream.Options{
 			InsecureSkipVerify: false,
 			Bootstrap:          []string{"8.8.8.8"},
 			Timeout:            1 * time.Second,
@@ -344,7 +358,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error while upstream config parsing: %s", err)
 	}
-	dnsProxy.UpstreamConfig = &config
+	dnsProxy.UpstreamConfig = config
 
 	err = dnsProxy.Start()
 	if err != nil {
@@ -427,7 +441,10 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	// invalid fallback to make sure that reply is not coming from fallback server
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 	fallback := "1.2.3.4:567"
-	f, err := upstream.AddressToUpstream(fallback, upstream.Options{Timeout: timeOut})
+	f, err := upstream.AddressToUpstream(
+		fallback,
+		&upstream.Options{Timeout: timeOut},
+	)
 	if err != nil {
 		t.Fatalf("cannot create fallback upstream %s cause %s", fallback, err)
 	}
@@ -438,11 +455,13 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{}
 	for _, line := range upstreams {
 		var u upstream.Upstream
-		u, err = upstream.AddressToUpstream(line,
-			upstream.Options{
+		u, err = upstream.AddressToUpstream(
+			line,
+			&upstream.Options{
 				Bootstrap: []string{"8.8.8.8:53"},
 				Timeout:   timeOut,
-			})
+			},
+		)
 		if err != nil {
 			t.Fatalf("cannot create upstream %s cause %s", line, err)
 		}
@@ -498,12 +517,18 @@ func TestFallback(t *testing.T) {
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, upstream.Options{Timeout: timeout})
+		f, _ := upstream.AddressToUpstream(
+			s,
+			&upstream.Options{Timeout: timeout},
+		)
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using some random port to make sure that this upstream won't work
-	u, _ := upstream.AddressToUpstream("8.8.8.8:555", upstream.Options{Timeout: timeout})
+	u, _ := upstream.AddressToUpstream(
+		"8.8.8.8:555",
+		&upstream.Options{Timeout: timeout},
+	)
 	dnsProxy.UpstreamConfig = &UpstreamConfig{}
 	dnsProxy.UpstreamConfig.Upstreams = make([]upstream.Upstream, 0)
 	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, u)
@@ -557,12 +582,21 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, upstream.Options{Timeout: timeout})
+		f, _ := upstream.AddressToUpstream(
+			s,
+			&upstream.Options{Timeout: timeout},
+		)
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using a DOT server with invalid bootstrap
-	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", upstream.Options{Bootstrap: []string{"8.8.8.8:555"}, Timeout: timeout})
+	u, _ := upstream.AddressToUpstream(
+		"tls://dns.adguard.com",
+		&upstream.Options{
+			Bootstrap: []string{"8.8.8.8:555"},
+			Timeout:   timeout,
+		},
+	)
 	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{}
 	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, u)
 
@@ -953,7 +987,10 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 		}
 	}
 	upstreams := make([]upstream.Upstream, 0)
-	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, upstream.Options{Timeout: defaultTimeout})
+	dnsUpstream, err := upstream.AddressToUpstream(
+		upstreamAddr,
+		&upstream.Options{Timeout: defaultTimeout},
+	)
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}
@@ -970,13 +1007,18 @@ func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	req := createTestMessage()
 	err := conn.WriteMsg(req)
 	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
+		t.Errorf("cannot write message: %s", err)
+
+		return
 	}
 
 	res, err := conn.ReadMsg()
 	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
+		t.Errorf("cannot read response to message: %s", err)
+
+		return
 	}
+
 	assertResponse(t, res)
 }
 

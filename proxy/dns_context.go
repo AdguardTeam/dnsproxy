@@ -14,7 +14,7 @@ import (
 
 // DNSContext represents a DNS request message context
 type DNSContext struct {
-	Proto     string            // "udp", "tcp", "tls", "https", "quic"
+	Proto     Proto
 	Req       *dns.Msg          // DNS request
 	Res       *dns.Msg          // DNS response from an upstream
 	Addr      net.Addr          // client address.
@@ -48,6 +48,11 @@ type DNSContext struct {
 	// QUICSession is the QUIC session from which we got the query.  For
 	// ProtoQUIC only.
 	QUICSession quic.Session
+
+	// RequestID is an opaque numerical identifier of this request that is
+	// guaranteed to be unique across requests processed by a single Proxy
+	// instance.
+	RequestID uint64
 
 	ecsReqIP   net.IP // ECS IP used in request
 	ecsReqMask uint8  // ECS mask used in request
@@ -95,6 +100,6 @@ func (ctx *DNSContext) scrub() {
 		ctx.Res.SetEdns0(ctx.udpSize, ctx.doBit)
 	}
 
-	ctx.Res.Truncate(proxyutil.DNSSize(ctx.Proto, ctx.Req))
+	ctx.Res.Truncate(proxyutil.DNSSize(ctx.Proto == ProtoUDP, ctx.Req))
 	ctx.Res.Compress = true // some devices require DNS message compression
 }

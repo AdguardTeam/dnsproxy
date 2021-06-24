@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/fastip"
@@ -29,25 +30,39 @@ const (
 	ednsCSDefaultNetmaskV6 = 112 // default network mask for IPv6 address for EDNS ClientSubnet option
 )
 
+// Proto is the DNS protocol.
+type Proto string
+
+// Proto values.
 const (
-	// ProtoUDP is plain DNS-over-UDP
-	ProtoUDP = "udp"
-	// ProtoTCP is plain DNS-over-TCP
-	ProtoTCP = "tcp"
-	// ProtoTLS is DNS-over-TLS
-	ProtoTLS = "tls"
-	// ProtoHTTPS is DNS-over-HTTPS
-	ProtoHTTPS = "https"
-	// ProtoQUIC is QUIC transport
-	ProtoQUIC = "quic"
-	// ProtoDNSCrypt is DNSCrypt
-	ProtoDNSCrypt = "dnscrypt"
+	// ProtoUDP is the plain DNS-over-UDP protocol.
+	ProtoUDP Proto = "udp"
+	// ProtoTCP is the plain DNS-over-TCP protocol.
+	ProtoTCP Proto = "tcp"
+	// ProtoTLS is the DNS-over-TLS (DoT) protocol.
+	ProtoTLS Proto = "tls"
+	// ProtoHTTPS is the DNS-over-HTTPS (DoH) protocol.
+	ProtoHTTPS Proto = "https"
+	// ProtoQUIC is the DNS-over-QUIC (DoQ) protocol.
+	ProtoQUIC Proto = "quic"
+	// ProtoDNSCrypt is the DNSCrypt protocol.
+	ProtoDNSCrypt Proto = "dnscrypt"
+)
+
+const (
 	// UnqualifiedNames is reserved name for "unqualified names only", ie names without dots
 	UnqualifiedNames = "unqualified_names"
 )
 
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
+	// counter is the counter of messages.  It must only be incremented
+	// atomically, so it must be the first member of the struct to make sure
+	// that it has a 64-bit alignment.
+	//
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG.
+	counter uint64
+
 	started bool // Started flag
 
 	// Listeners
@@ -162,7 +177,9 @@ func (p *Proxy) Init() (err error) {
 	p.bytesPool = &sync.Pool{
 		New: func() interface{} {
 			// 2 bytes may be used to store packet length (see TCP/TLS)
-			return make([]byte, 2+dns.MaxMsgSize)
+			b := make([]byte, 2+dns.MaxMsgSize)
+
+			return &b
 		},
 	}
 
@@ -279,7 +296,7 @@ func (p *Proxy) Stop() error {
 
 // Addrs returns all listen addresses for the specified proto or nil if the proxy does not listen to it.
 // proto must be "tcp", "tls", "https", "quic", or "udp"
-func (p *Proxy) Addrs(proto string) []net.Addr {
+func (p *Proxy) Addrs(proto Proto) []net.Addr {
 	p.RLock()
 	defer p.RUnlock()
 
@@ -329,7 +346,7 @@ func (p *Proxy) Addrs(proto string) []net.Addr {
 
 // Addr returns the first listen address for the specified proto or null if the proxy does not listen to it
 // proto must be "tcp", "tls", "https", "quic", or "udp"
-func (p *Proxy) Addr(proto string) net.Addr {
+func (p *Proxy) Addr(proto Proto) net.Addr {
 	p.RLock()
 	defer p.RUnlock()
 	switch proto {
@@ -503,4 +520,15 @@ func (p *Proxy) processECS(d *DNSContext) {
 
 	d.ecsReqIP = ip
 	d.ecsReqMask = mask
+}
+
+// newDNSContext returns a new properly initialized *DNSContext.
+func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
+	return &DNSContext{
+		Proto:     proto,
+		Req:       req,
+		StartTime: time.Now(),
+
+		RequestID: atomic.AddUint64(&p.counter, 1),
+	}
 }

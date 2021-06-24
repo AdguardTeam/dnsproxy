@@ -33,7 +33,6 @@ func TestPingSuccess(t *testing.T) {
 }
 
 func TestPingFail(t *testing.T) {
-
 	ip := net.ParseIP("127.0.0.1")
 	port := uint(getFreePort())
 
@@ -75,7 +74,7 @@ func TestPingFastest(t *testing.T) {
 	// the test checks that 127.0.0.1 is returned
 	ips = append(ips, net.ParseIP("8.8.8.8"))
 
-	found, res := f.pingAll("test", []net.IP{ip})
+	found, res := f.pingAll("test", ips)
 	assert.True(t, found)
 	assert.NotNil(t, res)
 	assert.True(t, res.success)

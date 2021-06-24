@@ -44,13 +44,10 @@ type dnsCryptHandler struct {
 var _ dnscrypt.Handler = &dnsCryptHandler{}
 
 // ServeDNS - processes the DNS query
-func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, r *dns.Msg) error {
-	d := &DNSContext{
-		Proto:                  ProtoDNSCrypt,
-		Req:                    r,
-		Addr:                   rw.RemoteAddr(),
-		DNSCryptResponseWriter: rw,
-	}
+func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) error {
+	d := h.proxy.newDNSContext(ProtoDNSCrypt, req)
+	d.Addr = rw.RemoteAddr()
+	d.DNSCryptResponseWriter = rw
 
 	h.requestGoroutinesSema.acquire()
 	defer h.requestGoroutinesSema.release()

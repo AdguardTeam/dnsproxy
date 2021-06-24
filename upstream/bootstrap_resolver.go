@@ -22,8 +22,9 @@ type Resolver struct {
 // NewResolver creates an instance of a Resolver structure with defined net.Resolver and it's address
 // resolverAddress -- is address of net.Resolver
 // The host in the address parameter of Dial func will always be a literal IP address (from documentation)
-// options -- Upstream customization options
-func NewResolver(resolverAddress string, options Options) (*Resolver, error) {
+// options are the upstream customization options, nil means use default
+// options.
+func NewResolver(resolverAddress string, options *Options) (*Resolver, error) {
 	r := &Resolver{}
 
 	// set default net.Resolver as a resolver if resolverAddress is empty
@@ -32,9 +33,13 @@ func NewResolver(resolverAddress string, options Options) (*Resolver, error) {
 		return r, nil
 	}
 
+	if options == nil {
+		options = &Options{}
+	}
+
 	r.resolverAddress = resolverAddress
 	var err error
-	opts := Options{
+	opts := &Options{
 		Timeout:                 options.Timeout,
 		VerifyServerCertificate: options.VerifyServerCertificate,
 	}

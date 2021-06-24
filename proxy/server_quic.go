@@ -97,13 +97,8 @@ func (p *Proxy) handleQUICSession(session quic.Session, requestGoroutinesSema se
 // handleQUICStream reads DNS queries from the stream, processes them,
 // and writes back the responses
 func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
-	var buf []byte
-	buf = p.bytesPool.Get().([]byte)
-
-	// Linter says that the argument needs to be pointer-like
-	// But it's already pointer-like
-	// nolint
-	defer p.bytesPool.Put(buf)
+	bufPtr := p.bytesPool.Get().(*[]byte)
+	defer p.bytesPool.Put(bufPtr)
 
 	// One query -- one stream
 	// The client MUST send the DNS query over the selected stream, and MUST
@@ -112,6 +107,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 
 	// err is not checked here because STREAM FIN sent by the client is indicated as error here.
 	// instead, we should check the number of bytes received.
+	buf := *bufPtr
 	n, err := stream.Read(buf)
 
 	// The server MUST send the response on the same stream, and MUST indicate through
@@ -131,8 +127,8 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 		return
 	}
 
-	msg := dns.Msg{}
-	err = msg.Unpack(buf)
+	req := &dns.Msg{}
+	err = req.Unpack(buf)
 	if err != nil {
 		log.Info("failed to unpack a DNS query: %v", err)
 	}
@@ -141,7 +137,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	// this is a fatal error and the recipient of the defective message MUST forcibly abort
 	// the connection immediately.
 	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2
-	if opt := msg.IsEdns0(); opt != nil {
+	if opt := req.IsEdns0(); opt != nil {
 		for _, option := range opt.Option {
 			// Check for EDNS TCP keepalive option
 			if option.Option() == dns.EDNS0TCPKEEPALIVE {
@@ -152,13 +148,10 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 		}
 	}
 
-	d := &DNSContext{
-		Proto:       ProtoQUIC,
-		Req:         &msg,
-		Addr:        session.RemoteAddr(),
-		QUICStream:  stream,
-		QUICSession: session,
-	}
+	d := p.newDNSContext(ProtoQUIC, req)
+	d.Addr = session.RemoteAddr()
+	d.QUICStream = stream
+	d.QUICSession = session
 
 	err = p.handleDNSRequest(d)
 	if err != nil {

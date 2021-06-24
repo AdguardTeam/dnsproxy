@@ -465,26 +465,36 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 
 	r, ok := c.Get(&dnsMsg)
 	if !ok {
-		t.Fatalf("No cache found for %s", host)
+		t.Errorf("No cache found for %s", host)
+
+		return
 	}
 
 	if diff := deepEqualMsg(r, &dnsMsg); diff != nil {
 		t.Error(diff)
+
+		return
 	}
 
 	r, ok = c.Get(&dnsMsg)
 	if !ok {
-		t.Fatalf("No cache found for %s", host)
+		t.Errorf("No cache found for %s", host)
+
+		return
 	}
 
 	if diff := deepEqualMsg(r, &dnsMsg); diff != nil {
 		t.Error(diff)
+
+		return
 	}
 
 	time.Sleep(1100 * time.Millisecond)
 	_, ok = c.Get(&dnsMsg)
 	if ok {
-		t.Fatalf("Cache for %s should be already removed", host)
+		t.Errorf("Cache for %s should be already removed", host)
+
+		return
 	}
 }
 

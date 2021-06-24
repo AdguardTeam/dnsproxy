@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewResolver(t *testing.T) {
-	r, err := NewResolver("1.1.1.1:53", Options{Timeout: 3 * time.Second})
+	r, err := NewResolver("1.1.1.1:53", &Options{Timeout: 3 * time.Second})
 	assert.Nil(t, err)
 
 	ipAddrs, err := r.LookupIPAddr(context.TODO(), "cloudflare-dns.com")
@@ -33,7 +33,7 @@ func TestNewResolver(t *testing.T) {
 }
 
 func TestNewResolverIsValid(t *testing.T) {
-	withTimeoutOpt := Options{Timeout: 3 * time.Second}
+	withTimeoutOpt := &Options{Timeout: 3 * time.Second}
 
 	r, err := NewResolver("1.1.1.1:53", withTimeoutOpt)
 	assert.Nil(t, err)
@@ -72,15 +72,15 @@ func TestNewResolverIsValid(t *testing.T) {
 
 	// not an IP address:
 
-	r, err = NewResolver("tls://dns.adguard.com", withTimeoutOpt)
-	assert.NotNil(t, err)
+	_, err = NewResolver("tls://dns.adguard.com", withTimeoutOpt)
+	assert.Error(t, err)
 
-	r, err = NewResolver("https://dns.adguard.com/dns-query", withTimeoutOpt)
-	assert.NotNil(t, err)
+	_, err = NewResolver("https://dns.adguard.com/dns-query", withTimeoutOpt)
+	assert.Error(t, err)
 
-	r, err = NewResolver("tcp://dns.adguard.com", Options{})
-	assert.NotNil(t, err)
+	_, err = NewResolver("tcp://dns.adguard.com", nil)
+	assert.Error(t, err)
 
-	r, err = NewResolver("dns.adguard.com", Options{})
-	assert.NotNil(t, err)
+	_, err = NewResolver("dns.adguard.com", nil)
+	assert.Error(t, err)
 }

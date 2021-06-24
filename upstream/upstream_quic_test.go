@@ -10,7 +10,7 @@ import (
 func TestUpstreamDOQ(t *testing.T) {
 	// Create a DNS-over-QUIC upstream
 	address := "quic://dns.adguard.com:784"
-	u, err := AddressToUpstream(address, Options{InsecureSkipVerify: true})
+	u, err := AddressToUpstream(address, &Options{InsecureSkipVerify: true})
 	assert.Nil(t, err)
 
 	uq := u.(*dnsOverQUIC)

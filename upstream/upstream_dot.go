@@ -86,9 +86,9 @@ func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, erro
 	if err != nil {
 		poolConn.Close()
 		return nil, errorx.Decorate(err, "Failed to read a request from %s", p.Address())
-	}
-	if err == nil && reply.Id != m.Id {
+	} else if reply.Id != m.Id {
 		err = dns.ErrId
 	}
+
 	return reply, err
 }

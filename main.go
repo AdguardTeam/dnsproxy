@@ -162,8 +162,8 @@ const defaultTimeout = 10 * time.Second
 const defaultDNS64Prefix = "64:ff9b::/96"
 
 func main() {
-	var options Options
-	var parser = goFlags.NewParser(&options, goFlags.Default)
+	options := &Options{}
+	parser := goFlags.NewParser(options, goFlags.Default)
 
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Printf("dnsproxy version: %s\n", VersionString)
@@ -183,7 +183,7 @@ func main() {
 	run(options)
 }
 
-func run(options Options) {
+func run(options *Options) {
 	if options.Verbose {
 		log.SetLevel(log.DEBUG)
 	}
@@ -227,7 +227,7 @@ func run(options Options) {
 }
 
 // createProxyConfig creates proxy.Config from the command line arguments
-func createProxyConfig(options Options) proxy.Config {
+func createProxyConfig(options *Options) proxy.Config {
 	// Create the config
 	config := proxy.Config{
 		Ratelimit:              options.Ratelimit,
@@ -252,11 +252,12 @@ func createProxyConfig(options Options) proxy.Config {
 }
 
 // initUpstreams inits upstream-related config
-func initUpstreams(config *proxy.Config, options Options) {
+func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
 	upstreams := loadServersList(options.Upstreams)
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(upstreams,
-		upstream.Options{
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(
+		upstreams,
+		&upstream.Options{
 			InsecureSkipVerify: options.Insecure,
 			Bootstrap:          options.BootstrapDNS,
 			Timeout:            defaultTimeout,
@@ -264,7 +265,7 @@ func initUpstreams(config *proxy.Config, options Options) {
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}
-	config.UpstreamConfig = &upstreamConfig
+	config.UpstreamConfig = upstreamConfig
 
 	if options.AllServers {
 		config.UpstreamMode = proxy.UModeParallel
@@ -277,7 +278,10 @@ func initUpstreams(config *proxy.Config, options Options) {
 	if options.Fallbacks != nil {
 		fallbacks := []upstream.Upstream{}
 		for i, f := range loadServersList(options.Fallbacks) {
-			fallback, err := upstream.AddressToUpstream(f, upstream.Options{Timeout: defaultTimeout})
+			fallback, err := upstream.AddressToUpstream(
+				f,
+				&upstream.Options{Timeout: defaultTimeout},
+			)
 			if err != nil {
 				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)
 			}
@@ -289,7 +293,7 @@ func initUpstreams(config *proxy.Config, options Options) {
 }
 
 // initEDNS inits EDNS-related config
-func initEDNS(config *proxy.Config, options Options) {
+func initEDNS(config *proxy.Config, options *Options) {
 	if options.EDNSAddr != "" {
 		if options.EnableEDNSSubnet {
 			ednsIP := net.ParseIP(options.EDNSAddr)
@@ -304,7 +308,7 @@ func initEDNS(config *proxy.Config, options Options) {
 }
 
 // initBogusNXDomain inits BogusNXDomain structure
-func initBogusNXDomain(config *proxy.Config, options Options) {
+func initBogusNXDomain(config *proxy.Config, options *Options) {
 	if len(options.BogusNXDomain) > 0 {
 		bogusIP := []net.IP{}
 		for _, s := range options.BogusNXDomain {
@@ -320,9 +324,9 @@ func initBogusNXDomain(config *proxy.Config, options Options) {
 }
 
 // initTLSConfig inits the TLS config
-func initTLSConfig(config *proxy.Config, options Options) {
+func initTLSConfig(config *proxy.Config, options *Options) {
 	if options.TLSCertPath != "" && options.TLSKeyPath != "" {
-		tlsConfig, err := newTLSConfig(options.TLSCertPath, options.TLSKeyPath, options)
+		tlsConfig, err := newTLSConfig(options)
 		if err != nil {
 			log.Fatalf("failed to load TLS config: %s", err)
 		}
@@ -331,7 +335,7 @@ func initTLSConfig(config *proxy.Config, options Options) {
 }
 
 // initDNSCryptConfig inits the DNSCrypt config
-func initDNSCryptConfig(config *proxy.Config, options Options) {
+func initDNSCryptConfig(config *proxy.Config, options *Options) {
 	if options.DNSCryptConfigPath == "" {
 		return
 	}
@@ -357,7 +361,7 @@ func initDNSCryptConfig(config *proxy.Config, options Options) {
 }
 
 // initListenAddrs inits listen addrs
-func initListenAddrs(config *proxy.Config, options Options) {
+func initListenAddrs(config *proxy.Config, options *Options) {
 	listenIPs := []net.IP{}
 	for _, a := range options.ListenAddrs {
 		ip := net.ParseIP(a)
@@ -417,7 +421,7 @@ func initListenAddrs(config *proxy.Config, options Options) {
 }
 
 // initDNS64 inits the DNS64 configuration for dnsproxy
-func initDNS64(p *proxy.Proxy, options Options) {
+func initDNS64(p *proxy.Proxy, options *Options) {
 	if !options.DNS64 {
 		return
 	}
@@ -459,7 +463,7 @@ func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSConte
 // NewTLSConfig returns a TLS config that includes a certificate
 // Use for server TLS config or when using a client certificate
 // If caPath is empty, system CAs will be used
-func newTLSConfig(certPath, keyPath string, options Options) (*tls.Config, error) {
+func newTLSConfig(options *Options) (*tls.Config, error) {
 	// Set default TLS min/max versions
 	tlsMinVersion := tls.VersionTLS10 // Default for crypto/tls
 	tlsMaxVersion := tls.VersionTLS13 // Default for crypto/tls
@@ -480,7 +484,7 @@ func newTLSConfig(certPath, keyPath string, options Options) (*tls.Config, error
 		tlsMaxVersion = tls.VersionTLS12
 	}
 
-	cert, err := loadX509KeyPair(certPath, keyPath)
+	cert, err := loadX509KeyPair(options.TLSCertPath, options.TLSKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not load TLS cert: %s", err)
 	}

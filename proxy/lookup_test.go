@@ -14,7 +14,7 @@ func TestLookupIPAddr(t *testing.T) {
 	p := Proxy{}
 	upstreams := make([]upstream.Upstream, 0)
 	// Use AdGuard DNS here
-	opts := upstream.Options{Timeout: defaultTimeout}
+	opts := &upstream.Options{Timeout: defaultTimeout}
 	dnsUpstream, err := upstream.AddressToUpstream("94.140.14.14", opts)
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)

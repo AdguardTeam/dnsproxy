@@ -117,21 +117,29 @@ func sendTestAAAAMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup, h
 	req := createAAAATestMessage(host)
 	err := conn.WriteMsg(req)
 	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
+		t.Errorf("cannot write message: %s", err)
+
+		return
 	}
 
 	res, err := conn.ReadMsg()
 	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
+		t.Errorf("cannot read response to message: %s", err)
+
+		return
 	}
 
 	if len(res.Answer) == 0 {
-		t.Fatalf("No answers!")
+		t.Errorf("No answers!")
+
+		return
 	}
 
 	_, ok := res.Answer[0].(*dns.AAAA)
 	if !ok {
-		t.Fatalf("Answer for %s is not AAAA record!", host)
+		t.Errorf("Answer for %s is not AAAA record!", host)
+
+		return
 	}
 }
 

@@ -70,8 +70,12 @@ func parseHostAndPort(addr string) (string, string, error) {
 // * tls://1.1.1.1 -- DNS-over-TLS
 // * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
 // * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
-// options -- Upstream customization options
-func AddressToUpstream(address string, options Options) (Upstream, error) {
+// options -- Upstream customization options, nil means default options.
+func AddressToUpstream(address string, options *Options) (Upstream, error) {
+	if options == nil {
+		options = &Options{}
+	}
+
 	if strings.Contains(address, "://") {
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
@@ -94,7 +98,7 @@ func AddressToUpstream(address string, options Options) (Upstream, error) {
 
 // urlToBoot creates an instance of the bootstrapper with the specified options
 // options -- Upstream customization options
-func urlToBoot(resolverURL *url.URL, opts Options) (*bootstrapper, error) {
+func urlToBoot(resolverURL *url.URL, opts *Options) (*bootstrapper, error) {
 	if len(opts.ServerIPAddrs) == 0 {
 		return newBootstrapper(resolverURL, opts)
 	}
@@ -104,7 +108,7 @@ func urlToBoot(resolverURL *url.URL, opts Options) (*bootstrapper, error) {
 
 // urlToUpstream converts a URL to an Upstream
 // options -- Upstream customization options
-func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
+func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 	switch upstreamURL.Scheme {
 	case "sdns":
 		return stampToUpstream(upstreamURL, opts)
@@ -117,7 +121,7 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 
 	case "quic":
 		if upstreamURL.Port() == "" {
-			//https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-10.2.1
+			// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-10.2.1
 			// Early experiments MAY use port 8853. This port is marked in the IANA registry as unassigned.
 			// (Note that prior to version -02 of this draft, experiments were directed to use port 784.)
 			upstreamURL.Host += ":8853"
@@ -161,7 +165,7 @@ func urlToUpstream(upstreamURL *url.URL, opts Options) (Upstream, error) {
 
 // stampToUpstream converts a DNS stamp to an Upstream
 // options -- Upstream customization options
-func stampToUpstream(upsURL *url.URL, opts Options) (Upstream, error) {
+func stampToUpstream(upsURL *url.URL, opts *Options) (Upstream, error) {
 	stamp, err := dnsstamps.NewServerStampFromString(upsURL.String())
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to parse %s", upsURL)

@@ -43,13 +43,13 @@ type bootstrapper struct {
 	// callbacks for checking certificates, timeout,
 	// the need to verify the server certificate,
 	// the addresses of upstream servers, etc
-	options Options
+	options *Options
 }
 
 // newBootstrapperResolved creates a new bootstrapper that already contains resolved config.
 // This can be done only in the case when we already know the resolver IP address.
 // options -- Upstream customization options
-func newBootstrapperResolved(upsURL *url.URL, options Options) (*bootstrapper, error) {
+func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, error) {
 	// get a host without port
 	host, port, err := net.SplitHostPort(upsURL.Host)
 	if err != nil {
@@ -75,7 +75,7 @@ func newBootstrapperResolved(upsURL *url.URL, options Options) (*bootstrapper, e
 // newBootstrapper initializes a new bootstrapper instance
 // address -- original resolver address string (i.e. tls://one.one.one.one:853)
 // options -- Upstream customization options
-func newBootstrapper(address *url.URL, options Options) (*bootstrapper, error) {
+func newBootstrapper(address *url.URL, options *Options) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
 	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup

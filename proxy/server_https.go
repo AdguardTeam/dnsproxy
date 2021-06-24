@@ -88,8 +88,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg := new(dns.Msg)
-	if err = msg.Unpack(buf); err != nil {
+	req := &dns.Msg{}
+	if err = req.Unpack(buf); err != nil {
 		log.Tracef("msg.Unpack: %s", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
@@ -97,13 +97,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	addr, _ := p.remoteAddr(r)
 
-	d := &DNSContext{
-		Proto:              ProtoHTTPS,
-		Req:                msg,
-		Addr:               addr,
-		HTTPRequest:        r,
-		HTTPResponseWriter: w,
-	}
+	d := p.newDNSContext(ProtoHTTPS, req)
+	d.Addr = addr
+	d.HTTPRequest = r
+	d.HTTPResponseWriter = w
 
 	err = p.handleDNSRequest(d)
 	if err != nil {

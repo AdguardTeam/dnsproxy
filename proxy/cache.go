@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/binary"
 	"math"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -12,139 +13,257 @@ import (
 	"github.com/miekg/dns"
 )
 
-const (
-	defaultCacheSize = 64 * 1024 // in bytes
-)
+// defaultCacheSize is the size of cache in bytes by default.
+const defaultCacheSize = 64 * 1024
 
+// cache is used to cache requests.
 type cache struct {
-	items        glcache.Cache // cache
-	cacheSize    int           // cache size (in bytes)
-	sync.RWMutex               // lock
+	// items is the requests cache.
+	items glcache.Cache
+	// itemsLock protects requests cache.
+	itemsLock sync.RWMutex
+
+	// itemsWithSubnet is the requests cache.
+	itemsWithSubnet glcache.Cache
+	// itemsWithSubnetLock protects requests cache.
+	itemsWithSubnetLock sync.RWMutex
+
+	// cacheSize is the size of a key-value pair of cache.
+	cacheSize int
+	// optimistic defines if the cache should return expired items and
+	// resolve those again.
+	optimistic bool
 }
 
-func (c *cache) Get(request *dns.Msg) (*dns.Msg, bool) {
-	if request == nil || len(request.Question) != 1 {
-		return nil, false
+// initCache initializes cache in case it is enabled.
+func (p *Proxy) initCache() {
+	if !p.CacheEnabled {
+		return
 	}
-	// create key for request
-	key := key(request)
-	c.Lock()
-	if c.items == nil {
-		c.Unlock()
-		return nil, false
+
+	log.Printf("DNS cache is enabled")
+
+	c := &cache{
+		optimistic: p.CacheOptimistic,
+		cacheSize:  p.CacheSizeBytes,
 	}
-	c.Unlock()
+	p.cache = c
+	c.initLazy()
+	if p.EnableEDNSClientSubnet {
+		c.initLazyWithSubnet()
+	}
+
+	p.shortFlighter = newOptimisticResolver(
+		p.replyFromUpstream,
+		p.setInCache,
+		c.Delete,
+	)
+	p.shortFlighterWithSubnet = newOptimisticResolver(
+		p.replyFromUpstream,
+		p.setInCache,
+		c.DeleteWithSubnet,
+	)
+}
+
+// Get returns cached *dns.Msg if it's found.  Nil otherwise.
+func (c *cache) Get(req *dns.Msg) (res *dns.Msg, expired bool, key []byte) {
+	c.itemsLock.RLock()
+	defer c.itemsLock.RUnlock()
+
+	if c.items == nil || req == nil || len(req.Question) != 1 {
+		return nil, false, nil
+	}
+
+	key = msgToKey(req)
 	data := c.items.Get(key)
 	if data == nil {
-		return nil, false
+		return nil, false, key
 	}
 
-	res := unpackResponse(data, request)
-	if res == nil {
+	if res, expired = unpackResponse(data, req, c.optimistic); res == nil {
 		c.items.Del(key)
-		return nil, false
 	}
-	return res, true
+
+	return res, expired, key
 }
 
-func (c *cache) Set(m *dns.Msg) {
-	if m == nil {
-		return // no-op
+// GetWithSubnet returns cached *dns.Msg if it's found by client IP and subnet
+// mask.  Nil otherwise.  Note that a slow longest-prefix-match algorithm used,
+// so cache searches are performed up to mask+1 times.
+func (c *cache) GetWithSubnet(req *dns.Msg, cliIP net.IP, mask uint8) (
+	res *dns.Msg,
+	expired bool,
+	key []byte,
+) {
+	c.itemsWithSubnetLock.RLock()
+	defer c.itemsWithSubnetLock.RUnlock()
+
+	if c.itemsWithSubnet == nil || req == nil || len(req.Question) != 1 {
+		return nil, false, nil
 	}
 
+	var data []byte
+	for mask++; mask > 0 && data == nil; {
+		mask--
+		key = msgToKeyWithSubnet(req, cliIP, mask)
+		data = c.itemsWithSubnet.Get(key)
+	}
+	if data == nil {
+		return nil, false, key
+	}
+
+	if res, expired = unpackResponse(data, req, c.optimistic); res == nil {
+		c.itemsWithSubnet.Del(key)
+	}
+
+	return res, expired, key
+}
+
+// initLazy initializes the cache for requests.
+func (c *cache) initLazy() {
+	c.itemsLock.Lock()
+	defer c.itemsLock.Unlock()
+
+	if c.items == nil {
+		c.items = c.createCache()
+	}
+}
+
+// initLazyWithSubnet initializes the cache for requests with subnets.
+func (c *cache) initLazyWithSubnet() {
+	c.itemsWithSubnetLock.Lock()
+	defer c.itemsWithSubnetLock.Unlock()
+
+	if c.itemsWithSubnet == nil {
+		c.itemsWithSubnet = c.createCache()
+	}
+}
+
+// createCache returns new Cache with predefined settings.
+func (c *cache) createCache() (glc glcache.Cache) {
+	maxSize := defaultCacheSize
+	if c.cacheSize > 0 {
+		maxSize = c.cacheSize
+	}
+	conf := glcache.Config{
+		MaxSize:   uint(maxSize),
+		EnableLRU: true,
+	}
+
+	return glcache.New(conf)
+}
+
+// Set tries to add the request into cache.
+func (c *cache) Set(m *dns.Msg) {
 	if !isCacheable(m) {
 		return
 	}
 
-	key := key(m)
+	c.initLazy()
 
-	c.Lock()
-	// lazy initialization for cache
-	if c.items == nil {
-		conf := glcache.Config{
-			MaxSize:   defaultCacheSize,
-			EnableLRU: true,
-		}
-		if c.cacheSize > 0 {
-			conf.MaxSize = uint(c.cacheSize)
-		}
-		c.items = glcache.New(conf)
-	}
-	c.Unlock()
-
+	key := msgToKey(m)
 	data := packResponse(m)
-	_ = c.items.Set(key, data)
+
+	c.itemsLock.RLock()
+	defer c.itemsLock.RUnlock()
+
+	c.items.Set(key, data)
 }
 
-// check if message is cacheable
+// SetWithSubnet tries to add the request with subnet into cache.
+func (c *cache) SetWithSubnet(m *dns.Msg, ip net.IP, mask uint8) {
+	if !isCacheable(m) {
+		return
+	}
+
+	c.initLazyWithSubnet()
+
+	key := msgToKeyWithSubnet(m, ip, mask)
+	data := packResponse(m)
+
+	c.itemsWithSubnetLock.RLock()
+	defer c.itemsWithSubnetLock.RUnlock()
+
+	c.itemsWithSubnet.Set(key, data)
+}
+
+// isCacheable checks if m is valid to be cached.
 func isCacheable(m *dns.Msg) bool {
-	// truncated messages aren't valid
+	if m == nil {
+		return false
+	}
+
+	// Truncated messages aren't valid.
 	if m.Truncated {
 		log.Tracef("Refusing to cache truncated message")
+
 		return false
 	}
 
-	// if has wrong number of questions, also don't cache
+	// If has wrong number of questions, also don't cache.
 	if len(m.Question) != 1 {
 		log.Tracef("Refusing to cache message with wrong number of questions")
+
 		return false
 	}
 
-	ttl := findLowestTTL(m)
-	if ttl == 0 {
+	if findLowestTTL(m) == 0 {
 		return false
 	}
 
 	qName := m.Question[0].Name
-	if m.Rcode != dns.RcodeSuccess && m.Rcode != dns.RcodeNameError {
-		log.Tracef("%s: refusing to cache message with response type %s", qName, dns.RcodeToString[m.Rcode])
+	rcode := m.Rcode
+	if rcode != dns.RcodeSuccess && rcode != dns.RcodeNameError {
+		log.Tracef(
+			"%s: refusing to cache message with response type %s",
+			qName,
+			dns.RcodeToString[rcode],
+		)
+
 		return false
 	}
 
-	qType := m.Question[0].Qtype
-	if m.Rcode == dns.RcodeSuccess && (qType == dns.TypeA || qType == dns.TypeAAAA) {
-		// Now verify that it contains at least one A or AAAA record
-		if len(m.Answer) == 0 {
-			log.Tracef("%s: refusing to cache a NOERROR response with no answers", qName)
-			return false
-		}
+	if qType := m.Question[0].Qtype; m.Rcode != dns.RcodeSuccess ||
+		(qType != dns.TypeA && qType != dns.TypeAAAA) {
+		return true
+	}
 
-		found := false
-		for _, rr := range m.Answer {
-			if rr.Header().Rrtype == dns.TypeA || rr.Header().Rrtype == dns.TypeAAAA {
-				found = true
-				break
-			}
-		}
+	// Now verify that it contains at least one A or AAAA record.
+	if len(m.Answer) == 0 {
+		log.Tracef(
+			"%s: refusing to cache a NOERROR response with no answers",
+			qName,
+		)
 
-		if !found {
-			log.Tracef("%s: refusing to cache a response with no A and AAAA answers", qName)
-			return false
+		return false
+	}
+
+	for _, rr := range m.Answer {
+		if h := rr.Header(); h.Rrtype == dns.TypeA || h.Rrtype == dns.TypeAAAA {
+			return true
 		}
 	}
 
-	return true
+	log.Tracef("%s: refusing to cache a response with no A and AAAA answers", qName)
+
+	return false
 }
 
+// findLowestTTL returns the lowest TTL in m's RRs or 0 if the information is
+// absent.
 func findLowestTTL(m *dns.Msg) (ttl uint32) {
 	ttl = math.MaxUint32
 
-	if m.Answer != nil {
-		for _, r := range m.Answer {
-			ttl = getTTLIfLower(r.Header(), ttl)
-		}
+	for _, r := range m.Answer {
+		ttl = getTTLIfLower(r.Header(), ttl)
 	}
 
-	if m.Ns != nil {
-		for _, r := range m.Ns {
-			ttl = getTTLIfLower(r.Header(), ttl)
-		}
+	for _, r := range m.Ns {
+		ttl = getTTLIfLower(r.Header(), ttl)
 	}
 
-	if m.Extra != nil {
-		for _, r := range m.Extra {
-			ttl = getTTLIfLower(r.Header(), ttl)
-		}
+	for _, r := range m.Extra {
+		ttl = getTTLIfLower(r.Header(), ttl)
 	}
 
 	if ttl == math.MaxUint32 {
@@ -154,6 +273,7 @@ func findLowestTTL(m *dns.Msg) (ttl uint32) {
 	return ttl
 }
 
+// getTTLIfLower returns the minimum of h's ttl and the passed ttl.
 func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
 	if h.Rrtype == dns.TypeOPT {
 		return ttl
@@ -164,8 +284,8 @@ func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
 	return ttl
 }
 
-// Updates a given TTL to fall within the range specified
-// by the cacheMinTTL and cacheMaxTTL settings
+// Updates a given TTL to fall within the range specified by the cacheMinTTL and
+// cacheMaxTTL settings.
 func respectTTLOverrides(ttl uint32, cacheMinTTL uint32, cacheMaxTTL uint32) uint32 {
 	if ttl < cacheMinTTL {
 		return cacheMinTTL
@@ -178,8 +298,8 @@ func respectTTLOverrides(ttl uint32, cacheMinTTL uint32, cacheMaxTTL uint32) uin
 	return ttl
 }
 
-// key constructs the cache key from type, class and question's name of m.
-func key(m *dns.Msg) []byte {
+// msgToKey constructs the cache key from type, class and question's name of m.
+func msgToKey(m *dns.Msg) []byte {
 	q := m.Question[0]
 	name := q.Name
 	b := make([]byte, 2+2+len(name))
@@ -188,6 +308,52 @@ func key(m *dns.Msg) []byte {
 	binary.BigEndian.PutUint16(b, q.Qtype)
 	binary.BigEndian.PutUint16(b[2:], q.Qclass)
 	copy(b[4:], strings.ToLower(name))
+	return b
+}
+
+// msgToKeyWithSubnet constructs the cache key from DO bit, type, class, subnet
+// mask, client's IP address and question's name of m.
+func msgToKeyWithSubnet(m *dns.Msg, ip net.IP, mask uint8) []byte {
+	q := m.Question[0]
+	cap := 1 + 2 + 2 + 1 + len(q.Name)
+	if mask != 0 {
+		cap += len(ip)
+	}
+
+	// init the array
+	b := make([]byte, cap)
+	k := 0
+
+	// put do
+	opt := m.IsEdns0()
+	do := false
+	if opt != nil {
+		do = opt.Do()
+	}
+	if do {
+		b[k] = 1
+	} else {
+		b[k] = 0
+	}
+	k++
+
+	// put qtype
+	binary.BigEndian.PutUint16(b[:], q.Qtype)
+	k += 2
+
+	// put qclass
+	binary.BigEndian.PutUint16(b[k:], q.Qclass)
+	k += 2
+
+	// add mask
+	b[k] = mask
+	k++
+	if mask != 0 {
+		copy(b[k:], ip)
+		k += len(ip)
+	}
+
+	copy(b[k:], strings.ToLower(q.Name))
 	return b
 }
 
@@ -239,6 +405,7 @@ func packResponse(m *dns.Msg) []byte {
 	d := make([]byte, 4+len(pm))
 	binary.BigEndian.PutUint32(d, expire)
 	copy(d[4:], pm)
+
 	return d
 }
 
@@ -262,19 +429,29 @@ func filterMsg(dst, m *dns.Msg, ad, do bool, ttl uint32) {
 	dst.Extra = filterRRSlice(m.Extra, do, ttl, dns.TypeNone)
 }
 
-// unpackResponse returns the unpacked response if it exists and didn't expire,
-// nil otherwise.
-func unpackResponse(data []byte, req *dns.Msg) *dns.Msg {
+// optimisticTTL is the default TTL for expired cached response.
+const optimisticTTL = 60
+
+// unpackResponse returns the unpacked response if it exists.  The returnExpired
+// controls whether or not the expired response should be omitted.
+func unpackResponse(data []byte, req *dns.Msg, returnExpired bool) (res *dns.Msg, expired bool) {
 	expire := binary.BigEndian.Uint32(data[:4])
 	now := time.Now().Unix()
+	var ttl uint32
 	if int64(expire) <= now {
-		return nil
+		expired = true
+		if !returnExpired {
+			return nil, expired
+		}
+
+		ttl = optimisticTTL
+	} else {
+		ttl = expire - uint32(now)
 	}
-	ttl := expire - uint32(now)
 
 	m := &dns.Msg{}
 	if m.Unpack(data[4:]) != nil {
-		return nil
+		return nil, expired
 	}
 
 	adBit := req.AuthenticatedData
@@ -283,7 +460,7 @@ func unpackResponse(data []byte, req *dns.Msg) *dns.Msg {
 		doBit = o.Do()
 	}
 
-	res := &dns.Msg{}
+	res = &dns.Msg{}
 	res.SetReply(req)
 	res.AuthenticatedData = m.AuthenticatedData
 	res.RecursionAvailable = m.RecursionAvailable
@@ -295,5 +472,27 @@ func unpackResponse(data []byte, req *dns.Msg) *dns.Msg {
 	// RRs, and also all DNSSEC RRs otherwise.
 	filterMsg(res, m, adBit, doBit, ttl)
 
-	return res
+	return res, expired
+}
+
+func (c *cache) Delete(key []byte) {
+	c.itemsLock.RLock()
+	defer c.itemsLock.RUnlock()
+
+	if c.items == nil {
+		return
+	}
+
+	c.items.Del(key)
+}
+
+func (c *cache) DeleteWithSubnet(key []byte) {
+	c.itemsWithSubnetLock.RLock()
+	defer c.itemsWithSubnetLock.RUnlock()
+
+	if c.itemsWithSubnet == nil {
+		return
+	}
+
+	c.itemsWithSubnet.Del(key)
 }

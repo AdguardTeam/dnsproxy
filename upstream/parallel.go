@@ -126,11 +126,22 @@ func exchangeAsync(u Upstream, req *dns.Msg, resp chan *exchangeResult) {
 func exchange(u Upstream, req *dns.Msg) (*dns.Msg, error) {
 	start := time.Now()
 	reply, err := u.Exchange(req)
-	elapsed := time.Since(start) / time.Millisecond
+	elapsed := time.Since(start)
 	if err == nil {
-		log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
+		log.Tracef(
+			"upstream %s successfully finished exchange of %s. Elapsed %s.",
+			u.Address(),
+			req.Question[0].String(),
+			elapsed,
+		)
 	} else {
-		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
+		log.Tracef(
+			"upstream %s failed to exchange %s in %s. Cause: %s",
+			u.Address(),
+			req.Question[0].String(),
+			elapsed,
+			err,
+		)
 	}
 	return reply, err
 }
@@ -196,11 +207,23 @@ func lookupAsync(ctx context.Context, r *Resolver, host string, res chan *lookup
 func lookup(ctx context.Context, r *Resolver, host string) ([]net.IPAddr, error) {
 	start := time.Now()
 	address, err := r.LookupIPAddr(ctx, host)
-	elapsed := time.Since(start) / time.Millisecond
+	elapsed := time.Since(start)
 	if err != nil {
-		log.Tracef("failed to lookup for %s in %d milliseconds using %s: %s", host, elapsed, r.resolverAddress, err)
+		log.Tracef(
+			"failed to lookup for %s in %s using %s: %s",
+			host,
+			elapsed,
+			r.resolverAddress,
+			err,
+		)
 	} else {
-		log.Tracef("successfully finished lookup for %s in %d milliseconds using %s. Result : %s", host, elapsed, r.resolverAddress, address)
+		log.Tracef(
+			"successfully finished lookup for %s in %s using %s. Result : %s",
+			host,
+			elapsed,
+			r.resolverAddress,
+			address,
+		)
 	}
 	return address, err
 }

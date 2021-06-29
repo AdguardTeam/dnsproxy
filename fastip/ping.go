@@ -127,11 +127,12 @@ func (f *FastestAddr) pingDoTCP(host string, ip net.IP, port uint, ch chan *ping
 	addr := net.JoinHostPort(ip.String(), strconv.Itoa(int(port)))
 	conn, err := net.DialTimeout("tcp", addr, pingTCPTimeout)
 
+	elapsed := time.Since(start)
 	// regardless of the result, save elapsed ms
-	res.latency = uint(time.Since(start).Milliseconds())
+	res.latency = uint(elapsed.Milliseconds())
 
 	if err != nil {
-		log.Debug("pingDoTCP: %s: failed to connect to %s:%d, elapsed %d ms: %v", host, ip, port, res.latency, err)
+		log.Debug("pingDoTCP: %s: failed to connect to %s:%d, elapsed %s ms: %v", host, ip, port, elapsed, err)
 
 		res.success = false
 		f.cacheAddFailure(ip)
@@ -141,7 +142,7 @@ func (f *FastestAddr) pingDoTCP(host string, ip net.IP, port uint, ch chan *ping
 		return
 	}
 
-	log.Debug("pingDoTCP: %s: elapsed %d ms on %s:%d", host, res.latency, ip, port)
+	log.Debug("pingDoTCP: %s: elapsed %s ms on %s:%d", host, elapsed, ip, port)
 	_ = conn.Close()
 	f.cacheAddSuccessful(ip, res.latency)
 	ch <- res

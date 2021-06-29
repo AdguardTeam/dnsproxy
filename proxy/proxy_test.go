@@ -287,10 +287,11 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 				t.Fatalf("wanted length has unexpected value %d", tc.wantLen)
 			}
 
-			cached, ok := p.cache.Get(dctx.Req)
-			require.True(t, ok)
+			cached, expired, key := p.cache.Get(dctx.Req)
 			require.NotNil(t, cached)
 			require.Len(t, cached.Answer, 2)
+			assert.False(t, expired)
+			assert.Equal(t, key, msgToKey(dctx.Req))
 
 			// Just make it match.
 			cached.Answer[0].Header().Ttl = defaultTestTTL
@@ -904,7 +905,9 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	assert.True(t, err == nil)
 
 	// get from cache - check min TTL
-	m, _ := dnsProxy.cacheSubnet.GetWithSubnet(d.Req, clientIP, 24)
+	m, expired, key := dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	assert.False(t, expired)
+	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
 	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMinTTL)
 
 	// 2nd request
@@ -923,7 +926,9 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	assert.True(t, err == nil)
 
 	// get from cache - check max TTL
-	m, _ = dnsProxy.cacheSubnet.GetWithSubnet(d.Req, clientIP, 24)
+	m, expired, key = dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	assert.False(t, expired)
+	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
 	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
 
 	_ = dnsProxy.Stop()
@@ -1181,4 +1186,139 @@ func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 func (u *testUpstream) Address() string {
 	return ""
+}
+
+func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
+	const (
+		host             = "some.domain.name."
+		nonOptimisticTTL = 3600
+	)
+
+	buildCtx := func() (dctx *DNSContext) {
+		req := &dns.Msg{
+			MsgHdr: dns.MsgHdr{
+				Id: dns.Id(),
+			},
+			Question: []dns.Question{{
+				Name:   host,
+				Qtype:  dns.TypeA,
+				Qclass: dns.ClassINET,
+			}},
+		}
+
+		return &DNSContext{
+			Req: req,
+		}
+	}
+	buildResp := func(req *dns.Msg, ttl uint32) (resp *dns.Msg) {
+		resp = (&dns.Msg{}).SetReply(req)
+		resp.Answer = []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{
+				Name:   host,
+				Rrtype: dns.TypeA,
+				Class:  dns.ClassINET,
+				Ttl:    ttl,
+			},
+			A: net.IP{1, 2, 3, 4},
+		}}
+
+		return resp
+	}
+
+	p := &Proxy{
+		Config: Config{
+			CacheEnabled:    true,
+			CacheOptimistic: true,
+		},
+	}
+
+	testFunc := func(t *testing.T, responsed bool) (firstCtx *DNSContext) {
+		p.initCache()
+		out, in := make(chan unit), make(chan unit)
+		p.shortFlighter.resolve = func(dctx *DNSContext) (ok bool, err error) {
+			dctx.Res = buildResp(dctx.Req, nonOptimisticTTL)
+
+			return responsed, nil
+		}
+		p.shortFlighter.set = func(dctx *DNSContext) {
+			defer func() {
+				out <- unit{}
+			}()
+
+			// Report adding to cache is in process.
+			out <- unit{}
+			// Wait for tests to finish.
+			<-in
+
+			p.setInCache(dctx)
+		}
+		p.shortFlighter.delete = func(k []byte) {
+			defer func() {
+				out <- unit{}
+			}()
+
+			// Report deleting from cache is in process.
+			out <- unit{}
+			// Wait for tests to finish.
+			<-in
+
+			p.cache.Delete(k)
+		}
+
+		// Two different contexts are made to emulate two different
+		// requests with the same question section.
+		var secondCtx *DNSContext
+		firstCtx, secondCtx = buildCtx(), buildCtx()
+
+		// Add expired response into cache.
+		req := firstCtx.Req
+		key := msgToKey(req)
+		data := packResponse(buildResp(req, 0))
+		items := glcache.New(glcache.Config{
+			EnableLRU: true,
+		})
+		items.Set(key, data)
+		p.cache.items = items
+
+		err := p.Resolve(firstCtx)
+		require.NoError(t, err)
+		require.Len(t, firstCtx.Res.Answer, 1)
+
+		assert.EqualValues(t, optimisticTTL, firstCtx.Res.Answer[0].Header().Ttl)
+
+		// Wait for optimisticResolver to reach the tested function.
+		<-out
+
+		err = p.Resolve(secondCtx)
+		require.NoError(t, err)
+		require.Len(t, secondCtx.Res.Answer, 1)
+
+		assert.EqualValues(t, optimisticTTL, secondCtx.Res.Answer[0].Header().Ttl)
+
+		// Continue and wait for it to finish.
+		in <- unit{}
+		<-out
+
+		return firstCtx
+	}
+
+	t.Run("successful", func(t *testing.T) {
+		firstCtx := testFunc(t, true)
+
+		// Should be served from cache.
+		data := p.cache.items.Get(msgToKey(firstCtx.Req))
+		unpacked, expired := unpackResponse(data, firstCtx.Req, false)
+		require.False(t, expired)
+		require.NotNil(t, unpacked)
+		require.Len(t, unpacked.Answer, 1)
+
+		assert.EqualValues(t, nonOptimisticTTL, unpacked.Answer[0].Header().Ttl)
+	})
+
+	t.Run("unsuccessful", func(t *testing.T) {
+		firstCtx := testFunc(t, false)
+
+		// Should be removed from cache.
+		assert.Nil(t, p.cache.items.Get(msgToKey(firstCtx.Req)))
+	})
 }

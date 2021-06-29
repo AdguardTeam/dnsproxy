@@ -110,7 +110,7 @@ func (p *dnsOverHTTPS) getClient() (c *http.Client, err error) {
 	// This happens quite often on mobile devices
 	elapsed := time.Since(startTime)
 	if p.boot.options.Timeout > 0 && elapsed > p.boot.options.Timeout {
-		return nil, fmt.Errorf("timeout exceeded: %d ms", int(elapsed/time.Millisecond))
+		return nil, fmt.Errorf("timeout exceeded: %s", elapsed)
 	}
 
 	p.client, err = p.createClient()

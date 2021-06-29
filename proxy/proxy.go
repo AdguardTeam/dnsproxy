@@ -99,8 +99,15 @@ type Proxy struct {
 	// DNS cache
 	// --
 
-	cache       *cache       // cache instance (nil if cache is disabled)
-	cacheSubnet *cacheSubnet // cache instance (nil if cache is disabled)
+	// cache is used to cache requests.  It is disabled if nil.
+	cache *cache
+	// shortFlighter is used to resolve the expired cached requests without
+	// repetitions.
+	shortFlighter *optimisticResolver
+	// shortFlighterWithSubnet is used to resolve the expired cached
+	// requests making sure that only one request for each cache item is
+	// performed at a time.
+	shortFlighterWithSubnet *optimisticResolver
 
 	// FastestAddr module
 	// --
@@ -129,19 +136,7 @@ type Proxy struct {
 
 // Init - initializes the proxy structures but does not start it
 func (p *Proxy) Init() (err error) {
-	if p.CacheEnabled {
-		log.Printf("DNS cache is enabled")
-
-		p.cache = &cache{
-			cacheSize: p.CacheSizeBytes,
-		}
-
-		if p.Config.EnableEDNSClientSubnet {
-			p.cacheSubnet = &cacheSubnet{
-				cacheSize: p.CacheSizeBytes,
-			}
-		}
-	}
+	p.initCache()
 
 	if p.TLSConfig != nil && len(p.TLSConfig.NextProtos) == 0 {
 		p.TLSConfig.NextProtos = append([]string{
@@ -390,6 +385,60 @@ func (p *Proxy) Addr(proto Proto) net.Addr {
 	}
 }
 
+// replyFromUpstream tries to resolve the request and caches it if cacheWorks is
+// true.
+func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
+	req := d.Req
+	host := req.Question[0].Name
+	var upstreams []upstream.Upstream
+	// Get custom upstreams first.  Note that they might be empty.
+	if d.CustomUpstreamConfig != nil {
+		upstreams = d.CustomUpstreamConfig.getUpstreamsForDomain(host)
+	}
+	// If nothing is found in the custom upstreams, start using the default
+	// ones.
+	if upstreams == nil {
+		upstreams = p.UpstreamConfig.getUpstreamsForDomain(host)
+	}
+
+	start := time.Now()
+
+	// Perform the DNS request.
+	var reply *dns.Msg
+	var u upstream.Upstream
+	reply, u, err = p.exchange(req, upstreams)
+	if p.isNAT64PrefixAvailable() && p.isEmptyAAAAResponse(reply, req) {
+		log.Tracef("Received an empty AAAA response, checking DNS64")
+		reply, u, err = p.checkDNS64(req, reply, upstreams)
+	} else if p.isBogusNXDomain(reply) {
+		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")
+		reply = p.genNXDomain(reply)
+	}
+
+	log.Tracef("RTT: %s", time.Since(start))
+
+	if err != nil && p.Fallbacks != nil {
+		log.Tracef("Using the fallback upstream due to %s", err)
+
+		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, req)
+	}
+
+	if reply != nil {
+		// This branch handles the successfully exchanged response.
+
+		// Set upstream that have resolved the request to DNSContext.
+		d.Upstream = u
+		p.setMinMaxTTL(reply)
+		ok = true
+	} else {
+		reply = p.genServerFailure(req)
+		d.hasEDNS0 = false
+	}
+	d.Res = reply
+
+	return ok, err
+}
+
 // addDO adds EDNS0 RR if needed and sets DO bit of msg to true.
 func addDO(msg *dns.Msg) {
 	if o := msg.IsEdns0(); o != nil {
@@ -407,8 +456,8 @@ func addDO(msg *dns.Msg) {
 const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
-// upstreams.
-func (p *Proxy) Resolve(d *DNSContext) error {
+// upstream servers.
+func (p *Proxy) Resolve(d *DNSContext) (err error) {
 	if p.Config.EnableEDNSClientSubnet {
 		p.processECS(d)
 	}
@@ -431,54 +480,15 @@ func (p *Proxy) Resolve(d *DNSContext) error {
 		addDO(d.Req)
 	}
 
-	host := d.Req.Question[0].Name
-	var upstreams []upstream.Upstream
+	var ok bool
+	ok, err = p.replyFromUpstream(d)
 
-	// Get custom upstreams first -- note that they might be empty
-	if d.CustomUpstreamConfig != nil {
-		upstreams = d.CustomUpstreamConfig.getUpstreamsForDomain(host)
-	}
-	// If nothing found in the custom upstreams, start using the default ones
-	if upstreams == nil {
-		upstreams = p.UpstreamConfig.getUpstreamsForDomain(host)
+	if cacheWorks && ok {
+		// Cache the response with DNSSEC RRs.
+		p.setInCache(d)
 	}
 
-	// execute the DNS request
-	startTime := time.Now()
-	reply, u, err := p.exchange(d.Req, upstreams)
-	if p.isNAT64PrefixAvailable() && p.isEmptyAAAAResponse(reply, d.Req) {
-		log.Tracef("Received an empty AAAA response, checking DNS64")
-		reply, u, err = p.checkDNS64(d.Req, reply, upstreams)
-	} else if p.isBogusNXDomain(reply) {
-		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")
-		reply = p.genNXDomain(reply)
-	}
-
-	rtt := int(time.Since(startTime) / time.Millisecond)
-	log.Tracef("RTT: %d ms", rtt)
-
-	if err != nil && p.Fallbacks != nil {
-		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
-	}
-
-	if reply != nil {
-		// This branch handles the successfully exchanged response.
-
-		// Set upstream that have resolved the request to DNSContext.
-		d.Upstream = u
-		p.setMinMaxTTL(reply)
-		if cacheWorks {
-			// Cache the response with DNSSEC RRs.
-			p.setInCache(d, reply)
-		}
-	} else {
-		reply = p.genServerFailure(d.Req)
-		d.hasEDNS0 = false
-	}
-
-	filterMsg(reply, reply, d.adBit, d.doBit, 0)
-	d.Res = reply
+	filterMsg(d.Res, d.Res, d.adBit, d.doBit, 0)
 
 	// Complete the response.
 	d.scrub()

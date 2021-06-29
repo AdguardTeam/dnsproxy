@@ -83,7 +83,8 @@ func (ctx *DNSContext) calcFlagsAndSize() {
 	}
 }
 
-// scrub - prepares the d.Res to be written (truncates if necessary)
+// scrub prepares the d.Res to be written.  Truncation is applied as well if
+// necessary.
 func (ctx *DNSContext) scrub() {
 	if ctx.Res == nil || ctx.Req == nil {
 		return
@@ -101,5 +102,6 @@ func (ctx *DNSContext) scrub() {
 	}
 
 	ctx.Res.Truncate(proxyutil.DNSSize(ctx.Proto == ProtoUDP, ctx.Req))
-	ctx.Res.Compress = true // some devices require DNS message compression
+	// Some devices require DNS message compression.
+	ctx.Res.Compress = true
 }

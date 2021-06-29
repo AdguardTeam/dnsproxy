@@ -1,6 +1,7 @@
-# github.com/AdguardTeam/golibs v0.4.4
+# github.com/AdguardTeam/golibs v0.8.0
 ## explicit
 github.com/AdguardTeam/golibs/cache
+github.com/AdguardTeam/golibs/errors
 github.com/AdguardTeam/golibs/log
 github.com/AdguardTeam/golibs/utils
 # github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da

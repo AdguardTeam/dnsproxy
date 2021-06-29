@@ -106,6 +106,9 @@ type Options struct {
 	// DNS cache maximum TTL value - overrides record value
 	CacheMaxTTL uint32 `long:"cache-max-ttl" description:"Maximum TTL value for DNS entries, in seconds."`
 
+	// CacheOptimistic, if set to true, enables the optimistic DNS cache. That means that cached results will be served even if their cache TTL has already expired.
+	CacheOptimistic bool `long:"cache-optimistic" description:"If specified, optimistic DNS cache is enabled" optional:"yes" optional-value:"true"`
+
 	// Anti-DNS amplification measures
 	// --
 
@@ -235,6 +238,7 @@ func createProxyConfig(options *Options) proxy.Config {
 		CacheSizeBytes:         options.CacheSizeBytes,
 		CacheMinTTL:            options.CacheMinTTL,
 		CacheMaxTTL:            options.CacheMaxTTL,
+		CacheOptimistic:        options.CacheOptimistic,
 		RefuseAny:              options.RefuseAny,
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
 		UDPBufferSize:          options.UDPBufferSize,

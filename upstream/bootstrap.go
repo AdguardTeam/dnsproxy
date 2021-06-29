@@ -222,14 +222,14 @@ func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHa
 			log.Tracef("Dialing to %s", resolverAddress)
 			start := time.Now()
 			con, err := dialer.DialContext(ctx, network, resolverAddress)
-			elapsed := time.Since(start) / time.Millisecond
+			elapsed := time.Since(start)
 
 			if err == nil {
-				log.Tracef("dialer has successfully initialized connection to %s in %d milliseconds", resolverAddress, elapsed)
+				log.Tracef("dialer has successfully initialized connection to %s in %s", resolverAddress, elapsed)
 				return con, err
 			}
 			errs = append(errs, err)
-			log.Tracef("dialer failed to initialize connection to %s, in %d milliseconds, cause: %s", resolverAddress, elapsed, err)
+			log.Tracef("dialer failed to initialize connection to %s, in %s, cause: %s", resolverAddress, elapsed, err)
 		}
 
 		if len(errs) == 0 {

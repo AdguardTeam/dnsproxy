@@ -36,6 +36,13 @@ func (f *FastestAddr) pingAll(host string, ips []net.IP) (bool, *pingResult) {
 		return false, nil
 	}
 
+	if len(ips) == 1 {
+		return true, &pingResult{
+			ip:      ips[0],
+			success: true,
+		}
+	}
+
 	// channel that we will use to get the ping result
 	ch := make(chan *pingResult, len(ips)*len(f.tcpPorts))
 

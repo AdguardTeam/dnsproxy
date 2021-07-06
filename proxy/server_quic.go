@@ -189,8 +189,7 @@ func isQuicConnClosedErr(err error) bool {
 		return true
 	}
 
-	// NO_ERROR: No recent network activity
-	if strings.Contains(str, "NO_ERROR") {
+	if strings.Contains(str, "No recent network activity") {
 		return true
 	}
 

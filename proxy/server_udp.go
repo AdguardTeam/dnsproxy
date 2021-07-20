@@ -112,6 +112,11 @@ func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.U
 func (p *Proxy) respondUDP(d *DNSContext) error {
 	resp := d.Res
 
+	if resp == nil {
+		// Do nothing if no response has been written
+		return nil
+	}
+
 	bytes, err := resp.Pack()
 	if err != nil {
 		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())

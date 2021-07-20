@@ -106,6 +106,11 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 	resp := d.Res
 	conn := d.Conn
 
+	if resp == nil {
+		// If no response has been written, close the connection right away
+		return conn.Close()
+	}
+
 	bytes, err := resp.Pack()
 	if err != nil {
 		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())

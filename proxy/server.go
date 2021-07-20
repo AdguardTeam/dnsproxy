@@ -141,10 +141,6 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 
 // respond writes the specified response to the client (or does nothing if d.Res is empty)
 func (p *Proxy) respond(d *DNSContext) {
-	if d.Res == nil {
-		return
-	}
-
 	// d.Conn can be nil in the case of a DOH request
 	if d.Conn != nil {
 		d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout)) //nolint

@@ -57,5 +57,10 @@ func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) err
 
 // Writes a response to the UDP client
 func (p *Proxy) respondDNSCrypt(d *DNSContext) error {
+	if d.Res == nil {
+		// If no response has been written, do nothing and let it drop
+		return nil
+	}
+
 	return d.DNSCryptResponseWriter.WriteMsg(d.Res)
 }

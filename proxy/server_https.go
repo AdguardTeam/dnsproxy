@@ -137,6 +137,12 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 	resp := d.Res
 	w := d.HTTPResponseWriter
 
+	if resp == nil {
+		// If no response has been written, indicate it via a 500 error
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return nil
+	}
+
 	bytes, err := resp.Pack()
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

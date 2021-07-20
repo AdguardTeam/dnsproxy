@@ -142,8 +142,11 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 			// Check for EDNS TCP keepalive option
 			if option.Option() == dns.EDNS0TCPKEEPALIVE {
 				log.Debug("client sent EDNS0 TCP keepalive option")
-				// Already closing the connection so we don't care about the error
-				_ = session.CloseWithError(0, "")
+				errorCode := quic.ApplicationErrorCode(quic.ConnectionRefused)
+
+				// Already closing the connection so we don't care about the error.
+				_ = session.CloseWithError(errorCode, "")
+				return
 			}
 		}
 	}
@@ -162,6 +165,12 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 // Writes a response to the QUIC stream
 func (p *Proxy) respondQUIC(d *DNSContext) error {
 	resp := d.Res
+
+	if resp == nil {
+		// If no response has been written, close the QUIC session right away.
+		errorCode := quic.ApplicationErrorCode(quic.InternalError)
+		return d.QUICSession.CloseWithError(errorCode, "")
+	}
 
 	bytes, err := resp.Pack()
 	if err != nil {

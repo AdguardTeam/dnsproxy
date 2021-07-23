@@ -233,13 +233,17 @@ func run(options *Options) {
 func createProxyConfig(options *Options) proxy.Config {
 	// Create the config
 	config := proxy.Config{
-		Ratelimit:              options.Ratelimit,
-		CacheEnabled:           options.Cache,
-		CacheSizeBytes:         options.CacheSizeBytes,
-		CacheMinTTL:            options.CacheMinTTL,
-		CacheMaxTTL:            options.CacheMaxTTL,
-		CacheOptimistic:        options.CacheOptimistic,
-		RefuseAny:              options.RefuseAny,
+		Ratelimit:       options.Ratelimit,
+		CacheEnabled:    options.Cache,
+		CacheSizeBytes:  options.CacheSizeBytes,
+		CacheMinTTL:     options.CacheMinTTL,
+		CacheMaxTTL:     options.CacheMaxTTL,
+		CacheOptimistic: options.CacheOptimistic,
+		RefuseAny:       options.RefuseAny,
+		// TODO(e.burkov):  The following CIDRs are aimed to match any
+		// address.  This is not quite proper approach to be used by
+		// default so think about configuring it.
+		TrustedProxies:         []string{"0.0.0.0/0", "::0/0"},
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
 		UDPBufferSize:          options.UDPBufferSize,
 		MaxGoroutines:          options.MaxGoRoutines,

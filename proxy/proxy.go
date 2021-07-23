@@ -96,6 +96,9 @@ type Proxy struct {
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
+	// proxyVerifier checks if the proxy is in the trusted list.
+	proxyVerifier *subnetDetector
+
 	// DNS cache
 	// --
 
@@ -181,6 +184,11 @@ func (p *Proxy) Init() (err error) {
 	if p.UpstreamMode == UModeFastestAddr {
 		log.Printf("Fastest IP is enabled")
 		p.fastestAddr = fastip.NewFastestAddr()
+	}
+
+	p.proxyVerifier, err = newSubnetDetector(p.TrustedProxies)
+	if err != nil {
+		return fmt.Errorf("initializing subnet detector for proxies verifying: %w", err)
 	}
 
 	return nil
@@ -412,7 +420,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		reply, u, err = p.checkDNS64(req, reply, upstreams)
 	} else if p.isBogusNXDomain(reply) {
 		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")
-		reply = p.genNXDomain(reply)
+		reply = p.genWithRCode(reply, dns.RcodeNameError)
 	}
 
 	log.Tracef("RTT: %s", time.Since(start))

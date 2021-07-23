@@ -2,7 +2,7 @@ package upstream
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"testing"
@@ -15,10 +15,7 @@ import (
 
 func TestMain(m *testing.M) {
 	// Disable logging in tests.
-	//
-	// TODO(a.garipov): Move to io.Discard after we drop Go 1.15
-	// compatibility.
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 
 	os.Exit(m.Run())
 }

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
@@ -95,41 +96,28 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	addr, _ := p.remoteAddr(r)
+	addr, prx, _ := remoteAddr(r)
 
 	d := p.newDNSContext(ProtoHTTPS, req)
 	d.Addr = addr
 	d.HTTPRequest = r
 	d.HTTPResponseWriter = w
 
+	if prx != nil {
+		log.Debug("request came from proxy server %s", prx)
+		if !p.proxyVerifier.detect(prx) {
+			log.Debug("the proxy server %s is not trusted", prx)
+			d.Res = p.genWithRCode(req, dns.RcodeRefused)
+			p.respond(d)
+
+			return
+		}
+	}
+
 	err = p.handleDNSRequest(d)
 	if err != nil {
 		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
 	}
-}
-
-// Get a client IP address from HTTP headers that proxy servers may set
-func getIPFromHTTPRequest(r *http.Request) net.IP {
-	names := []string{
-		"CF-Connecting-IP", "True-Client-IP", // set by CloudFlare servers
-		"X-Real-IP",
-	}
-	for _, name := range names {
-		s := r.Header.Get(name)
-		ip := net.ParseIP(s)
-		if ip != nil {
-			return ip
-		}
-	}
-
-	s := r.Header.Get("X-Forwarded-For")
-	s = splitNext(&s, ',') // get left-most IP address
-	ip := net.ParseIP(s)
-	if ip != nil {
-		return ip
-	}
-
-	return nil
 }
 
 // Writes a response to the DOH client
@@ -155,26 +143,61 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 	return err
 }
 
-func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
-	host, port, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	portValue, err := strconv.Atoi(port)
-	if err != nil {
-		return nil, err
-	}
-
-	ip := getIPFromHTTPRequest(r)
-	if ip != nil {
-		log.Tracef("Using IP address from HTTP request: %s", ip)
-	} else {
-		ip = net.ParseIP(host)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid IP: %s", host)
+// realIPFromHdrs extracts the actual client's IP address from the first
+// suitable r's header.  It returns nil if r doesn't contain any information
+// about real client's IP address.  Current headers priority is:
+//
+//   1. CF-Connecting-IP
+//   2. True-Client-IP
+//   3. X-Real-IP
+//   4. X-Forwarded-For
+//
+func realIPFromHdrs(r *http.Request) (realIP net.IP) {
+	for _, h := range [...]string{
+		// Headers set by CloudFlare proxy servers.
+		"CF-Connecting-IP",
+		"True-Client-IP",
+		// Other proxying headers.
+		"X-Real-IP",
+	} {
+		realIP = net.ParseIP(strings.TrimSpace(r.Header.Get(h)))
+		if realIP != nil {
+			return realIP
 		}
 	}
 
-	return &net.TCPAddr{IP: ip, Port: portValue}, nil
+	xff := r.Header.Get("X-Forwarded-For")
+	firstComma := strings.IndexByte(xff, ',')
+	if firstComma == -1 {
+		return net.ParseIP(strings.TrimSpace(xff))
+	}
+
+	return net.ParseIP(strings.TrimSpace(xff[:firstComma]))
+}
+
+// remoteAddr returns the real client's address and the IP address of the latest
+// proxy server if any.
+func remoteAddr(r *http.Request) (addr net.Addr, prx net.IP, err error) {
+	var hostStr, portStr string
+	if hostStr, portStr, err = net.SplitHostPort(r.RemoteAddr); err != nil {
+		return nil, nil, err
+	}
+
+	var port int
+	if port, err = strconv.Atoi(portStr); err != nil {
+		return nil, nil, err
+	}
+
+	host := net.ParseIP(hostStr)
+	if host == nil {
+		return nil, nil, fmt.Errorf("invalid ip: %s", hostStr)
+	}
+
+	if realIP := realIPFromHdrs(r); realIP != nil {
+		log.Tracef("Using IP address from HTTP request: %s", realIP)
+
+		return &net.TCPAddr{IP: realIP, Port: port}, host, nil
+	}
+
+	return &net.TCPAddr{IP: host, Port: port}, nil, nil
 }

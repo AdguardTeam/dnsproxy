@@ -8,7 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -27,10 +27,7 @@ import (
 
 func TestMain(m *testing.M) {
 	// Disable logging in tests.
-	//
-	// TODO(a.garipov): Move to io.Discard after we drop Go 1.15
-	// compatibility.
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 
 	os.Exit(m.Run())
 }
@@ -1001,6 +998,9 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	}
 	p.UpstreamConfig = &UpstreamConfig{}
 	p.UpstreamConfig.Upstreams = append(upstreams, dnsUpstream)
+
+	p.TrustedProxies = []string{"0.0.0.0/0", "::0/0"}
+
 	return &p
 }
 
@@ -1072,6 +1072,8 @@ func createHostTestMessage(host string) *dns.Msg {
 }
 
 func assertResponse(t *testing.T, reply *dns.Msg) {
+	t.Helper()
+
 	if len(reply.Answer) != 1 {
 		t.Fatalf("DNS upstream returned reply with wrong number of answers - %d", len(reply.Answer))
 	}
@@ -1085,6 +1087,8 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 }
 
 func createServerTLSConfig(t *testing.T) (*tls.Config, []byte) {
+	t.Helper()
+
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("cannot generate RSA key: %s", err)

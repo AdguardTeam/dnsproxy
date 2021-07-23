@@ -1,9 +1,9 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
@@ -177,12 +177,7 @@ func (p *Proxy) respond(d *DNSContext) {
 }
 
 func isNonCriticalError(err error) (ok bool) {
-	// TODO(a.garipov): When Go 1.16 is released, replace the error string
-	// check with proper error handling.
-	//
-	// See https://github.com/golang/go/issues/4373.
-	return isEPIPE(err) ||
-		strings.HasSuffix(err.Error(), "use of closed network connection")
+	return isEPIPE(err) || errors.Is(err, net.ErrClosed)
 }
 
 // Set TTL value of all records according to our settings
@@ -199,25 +194,24 @@ func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
 }
 
 func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {
-	resp := dns.Msg{}
-	resp.SetRcode(request, dns.RcodeServerFailure)
-	resp.RecursionAvailable = true
-	return &resp
+	return p.genWithRCode(request, dns.RcodeServerFailure)
 }
 
-func (p *Proxy) genNotImpl(request *dns.Msg) *dns.Msg {
-	resp := dns.Msg{}
-	resp.SetRcode(request, dns.RcodeNotImplemented)
-	resp.RecursionAvailable = true
-	resp.SetEdns0(1452, false) // NOTIMPL without EDNS is treated as 'we don't support EDNS', so explicitly set it
-	return &resp
+func (p *Proxy) genNotImpl(request *dns.Msg) (resp *dns.Msg) {
+	resp = p.genWithRCode(request, dns.RcodeNotImplemented)
+	// NOTIMPL without EDNS is treated as 'we don't support EDNS', so
+	// explicitly set it.
+	resp.SetEdns0(1452, false)
+
+	return resp
 }
 
-func (p *Proxy) genNXDomain(req *dns.Msg) *dns.Msg {
-	resp := dns.Msg{}
-	resp.SetRcode(req, dns.RcodeNameError)
+func (p *Proxy) genWithRCode(r *dns.Msg, code int) (resp *dns.Msg) {
+	resp = &dns.Msg{}
+	resp.SetRcode(r, code)
 	resp.RecursionAvailable = true
-	return &resp
+
+	return resp
 }
 
 func (p *Proxy) logDNSMessage(m *dns.Msg) {

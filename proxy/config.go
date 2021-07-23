@@ -63,6 +63,12 @@ type Config struct {
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
 	RefuseAny          bool     // if true, refuse ANY requests
 
+	// TrustedProxies is the list of IP addresses and CIDR networks to
+	// detect proxy servers addresses the DoH requests from which should be
+	// handled.  The value of nil or an empty slice for this field makes
+	// Proxy not trust any address.
+	TrustedProxies []string
+
 	// Upstream DNS servers and their settings
 	// --
 
@@ -120,7 +126,7 @@ type Config struct {
 	// MaxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.
 	//
-	// TODO(a.garipov): Renamme this to something like
+	// TODO(a.garipov): Rename this to something like
 	// “MaxDNSRequestGoroutines” in a later major version, as it doesn't
 	// actually limit all goroutines.
 	MaxGoroutines int

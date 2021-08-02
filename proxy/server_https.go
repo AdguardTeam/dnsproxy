@@ -96,7 +96,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	addr, prx, _ := remoteAddr(r)
+	addr, prx, err := remoteAddr(r)
+	if err != nil {
+		log.Debug("warning: getting real ip: %s", err)
+	}
 
 	d := p.newDNSContext(ProtoHTTPS, req)
 	d.Addr = addr
@@ -104,13 +107,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.HTTPResponseWriter = w
 
 	if prx != nil {
+		ip := ipFromAddr(prx)
 		log.Debug("request came from proxy server %s", prx)
-		if !p.proxyVerifier.detect(prx) {
-			log.Debug("the proxy server %s is not trusted", prx)
-			d.Res = p.genWithRCode(req, dns.RcodeRefused)
-			p.respond(d)
-
-			return
+		if !p.proxyVerifier.detect(ip) {
+			log.Debug("proxy %s is not trusted, using original remote addr", ip)
+			d.Addr = prx
 		}
 	}
 
@@ -118,6 +119,22 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
 	}
+}
+
+// ipFromAddr returns an IP address from addr.  If addr is neither
+// a *net.TCPAddr nor a *net.UDPAddr, it returns nil.
+//
+// TODO(a.garipov): Create package netutil in the golibs module and move it
+// there.
+func ipFromAddr(addr net.Addr) (ip net.IP) {
+	switch addr := addr.(type) {
+	case *net.TCPAddr:
+		return addr.IP
+	case *net.UDPAddr:
+		return addr.IP
+	}
+
+	return nil
 }
 
 // Writes a response to the DOH client
@@ -177,7 +194,7 @@ func realIPFromHdrs(r *http.Request) (realIP net.IP) {
 
 // remoteAddr returns the real client's address and the IP address of the latest
 // proxy server if any.
-func remoteAddr(r *http.Request) (addr net.Addr, prx net.IP, err error) {
+func remoteAddr(r *http.Request) (addr, prx net.Addr, err error) {
 	var hostStr, portStr string
 	if hostStr, portStr, err = net.SplitHostPort(r.RemoteAddr); err != nil {
 		return nil, nil, err
@@ -196,7 +213,15 @@ func remoteAddr(r *http.Request) (addr net.Addr, prx net.IP, err error) {
 	if realIP := realIPFromHdrs(r); realIP != nil {
 		log.Tracef("Using IP address from HTTP request: %s", realIP)
 
-		return &net.TCPAddr{IP: realIP, Port: port}, host, nil
+		// TODO(a.garipov): Use net.UDPAddr here and below when
+		// necessary when we start supporting HTTP/3.
+		//
+		// TODO(a.garipov): Add port if we can get it from headers like
+		// X-Real-Port, X-Forwarded-Port, etc.
+		addr = &net.TCPAddr{IP: realIP, Port: 0}
+		prx = &net.TCPAddr{IP: host, Port: port}
+
+		return addr, prx, nil
 	}
 
 	return &net.TCPAddr{IP: host, Port: port}, nil, nil

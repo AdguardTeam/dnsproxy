@@ -21,6 +21,13 @@ func TestHttpsProxy(t *testing.T) {
 	tlsConf, caPem := createServerTLSConfig(t)
 	dnsProxy := createTestProxy(t, tlsConf)
 
+	var gotAddr net.Addr
+	dnsProxy.RequestHandler = func(_ *Proxy, d *DNSContext) (err error) {
+		gotAddr = d.Addr
+
+		return dnsProxy.Resolve(d)
+	}
+
 	roots := x509.NewCertPool()
 	ok := roots.AppendCertsFromPEM(caPem)
 	require.True(t, ok)
@@ -98,12 +105,14 @@ func TestHttpsProxy(t *testing.T) {
 		reply := doRequest(t, proxyIP.String())
 
 		assertResponse(t, reply)
+		assert.True(t, ipFromAddr(gotAddr).Equal(clientIP))
 	})
 
-	t.Run("refused", func(t *testing.T) {
+	t.Run("not_in_trusted", func(t *testing.T) {
 		reply := doRequest(t, "127.0.0.2")
 
-		assert.Equal(t, dns.RcodeRefused, reply.Rcode)
+		assertResponse(t, reply)
+		assert.True(t, ipFromAddr(gotAddr).Equal(proxyIP))
 	})
 }
 
@@ -300,11 +309,8 @@ func TestRemoteAddr(t *testing.T) {
 
 			require.NoError(t, err)
 
-			tcpAddr, ok := addr.(*net.TCPAddr)
-			require.True(t, ok)
-
-			assert.True(t, tcpAddr.IP.Equal(tc.wantIP))
-			assert.True(t, tc.wantProxy.Equal(prx))
+			assert.True(t, ipFromAddr(addr).Equal(tc.wantIP))
+			assert.True(t, tc.wantProxy.Equal(ipFromAddr(prx)))
 		})
 	}
 }

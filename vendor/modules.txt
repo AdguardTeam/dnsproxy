@@ -20,6 +20,9 @@ github.com/ameshkov/dnsstamps
 github.com/beefsack/go-rate
 # github.com/cheekybits/genny v1.0.0
 github.com/cheekybits/genny/generic
+# github.com/coreos/go-semver v0.3.0
+## explicit
+github.com/coreos/go-semver/semver
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/go-test/deep v1.0.5

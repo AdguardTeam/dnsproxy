@@ -7,6 +7,7 @@ require (
 	github.com/ameshkov/dnscrypt/v2 v2.1.3
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20200827232406-6cde80facd47
+	github.com/coreos/go-semver v0.3.0
 	github.com/go-test/deep v1.0.5
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/joomcode/errorx v1.0.3

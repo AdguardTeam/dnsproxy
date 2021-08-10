@@ -151,6 +151,9 @@ type Options struct {
 	// The maximum number of go routines
 	MaxGoRoutines int `long:"max-go-routines" description:"Set the maximum number of go routines. A value <= 0 will not not set a maximum." default:"0"`
 
+	// IP Set
+	IPSets []string `long:"ipset" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers"`
+
 	// Print DNSProxy version (just for the help)
 	Version bool `long:"version" description:"Prints the program version"`
 }
@@ -212,6 +215,11 @@ func run(options *Options) {
 		dnsProxy.RequestHandler = ipv6Configuration.handleDNSRequest
 	}
 
+	if config.IPSetConfig != nil {
+		ipsetConfiguration := ipsetConfiguration{dnsProxy}
+		dnsProxy.ResponseHandler = ipsetConfiguration.handleDNSResponse
+	}
+
 	// Start the proxy
 	err := dnsProxy.Start()
 	if err != nil {
@@ -255,6 +263,7 @@ func createProxyConfig(options *Options) proxy.Config {
 	initTLSConfig(&config, options)
 	initDNSCryptConfig(&config, options)
 	initListenAddrs(&config, options)
+	initIPSet(&config, options)
 
 	return config
 }
@@ -454,6 +463,19 @@ func initDNS64(p *proxy.Proxy, options *Options) {
 	p.SetNAT64Prefix(ip[:proxy.NAT64PrefixLength])
 }
 
+// initIPSet inits the IP set configuration for dnsproxy
+func initIPSet(config *proxy.Config, options *Options) {
+	// Init IP sets
+	ipsets := loadServersList(options.IPSets)
+	if len(ipsets) > 0 {
+		ipsetConfig, err := proxy.ParseIPSetsConfig(ipsets)
+		if err != nil {
+			log.Fatalf("error while parsing ip sets configuration: %s", err)
+		}
+		config.IPSetConfig = ipsetConfig
+	}
+}
+
 // IPv6 configuration
 type ipv6Configuration struct {
 	ipv6Disabled bool // If true, all AAAA requests will be replied with NoError RCode and empty answer
@@ -548,4 +570,23 @@ func loadServersList(sources []string) []string {
 	}
 
 	return servers
+}
+
+// IP sets configuration
+type ipsetConfiguration struct {
+	dnsProxy *proxy.Proxy
+}
+
+// handleDNSResponse pushs IP address to IP sets for current session after resolved
+func (c *ipsetConfiguration) handleDNSResponse(d *proxy.DNSContext, err error) {
+	if len(d.Res.Answer) > 0 {
+		for _, r := range d.Res.Answer {
+			if r != nil {
+				ipset := c.dnsProxy.IPSetConfig.GetUpstreamsForDomain(r.Header().Name)
+				if ipset != nil && ipset.Parse(r) {
+					return
+				}
+			}
+		}
+	}
 }

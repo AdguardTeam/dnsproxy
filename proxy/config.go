@@ -134,6 +134,8 @@ type Config struct {
 	// The size of the read buffer on the underlying socket. Larger read buffers can handle
 	// larger bursts of requests before packets get dropped.
 	UDPBufferSize int
+
+	IPSetConfig *IPSetConfig // IP sets configuration
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

@@ -6,7 +6,13 @@ import (
 )
 
 func TestTLSPoolReconnect(t *testing.T) {
-	u, err := AddressToUpstream("tls://one.one.one.one", Options{Bootstrap: []string{"8.8.8.8:53"}, Timeout: timeout})
+	u, err := AddressToUpstream(
+		"tls://one.one.one.one",
+		&Options{
+			Bootstrap: []string{"8.8.8.8:53"},
+			Timeout:   timeout,
+		},
+	)
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}
@@ -41,7 +47,13 @@ func TestTLSPoolReconnect(t *testing.T) {
 
 func TestTLSPoolDeadLine(t *testing.T) {
 	// Create TLS upstream
-	u, err := AddressToUpstream("tls://one.one.one.one", Options{Bootstrap: []string{"8.8.8.8:53"}, Timeout: timeout})
+	u, err := AddressToUpstream(
+		"tls://one.one.one.one",
+		&Options{
+			Bootstrap: []string{"8.8.8.8:53"},
+			Timeout:   timeout,
+		},
+	)
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}

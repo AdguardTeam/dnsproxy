@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
@@ -24,7 +25,7 @@ func (p *Proxy) createHTTPSListeners() error {
 		log.Info("Listening to https://%s", tcpListen.Addr())
 
 		srv := &http.Server{
-			TLSConfig:         p.TLSConfig,
+			TLSConfig:         p.TLSConfig.Clone(),
 			Handler:           p,
 			ReadHeaderTimeout: defaultTimeout,
 			WriteTimeout:      defaultTimeout,
@@ -88,21 +89,30 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg := new(dns.Msg)
-	if err = msg.Unpack(buf); err != nil {
+	req := &dns.Msg{}
+	if err = req.Unpack(buf); err != nil {
 		log.Tracef("msg.Unpack: %s", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
-	addr, _ := p.remoteAddr(r)
+	addr, prx, err := remoteAddr(r)
+	if err != nil {
+		log.Debug("warning: getting real ip: %s", err)
+	}
 
-	d := &DNSContext{
-		Proto:              ProtoHTTPS,
-		Req:                msg,
-		Addr:               addr,
-		HTTPRequest:        r,
-		HTTPResponseWriter: w,
+	d := p.newDNSContext(ProtoHTTPS, req)
+	d.Addr = addr
+	d.HTTPRequest = r
+	d.HTTPResponseWriter = w
+
+	if prx != nil {
+		ip := ipFromAddr(prx)
+		log.Debug("request came from proxy server %s", prx)
+		if !p.proxyVerifier.detect(ip) {
+			log.Debug("proxy %s is not trusted, using original remote addr", ip)
+			d.Addr = prx
+		}
 	}
 
 	err = p.handleDNSRequest(d)
@@ -111,25 +121,17 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Get a client IP address from HTTP headers that proxy servers may set
-func getIPFromHTTPRequest(r *http.Request) net.IP {
-	names := []string{
-		"CF-Connecting-IP", "True-Client-IP", // set by CloudFlare servers
-		"X-Real-IP",
-	}
-	for _, name := range names {
-		s := r.Header.Get(name)
-		ip := net.ParseIP(s)
-		if ip != nil {
-			return ip
-		}
-	}
-
-	s := r.Header.Get("X-Forwarded-For")
-	s = splitNext(&s, ',') // get left-most IP address
-	ip := net.ParseIP(s)
-	if ip != nil {
-		return ip
+// ipFromAddr returns an IP address from addr.  If addr is neither
+// a *net.TCPAddr nor a *net.UDPAddr, it returns nil.
+//
+// TODO(a.garipov): Create package netutil in the golibs module and move it
+// there.
+func ipFromAddr(addr net.Addr) (ip net.IP) {
+	switch addr := addr.(type) {
+	case *net.TCPAddr:
+		return addr.IP
+	case *net.UDPAddr:
+		return addr.IP
 	}
 
 	return nil
@@ -139,6 +141,12 @@ func getIPFromHTTPRequest(r *http.Request) net.IP {
 func (p *Proxy) respondHTTPS(d *DNSContext) error {
 	resp := d.Res
 	w := d.HTTPResponseWriter
+
+	if resp == nil {
+		// If no response has been written, indicate it via a 500 error
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return nil
+	}
 
 	bytes, err := resp.Pack()
 	if err != nil {
@@ -152,26 +160,69 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 	return err
 }
 
-func (p *Proxy) remoteAddr(r *http.Request) (net.Addr, error) {
-	host, port, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	portValue, err := strconv.Atoi(port)
-	if err != nil {
-		return nil, err
-	}
-
-	ip := getIPFromHTTPRequest(r)
-	if ip != nil {
-		log.Tracef("Using IP address from HTTP request: %s", ip)
-	} else {
-		ip = net.ParseIP(host)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid IP: %s", host)
+// realIPFromHdrs extracts the actual client's IP address from the first
+// suitable r's header.  It returns nil if r doesn't contain any information
+// about real client's IP address.  Current headers priority is:
+//
+//   1. CF-Connecting-IP
+//   2. True-Client-IP
+//   3. X-Real-IP
+//   4. X-Forwarded-For
+//
+func realIPFromHdrs(r *http.Request) (realIP net.IP) {
+	for _, h := range [...]string{
+		// Headers set by CloudFlare proxy servers.
+		"CF-Connecting-IP",
+		"True-Client-IP",
+		// Other proxying headers.
+		"X-Real-IP",
+	} {
+		realIP = net.ParseIP(strings.TrimSpace(r.Header.Get(h)))
+		if realIP != nil {
+			return realIP
 		}
 	}
 
-	return &net.TCPAddr{IP: ip, Port: portValue}, nil
+	xff := r.Header.Get("X-Forwarded-For")
+	firstComma := strings.IndexByte(xff, ',')
+	if firstComma == -1 {
+		return net.ParseIP(strings.TrimSpace(xff))
+	}
+
+	return net.ParseIP(strings.TrimSpace(xff[:firstComma]))
+}
+
+// remoteAddr returns the real client's address and the IP address of the latest
+// proxy server if any.
+func remoteAddr(r *http.Request) (addr, prx net.Addr, err error) {
+	var hostStr, portStr string
+	if hostStr, portStr, err = net.SplitHostPort(r.RemoteAddr); err != nil {
+		return nil, nil, err
+	}
+
+	var port int
+	if port, err = strconv.Atoi(portStr); err != nil {
+		return nil, nil, err
+	}
+
+	host := net.ParseIP(hostStr)
+	if host == nil {
+		return nil, nil, fmt.Errorf("invalid ip: %s", hostStr)
+	}
+
+	if realIP := realIPFromHdrs(r); realIP != nil {
+		log.Tracef("Using IP address from HTTP request: %s", realIP)
+
+		// TODO(a.garipov): Use net.UDPAddr here and below when
+		// necessary when we start supporting HTTP/3.
+		//
+		// TODO(a.garipov): Add port if we can get it from headers like
+		// X-Real-Port, X-Forwarded-Port, etc.
+		addr = &net.TCPAddr{IP: realIP, Port: 0}
+		prx = &net.TCPAddr{IP: host, Port: port}
+
+		return addr, prx, nil
+	}
+
+	return &net.TCPAddr{IP: host, Port: port}, nil, nil
 }

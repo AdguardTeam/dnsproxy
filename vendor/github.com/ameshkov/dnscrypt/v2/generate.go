@@ -14,36 +14,37 @@ import (
 
 const dnsCryptV2Prefix = "2.dnscrypt-cert."
 
-// ResolverConfig - DNSCrypt resolver configuration
+// ResolverConfig is the DNSCrypt resolver configuration
 type ResolverConfig struct {
 	// DNSCrypt provider name
 	ProviderName string `yaml:"provider_name"`
 
-	// PublicKey - DNSCrypt resolver public key
+	// PublicKey is the DNSCrypt resolver public key
 	PublicKey string `yaml:"public_key"`
 
-	// PrivateKey - DNSCrypt resolver private key
+	// PrivateKey is the DNSCrypt resolver private key
 	// The main and only purpose of this key is to sign the certificate
 	PrivateKey string `yaml:"private_key"`
 
-	// ResolverSk - hex-encoded short-term private key.
+	// ResolverSk is a hex-encoded short-term private key.
 	// This key is used to encrypt/decrypt DNS queries.
 	// If not set, we'll generate a new random ResolverSk and ResolverPk.
 	ResolverSk string `yaml:"resolver_secret"`
 
-	// ResolverSk - hex-encoded short-term public key corresponding to ResolverSk.
+	// ResolverPk is a hex-encoded short-term public key corresponding to ResolverSk.
 	// This key is used to encrypt/decrypt DNS queries.
 	ResolverPk string `yaml:"resolver_public"`
 
-	// EsVersion - crypto to use in this resolver
+	// EsVersion is the crypto to use in this resolver
 	EsVersion CryptoConstruction `yaml:"es_version"`
 
-	// CertificateTTL - time-to-live for the certificate that is generated using this ResolverConfig.
+	// CertificateTTL is the time-to-live value for the certificate that is
+	// generated using this ResolverConfig.
 	// If not set, we'll use 1 year by default.
 	CertificateTTL time.Duration `yaml:"certificate_ttl"`
 }
 
-// CreateCert - generates a signed Cert to be used by Server
+// CreateCert generates a signed Cert to be used by Server
 func (rc *ResolverConfig) CreateCert() (*Cert, error) {
 	log.Printf("Creating signed DNSCrypt certificate")
 
@@ -98,7 +99,7 @@ func (rc *ResolverConfig) CreateCert() (*Cert, error) {
 	return cert, nil
 }
 
-// CreateStamp - generates a DNS stamp for this resolver
+// CreateStamp generates a DNS stamp for this resolver
 func (rc *ResolverConfig) CreateStamp(addr string) (dnsstamps.ServerStamp, error) {
 	stamp := dnsstamps.ServerStamp{
 		ProviderName: rc.ProviderName,
@@ -115,7 +116,7 @@ func (rc *ResolverConfig) CreateStamp(addr string) (dnsstamps.ServerStamp, error
 	return stamp, nil
 }
 
-// GenerateResolverConfig - generates resolver configuration for a given provider name.
+// GenerateResolverConfig generates resolver configuration for a given provider name.
 // providerName is mandatory. If needed, "2.dnscrypt-cert." prefix is added to it.
 // privateKey is optional. If not set, it will be generated automatically.
 func GenerateResolverConfig(providerName string, privateKey ed25519.PrivateKey) (ResolverConfig, error) {
@@ -145,18 +146,18 @@ func GenerateResolverConfig(providerName string, privateKey ed25519.PrivateKey) 
 	return rc, nil
 }
 
-// HexEncodeKey - encodes a byte slice to a hex-encoded string.
+// HexEncodeKey encodes a byte slice to a hex-encoded string.
 func HexEncodeKey(b []byte) string {
 	return strings.ToUpper(hex.EncodeToString(b))
 }
 
-// HexDecodeKey - decodes a hex-encoded string with (optional) colons
+// HexDecodeKey decodes a hex-encoded string with (optional) colons
 // to a byte array.
 func HexDecodeKey(str string) ([]byte, error) {
 	return hex.DecodeString(strings.ReplaceAll(str, ":", ""))
 }
 
-// generateRandomKeyPair - generates a random key-pair
+// generateRandomKeyPair generates a random key-pair
 func generateRandomKeyPair() (privateKey [keySize]byte, publicKey [keySize]byte) {
 	privateKey = [keySize]byte{}
 	publicKey = [keySize]byte{}

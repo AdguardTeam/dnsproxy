@@ -11,8 +11,7 @@ func TestDNSTruncated(t *testing.T) {
 	address := "94.140.14.14:53"
 	// Google DNS
 	// address := "8.8.8.8:53"
-	u, err := AddressToUpstream(address, Options{Timeout: timeout})
-
+	u, err := AddressToUpstream(address, &Options{Timeout: timeout})
 	if err != nil {
 		t.Fatalf("error while creating an upstream: %s", err)
 	}

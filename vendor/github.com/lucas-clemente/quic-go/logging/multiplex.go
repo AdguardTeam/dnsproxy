@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"net"
 	"time"
 )
@@ -11,7 +12,7 @@ type tracerMultiplexer struct {
 
 var _ Tracer = &tracerMultiplexer{}
 
-// NewMultiplexedTracer creates a new tracer that multiplexes all events to multiple tracers.
+// NewMultiplexedTracer creates a new tracer that multiplexes events to multiple tracers.
 func NewMultiplexedTracer(tracers ...Tracer) Tracer {
 	if len(tracers) == 0 {
 		return nil
@@ -22,14 +23,14 @@ func NewMultiplexedTracer(tracers ...Tracer) Tracer {
 	return &tracerMultiplexer{tracers}
 }
 
-func (m *tracerMultiplexer) TracerForConnection(p Perspective, odcid ConnectionID) ConnectionTracer {
+func (m *tracerMultiplexer) TracerForConnection(ctx context.Context, p Perspective, odcid ConnectionID) ConnectionTracer {
 	var connTracers []ConnectionTracer
 	for _, t := range m.tracers {
-		if ct := t.TracerForConnection(p, odcid); ct != nil {
+		if ct := t.TracerForConnection(ctx, p, odcid); ct != nil {
 			connTracers = append(connTracers, ct)
 		}
 	}
-	return newConnectionMultiplexer(connTracers...)
+	return NewMultiplexedConnectionTracer(connTracers...)
 }
 
 func (m *tracerMultiplexer) SentPacket(remote net.Addr, hdr *Header, size ByteCount, frames []Frame) {
@@ -50,7 +51,8 @@ type connTracerMultiplexer struct {
 
 var _ ConnectionTracer = &connTracerMultiplexer{}
 
-func newConnectionMultiplexer(tracers ...ConnectionTracer) ConnectionTracer {
+// NewMultiplexedConnectionTracer creates a new connection tracer that multiplexes events to multiple tracers.
+func NewMultiplexedConnectionTracer(tracers ...ConnectionTracer) ConnectionTracer {
 	if len(tracers) == 0 {
 		return nil
 	}
@@ -60,15 +62,21 @@ func newConnectionMultiplexer(tracers ...ConnectionTracer) ConnectionTracer {
 	return &connTracerMultiplexer{tracers: tracers}
 }
 
-func (m *connTracerMultiplexer) StartedConnection(local, remote net.Addr, version VersionNumber, srcConnID, destConnID ConnectionID) {
+func (m *connTracerMultiplexer) StartedConnection(local, remote net.Addr, srcConnID, destConnID ConnectionID) {
 	for _, t := range m.tracers {
-		t.StartedConnection(local, remote, version, srcConnID, destConnID)
+		t.StartedConnection(local, remote, srcConnID, destConnID)
 	}
 }
 
-func (m *connTracerMultiplexer) ClosedConnection(reason CloseReason) {
+func (m *connTracerMultiplexer) NegotiatedVersion(chosen VersionNumber, clientVersions, serverVersions []VersionNumber) {
 	for _, t := range m.tracers {
-		t.ClosedConnection(reason)
+		t.NegotiatedVersion(chosen, clientVersions, serverVersions)
+	}
+}
+
+func (m *connTracerMultiplexer) ClosedConnection(e error) {
+	for _, t := range m.tracers {
+		t.ClosedConnection(e)
 	}
 }
 
@@ -81,6 +89,12 @@ func (m *connTracerMultiplexer) SentTransportParameters(tp *TransportParameters)
 func (m *connTracerMultiplexer) ReceivedTransportParameters(tp *TransportParameters) {
 	for _, t := range m.tracers {
 		t.ReceivedTransportParameters(tp)
+	}
+}
+
+func (m *connTracerMultiplexer) RestoredTransportParameters(tp *TransportParameters) {
+	for _, t := range m.tracers {
+		t.RestoredTransportParameters(tp)
 	}
 }
 
@@ -132,6 +146,12 @@ func (m *connTracerMultiplexer) UpdatedMetrics(rttStats *RTTStats, cwnd, bytesIn
 	}
 }
 
+func (m *connTracerMultiplexer) AcknowledgedPacket(encLevel EncryptionLevel, pn PacketNumber) {
+	for _, t := range m.tracers {
+		t.AcknowledgedPacket(encLevel, pn)
+	}
+}
+
 func (m *connTracerMultiplexer) LostPacket(encLevel EncryptionLevel, pn PacketNumber, reason PacketLossReason) {
 	for _, t := range m.tracers {
 		t.LostPacket(encLevel, pn, reason)
@@ -162,6 +182,12 @@ func (m *connTracerMultiplexer) DroppedEncryptionLevel(encLevel EncryptionLevel)
 	}
 }
 
+func (m *connTracerMultiplexer) DroppedKey(generation KeyPhase) {
+	for _, t := range m.tracers {
+		t.DroppedKey(generation)
+	}
+}
+
 func (m *connTracerMultiplexer) SetLossTimer(typ TimerType, encLevel EncryptionLevel, exp time.Time) {
 	for _, t := range m.tracers {
 		t.SetLossTimer(typ, encLevel, exp)
@@ -177,6 +203,12 @@ func (m *connTracerMultiplexer) LossTimerExpired(typ TimerType, encLevel Encrypt
 func (m *connTracerMultiplexer) LossTimerCanceled() {
 	for _, t := range m.tracers {
 		t.LossTimerCanceled()
+	}
+}
+
+func (m *connTracerMultiplexer) Debug(name, msg string) {
+	for _, t := range m.tracers {
+		t.Debug(name, msg)
 	}
 }
 

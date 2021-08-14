@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"net"
 
@@ -9,37 +10,36 @@ import (
 	"github.com/miekg/dns"
 )
 
-// isEmptyAAAAResponse checks AAAA answer to be empty
-// returns true if NAT64 prefix already calculated and there are no answers for AAAA question
+// NAT64PrefixLength is the length of a NAT64 prefix
+const NAT64PrefixLength = 12
+
+// isEmptyAAAAResponse checks if there are no AAAA records in response
 func (p *Proxy) isEmptyAAAAResponse(resp, req *dns.Msg) bool {
-	return p.isNAT64PrefixAvailable() &&
-		(resp == nil || len(resp.Answer) == 0) &&
+	return (resp == nil || len(resp.Answer) == 0) &&
 		req.Question[0].Qtype == dns.TypeAAAA
 }
 
 // isNAT64PrefixAvailable returns true if NAT64 prefix was calculated
 func (p *Proxy) isNAT64PrefixAvailable() bool {
-	p.nat64Lock.Lock()
+	p.nat64PrefixLock.Lock()
 	prefixSize := len(p.nat64Prefix)
-	p.nat64Lock.Unlock()
-	return prefixSize == 12
+	p.nat64PrefixLock.Unlock()
+	return prefixSize == NAT64PrefixLength
 }
 
 // SetNAT64Prefix sets NAT64 prefix
 func (p *Proxy) SetNAT64Prefix(prefix []byte) {
-	if len(prefix) != 12 {
+	if len(prefix) != NAT64PrefixLength {
 		return
 	}
 
-	// Check if proxy is started and has no prefix yet
-	p.nat64Lock.Lock()
-	if len(p.nat64Prefix) == 0 {
-		if p.started {
-			p.nat64Prefix = prefix
-			log.Printf("NAT64 prefix: %v", prefix)
-		}
-	}
-	p.nat64Lock.Unlock()
+	p.nat64PrefixLock.Lock()
+	p.nat64Prefix = prefix
+	p.nat64PrefixLock.Unlock()
+
+	ip := [net.IPv6len]byte{}
+	copy(ip[:NAT64PrefixLength], prefix)
+	log.Info("NAT64 prefix: %v", net.IP(ip[:]).String())
 }
 
 // createModifiedARequest returns modified question to make A DNS request
@@ -57,12 +57,16 @@ func createModifiedARequest(d *dns.Msg) (*dns.Msg, error) {
 	return &req, nil
 }
 
-// createDNS64MappedResponse adds NAT 64 mapped answer to the old message
+// createDNS64MappedResponse adds a NAT64 mapped answer to the old message
 // newAResp is new A response. oldAAAAResp is old *dns.Msg with AAAA request and empty answer
 func (p *Proxy) createDNS64MappedResponse(newAResp, oldAAAAResp *dns.Msg) (*dns.Msg, error) {
-	// do nothing if prefix is not valid
-	if !p.isNAT64PrefixAvailable() {
-		return nil, fmt.Errorf("can not create DNS64 mapped response: NAT64 prefix was not calculated")
+	var nat64Prefix []byte
+	p.nat64PrefixLock.Lock()
+	nat64Prefix = p.nat64Prefix
+	p.nat64PrefixLock.Unlock()
+
+	if len(nat64Prefix) != NAT64PrefixLength {
+		return nil, errors.New("cannot create a mapped response, no NAT64 prefix specified")
 	}
 
 	// check if there are no answers
@@ -82,9 +86,9 @@ func (p *Proxy) createDNS64MappedResponse(newAResp, oldAAAAResp *dns.Msg) (*dns.
 		mappedAddress := make(net.IP, net.IPv6len)
 
 		// add NAT 64 prefix and append ipv4 record
-		copy(mappedAddress, p.nat64Prefix)
+		copy(mappedAddress, nat64Prefix)
 		for index, b := range i.A {
-			mappedAddress[12+index] = b
+			mappedAddress[NAT64PrefixLength+index] = b
 		}
 
 		// create new response and fill it
@@ -96,7 +100,7 @@ func (p *Proxy) createDNS64MappedResponse(newAResp, oldAAAAResp *dns.Msg) (*dns.
 	return oldAAAAResp, nil
 }
 
-// checkDNS64 is called when there is no answer for AAAA request and NAT64 prefix available.
+// checkDNS64 is called when there is no answer for AAAA request and a NAT64 prefix is configured.
 // this function creates modified A request from oldAAAAReq, exchanges it and returns DNS64 mapped response
 // oldAAAAReq is message with AAAA Question. oldAAAAResp is response for oldAAAAReq with empty answer section
 func (p *Proxy) checkDNS64(oldAAAAReq, oldAAAAResp *dns.Msg, upstreams []upstream.Upstream) (*dns.Msg, upstream.Upstream, error) {

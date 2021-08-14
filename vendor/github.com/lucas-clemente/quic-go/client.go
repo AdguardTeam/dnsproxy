@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
@@ -15,8 +14,6 @@ import (
 )
 
 type client struct {
-	mutex sync.Mutex
-
 	conn sendConn
 	// If the client is created with DialAddr, we create a packet conn.
 	// If it is started with Dial, we take a packet conn as a parameter.
@@ -40,8 +37,9 @@ type client struct {
 
 	session quicSession
 
-	tracer logging.ConnectionTracer
-	logger utils.Logger
+	tracer    logging.ConnectionTracer
+	tracingID uint64
+	logger    utils.Logger
 }
 
 var (
@@ -71,7 +69,18 @@ func DialAddrEarly(
 	tlsConf *tls.Config,
 	config *Config,
 ) (EarlySession, error) {
-	sess, err := dialAddrContext(context.Background(), addr, tlsConf, config, true)
+	return DialAddrEarlyContext(context.Background(), addr, tlsConf, config)
+}
+
+// DialAddrEarlyContext establishes a new 0-RTT QUIC connection to a server using provided context.
+// See DialAddrEarly for details
+func DialAddrEarlyContext(
+	ctx context.Context,
+	addr string,
+	tlsConf *tls.Config,
+	config *Config,
+) (EarlySession, error) {
+	sess, err := dialAddrContext(ctx, addr, tlsConf, config, true)
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +117,14 @@ func dialAddrContext(
 	return dialContext(ctx, udpConn, udpAddr, addr, tlsConf, config, use0RTT, true)
 }
 
-// Dial establishes a new QUIC connection to a server using a net.PacketConn.
-// The same PacketConn can be used for multiple calls to Dial and Listen,
-// QUIC connection IDs are used for demultiplexing the different connections.
-// The host parameter is used for SNI.
-// The tls.Config must define an application protocol (using NextProtos).
+// Dial establishes a new QUIC connection to a server using a net.PacketConn. If
+// the PacketConn satisfies the OOBCapablePacketConn interface (as a net.UDPConn
+// does), ECN and packet info support will be enabled. In this case, ReadMsgUDP
+// and WriteMsgUDP will be used instead of ReadFrom and WriteTo to read/write
+// packets. The same PacketConn can be used for multiple calls to Dial and
+// Listen, QUIC connection IDs are used for demultiplexing the different
+// connections. The host parameter is used for SNI. The tls.Config must define
+// an application protocol (using NextProtos).
 func Dial(
 	pconn net.PacketConn,
 	remoteAddr net.Addr,
@@ -135,7 +147,20 @@ func DialEarly(
 	tlsConf *tls.Config,
 	config *Config,
 ) (EarlySession, error) {
-	return dialContext(context.Background(), pconn, remoteAddr, host, tlsConf, config, true, false)
+	return DialEarlyContext(context.Background(), pconn, remoteAddr, host, tlsConf, config)
+}
+
+// DialEarlyContext establishes a new 0-RTT QUIC connection to a server using a net.PacketConn using the provided context.
+// See DialEarly for details.
+func DialEarlyContext(
+	ctx context.Context,
+	pconn net.PacketConn,
+	remoteAddr net.Addr,
+	host string,
+	tlsConf *tls.Config,
+	config *Config,
+) (EarlySession, error) {
+	return dialContext(ctx, pconn, remoteAddr, host, tlsConf, config, true, false)
 }
 
 // DialContext establishes a new QUIC connection to a server using a net.PacketConn using the provided context.
@@ -178,8 +203,16 @@ func dialContext(
 	}
 	c.packetHandlers = packetHandlers
 
+	c.tracingID = nextSessionTracingID()
 	if c.config.Tracer != nil {
-		c.tracer = c.config.Tracer.TracerForConnection(protocol.PerspectiveClient, c.destConnID)
+		c.tracer = c.config.Tracer.TracerForConnection(
+			context.WithValue(ctx, SessionTracingKey, c.tracingID),
+			protocol.PerspectiveClient,
+			c.destConnID,
+		)
+	}
+	if c.tracer != nil {
+		c.tracer.StartedConnection(c.conn.LocalAddr(), c.conn.RemoteAddr(), c.srcConnID, c.destConnID)
 	}
 	if err := c.dial(ctx); err != nil {
 		return nil, err
@@ -232,7 +265,7 @@ func newClient(
 	c := &client{
 		srcConnID:         srcConnID,
 		destConnID:        destConnID,
-		conn:              newSendConn(pconn, remoteAddr),
+		conn:              newSendPconn(pconn, remoteAddr),
 		createdPacketConn: createdPacketConn,
 		use0RTT:           use0RTT,
 		tlsConf:           tlsConf,
@@ -246,11 +279,7 @@ func newClient(
 
 func (c *client) dial(ctx context.Context) error {
 	c.logger.Infof("Starting new connection to %s (%s -> %s), source connection ID %s, destination connection ID %s, version %s", c.tlsConf.ServerName, c.conn.LocalAddr(), c.conn.RemoteAddr(), c.srcConnID, c.destConnID, c.version)
-	if c.tracer != nil {
-		c.tracer.StartedConnection(c.conn.LocalAddr(), c.conn.RemoteAddr(), c.version, c.srcConnID, c.destConnID)
-	}
 
-	c.mutex.Lock()
 	c.session = newClientSession(
 		c.conn,
 		c.packetHandlers,
@@ -259,20 +288,19 @@ func (c *client) dial(ctx context.Context) error {
 		c.config,
 		c.tlsConf,
 		c.initialPacketNumber,
-		c.version,
 		c.use0RTT,
 		c.hasNegotiatedVersion,
 		c.tracer,
+		c.tracingID,
 		c.logger,
 		c.version,
 	)
-	c.mutex.Unlock()
 	c.packetHandlers.Add(c.srcConnID, c.session)
 
 	errorChan := make(chan error, 1)
 	go func() {
 		err := c.session.run() // returns as soon as the session is closed
-		if !errors.Is(err, errCloseForRecreating{}) && c.createdPacketConn {
+		if !errors.Is(err, &errCloseForRecreating{}) && c.createdPacketConn {
 			c.packetHandlers.Destroy()
 		}
 		errorChan <- err

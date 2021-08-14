@@ -262,10 +262,10 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		}
 	}
 
-	hs.hello.earlyData = false // disable 0-RTT
-	if c.extraConfig != nil && c.extraConfig.Rejected0RTT != nil {
+	if hs.hello.earlyData && c.extraConfig != nil && c.extraConfig.Rejected0RTT != nil {
 		c.extraConfig.Rejected0RTT()
 	}
+	hs.hello.earlyData = false // disable 0-RTT
 
 	hs.transcript.Write(hs.hello.marshal())
 	if _, err := c.writeRecord(recordTypeHandshake, hs.hello.marshal()); err != nil {
@@ -403,6 +403,11 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(encryptedExtensions, msg)
 	}
+	// Notify the caller if 0-RTT was rejected.
+	if !encryptedExtensions.earlyData && hs.hello.earlyData && c.extraConfig != nil && c.extraConfig.Rejected0RTT != nil {
+		c.extraConfig.Rejected0RTT()
+	}
+	c.used0RTT = encryptedExtensions.earlyData
 	if hs.c.extraConfig != nil && hs.c.extraConfig.ReceivedExtensions != nil {
 		hs.c.extraConfig.ReceivedExtensions(typeEncryptedExtensions, encryptedExtensions.additionalExtensions)
 	}
@@ -425,12 +430,6 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 		}
 	}
 	c.clientProtocol = encryptedExtensions.alpnProtocol
-	// Notify the caller if 0-RTT was rejected.
-	if !encryptedExtensions.earlyData && hs.hello.earlyData && c.extraConfig != nil && c.extraConfig.Rejected0RTT != nil {
-		c.extraConfig.Rejected0RTT()
-	}
-	c.used0RTT = encryptedExtensions.earlyData
-
 	return nil
 }
 

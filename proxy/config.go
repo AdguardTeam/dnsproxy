@@ -63,6 +63,12 @@ type Config struct {
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
 	RefuseAny          bool     // if true, refuse ANY requests
 
+	// TrustedProxies is the list of IP addresses and CIDR networks to
+	// detect proxy servers addresses the DoH requests from which should be
+	// handled.  The value of nil or an empty slice for this field makes
+	// Proxy not trust any address.
+	TrustedProxies []string
+
 	// Upstream DNS servers and their settings
 	// --
 
@@ -70,7 +76,7 @@ type Config struct {
 	Fallbacks      []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 	UpstreamMode   UpstreamModeType    // How to request the upstream servers
 
-	// BogusNXDomain - transforms responses that contain only given IP addresses into NXDOMAIN
+	// BogusNXDomain - transforms responses that contain at least one of the given IP addresses into NXDOMAIN
 	// Similar to dnsmasq's "bogus-nxdomain"
 	BogusNXDomain []net.IP
 
@@ -103,6 +109,9 @@ type Config struct {
 	CacheSizeBytes int    // Cache size (in bytes). Default: 64k
 	CacheMinTTL    uint32 // Minimum TTL for DNS entries (in seconds).
 	CacheMaxTTL    uint32 // Maximum TTL for DNS entries (in seconds).
+	// CacheOptimistic defines if the optimistic cache mechanism should be
+	// used.
+	CacheOptimistic bool
 
 	// Handlers (for the case when dnsproxy is used as a library)
 	// --
@@ -117,10 +126,14 @@ type Config struct {
 	// MaxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.
 	//
-	// TODO(a.garipov): Renamme this to something like
+	// TODO(a.garipov): Rename this to something like
 	// “MaxDNSRequestGoroutines” in a later major version, as it doesn't
 	// actually limit all goroutines.
 	MaxGoroutines int
+
+	// The size of the read buffer on the underlying socket. Larger read buffers can handle
+	// larger bursts of requests before packets get dropped.
+	UDPBufferSize int
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

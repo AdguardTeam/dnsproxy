@@ -1,4 +1,3 @@
-[![Build Status](https://travis-ci.com/ameshkov/dnscrypt.svg?branch=master)](https://travis-ci.com/ameshkov/dnscrypt)
 [![Code Coverage](https://img.shields.io/codecov/c/github/ameshkov/dnscrypt/master.svg)](https://codecov.io/github/ameshkov/dnscrypt?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ameshkov/dnscrypt)](https://goreportcard.com/report/ameshkov/dnscrypt)
 [![Go Doc](https://godoc.org/github.com/ameshkov/dnscrypt?status.svg)](https://godoc.org/github.com/ameshkov/dnscrypt)
@@ -11,6 +10,8 @@ This repo includes everything you need to work with DNSCrypt. You can run your o
 
 * [Command-line tool](#commandline)
     * [How to install](#install)
+    * [How to configure](#configure)
+      * [Converting dnscrypt-wrapper configuration](#convertfromwrapper)
     * [Running a server](#runningserver)
     * [Making lookups](#lookup)
 * [Programming interface](#api)
@@ -28,12 +29,23 @@ Please note, that even though this tool can work as a server, it's purpose is me
 
 Download and unpack an archive for your platform from the [latest release](https://github.com/ameshkov/dnscrypt/releases).
 
-### <a id="runningserver"></a> Running a server
+Homebrew:
+```
+brew install ameshkov/tap/dnscrypt
+```
+
+### <a id="configure"></a> How to configure
 
 Generate a configuration file for running a DNSCrypt server:
 
-```shell script
-./dnscrypt generate --provider-name=2.dnscrypt-cert.example.org --out=config.yaml
+```
+./dnscrypt generate
+
+[generate command options]
+      -p, --provider-name= DNSCrypt provider name. Param is required.
+      -o, --out=           Path to the resulting config file. Param is required.
+      -k, --private-key=   Private key (hex-encoded)
+      -t, --ttl=           Certificate time-to-live (seconds)
 ```
 
 It will generate a configuration file that looks like this:
@@ -54,10 +66,34 @@ certificate_ttl: 0s
 * `es_version` - crypto to use. Can be `1` (XSalsa20Poly1305) or `2` (XChacha20Poly1305).
 * `certificate_ttl` - certificate time-to-live. By default it's set to `0` and in this case 1-year cert is generated. The certificate is generated on `dnscrypt` start-up and it will only be valid for the specified amount of time. You should periodically restart `dnscrypt` to rotate the cert. 
 
+#### <a id="convertfromwrapper"></a> Converting [dnscrypt-wrapper](https://github.com/cofyc/dnscrypt-wrapper) configuration
+
+Also, to create a configuration, you can use the keys generated using [dnscrypt-wrapper](https://github.com/cofyc/dnscrypt-wrapper) by running the command:
+
+```
+./dnscrypt convert-dnscrypt-wrapper
+
+[convert-dnscrypt-wrapper command options]
+      -p, --private-key=     Path to the DNSCrypt resolver private key file that is used for signing certificates. Param is required.
+      -r, --resolver-secret= Path to the Short-term privacy key file for encrypting/decrypting DNS queries. If not specified, resolver_secret and resolver_public will be randomly generated.
+      -n, --provider-name=   DNSCrypt provider name. Param is required.
+      -o, --out=             Path to the resulting config file. Param is required.
+      -t, --ttl=             Certificate time-to-live (seconds)
+```
+
+
+### <a id="runningserver"></a> Running a server
+
 This configuration file can be used to run a DNSCrypt forwarding server:
 
-```shell script
-./dnscrypt server --config=config.yaml --forward=94.140.14.140:53
+```
+./dnscrypt server 
+
+[server command options]
+      -c, --config=  Path to the DNSCrypt configuration file. Param is required.
+      -f, --forward= Forwards DNS queries to the specified address (default: 94.140.14.140:53)
+      -l, --listen=  Listening addresses (default: 0.0.0.0)
+      -p, --port=    Listening ports (default: 443)
 ```
 
 Now you can go to https://dnscrypt.info/stamps and use `provider_name` and `public_key` from this configuration to generate a DNS stamp. Here's how it looks like for a server running on `127.0.0.1:443`:
@@ -71,21 +107,27 @@ sdns://AQcAAAAAAAAADTEyNy4wLjAuMTo0NDMg8R3bzEgX5UOEX93Uy4gYSbZCJvPeOXYlZp2HuRm8T
 You can use that stamp to send a DNSCrypt request to your server:
 
 ```
-./dnscrypt lookup-stamp \
-    --stamp=sdns://AQcAAAAAAAAADTEyNy4wLjAuMTo0NDMg8R3bzEgX5UOEX93Uy4gYSbZCJvPeOXYlZp2HuRm8T7AbMi5kbnNjcnlwdC1jZXJ0LmV4YW1wbGUub3Jn \
-    --domain=example.org \
-    --type=a
+./dnscrypt lookup-stamp
+
+[lookup-stamp command options]
+      -n, --network= network type (tcp/udp) (default: udp)
+      -s, --stamp=   DNSCrypt resolver stamp. Param is required.
+      -d, --domain=  Domain to resolve. Param is required.
+      -t, --type=    DNS query type (default: A)
 ```
 
 You can also send a DNSCrypt request using a command that does not require stamps:
 
 ```
 ./dnscrypt lookup \
-    --provider-name=2.dnscrypt-cert.opendns.com \
-    --public-key=b7351140206f225d3e2bd822d7fd691ea1c33cc8d6668d0cbe04bfabca43fb79 \
-    --addr=208.67.220.220 \
-    --domain=example.org \
-    --type=a
+
+[lookup command options]
+      -n, --network=       network type (tcp/udp) (default: udp)
+      -p, --provider-name= DNSCrypt resolver provider name. Param is required.
+      -k, --public-key=    DNSCrypt resolver public key. Param is required.
+      -a, --addr=          Resolver address (IP[:port]). By default, the port is 443. Param is required.
+      -d, --domain=        Domain to resolve. Param is required.
+      -t, --type=          DNS query type (default: A)
 ```
 
 ## <a id="api"></a> Programming interface

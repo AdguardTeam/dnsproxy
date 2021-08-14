@@ -3,6 +3,7 @@
 package logging
 
 import (
+	"context"
 	"net"
 	"time"
 
@@ -22,6 +23,8 @@ type (
 	EncryptionLevel = protocol.EncryptionLevel
 	// The KeyPhase is the key phase of the 1-RTT keys.
 	KeyPhase = protocol.KeyPhase
+	// The KeyPhaseBit is the value of the key phase bit of the 1-RTT packets.
+	KeyPhaseBit = protocol.KeyPhaseBit
 	// The PacketNumber is the packet number of a packet.
 	PacketNumber = protocol.PacketNumber
 	// The Perspective is the role of a QUIC endpoint (client or server).
@@ -43,14 +46,23 @@ type (
 	ExtendedHeader = wire.ExtendedHeader
 	// The TransportParameters are QUIC transport parameters.
 	TransportParameters = wire.TransportParameters
+	// The PreferredAddress is the preferred address sent in the transport parameters.
+	PreferredAddress = wire.PreferredAddress
 
 	// A TransportError is a transport-level error code.
-	TransportError = qerr.ErrorCode
+	TransportError = qerr.TransportErrorCode
 	// An ApplicationError is an application-defined error code.
-	ApplicationError = qerr.ErrorCode
+	ApplicationError = qerr.TransportErrorCode
 
 	// The RTTStats contain statistics used by the congestion controller.
 	RTTStats = utils.RTTStats
+)
+
+const (
+	// KeyPhaseZero is key phase bit 0
+	KeyPhaseZero KeyPhaseBit = protocol.KeyPhaseZero
+	// KeyPhaseOne is key phase bit 1
+	KeyPhaseOne KeyPhaseBit = protocol.KeyPhaseOne
 )
 
 const (
@@ -69,8 +81,6 @@ const (
 	Encryption1RTT EncryptionLevel = protocol.Encryption1RTT
 	// Encryption0RTT is the 0-RTT encryption level
 	Encryption0RTT EncryptionLevel = protocol.Encryption0RTT
-	// EncryptionNone is no encryption
-	EncryptionNone EncryptionLevel = protocol.EncryptionUnspecified
 )
 
 const (
@@ -82,11 +92,11 @@ const (
 
 // A Tracer traces events.
 type Tracer interface {
-	// ConnectionTracer requests a new tracer for a connection.
+	// TracerForConnection requests a new tracer for a connection.
 	// The ODCID is the original destination connection ID:
 	// The destination connection ID that the client used on the first Initial packet it sent on this connection.
 	// If nil is returned, tracing will be disabled for this connection.
-	TracerForConnection(p Perspective, odcid ConnectionID) ConnectionTracer
+	TracerForConnection(ctx context.Context, p Perspective, odcid ConnectionID) ConnectionTracer
 
 	SentPacket(net.Addr, *Header, ByteCount, []Frame)
 	DroppedPacket(net.Addr, PacketType, ByteCount, PacketDropReason)
@@ -94,10 +104,12 @@ type Tracer interface {
 
 // A ConnectionTracer records events.
 type ConnectionTracer interface {
-	StartedConnection(local, remote net.Addr, version VersionNumber, srcConnID, destConnID ConnectionID)
-	ClosedConnection(CloseReason)
+	StartedConnection(local, remote net.Addr, srcConnID, destConnID ConnectionID)
+	NegotiatedVersion(chosen VersionNumber, clientVersions, serverVersions []VersionNumber)
+	ClosedConnection(error)
 	SentTransportParameters(*TransportParameters)
 	ReceivedTransportParameters(*TransportParameters)
+	RestoredTransportParameters(parameters *TransportParameters) // for 0-RTT
 	SentPacket(hdr *ExtendedHeader, size ByteCount, ack *AckFrame, frames []Frame)
 	ReceivedVersionNegotiationPacket(*Header, []VersionNumber)
 	ReceivedRetry(*Header)
@@ -105,15 +117,18 @@ type ConnectionTracer interface {
 	BufferedPacket(PacketType)
 	DroppedPacket(PacketType, ByteCount, PacketDropReason)
 	UpdatedMetrics(rttStats *RTTStats, cwnd, bytesInFlight ByteCount, packetsInFlight int)
+	AcknowledgedPacket(EncryptionLevel, PacketNumber)
 	LostPacket(EncryptionLevel, PacketNumber, PacketLossReason)
 	UpdatedCongestionState(CongestionState)
 	UpdatedPTOCount(value uint32)
 	UpdatedKeyFromTLS(EncryptionLevel, Perspective)
 	UpdatedKey(generation KeyPhase, remote bool)
 	DroppedEncryptionLevel(EncryptionLevel)
+	DroppedKey(generation KeyPhase)
 	SetLossTimer(TimerType, EncryptionLevel, time.Time)
 	LossTimerExpired(TimerType, EncryptionLevel)
 	LossTimerCanceled()
 	// Close is called when the connection is closed.
 	Close()
+	Debug(name, msg string)
 }

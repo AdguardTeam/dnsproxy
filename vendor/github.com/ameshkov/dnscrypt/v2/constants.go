@@ -1,52 +1,58 @@
 package dnscrypt
 
-import "errors"
+// Error represents a dnscrypt error.
+type Error string
 
-var (
-	// ErrTooShort - DNS query is shorter than possible
-	ErrTooShort = errors.New("DNSCrypt message is too short")
+func (e Error) Error() string { return "dnscrypt: " + string(e) }
 
-	// ErrQueryTooLarge - DNS query is larger than max allowed size
-	ErrQueryTooLarge = errors.New("DNSCrypt query is too large")
+const (
+	// ErrTooShort means that the DNS query is shorter than possible
+	ErrTooShort = Error("message is too short")
 
-	// ErrEsVersion - cert contains unsupported es-version
-	ErrEsVersion = errors.New("unsupported es-version")
+	// ErrQueryTooLarge means that the DNS query is larger than max allowed size
+	ErrQueryTooLarge = Error("DNSCrypt query is too large")
 
-	// ErrInvalidDate - cert is not valid for the current time
-	ErrInvalidDate = errors.New("cert has invalid ts-start or ts-end")
+	// ErrEsVersion means that the cert contains unsupported es-version
+	ErrEsVersion = Error("unsupported es-version")
 
-	// ErrInvalidCertSignature - cert has invalid signature
-	ErrInvalidCertSignature = errors.New("cert has invalid signature")
+	// ErrInvalidDate means that the cert is not valid for the current time
+	ErrInvalidDate = Error("cert has invalid ts-start or ts-end")
 
-	// ErrInvalidQuery - failed to decrypt a DNSCrypt query
-	ErrInvalidQuery = errors.New("DNSCrypt query is invalid and cannot be decrypted")
+	// ErrInvalidCertSignature means that the cert has invalid signature
+	ErrInvalidCertSignature = Error("cert has invalid signature")
 
-	// ErrInvalidClientMagic - client-magic does not match
-	ErrInvalidClientMagic = errors.New("DNSCrypt query contains invalid client magic")
+	// ErrInvalidQuery means that it failed to decrypt a DNSCrypt query
+	ErrInvalidQuery = Error("DNSCrypt query is invalid and cannot be decrypted")
 
-	// ErrInvalidResolverMagic - server-magic does not match
-	ErrInvalidResolverMagic = errors.New("DNSCrypt response contains invalid resolver magic")
+	// ErrInvalidClientMagic means that client-magic does not match
+	ErrInvalidClientMagic = Error("DNSCrypt query contains invalid client magic")
 
-	// ErrInvalidResponse - failed to decrypt a DNSCrypt response
-	ErrInvalidResponse = errors.New("DNSCrypt response is invalid and cannot be decrypted")
+	// ErrInvalidResolverMagic means that server-magic does not match
+	ErrInvalidResolverMagic = Error("DNSCrypt response contains invalid resolver magic")
 
-	// ErrInvalidPadding - failed to unpad a query
-	ErrInvalidPadding = errors.New("invalid padding")
+	// ErrInvalidResponse means that it failed to decrypt a DNSCrypt response
+	ErrInvalidResponse = Error("DNSCrypt response is invalid and cannot be decrypted")
 
-	// ErrInvalidDNSStamp - invalid DNS stamp
-	ErrInvalidDNSStamp = errors.New("invalid DNS stamp")
+	// ErrInvalidPadding means that it failed to unpad a query
+	ErrInvalidPadding = Error("invalid padding")
 
-	// ErrFailedToFetchCert - failed to fetch DNSCrypt certificate
-	ErrFailedToFetchCert = errors.New("failed to fetch DNSCrypt certificate")
+	// ErrInvalidDNSStamp means an invalid DNS stamp
+	ErrInvalidDNSStamp = Error("invalid DNS stamp")
 
-	// ErrCertTooShort - failed to deserialize cert, too short
-	ErrCertTooShort = errors.New("cert is too short")
+	// ErrFailedToFetchCert means that it failed to fetch DNSCrypt certificate
+	ErrFailedToFetchCert = Error("failed to fetch DNSCrypt certificate")
 
-	// ErrCertMagic - invalid cert magic
-	ErrCertMagic = errors.New("invalid cert magic")
+	// ErrCertTooShort means that it failed to deserialize cert, too short
+	ErrCertTooShort = Error("cert is too short")
 
-	// ErrServerConfig - failed to start the DNSCrypt server - invalid configuration
-	ErrServerConfig = errors.New("invalid server configuration")
+	// ErrCertMagic means an invalid cert magic
+	ErrCertMagic = Error("invalid cert magic")
+
+	// ErrServerConfig means that it failed to start the DNSCrypt server - invalid configuration
+	ErrServerConfig = Error("invalid server configuration")
+
+	// ErrServerNotStarted is returned if there's nothing to shutdown
+	ErrServerNotStarted = Error("server is not started")
 )
 
 const (
@@ -55,7 +61,7 @@ const (
 	// Some servers do not work if padded length is less than 256. Example: Quad9
 	minUDPQuestionSize = 256
 
-	// <max-query-len> - maximum allowed query length
+	// <max-query-len> is the maximum allowed query length
 	maxQueryLen = 1252
 
 	// Minimum possible DNS packet size
@@ -68,7 +74,7 @@ const (
 	// size of the shared key used to encrypt/decrypt messages
 	sharedKeySize = 32
 
-	// ClientMagic - the first 8 bytes of a client query that is to be built
+	// ClientMagic is the first 8 bytes of a client query that is to be built
 	// using the information from this certificate. It may be a truncated
 	// public key. Two valid certificates cannot share the same <client-magic>.
 	clientMagicSize = 8
@@ -82,10 +88,10 @@ const (
 )
 
 var (
-	// certMagic - bytes sequence that must be in the beginning of the serialized cert
+	// certMagic is a bytes sequence that must be in the beginning of the serialized cert
 	certMagic = [4]byte{0x44, 0x4e, 0x53, 0x43}
 
-	// resolverMagic - byte sequence that must be in the beginning of every response
+	// resolverMagic is a byte sequence that must be in the beginning of every response
 	resolverMagic = []byte{0x72, 0x36, 0x66, 0x6e, 0x76, 0x57, 0x6a, 0x38}
 )
 

@@ -7,19 +7,20 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/net/http2"
-
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
+	"golang.org/x/net/http2"
 )
 
 // NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
 // by selecting the ALPN token "dq" in the crypto handshake.
-const NextProtoDQ = "doq-i00"
+const NextProtoDQ = "doq-i02"
+
+// compatProtoDQ - ALPNs for backwards compatibility
+var compatProtoDQ = []string{"doq-i00", "dq", "doq"}
 
 // RootCAs is the CertPool that must be used by all upstreams
 // Redefining RootCAs makes sense on iOS to overcome the 15MB memory limit of the NEPacketTunnelProvider
@@ -30,40 +31,42 @@ var RootCAs *x509.CertPool
 // nolint
 var CipherSuites []uint16
 
+// TODO: refactor bootstrapper, it's overcomplicated and hard to understand what it does
 type bootstrapper struct {
-	address            string        // in form of "tls://one.one.one.one:853"
-	resolvers          []*Resolver   // list of Resolvers to use to resolve hostname, if necessary
-	timeout            time.Duration // resolution duration (shared with the upstream) (0 == infinite timeout)
-	insecureSkipVerify bool          // if true - tls.Config will have InsecureSkipVerify set to true
-
+	URL            *url.URL
+	resolvers      []*Resolver // list of Resolvers to use to resolve hostname, if necessary
 	dialContext    dialHandler // specifies the dial function for creating unencrypted TCP connections.
 	resolvedConfig *tls.Config
 	sync.RWMutex
+
+	// stores options for AddressToUpstream func:
+	// callbacks for checking certificates, timeout,
+	// the need to verify the server certificate,
+	// the addresses of upstream servers, etc
+	options *Options
 }
 
 // newBootstrapperResolved creates a new bootstrapper that already contains resolved config.
 // This can be done only in the case when we already know the resolver IP address.
-// timeout is also used for establishing TCP connections
-// insecureSkipVerify -- if true, disable TLS certs verification
-func newBootstrapperResolved(address string, serverIPAddrs []net.IP, timeout time.Duration, insecureSkipVerify bool) (*bootstrapper, error) {
+// options -- Upstream customization options
+func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, error) {
 	// get a host without port
-	host, port, err := getAddressHostPort(address)
+	host, port, err := net.SplitHostPort(upsURL.Host)
 	if err != nil {
-		return nil, fmt.Errorf("bootstrapper requires port in address %s", address)
+		return nil, fmt.Errorf("bootstrapper requires port in address %s", upsURL.String())
 	}
 
 	var resolverAddresses []string
-	for _, ip := range serverIPAddrs {
+	for _, ip := range options.ServerIPAddrs {
 		addr := net.JoinHostPort(ip.String(), port)
 		resolverAddresses = append(resolverAddresses, addr)
 	}
 
 	b := &bootstrapper{
-		address:            address,
-		timeout:            timeout,
-		insecureSkipVerify: insecureSkipVerify,
+		URL:     upsURL,
+		options: options,
 	}
-	b.dialContext = b.createDialContext(resolverAddresses, timeout)
+	b.dialContext = b.createDialContext(resolverAddresses)
 	b.resolvedConfig = b.createTLSConfig(host)
 
 	return b, nil
@@ -71,31 +74,28 @@ func newBootstrapperResolved(address string, serverIPAddrs []net.IP, timeout tim
 
 // newBootstrapper initializes a new bootstrapper instance
 // address -- original resolver address string (i.e. tls://one.one.one.one:853)
-// bootstrapAddr -- a list of bootstrap DNS resolvers' addresses
-// timeout -- DNS query timeout
-// insecureSkipVerify -- if true, disable TLS certs verification
-func newBootstrapper(address string, bootstrapAddr []string, timeout time.Duration, insecureSkipVerify bool) (*bootstrapper, error) {
+// options -- Upstream customization options
+func newBootstrapper(address *url.URL, options *Options) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
-	if bootstrapAddr != nil && len(bootstrapAddr) != 0 {
+	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
-		for _, boot := range bootstrapAddr {
-			r, err := NewResolver(boot, timeout)
+		for _, boot := range options.Bootstrap {
+			r, err := NewResolver(boot, options)
 			if err != nil {
 				return nil, err
 			}
 			resolvers = append(resolvers, r)
 		}
 	} else {
-		r, _ := NewResolver("", timeout) // NewResolver("") always succeeds
+		r, _ := NewResolver("", options) // NewResolver("") always succeeds
 		// nil resolver if the default one
 		resolvers = append(resolvers, r)
 	}
 
 	return &bootstrapper{
-		address:            address,
-		resolvers:          resolvers,
-		timeout:            timeout,
-		insecureSkipVerify: insecureSkipVerify,
+		URL:       address,
+		resolvers: resolvers,
+		options:   options,
 	}, nil
 }
 
@@ -116,11 +116,11 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	//
 
 	// get a host without port
-	host, port, err := getAddressHostPort(n.address)
+	addr := n.URL
+	host, port, err := net.SplitHostPort(addr.Host)
 	if err != nil {
-		addr := n.address
 		n.RUnlock()
-		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr)
+		return nil, nil, fmt.Errorf("bootstrapper requires port in address %s", addr.String())
 	}
 
 	// if n.address's host is an IP, just use it right away
@@ -133,7 +133,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		n.Lock()
 		defer n.Unlock()
 
-		n.dialContext = n.createDialContext([]string{resolverAddress}, n.timeout)
+		n.dialContext = n.createDialContext([]string{resolverAddress})
 		n.resolvedConfig = n.createTLSConfig(host)
 		return n.resolvedConfig, n.dialContext, nil
 	}
@@ -148,8 +148,8 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	//
 
 	var ctx context.Context
-	if n.timeout > 0 {
-		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), n.timeout)
+	if n.options.Timeout > 0 {
+		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), n.options.Timeout)
 		defer cancel() // important to avoid a resource leak
 		ctx = ctxWithTimeout
 	} else {
@@ -178,7 +178,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	n.Lock()
 	defer n.Unlock()
 
-	n.dialContext = n.createDialContext(resolved, n.timeout)
+	n.dialContext = n.createDialContext(resolved)
 	n.resolvedConfig = n.createTLSConfig(host)
 	return n.resolvedConfig, n.dialContext, nil
 }
@@ -186,24 +186,31 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	tlsConfig := &tls.Config{
-		ServerName:         host,
-		RootCAs:            RootCAs,
-		CipherSuites:       CipherSuites,
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: n.insecureSkipVerify,
+		ServerName:            host,
+		RootCAs:               RootCAs,
+		CipherSuites:          CipherSuites,
+		MinVersion:            tls.VersionTLS12,
+		InsecureSkipVerify:    n.options.InsecureSkipVerify,
+		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
-	tlsConfig.NextProtos = []string{
-		"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+	// The supported application level protocols should be specified only
+	// for DNS-over-HTTPS and DNS-over-QUIC connections.
+	//
+	// See https://github.com/AdguardTeam/AdGuardHome/issues/2681.
+	if n.URL.Scheme != "tls" {
+		tlsConfig.NextProtos = append([]string{
+			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+		}, compatProtoDQ...)
 	}
 
 	return tlsConfig
 }
 
 // createDialContext returns dialContext function that tries to establish connection with all given addresses one by one
-func (n *bootstrapper) createDialContext(addresses []string, timeout time.Duration) (dialContext dialHandler) {
+func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHandler) {
 	dialer := &net.Dialer{
-		Timeout: timeout,
+		Timeout: n.options.Timeout,
 	}
 
 	dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -215,14 +222,14 @@ func (n *bootstrapper) createDialContext(addresses []string, timeout time.Durati
 			log.Tracef("Dialing to %s", resolverAddress)
 			start := time.Now()
 			con, err := dialer.DialContext(ctx, network, resolverAddress)
-			elapsed := time.Since(start) / time.Millisecond
+			elapsed := time.Since(start)
 
 			if err == nil {
-				log.Tracef("dialer has successfully initialized connection to %s in %d milliseconds", resolverAddress, elapsed)
+				log.Tracef("dialer has successfully initialized connection to %s in %s", resolverAddress, elapsed)
 				return con, err
 			}
 			errs = append(errs, err)
-			log.Tracef("dialer failed to initialize connection to %s, in %d milliseconds, cause: %s", resolverAddress, elapsed, err)
+			log.Tracef("dialer failed to initialize connection to %s, in %s, cause: %s", resolverAddress, elapsed, err)
 		}
 
 		if len(errs) == 0 {
@@ -231,23 +238,4 @@ func (n *bootstrapper) createDialContext(addresses []string, timeout time.Durati
 		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
 	}
 	return
-}
-
-// getAddressHostPort splits resolver address into host and port
-// returns host, port
-func getAddressHostPort(address string) (string, string, error) {
-	justHostPort := address
-	if strings.Contains(address, "://") {
-		parsedURL, err := url.Parse(address)
-		if err != nil {
-			return "", "", errorx.Decorate(err, "failed to parse %s", address)
-		}
-
-		justHostPort = parsedURL.Host
-	}
-
-	// convert host to IP if necessary, we know that it's scheme://hostname:port/
-
-	// get a host without port
-	return net.SplitHostPort(justHostPort)
 }

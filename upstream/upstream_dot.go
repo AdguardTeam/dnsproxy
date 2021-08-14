@@ -19,7 +19,10 @@ type dnsOverTLS struct {
 	sync.RWMutex // protects pool
 }
 
-func (p *dnsOverTLS) Address() string { return p.boot.address }
+// type check
+var _ Upstream = &dnsOverTLS{}
+
+func (p *dnsOverTLS) Address() string { return p.boot.URL.String() }
 
 func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	var pool *TLSPool
@@ -83,9 +86,9 @@ func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, erro
 	if err != nil {
 		poolConn.Close()
 		return nil, errorx.Decorate(err, "Failed to read a request from %s", p.Address())
-	}
-	if err == nil && reply.Id != m.Id {
+	} else if reply.Id != m.Id {
 		err = dns.ErrId
 	}
+
 	return reply, err
 }

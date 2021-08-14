@@ -2,6 +2,7 @@ package quic
 
 import (
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -10,6 +11,15 @@ import (
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/wire"
 )
+
+type deadlineError struct{}
+
+func (deadlineError) Error() string   { return "deadline exceeded" }
+func (deadlineError) Temporary() bool { return true }
+func (deadlineError) Timeout() bool   { return true }
+func (deadlineError) Unwrap() error   { return os.ErrDeadlineExceeded }
+
+var errDeadline net.Error = &deadlineError{}
 
 // The streamSender is notified by the stream about various events.
 type streamSender interface {
@@ -51,11 +61,13 @@ type streamI interface {
 	hasData() bool
 	handleStopSendingFrame(*wire.StopSendingFrame)
 	popStreamFrame(maxBytes protocol.ByteCount) (*ackhandler.Frame, bool)
-	handleMaxStreamDataFrame(*wire.MaxStreamDataFrame)
+	updateSendWindow(protocol.ByteCount)
 }
 
-var _ receiveStreamI = (streamI)(nil)
-var _ sendStreamI = (streamI)(nil)
+var (
+	_ receiveStreamI = (streamI)(nil)
+	_ sendStreamI    = (streamI)(nil)
+)
 
 // A Stream assembles the data from StreamFrames and provides a super-convenient Read-Interface
 //
@@ -73,24 +85,6 @@ type stream struct {
 }
 
 var _ Stream = &stream{}
-
-type deadlineError struct{}
-
-func (deadlineError) Error() string   { return "deadline exceeded" }
-func (deadlineError) Temporary() bool { return true }
-func (deadlineError) Timeout() bool   { return true }
-
-var errDeadline net.Error = &deadlineError{}
-
-type streamCanceledError struct {
-	error
-	errorCode protocol.ApplicationErrorCode
-}
-
-func (streamCanceledError) Canceled() bool                             { return true }
-func (e streamCanceledError) ErrorCode() protocol.ApplicationErrorCode { return e.errorCode }
-
-var _ StreamError = &streamCanceledError{}
 
 // newStream creates a new Stream
 func newStream(streamID protocol.StreamID,

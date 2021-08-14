@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"net"
-	"strings"
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
@@ -92,9 +91,7 @@ func parseECS(m *dns.Msg) (net.IP, uint8, uint8) {
 				continue
 			}
 			switch sn.Family {
-			case 0:
-				fallthrough
-			case 1:
+			case 0, 1:
 				return sn.Address.To4(), sn.SourceNetmask, sn.SourceScope
 			case 2:
 				return sn.Address, sn.SourceNetmask, sn.SourceScope
@@ -147,41 +144,41 @@ func isPublicIP(ip net.IP) bool {
 	if ip4 != nil {
 		switch ip4[0] {
 		case 0:
-			return false //software
+			return false // software
 		case 10:
-			return false //private network
+			return false // private network
 		case 127:
-			return false //loopback
+			return false // loopback
 		case 169:
 			if ip4[1] == 254 {
-				return false //link-local
+				return false // link-local
 			}
 		case 172:
 			if ip4[1] >= 16 && ip4[1] <= 31 {
-				return false //private network
+				return false // private network
 			}
 		case 192:
-			if (ip4[1] == 0 && ip4[2] == 0) || //private network
-				(ip4[1] == 0 && ip4[2] == 2) || //documentation
-				(ip4[1] == 88 && ip4[2] == 99) || //reserved
-				(ip4[1] == 168) { //private network
+			if (ip4[1] == 0 && ip4[2] == 0) || // private network
+				(ip4[1] == 0 && ip4[2] == 2) || // documentation
+				(ip4[1] == 88 && ip4[2] == 99) || // reserved
+				(ip4[1] == 168) { // private network
 				return false
 			}
 		case 198:
-			if (ip4[1] == 18 || ip4[2] == 19) || //private network
-				(ip4[1] == 51 || ip4[2] == 100) { //documentation
+			if (ip4[1] == 18 || ip4[2] == 19) || // private network
+				(ip4[1] == 51 || ip4[2] == 100) { // documentation
 				return false
 			}
 		case 203:
-			if ip4[1] == 0 && ip4[2] == 113 { //documentation
+			if ip4[1] == 0 && ip4[2] == 113 { // documentation
 				return false
 			}
 		case 224:
-			if ip4[1] == 0 && ip4[2] == 0 { //multicast
+			if ip4[1] == 0 && ip4[2] == 0 { // multicast
 				return false
 			}
 		case 255:
-			if ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 { //subnet
+			if ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 { // subnet
 				return false
 			}
 		}
@@ -192,19 +189,4 @@ func isPublicIP(ip net.IP) bool {
 	}
 
 	return true
-}
-
-// split string by a byte and return the first chunk
-// Whitespace is trimmed
-func splitNext(str *string, splitBy byte) string {
-	i := strings.IndexByte(*str, splitBy)
-	s := ""
-	if i != -1 {
-		s = (*str)[0:i]
-		*str = (*str)[i+1:]
-	} else {
-		s = *str
-		*str = ""
-	}
-	return strings.TrimSpace(s)
 }

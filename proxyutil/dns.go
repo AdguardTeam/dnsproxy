@@ -9,20 +9,18 @@ import (
 	"github.com/miekg/dns"
 )
 
-var (
-	// ErrTooLarge - DNS message is larger than 64kb
-	ErrTooLarge = errors.New("DNS message is too large")
-)
+// ErrTooLarge - DNS message is larger than 64kb
+var ErrTooLarge = errors.New("DNS message is too large")
 
 // DNSSize returns if buffer size *advertised* in the requests OPT record.
 // Or when the request was over TCP, we return the maximum allowed size of 64K.
-func DNSSize(proto string, r *dns.Msg) int {
-	size := uint16(0)
+func DNSSize(isUDP bool, r *dns.Msg) int {
+	var size uint16
 	if o := r.IsEdns0(); o != nil {
 		size = o.UDPSize()
 	}
 
-	if proto != "udp" {
+	if !isUDP {
 		return dns.MaxMsgSize
 	}
 

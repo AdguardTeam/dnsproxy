@@ -20,6 +20,12 @@ linters-settings:
     min-complexity: 20
   lll:
     line-length: 200
+  depguard:
+    list-type: blacklist
+    include-go-root: false
+    packages:
+      - golang.org/x/net/context # we use context
+      - log # we use github.com/AdguardTeam/golibs/log
 
 linters:
   enable:
@@ -41,6 +47,7 @@ linters:
     - misspell
     - stylecheck
     - unconvert
+    - depguard
   disable-all: true
   fast: true
 

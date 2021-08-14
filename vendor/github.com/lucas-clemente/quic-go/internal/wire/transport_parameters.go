@@ -10,10 +10,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/internal/qerr"
-
 	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/internal/qerr"
 	"github.com/lucas-clemente/quic-go/internal/utils"
+	"github.com/lucas-clemente/quic-go/quicvarint"
 )
 
 const transportParameterMarshalingVersion = 1
@@ -42,6 +42,8 @@ const (
 	activeConnectionIDLimitParameterID         transportParameterID = 0xe
 	initialSourceConnectionIDParameterID       transportParameterID = 0xf
 	retrySourceConnectionIDParameterID         transportParameterID = 0x10
+	// https://datatracker.ietf.org/doc/draft-ietf-quic-datagram/
+	maxDatagramFrameSizeParameterID transportParameterID = 0x20
 )
 
 // PreferredAddress is the value encoding in the preferred_address transport parameter
@@ -81,12 +83,17 @@ type TransportParameters struct {
 
 	StatelessResetToken     *protocol.StatelessResetToken
 	ActiveConnectionIDLimit uint64
+
+	MaxDatagramFrameSize protocol.ByteCount
 }
 
 // Unmarshal the transport parameters
 func (p *TransportParameters) Unmarshal(data []byte, sentBy protocol.Perspective) error {
 	if err := p.unmarshal(bytes.NewReader(data), sentBy, false); err != nil {
-		return qerr.NewError(qerr.TransportParameterError, err.Error())
+		return &qerr.TransportError{
+			ErrorCode:    qerr.TransportParameterError,
+			ErrorMessage: err.Error(),
+		}
 	}
 	return nil
 }
@@ -96,103 +103,89 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 	var parameterIDs []transportParameterID
 
 	var (
-		readAckDelayExponent                bool
-		readMaxAckDelay                     bool
 		readOriginalDestinationConnectionID bool
 		readInitialSourceConnectionID       bool
 	)
 
+	p.AckDelayExponent = protocol.DefaultAckDelayExponent
+	p.MaxAckDelay = protocol.DefaultMaxAckDelay
+	p.MaxDatagramFrameSize = protocol.InvalidByteCount
+
 	for r.Len() > 0 {
-		paramIDInt, err := utils.ReadVarInt(r)
+		paramIDInt, err := quicvarint.Read(r)
 		if err != nil {
 			return err
 		}
 		paramID := transportParameterID(paramIDInt)
-		paramLen, err := utils.ReadVarInt(r)
+		paramLen, err := quicvarint.Read(r)
 		if err != nil {
 			return err
 		}
+		if uint64(r.Len()) < paramLen {
+			return fmt.Errorf("remaining length (%d) smaller than parameter length (%d)", r.Len(), paramLen)
+		}
 		parameterIDs = append(parameterIDs, paramID)
 		switch paramID {
-		case ackDelayExponentParameterID:
-			readAckDelayExponent = true
-			if err := p.readNumericTransportParameter(r, paramID, int(paramLen)); err != nil {
-				return err
-			}
-		case maxAckDelayParameterID:
-			readMaxAckDelay = true
-			if err := p.readNumericTransportParameter(r, paramID, int(paramLen)); err != nil {
-				return err
-			}
-		case initialMaxStreamDataBidiLocalParameterID,
+		case maxIdleTimeoutParameterID,
+			maxUDPPayloadSizeParameterID,
+			initialMaxDataParameterID,
+			initialMaxStreamDataBidiLocalParameterID,
 			initialMaxStreamDataBidiRemoteParameterID,
 			initialMaxStreamDataUniParameterID,
-			initialMaxDataParameterID,
 			initialMaxStreamsBidiParameterID,
 			initialMaxStreamsUniParameterID,
-			maxIdleTimeoutParameterID,
-			maxUDPPayloadSizeParameterID,
-			activeConnectionIDLimitParameterID:
+			maxAckDelayParameterID,
+			activeConnectionIDLimitParameterID,
+			maxDatagramFrameSizeParameterID,
+			ackDelayExponentParameterID:
 			if err := p.readNumericTransportParameter(r, paramID, int(paramLen)); err != nil {
 				return err
 			}
+		case preferredAddressParameterID:
+			if sentBy == protocol.PerspectiveClient {
+				return errors.New("client sent a preferred_address")
+			}
+			if err := p.readPreferredAddress(r, int(paramLen)); err != nil {
+				return err
+			}
+		case disableActiveMigrationParameterID:
+			if paramLen != 0 {
+				return fmt.Errorf("wrong length for disable_active_migration: %d (expected empty)", paramLen)
+			}
+			p.DisableActiveMigration = true
+		case statelessResetTokenParameterID:
+			if sentBy == protocol.PerspectiveClient {
+				return errors.New("client sent a stateless_reset_token")
+			}
+			if paramLen != 16 {
+				return fmt.Errorf("wrong length for stateless_reset_token: %d (expected 16)", paramLen)
+			}
+			var token protocol.StatelessResetToken
+			r.Read(token[:])
+			p.StatelessResetToken = &token
+		case originalDestinationConnectionIDParameterID:
+			if sentBy == protocol.PerspectiveClient {
+				return errors.New("client sent an original_destination_connection_id")
+			}
+			p.OriginalDestinationConnectionID, _ = protocol.ReadConnectionID(r, int(paramLen))
+			readOriginalDestinationConnectionID = true
+		case initialSourceConnectionIDParameterID:
+			p.InitialSourceConnectionID, _ = protocol.ReadConnectionID(r, int(paramLen))
+			readInitialSourceConnectionID = true
+		case retrySourceConnectionIDParameterID:
+			if sentBy == protocol.PerspectiveClient {
+				return errors.New("client sent a retry_source_connection_id")
+			}
+			connID, _ := protocol.ReadConnectionID(r, int(paramLen))
+			p.RetrySourceConnectionID = &connID
 		default:
-			if uint64(r.Len()) < paramLen {
-				return fmt.Errorf("remaining length (%d) smaller than parameter length (%d)", r.Len(), paramLen)
-			}
-			switch paramID {
-			case preferredAddressParameterID:
-				if sentBy == protocol.PerspectiveClient {
-					return errors.New("client sent a preferred_address")
-				}
-				if err := p.readPreferredAddress(r, int(paramLen)); err != nil {
-					return err
-				}
-			case disableActiveMigrationParameterID:
-				if paramLen != 0 {
-					return fmt.Errorf("wrong length for disable_active_migration: %d (expected empty)", paramLen)
-				}
-				p.DisableActiveMigration = true
-			case statelessResetTokenParameterID:
-				if sentBy == protocol.PerspectiveClient {
-					return errors.New("client sent a stateless_reset_token")
-				}
-				if paramLen != 16 {
-					return fmt.Errorf("wrong length for stateless_reset_token: %d (expected 16)", paramLen)
-				}
-				var token protocol.StatelessResetToken
-				r.Read(token[:])
-				p.StatelessResetToken = &token
-			case originalDestinationConnectionIDParameterID:
-				if sentBy == protocol.PerspectiveClient {
-					return errors.New("client sent an original_destination_connection_id")
-				}
-				p.OriginalDestinationConnectionID, _ = protocol.ReadConnectionID(r, int(paramLen))
-				readOriginalDestinationConnectionID = true
-			case initialSourceConnectionIDParameterID:
-				p.InitialSourceConnectionID, _ = protocol.ReadConnectionID(r, int(paramLen))
-				readInitialSourceConnectionID = true
-			case retrySourceConnectionIDParameterID:
-				if sentBy == protocol.PerspectiveClient {
-					return errors.New("client sent a retry_source_connection_id")
-				}
-				connID, _ := protocol.ReadConnectionID(r, int(paramLen))
-				p.RetrySourceConnectionID = &connID
-			default:
-				r.Seek(int64(paramLen), io.SeekCurrent)
-			}
+			r.Seek(int64(paramLen), io.SeekCurrent)
 		}
 	}
 
 	if !fromSessionTicket {
 		if sentBy == protocol.PerspectiveServer && !readOriginalDestinationConnectionID {
 			return errors.New("missing original_destination_connection_id")
-		}
-		if !readAckDelayExponent {
-			p.AckDelayExponent = protocol.DefaultAckDelayExponent
-		}
-		if !readMaxAckDelay {
-			p.MaxAckDelay = protocol.DefaultMaxAckDelay
 		}
 		if p.MaxUDPPayloadSize == 0 {
 			p.MaxUDPPayloadSize = protocol.MaxByteCount
@@ -264,13 +257,14 @@ func (p *TransportParameters) readNumericTransportParameter(
 	expectedLen int,
 ) error {
 	remainingLen := r.Len()
-	val, err := utils.ReadVarInt(r)
+	val, err := quicvarint.Read(r)
 	if err != nil {
 		return fmt.Errorf("error while reading transport parameter %d: %s", paramID, err)
 	}
 	if remainingLen-r.Len() != expectedLen {
-		return fmt.Errorf("inconsistent transport parameter length for %d", paramID)
+		return fmt.Errorf("inconsistent transport parameter length for transport parameter %#x", paramID)
 	}
+	//nolint:exhaustive // This only covers the numeric transport parameters.
 	switch paramID {
 	case initialMaxStreamDataBidiLocalParameterID:
 		p.InitialMaxStreamDataBidiLocal = protocol.ByteCount(val)
@@ -282,8 +276,14 @@ func (p *TransportParameters) readNumericTransportParameter(
 		p.InitialMaxData = protocol.ByteCount(val)
 	case initialMaxStreamsBidiParameterID:
 		p.MaxBidiStreamNum = protocol.StreamNum(val)
+		if p.MaxBidiStreamNum > protocol.MaxStreamCount {
+			return fmt.Errorf("initial_max_streams_bidi too large: %d (maximum %d)", p.MaxBidiStreamNum, protocol.MaxStreamCount)
+		}
 	case initialMaxStreamsUniParameterID:
 		p.MaxUniStreamNum = protocol.StreamNum(val)
+		if p.MaxUniStreamNum > protocol.MaxStreamCount {
+			return fmt.Errorf("initial_max_streams_uni too large: %d (maximum %d)", p.MaxUniStreamNum, protocol.MaxStreamCount)
+		}
 	case maxIdleTimeoutParameterID:
 		p.MaxIdleTimeout = utils.MaxDuration(protocol.MinRemoteIdleTimeout, time.Duration(val)*time.Millisecond)
 	case maxUDPPayloadSizeParameterID:
@@ -297,16 +297,14 @@ func (p *TransportParameters) readNumericTransportParameter(
 		}
 		p.AckDelayExponent = uint8(val)
 	case maxAckDelayParameterID:
-		maxAckDelay := time.Duration(val) * time.Millisecond
-		if maxAckDelay >= protocol.MaxMaxAckDelay {
-			return fmt.Errorf("invalid value for max_ack_delay: %dms (maximum %dms)", maxAckDelay/time.Millisecond, (protocol.MaxMaxAckDelay-time.Millisecond)/time.Millisecond)
+		if val > uint64(protocol.MaxMaxAckDelay/time.Millisecond) {
+			return fmt.Errorf("invalid value for max_ack_delay: %dms (maximum %dms)", val, protocol.MaxMaxAckDelay/time.Millisecond)
 		}
-		if maxAckDelay < 0 {
-			maxAckDelay = utils.InfDuration
-		}
-		p.MaxAckDelay = maxAckDelay
+		p.MaxAckDelay = time.Duration(val) * time.Millisecond
 	case activeConnectionIDLimitParameterID:
 		p.ActiveConnectionIDLimit = val
+	case maxDatagramFrameSizeParameterID:
+		p.MaxDatagramFrameSize = protocol.ByteCount(val)
 	default:
 		return fmt.Errorf("TransportParameter BUG: transport parameter %d not found", paramID)
 	}
@@ -317,12 +315,12 @@ func (p *TransportParameters) readNumericTransportParameter(
 func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	b := &bytes.Buffer{}
 
-	//add a greased value
-	utils.WriteVarInt(b, uint64(27+31*rand.Intn(100)))
+	// add a greased value
+	quicvarint.Write(b, uint64(27+31*rand.Intn(100)))
 	length := rand.Intn(16)
 	randomData := make([]byte, length)
 	rand.Read(randomData)
-	utils.WriteVarInt(b, uint64(length))
+	quicvarint.Write(b, uint64(length))
 	b.Write(randomData)
 
 	// initial_max_stream_data_bidi_local
@@ -340,7 +338,7 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	// idle_timeout
 	p.marshalVarintParam(b, maxIdleTimeoutParameterID, uint64(p.MaxIdleTimeout/time.Millisecond))
 	// max_packet_size
-	p.marshalVarintParam(b, maxUDPPayloadSizeParameterID, uint64(protocol.MaxReceivePacketSize))
+	p.marshalVarintParam(b, maxUDPPayloadSizeParameterID, uint64(protocol.MaxPacketBufferSize))
 	// max_ack_delay
 	// Only send it if is different from the default value.
 	if p.MaxAckDelay != protocol.DefaultMaxAckDelay {
@@ -353,24 +351,24 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	}
 	// disable_active_migration
 	if p.DisableActiveMigration {
-		utils.WriteVarInt(b, uint64(disableActiveMigrationParameterID))
-		utils.WriteVarInt(b, 0)
+		quicvarint.Write(b, uint64(disableActiveMigrationParameterID))
+		quicvarint.Write(b, 0)
 	}
 	if pers == protocol.PerspectiveServer {
 		// stateless_reset_token
 		if p.StatelessResetToken != nil {
-			utils.WriteVarInt(b, uint64(statelessResetTokenParameterID))
-			utils.WriteVarInt(b, 16)
+			quicvarint.Write(b, uint64(statelessResetTokenParameterID))
+			quicvarint.Write(b, 16)
 			b.Write(p.StatelessResetToken[:])
 		}
 		// original_destination_connection_id
-		utils.WriteVarInt(b, uint64(originalDestinationConnectionIDParameterID))
-		utils.WriteVarInt(b, uint64(p.OriginalDestinationConnectionID.Len()))
+		quicvarint.Write(b, uint64(originalDestinationConnectionIDParameterID))
+		quicvarint.Write(b, uint64(p.OriginalDestinationConnectionID.Len()))
 		b.Write(p.OriginalDestinationConnectionID.Bytes())
 		// preferred_address
 		if p.PreferredAddress != nil {
-			utils.WriteVarInt(b, uint64(preferredAddressParameterID))
-			utils.WriteVarInt(b, 4+2+16+2+1+uint64(p.PreferredAddress.ConnectionID.Len())+16)
+			quicvarint.Write(b, uint64(preferredAddressParameterID))
+			quicvarint.Write(b, 4+2+16+2+1+uint64(p.PreferredAddress.ConnectionID.Len())+16)
 			ipv4 := p.PreferredAddress.IPv4
 			b.Write(ipv4[len(ipv4)-4:])
 			utils.BigEndian.WriteUint16(b, p.PreferredAddress.IPv4Port)
@@ -384,22 +382,25 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	// active_connection_id_limit
 	p.marshalVarintParam(b, activeConnectionIDLimitParameterID, p.ActiveConnectionIDLimit)
 	// initial_source_connection_id
-	utils.WriteVarInt(b, uint64(initialSourceConnectionIDParameterID))
-	utils.WriteVarInt(b, uint64(p.InitialSourceConnectionID.Len()))
+	quicvarint.Write(b, uint64(initialSourceConnectionIDParameterID))
+	quicvarint.Write(b, uint64(p.InitialSourceConnectionID.Len()))
 	b.Write(p.InitialSourceConnectionID.Bytes())
 	// retry_source_connection_id
 	if pers == protocol.PerspectiveServer && p.RetrySourceConnectionID != nil {
-		utils.WriteVarInt(b, uint64(retrySourceConnectionIDParameterID))
-		utils.WriteVarInt(b, uint64(p.RetrySourceConnectionID.Len()))
+		quicvarint.Write(b, uint64(retrySourceConnectionIDParameterID))
+		quicvarint.Write(b, uint64(p.RetrySourceConnectionID.Len()))
 		b.Write(p.RetrySourceConnectionID.Bytes())
+	}
+	if p.MaxDatagramFrameSize != protocol.InvalidByteCount {
+		p.marshalVarintParam(b, maxDatagramFrameSizeParameterID, uint64(p.MaxDatagramFrameSize))
 	}
 	return b.Bytes()
 }
 
 func (p *TransportParameters) marshalVarintParam(b *bytes.Buffer, id transportParameterID, val uint64) {
-	utils.WriteVarInt(b, uint64(id))
-	utils.WriteVarInt(b, uint64(utils.VarIntLen(val)))
-	utils.WriteVarInt(b, val)
+	quicvarint.Write(b, uint64(id))
+	quicvarint.Write(b, uint64(quicvarint.Len(val)))
+	quicvarint.Write(b, val)
 }
 
 // MarshalForSessionTicket marshals the transport parameters we save in the session ticket.
@@ -411,7 +412,7 @@ func (p *TransportParameters) marshalVarintParam(b *bytes.Buffer, id transportPa
 // Since the session ticket is encrypted, the serialization format is defined by the server.
 // For convenience, we use the same format that we also use for sending the transport parameters.
 func (p *TransportParameters) MarshalForSessionTicket(b *bytes.Buffer) {
-	utils.WriteVarInt(b, transportParameterMarshalingVersion)
+	quicvarint.Write(b, transportParameterMarshalingVersion)
 
 	// initial_max_stream_data_bidi_local
 	p.marshalVarintParam(b, initialMaxStreamDataBidiLocalParameterID, uint64(p.InitialMaxStreamDataBidiLocal))
@@ -431,7 +432,7 @@ func (p *TransportParameters) MarshalForSessionTicket(b *bytes.Buffer) {
 
 // UnmarshalFromSessionTicket unmarshals transport parameters from a session ticket.
 func (p *TransportParameters) UnmarshalFromSessionTicket(r *bytes.Reader) error {
-	version, err := utils.ReadVarInt(r)
+	version, err := quicvarint.Read(r)
 	if err != nil {
 		return err
 	}
@@ -442,13 +443,14 @@ func (p *TransportParameters) UnmarshalFromSessionTicket(r *bytes.Reader) error 
 }
 
 // ValidFor0RTT checks if the transport parameters match those saved in the session ticket.
-func (p *TransportParameters) ValidFor0RTT(tp *TransportParameters) bool {
-	return p.InitialMaxStreamDataBidiLocal == tp.InitialMaxStreamDataBidiLocal &&
-		p.InitialMaxStreamDataBidiRemote == tp.InitialMaxStreamDataBidiRemote &&
-		p.InitialMaxStreamDataUni == tp.InitialMaxStreamDataUni &&
-		p.InitialMaxData == tp.InitialMaxData &&
-		p.MaxBidiStreamNum == tp.MaxBidiStreamNum &&
-		p.MaxUniStreamNum == tp.MaxUniStreamNum
+func (p *TransportParameters) ValidFor0RTT(saved *TransportParameters) bool {
+	return p.InitialMaxStreamDataBidiLocal >= saved.InitialMaxStreamDataBidiLocal &&
+		p.InitialMaxStreamDataBidiRemote >= saved.InitialMaxStreamDataBidiRemote &&
+		p.InitialMaxStreamDataUni >= saved.InitialMaxStreamDataUni &&
+		p.InitialMaxData >= saved.InitialMaxData &&
+		p.MaxBidiStreamNum >= saved.MaxBidiStreamNum &&
+		p.MaxUniStreamNum >= saved.MaxUniStreamNum &&
+		p.ActiveConnectionIDLimit == saved.ActiveConnectionIDLimit
 }
 
 // String returns a string representation, intended for logging.
@@ -464,6 +466,10 @@ func (p *TransportParameters) String() string {
 	if p.StatelessResetToken != nil { // the client never sends a stateless reset token
 		logString += ", StatelessResetToken: %#x"
 		logParams = append(logParams, *p.StatelessResetToken)
+	}
+	if p.MaxDatagramFrameSize != protocol.InvalidByteCount {
+		logString += ", MaxDatagramFrameSize: %d"
+		logParams = append(logParams, p.MaxDatagramFrameSize)
 	}
 	logString += "}"
 	return fmt.Sprintf(logString, logParams...)

@@ -2,13 +2,23 @@ package upstream
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMain(m *testing.M) {
+	// Disable logging in tests.
+	log.SetOutput(io.Discard)
+
+	os.Exit(m.Run())
+}
 
 func TestBootstrapTimeout(t *testing.T) {
 	const (
@@ -17,7 +27,13 @@ func TestBootstrapTimeout(t *testing.T) {
 	)
 
 	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
-	u, err := AddressToUpstream("tls://one.one.one.one", Options{Bootstrap: []string{"8.8.8.8:555"}, Timeout: timeout})
+	u, err := AddressToUpstream(
+		"tls://one.one.one.one",
+		&Options{
+			Bootstrap: []string{"8.8.8.8:555"},
+			Timeout:   timeout,
+		},
+	)
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}
@@ -64,7 +80,10 @@ func TestUpstreamRace(t *testing.T) {
 	)
 
 	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
-	u, err := AddressToUpstream("tls://1.1.1.1", Options{Timeout: timeout})
+	u, err := AddressToUpstream(
+		"tls://1.1.1.1",
+		&Options{Timeout: timeout},
+	)
 	if err != nil {
 		t.Fatalf("cannot create upstream: %s", err)
 	}
@@ -184,19 +203,27 @@ func TestUpstreams(t *testing.T) {
 			bootstrap: []string{"8.8.8.8:53"},
 		},
 		{
+			// AdGuard DNS (DNS-over-QUIC)
+			address:   "sdns://BAcAAAAAAAAAAAATZG5zLmFkZ3VhcmQuY29tOjc4NA",
+			bootstrap: []string{"8.8.8.8:53"},
+		},
+		{
 			// Cloudflare DNS
 			address:   "https://1.1.1.1/dns-query",
 			bootstrap: []string{},
 		},
 		{
 			// Cloudflare DNS
-			address:   "quic://dns-unfiltered.adguard.com",
+			address:   "quic://dns-unfiltered.adguard.com:784",
 			bootstrap: []string{},
 		},
 	}
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
-			u, err := AddressToUpstream(test.address, Options{Bootstrap: test.bootstrap, Timeout: timeout})
+			u, err := AddressToUpstream(
+				test.address,
+				&Options{Bootstrap: test.bootstrap, Timeout: timeout},
+			)
 			if err != nil {
 				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
 			}
@@ -207,12 +234,12 @@ func TestUpstreams(t *testing.T) {
 }
 
 func TestUpstreamAddress(t *testing.T) {
-	opt := Options{Bootstrap: []string{"1.1.1.1"}}
+	opt := &Options{Bootstrap: []string{"1.1.1.1"}}
 
-	u, _ := AddressToUpstream("1.1.1.1", Options{})
+	u, _ := AddressToUpstream("1.1.1.1", nil)
 	assert.Equal(t, "1.1.1.1:53", u.Address())
 
-	u, _ = AddressToUpstream("one.one.one.one", Options{})
+	u, _ = AddressToUpstream("one.one.one.one", nil)
 	assert.Equal(t, "one.one.one.one:53", u.Address())
 
 	u, _ = AddressToUpstream("tcp://one.one.one.one", opt)
@@ -224,16 +251,16 @@ func TestUpstreamAddress(t *testing.T) {
 	u, _ = AddressToUpstream("https://one.one.one.one", opt)
 	assert.Equal(t, "https://one.one.one.one:443", u.Address())
 
-	_, err := AddressToUpstream("asdf://1.1.1.1", Options{})
+	_, err := AddressToUpstream("asdf://1.1.1.1", nil)
 	assert.NotNil(t, err) // bad scheme
 
-	_, err = AddressToUpstream("12345.1.1.1:1234567", Options{})
+	_, err = AddressToUpstream("12345.1.1.1:1234567", nil)
 	assert.NotNil(t, err) // bad port
 
-	_, err = AddressToUpstream(":1234567", Options{})
+	_, err = AddressToUpstream(":1234567", nil)
 	assert.NotNil(t, err) // empty host
 
-	_, err = AddressToUpstream("host:", Options{})
+	_, err = AddressToUpstream("host:", nil)
 	assert.NotNil(t, err) // empty port
 }
 
@@ -241,25 +268,24 @@ func TestUpstreamDOTBootstrap(t *testing.T) {
 	upstreams := []struct {
 		address   string
 		bootstrap []string
-	}{
-		{
-			address:   "tls://one.one.one.one/",
-			bootstrap: []string{"tls://1.1.1.1"},
-		},
-		{
-			address:   "tls://one.one.one.one/",
-			bootstrap: []string{"https://1.1.1.1/dns-query"},
-		},
-		{
-			address: "tls://one.one.one.one/",
-			// Cisco OpenDNS
-			bootstrap: []string{"sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ"},
-		},
-	}
+	}{{
+		address:   "tls://one.one.one.one/",
+		bootstrap: []string{"tls://1.1.1.1"},
+	}, {
+		address:   "tls://one.one.one.one/",
+		bootstrap: []string{"https://1.1.1.1/dns-query"},
+	}, {
+		address: "tls://one.one.one.one/",
+		// Cisco OpenDNS
+		bootstrap: []string{"sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ"},
+	}}
 
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
-			u, err := AddressToUpstream(test.address, Options{Bootstrap: test.bootstrap, Timeout: timeout})
+			u, err := AddressToUpstream(
+				test.address,
+				&Options{Bootstrap: test.bootstrap, Timeout: timeout},
+			)
 			if err != nil {
 				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
 			}
@@ -273,7 +299,7 @@ func TestUpstreamDefaultOptions(t *testing.T) {
 	addresses := []string{"tls://1.1.1.1", "8.8.8.8"}
 
 	for _, address := range addresses {
-		u, err := AddressToUpstream(address, Options{})
+		u, err := AddressToUpstream(address, nil)
 		if err != nil {
 			t.Fatalf("Failed to generate upstream from address %s", address)
 		}
@@ -316,7 +342,10 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	}
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
-			u, err := AddressToUpstream(test.address, Options{Bootstrap: test.bootstrap, Timeout: timeout})
+			u, err := AddressToUpstream(
+				test.address,
+				&Options{Bootstrap: test.bootstrap, Timeout: timeout},
+			)
 			if err != nil {
 				t.Fatalf("Failed to generate upstream from address %s: %s", test.address, err)
 			}
@@ -325,10 +354,10 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		})
 	}
 
-	_, err := AddressToUpstream("tls://example.org", Options{Bootstrap: []string{
-		"8.8.8.8",
-		"asdfasdf",
-	}})
+	_, err := AddressToUpstream(
+		"tls://example.org",
+		&Options{Bootstrap: []string{"8.8.8.8", "asdfasdf"}},
+	)
 	assert.NotNil(t, err) // bad bootstrap "asdfasdf"
 }
 
@@ -365,7 +394,7 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
-			opts := Options{
+			opts := &Options{
 				Bootstrap:     test.bootstrap,
 				Timeout:       timeout,
 				ServerIPAddrs: []net.IP{net.ParseIP(test.serverIP)},

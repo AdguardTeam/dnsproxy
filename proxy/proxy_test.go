@@ -8,17 +8,29 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"io"
 	"math/big"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	// Disable logging in tests.
+	log.SetOutput(io.Discard)
+
+	os.Exit(m.Run())
+}
 
 const (
 	listenIP          = "127.0.0.1"
@@ -58,6 +70,235 @@ func TestProxyRace(t *testing.T) {
 	}
 }
 
+// defaultTestTTL used to guarantee caching.
+const defaultTestTTL = 1000
+
+type testDNSSECUpstream struct {
+	a     dns.RR
+	txt   dns.RR
+	ds    dns.RR
+	rrsig dns.RR
+}
+
+func (u *testDNSSECUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+	resp = &dns.Msg{}
+	resp.SetReply(m)
+
+	q := m.Question[0]
+	switch q.Qtype {
+	case dns.TypeA:
+		resp.Answer = append(resp.Answer, u.a)
+	case dns.TypeTXT:
+		resp.Answer = append(resp.Answer, u.txt)
+	case dns.TypeDS:
+		resp.Answer = append(resp.Answer, u.ds)
+	default:
+		// Go on.  The RRSIG resource record is added afterward.  This
+		// upstream.Upstream implementation doesn't handle explicit
+		// requests for it.
+	}
+
+	if len(resp.Answer) > 0 {
+		resp.Answer[0].Header().Ttl = defaultTestTTL
+	}
+
+	if o := m.IsEdns0(); o != nil {
+		resp.Answer = append(resp.Answer, u.rrsig)
+
+		resp.SetEdns0(defaultUDPBufSize, o.Do())
+	}
+
+	return resp, nil
+}
+
+func (u *testDNSSECUpstream) Address() string {
+	return ""
+}
+
+func TestProxy_Resolve_dnssecCache(t *testing.T) {
+	const host = "example.com"
+
+	const (
+		// Larger than UDP buffer size to invoke truncation.
+		txtDataLen      = 1024
+		txtDataChunkLen = 255
+	)
+
+	txtDataChunkNum := txtDataLen / txtDataChunkLen
+	if txtDataLen%txtDataChunkLen > 0 {
+		txtDataChunkNum += 1
+	}
+	txts := make([]string, txtDataChunkNum)
+	randData := make([]byte, txtDataLen)
+	n, err := rand.Read(randData)
+	require.NoError(t, err)
+	require.Equal(t, txtDataLen, n)
+	for i, c := range randData {
+		randData[i] = c%26 + 'a'
+	}
+	// *dns.TXT requires splitting the actual data into
+	// 256-byte chunks.
+	for i := 0; i < txtDataChunkNum; i++ {
+		r := txtDataChunkLen * (i + 1)
+		if r > txtDataLen {
+			r = txtDataLen
+		}
+		txts[i] = string(randData[txtDataChunkLen*i : r])
+	}
+	txt := &dns.TXT{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeTXT,
+			Class:  dns.ClassINET,
+		},
+		Txt: txts,
+	}
+
+	a := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+		},
+		A: net.IP{1, 2, 3, 4},
+	}
+
+	ds := &dns.DS{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeDS,
+			Class:  dns.ClassINET,
+		},
+		Digest: "736f6d652064656c65676174696f6e207369676e6572",
+	}
+
+	rrsig := &dns.RRSIG{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(host),
+			Rrtype: dns.TypeRRSIG,
+			Class:  dns.ClassINET,
+			Ttl:    defaultTestTTL,
+		},
+		TypeCovered: dns.TypeA,
+		Algorithm:   8,
+		Labels:      2,
+		SignerName:  dns.Fqdn(host),
+		Signature:   "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm",
+	}
+
+	p := &Proxy{}
+	p.UpstreamConfig = &UpstreamConfig{
+		Upstreams: []upstream.Upstream{&testDNSSECUpstream{
+			a:     a,
+			txt:   txt,
+			ds:    ds,
+			rrsig: rrsig,
+		}},
+	}
+	p.cache = &cache{
+		items: glcache.New(glcache.Config{
+			MaxSize:   defaultCacheSize,
+			EnableLRU: true,
+		}),
+	}
+
+	testCases := []struct {
+		wantAns dns.RR
+		name    string
+		wantLen int
+		edns    bool
+	}{{
+		wantAns: a,
+		name:    "a_noedns",
+		wantLen: 1,
+		edns:    false,
+	}, {
+		wantAns: a,
+		name:    "a_ends",
+		wantLen: 2,
+		edns:    true,
+	}, {
+		wantAns: txt,
+		name:    "txt_noedns",
+		wantLen: 1,
+		edns:    false,
+	}, {
+		wantAns: txt,
+		name:    "txt_edns",
+		// Truncated.
+		wantLen: 0,
+		edns:    true,
+	}, {
+		wantAns: ds,
+		name:    "ds_noedns",
+		wantLen: 1,
+		edns:    false,
+	}, {
+		wantAns: ds,
+		name:    "ds_edns",
+		wantLen: 2,
+		edns:    true,
+	}}
+
+	for _, tc := range testCases {
+		req := &dns.Msg{
+			MsgHdr: dns.MsgHdr{
+				Id: dns.Id(),
+			},
+			Compress: true,
+			Question: []dns.Question{{
+				Name:   dns.Fqdn(tc.wantAns.Header().Name),
+				Qtype:  tc.wantAns.Header().Rrtype,
+				Qclass: tc.wantAns.Header().Class,
+			}},
+		}
+		if tc.edns {
+			req.SetEdns0(txtDataLen/2, true)
+		}
+
+		dctx := &DNSContext{
+			Req:   req,
+			Proto: ProtoUDP,
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(p.cache.items.Clear)
+			err = p.Resolve(dctx)
+			require.NoError(t, err)
+
+			res := dctx.Res
+			require.NotNil(t, res)
+
+			require.Len(t, res.Answer, tc.wantLen, res.Answer)
+			switch tc.wantLen {
+			case 0:
+				assert.True(t, res.Truncated)
+			case 1:
+				res.Answer[0].Header().Ttl = defaultTestTTL
+				assert.Equal(t, tc.wantAns.String(), res.Answer[0].String())
+			case 2:
+				res.Answer[0].Header().Ttl = defaultTestTTL
+				assert.Equal(t, tc.wantAns.String(), res.Answer[0].String())
+				assert.Equal(t, rrsig.String(), res.Answer[1].String())
+			default:
+				t.Fatalf("wanted length has unexpected value %d", tc.wantLen)
+			}
+
+			cached, expired, key := p.cache.Get(dctx.Req)
+			require.NotNil(t, cached)
+			require.Len(t, cached.Answer, 2)
+			assert.False(t, expired)
+			assert.Equal(t, key, msgToKey(dctx.Req))
+
+			// Just make it match.
+			cached.Answer[0].Header().Ttl = defaultTestTTL
+			assert.Equal(t, tc.wantAns.String(), cached.Answer[0].String())
+			assert.Equal(t, rrsig.String(), cached.Answer[1].String())
+		})
+
+	}
+}
+
 func TestUpstreamsSort(t *testing.T) {
 	testProxy := createTestProxy(t, nil)
 	upstreams := []upstream.Upstream{}
@@ -65,7 +306,7 @@ func TestUpstreamsSort(t *testing.T) {
 	// there are 4 upstreams in configuration
 	config := []string{"1.2.3.4", "1.1.1.1", "2.3.4.5", "8.8.8.8"}
 	for _, u := range config {
-		up, err := upstream.AddressToUpstream(u, upstream.Options{Timeout: 1 * time.Second})
+		up, err := upstream.AddressToUpstream(u, &upstream.Options{Timeout: 1 * time.Second})
 		if err != nil {
 			t.Fatalf("Failed to create %s upstream: %s", u, err)
 		}
@@ -105,11 +346,17 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 
 	// upstreams specification. Domains adguard.com and google.ru reserved with fake upstreams, maps.google.ru excluded from dnsmasq.
 	upstreams := []string{"[/adguard.com/]1.2.3.4", "[/google.ru/]2.3.4.5", "[/maps.google.ru/]#", "1.1.1.1"}
-	config, err := ParseUpstreamsConfig(upstreams, []string{"8.8.8.8"}, 1*time.Second)
+	config, err := ParseUpstreamsConfig(
+		upstreams,
+		&upstream.Options{
+			InsecureSkipVerify: false,
+			Bootstrap:          []string{"8.8.8.8"},
+			Timeout:            1 * time.Second,
+		})
 	if err != nil {
 		t.Fatalf("Error while upstream config parsing: %s", err)
 	}
-	dnsProxy.UpstreamConfig = &config
+	dnsProxy.UpstreamConfig = config
 
 	err = dnsProxy.Start()
 	if err != nil {
@@ -192,7 +439,10 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	// invalid fallback to make sure that reply is not coming from fallback server
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 	fallback := "1.2.3.4:567"
-	f, err := upstream.AddressToUpstream(fallback, upstream.Options{Timeout: timeOut})
+	f, err := upstream.AddressToUpstream(
+		fallback,
+		&upstream.Options{Timeout: timeOut},
+	)
 	if err != nil {
 		t.Fatalf("cannot create fallback upstream %s cause %s", fallback, err)
 	}
@@ -203,7 +453,13 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{}
 	for _, line := range upstreams {
 		var u upstream.Upstream
-		u, err = upstream.AddressToUpstream(line, upstream.Options{Bootstrap: []string{"8.8.8.8:53"}, Timeout: timeOut})
+		u, err = upstream.AddressToUpstream(
+			line,
+			&upstream.Options{
+				Bootstrap: []string{"8.8.8.8:53"},
+				Timeout:   timeOut,
+			},
+		)
 		if err != nil {
 			t.Fatalf("cannot create upstream %s cause %s", line, err)
 		}
@@ -259,12 +515,18 @@ func TestFallback(t *testing.T) {
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, upstream.Options{Timeout: timeout})
+		f, _ := upstream.AddressToUpstream(
+			s,
+			&upstream.Options{Timeout: timeout},
+		)
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using some random port to make sure that this upstream won't work
-	u, _ := upstream.AddressToUpstream("8.8.8.8:555", upstream.Options{Timeout: timeout})
+	u, _ := upstream.AddressToUpstream(
+		"8.8.8.8:555",
+		&upstream.Options{Timeout: timeout},
+	)
 	dnsProxy.UpstreamConfig = &UpstreamConfig{}
 	dnsProxy.UpstreamConfig.Upstreams = make([]upstream.Upstream, 0)
 	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, u)
@@ -318,12 +580,21 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	dnsProxy.Fallbacks = []upstream.Upstream{}
 
 	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(s, upstream.Options{Timeout: timeout})
+		f, _ := upstream.AddressToUpstream(
+			s,
+			&upstream.Options{Timeout: timeout},
+		)
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
 	// using a DOT server with invalid bootstrap
-	u, _ := upstream.AddressToUpstream("tls://dns.adguard.com", upstream.Options{Bootstrap: []string{"8.8.8.8:555"}, Timeout: timeout})
+	u, _ := upstream.AddressToUpstream(
+		"tls://dns.adguard.com",
+		&upstream.Options{
+			Bootstrap: []string{"8.8.8.8:555"},
+			Timeout:   timeout,
+		},
+	)
 	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{}
 	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, u)
 
@@ -631,7 +902,9 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	assert.True(t, err == nil)
 
 	// get from cache - check min TTL
-	m, _ := dnsProxy.cacheSubnet.GetWithSubnet(d.Req, clientIP, 24)
+	m, expired, key := dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	assert.False(t, expired)
+	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
 	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMinTTL)
 
 	// 2nd request
@@ -650,7 +923,9 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	assert.True(t, err == nil)
 
 	// get from cache - check max TTL
-	m, _ = dnsProxy.cacheSubnet.GetWithSubnet(d.Req, clientIP, 24)
+	m, expired, key = dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	assert.False(t, expired)
+	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
 	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
 
 	_ = dnsProxy.Stop()
@@ -714,12 +989,18 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 		}
 	}
 	upstreams := make([]upstream.Upstream, 0)
-	dnsUpstream, err := upstream.AddressToUpstream(upstreamAddr, upstream.Options{Timeout: defaultTimeout})
+	dnsUpstream, err := upstream.AddressToUpstream(
+		upstreamAddr,
+		&upstream.Options{Timeout: defaultTimeout},
+	)
 	if err != nil {
 		t.Fatalf("cannot prepare the upstream: %s", err)
 	}
 	p.UpstreamConfig = &UpstreamConfig{}
 	p.UpstreamConfig.Upstreams = append(upstreams, dnsUpstream)
+
+	p.TrustedProxies = []string{"0.0.0.0/0", "::0/0"}
+
 	return &p
 }
 
@@ -731,13 +1012,18 @@ func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 	req := createTestMessage()
 	err := conn.WriteMsg(req)
 	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
+		t.Errorf("cannot write message: %s", err)
+
+		return
 	}
 
 	res, err := conn.ReadMsg()
 	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
+		t.Errorf("cannot read response to message: %s", err)
+
+		return
 	}
+
 	assertResponse(t, res)
 }
 
@@ -786,6 +1072,8 @@ func createHostTestMessage(host string) *dns.Msg {
 }
 
 func assertResponse(t *testing.T, reply *dns.Msg) {
+	t.Helper()
+
 	if len(reply.Answer) != 1 {
 		t.Fatalf("DNS upstream returned reply with wrong number of answers - %d", len(reply.Answer))
 	}
@@ -799,6 +1087,8 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 }
 
 func createServerTLSConfig(t *testing.T) (*tls.Config, []byte) {
+	t.Helper()
+
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("cannot generate RSA key: %s", err)
@@ -900,4 +1190,139 @@ func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 func (u *testUpstream) Address() string {
 	return ""
+}
+
+func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
+	const (
+		host             = "some.domain.name."
+		nonOptimisticTTL = 3600
+	)
+
+	buildCtx := func() (dctx *DNSContext) {
+		req := &dns.Msg{
+			MsgHdr: dns.MsgHdr{
+				Id: dns.Id(),
+			},
+			Question: []dns.Question{{
+				Name:   host,
+				Qtype:  dns.TypeA,
+				Qclass: dns.ClassINET,
+			}},
+		}
+
+		return &DNSContext{
+			Req: req,
+		}
+	}
+	buildResp := func(req *dns.Msg, ttl uint32) (resp *dns.Msg) {
+		resp = (&dns.Msg{}).SetReply(req)
+		resp.Answer = []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{
+				Name:   host,
+				Rrtype: dns.TypeA,
+				Class:  dns.ClassINET,
+				Ttl:    ttl,
+			},
+			A: net.IP{1, 2, 3, 4},
+		}}
+
+		return resp
+	}
+
+	p := &Proxy{
+		Config: Config{
+			CacheEnabled:    true,
+			CacheOptimistic: true,
+		},
+	}
+
+	testFunc := func(t *testing.T, responsed bool) (firstCtx *DNSContext) {
+		p.initCache()
+		out, in := make(chan unit), make(chan unit)
+		p.shortFlighter.resolve = func(dctx *DNSContext) (ok bool, err error) {
+			dctx.Res = buildResp(dctx.Req, nonOptimisticTTL)
+
+			return responsed, nil
+		}
+		p.shortFlighter.set = func(dctx *DNSContext) {
+			defer func() {
+				out <- unit{}
+			}()
+
+			// Report adding to cache is in process.
+			out <- unit{}
+			// Wait for tests to finish.
+			<-in
+
+			p.setInCache(dctx)
+		}
+		p.shortFlighter.delete = func(k []byte) {
+			defer func() {
+				out <- unit{}
+			}()
+
+			// Report deleting from cache is in process.
+			out <- unit{}
+			// Wait for tests to finish.
+			<-in
+
+			p.cache.Delete(k)
+		}
+
+		// Two different contexts are made to emulate two different
+		// requests with the same question section.
+		var secondCtx *DNSContext
+		firstCtx, secondCtx = buildCtx(), buildCtx()
+
+		// Add expired response into cache.
+		req := firstCtx.Req
+		key := msgToKey(req)
+		data := packResponse(buildResp(req, 0))
+		items := glcache.New(glcache.Config{
+			EnableLRU: true,
+		})
+		items.Set(key, data)
+		p.cache.items = items
+
+		err := p.Resolve(firstCtx)
+		require.NoError(t, err)
+		require.Len(t, firstCtx.Res.Answer, 1)
+
+		assert.EqualValues(t, optimisticTTL, firstCtx.Res.Answer[0].Header().Ttl)
+
+		// Wait for optimisticResolver to reach the tested function.
+		<-out
+
+		err = p.Resolve(secondCtx)
+		require.NoError(t, err)
+		require.Len(t, secondCtx.Res.Answer, 1)
+
+		assert.EqualValues(t, optimisticTTL, secondCtx.Res.Answer[0].Header().Ttl)
+
+		// Continue and wait for it to finish.
+		in <- unit{}
+		<-out
+
+		return firstCtx
+	}
+
+	t.Run("successful", func(t *testing.T) {
+		firstCtx := testFunc(t, true)
+
+		// Should be served from cache.
+		data := p.cache.items.Get(msgToKey(firstCtx.Req))
+		unpacked, expired := unpackResponse(data, firstCtx.Req, false)
+		require.False(t, expired)
+		require.NotNil(t, unpacked)
+		require.Len(t, unpacked.Answer, 1)
+
+		assert.EqualValues(t, nonOptimisticTTL, unpacked.Answer[0].Header().Ttl)
+	})
+
+	t.Run("unsuccessful", func(t *testing.T) {
+		firstCtx := testFunc(t, false)
+
+		// Should be removed from cache.
+		assert.Nil(t, p.cache.items.Get(msgToKey(firstCtx.Req)))
+	})
 }

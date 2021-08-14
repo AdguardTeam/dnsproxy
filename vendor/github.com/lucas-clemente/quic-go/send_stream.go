@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/lucas-clemente/quic-go/internal/ackhandler"
-
 	"github.com/lucas-clemente/quic-go/internal/flowcontrol"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
+	"github.com/lucas-clemente/quic-go/internal/qerr"
 	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/lucas-clemente/quic-go/internal/wire"
 )
@@ -20,7 +20,7 @@ type sendStreamI interface {
 	hasData() bool
 	popStreamFrame(maxBytes protocol.ByteCount) (*ackhandler.Frame, bool)
 	closeForShutdown(error)
-	handleMaxStreamDataFrame(*wire.MaxStreamDataFrame)
+	updateSendWindow(protocol.ByteCount)
 }
 
 type sendStream struct {
@@ -57,8 +57,10 @@ type sendStream struct {
 	version protocol.VersionNumber
 }
 
-var _ SendStream = &sendStream{}
-var _ sendStreamI = &sendStream{}
+var (
+	_ SendStream  = &sendStream{}
+	_ sendStreamI = &sendStream{}
+)
 
 func newSendStream(
 	streamID protocol.StreamID,
@@ -189,7 +191,7 @@ func (s *sendStream) canBufferStreamFrame() bool {
 	if s.nextFrame != nil {
 		l = s.nextFrame.DataLen()
 	}
-	return l+protocol.ByteCount(len(s.dataForWriting)) <= protocol.MaxReceivePacketSize
+	return l+protocol.ByteCount(len(s.dataForWriting)) <= protocol.MaxPacketBufferSize
 }
 
 // popStreamFrame returns the next STREAM frame that is supposed to be sent on this stream
@@ -344,6 +346,10 @@ func (s *sendStream) frameAcked(f wire.Frame) {
 	f.(*wire.StreamFrame).PutBack()
 
 	s.mutex.Lock()
+	if s.canceledWrite {
+		s.mutex.Unlock()
+		return
+	}
 	s.numOutstandingFrames--
 	if s.numOutstandingFrames < 0 {
 		panic("numOutStandingFrames negative")
@@ -369,6 +375,10 @@ func (s *sendStream) queueRetransmission(f wire.Frame) {
 	sf := f.(*wire.StreamFrame)
 	sf.DataLenPresent = true
 	s.mutex.Lock()
+	if s.canceledWrite {
+		s.mutex.Unlock()
+		return
+	}
 	s.retransmissionQueue = append(s.retransmissionQueue, sf)
 	s.numOutstandingFrames--
 	if s.numOutstandingFrames < 0 {
@@ -397,12 +407,12 @@ func (s *sendStream) Close() error {
 	return nil
 }
 
-func (s *sendStream) CancelWrite(errorCode protocol.ApplicationErrorCode) {
+func (s *sendStream) CancelWrite(errorCode StreamErrorCode) {
 	s.cancelWriteImpl(errorCode, fmt.Errorf("Write on stream %d canceled with error code %d", s.streamID, errorCode))
 }
 
 // must be called after locking the mutex
-func (s *sendStream) cancelWriteImpl(errorCode protocol.ApplicationErrorCode, writeErr error) {
+func (s *sendStream) cancelWriteImpl(errorCode qerr.StreamErrorCode, writeErr error) {
 	s.mutex.Lock()
 	if s.canceledWrite {
 		s.mutex.Unlock()
@@ -411,6 +421,8 @@ func (s *sendStream) cancelWriteImpl(errorCode protocol.ApplicationErrorCode, wr
 	s.ctxCancel()
 	s.canceledWrite = true
 	s.cancelWriteErr = writeErr
+	s.numOutstandingFrames = 0
+	s.retransmissionQueue = nil
 	newlyCompleted := s.isNewlyCompleted()
 	s.mutex.Unlock()
 
@@ -425,23 +437,22 @@ func (s *sendStream) cancelWriteImpl(errorCode protocol.ApplicationErrorCode, wr
 	}
 }
 
-func (s *sendStream) handleMaxStreamDataFrame(frame *wire.MaxStreamDataFrame) {
+func (s *sendStream) updateSendWindow(limit protocol.ByteCount) {
 	s.mutex.Lock()
 	hasStreamData := s.dataForWriting != nil || s.nextFrame != nil
 	s.mutex.Unlock()
 
-	s.flowController.UpdateSendWindow(frame.MaximumStreamData)
+	s.flowController.UpdateSendWindow(limit)
 	if hasStreamData {
 		s.sender.onHasStreamData(s.streamID)
 	}
 }
 
 func (s *sendStream) handleStopSendingFrame(frame *wire.StopSendingFrame) {
-	writeErr := streamCanceledError{
-		errorCode: frame.ErrorCode,
-		error:     fmt.Errorf("stream %d was reset with error code %d", s.streamID, frame.ErrorCode),
-	}
-	s.cancelWriteImpl(frame.ErrorCode, writeErr)
+	s.cancelWriteImpl(frame.ErrorCode, &StreamError{
+		StreamID:  s.streamID,
+		ErrorCode: frame.ErrorCode,
+	})
 }
 
 func (s *sendStream) Context() context.Context {

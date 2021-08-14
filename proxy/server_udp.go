@@ -31,6 +31,14 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
 	}
 
+	if p.Config.UDPBufferSize > 0 {
+		err = udpListen.SetReadBuffer(p.Config.UDPBufferSize)
+		if err != nil {
+			_ = udpListen.Close()
+			return nil, errorx.Decorate(err, "setting UDP buffer size failed")
+		}
+	}
+
 	err = proxyutil.UDPSetOptions(udpListen)
 	if err != nil {
 		_ = udpListen.Close()
@@ -82,20 +90,17 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, requestGoroutinesSema semaphore
 func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.UDPAddr, conn *net.UDPConn) {
 	log.Tracef("Start handling new UDP packet from %s", remoteAddr)
 
-	msg := &dns.Msg{}
-	err := msg.Unpack(packet)
+	req := &dns.Msg{}
+	err := req.Unpack(packet)
 	if err != nil {
 		log.Printf("error handling UDP packet: %s", err)
 		return
 	}
 
-	d := &DNSContext{
-		Proto:   ProtoUDP,
-		Req:     msg,
-		Addr:    remoteAddr,
-		Conn:    conn,
-		localIP: localIP,
-	}
+	d := p.newDNSContext(ProtoUDP, req)
+	d.Addr = remoteAddr
+	d.Conn = conn
+	d.localIP = localIP
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
@@ -106,6 +111,11 @@ func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.U
 // Writes a response to the UDP client
 func (p *Proxy) respondUDP(d *DNSContext) error {
 	resp := d.Res
+
+	if resp == nil {
+		// Do nothing if no response has been written
+		return nil
+	}
 
 	bytes, err := resp.Pack()
 	if err != nil {

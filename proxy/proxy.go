@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/fastip"
@@ -29,25 +30,39 @@ const (
 	ednsCSDefaultNetmaskV6 = 112 // default network mask for IPv6 address for EDNS ClientSubnet option
 )
 
+// Proto is the DNS protocol.
+type Proto string
+
+// Proto values.
 const (
-	// ProtoUDP is plain DNS-over-UDP
-	ProtoUDP = "udp"
-	// ProtoTCP is plain DNS-over-TCP
-	ProtoTCP = "tcp"
-	// ProtoTLS is DNS-over-TLS
-	ProtoTLS = "tls"
-	// ProtoHTTPS is DNS-over-HTTPS
-	ProtoHTTPS = "https"
-	// ProtoQUIC is QUIC transport
-	ProtoQUIC = "quic"
-	// ProtoDNSCrypt is DNSCrypt
-	ProtoDNSCrypt = "dnscrypt"
+	// ProtoUDP is the plain DNS-over-UDP protocol.
+	ProtoUDP Proto = "udp"
+	// ProtoTCP is the plain DNS-over-TCP protocol.
+	ProtoTCP Proto = "tcp"
+	// ProtoTLS is the DNS-over-TLS (DoT) protocol.
+	ProtoTLS Proto = "tls"
+	// ProtoHTTPS is the DNS-over-HTTPS (DoH) protocol.
+	ProtoHTTPS Proto = "https"
+	// ProtoQUIC is the DNS-over-QUIC (DoQ) protocol.
+	ProtoQUIC Proto = "quic"
+	// ProtoDNSCrypt is the DNSCrypt protocol.
+	ProtoDNSCrypt Proto = "dnscrypt"
+)
+
+const (
 	// UnqualifiedNames is reserved name for "unqualified names only", ie names without dots
 	UnqualifiedNames = "unqualified_names"
 )
 
 // Proxy combines the proxy server state and configuration
 type Proxy struct {
+	// counter is the counter of messages.  It must only be incremented
+	// atomically, so it must be the first member of the struct to make sure
+	// that it has a 64-bit alignment.
+	//
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG.
+	counter uint64
+
 	started bool // Started flag
 
 	// Listeners
@@ -72,8 +87,8 @@ type Proxy struct {
 	// DNS64 (in case dnsproxy works in a NAT64/DNS64 network)
 	// --
 
-	nat64Prefix []byte     // NAT 64 prefix
-	nat64Lock   sync.Mutex // Prefix lock
+	nat64Prefix     []byte     // NAT 64 prefix
+	nat64PrefixLock sync.Mutex // Prefix lock
 
 	// Ratelimit
 	// --
@@ -81,11 +96,21 @@ type Proxy struct {
 	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
+	// proxyVerifier checks if the proxy is in the trusted list.
+	proxyVerifier *subnetDetector
+
 	// DNS cache
 	// --
 
-	cache       *cache       // cache instance (nil if cache is disabled)
-	cacheSubnet *cacheSubnet // cache instance (nil if cache is disabled)
+	// cache is used to cache requests.  It is disabled if nil.
+	cache *cache
+	// shortFlighter is used to resolve the expired cached requests without
+	// repetitions.
+	shortFlighter *optimisticResolver
+	// shortFlighterWithSubnet is used to resolve the expired cached
+	// requests making sure that only one request for each cache item is
+	// performed at a time.
+	shortFlighterWithSubnet *optimisticResolver
 
 	// FastestAddr module
 	// --
@@ -114,27 +139,12 @@ type Proxy struct {
 
 // Init - initializes the proxy structures but does not start it
 func (p *Proxy) Init() (err error) {
-	if p.CacheEnabled {
-		log.Printf("DNS cache is enabled")
-
-		p.cache = &cache{
-			cacheSize: p.CacheSizeBytes,
-		}
-
-		if p.Config.EnableEDNSClientSubnet {
-			p.cacheSubnet = &cacheSubnet{
-				cacheSize: p.CacheSizeBytes,
-			}
-		}
-	}
+	p.initCache()
 
 	if p.TLSConfig != nil && len(p.TLSConfig.NextProtos) == 0 {
-		p.TLSConfig.NextProtos = []string{
-			"http/1.1",
-			http2.NextProtoTLS,
-			NextProtoDQ,
-		}
-		p.TLSConfig.NextProtos = append(p.TLSConfig.NextProtos, compatProtoDQ...)
+		p.TLSConfig.NextProtos = append([]string{
+			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+		}, compatProtoDQ...)
 	}
 
 	if p.MaxGoroutines > 0 {
@@ -165,13 +175,20 @@ func (p *Proxy) Init() (err error) {
 	p.bytesPool = &sync.Pool{
 		New: func() interface{} {
 			// 2 bytes may be used to store packet length (see TCP/TLS)
-			return make([]byte, 2+dns.MaxMsgSize)
+			b := make([]byte, 2+dns.MaxMsgSize)
+
+			return &b
 		},
 	}
 
 	if p.UpstreamMode == UModeFastestAddr {
 		log.Printf("Fastest IP is enabled")
 		p.fastestAddr = fastip.NewFastestAddr()
+	}
+
+	p.proxyVerifier, err = newSubnetDetector(p.TrustedProxies)
+	if err != nil {
+		return fmt.Errorf("initializing subnet detector for proxies verifying: %w", err)
 	}
 
 	return nil
@@ -282,7 +299,7 @@ func (p *Proxy) Stop() error {
 
 // Addrs returns all listen addresses for the specified proto or nil if the proxy does not listen to it.
 // proto must be "tcp", "tls", "https", "quic", or "udp"
-func (p *Proxy) Addrs(proto string) []net.Addr {
+func (p *Proxy) Addrs(proto Proto) []net.Addr {
 	p.RLock()
 	defer p.RUnlock()
 
@@ -332,7 +349,7 @@ func (p *Proxy) Addrs(proto string) []net.Addr {
 
 // Addr returns the first listen address for the specified proto or null if the proxy does not listen to it
 // proto must be "tcp", "tls", "https", "quic", or "udp"
-func (p *Proxy) Addr(proto string) net.Addr {
+func (p *Proxy) Addr(proto Proto) net.Addr {
 	p.RLock()
 	defer p.RUnlock()
 	switch proto {
@@ -376,65 +393,112 @@ func (p *Proxy) Addr(proto string) net.Addr {
 	}
 }
 
-// Resolve is the default resolving method used by the DNS proxy to query upstreams
-func (p *Proxy) Resolve(d *DNSContext) error {
-	if p.Config.EnableEDNSClientSubnet {
-		p.processECS(d)
-	}
-
-	if p.replyFromCache(d) {
-		return nil
-	}
-
-	host := d.Req.Question[0].Name
+// replyFromUpstream tries to resolve the request and caches it if cacheWorks is
+// true.
+func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
+	req := d.Req
+	host := req.Question[0].Name
 	var upstreams []upstream.Upstream
-
-	// Get custom upstreams first -- note that they might be empty
+	// Get custom upstreams first.  Note that they might be empty.
 	if d.CustomUpstreamConfig != nil {
 		upstreams = d.CustomUpstreamConfig.getUpstreamsForDomain(host)
 	}
-
-	// If nothing found in the custom upstreams, start using the default ones
+	// If nothing is found in the custom upstreams, start using the default
+	// ones.
 	if upstreams == nil {
 		upstreams = p.UpstreamConfig.getUpstreamsForDomain(host)
 	}
 
-	// execute the DNS request
-	startTime := time.Now()
-	reply, u, err := p.exchange(d.Req, upstreams)
-	if p.isEmptyAAAAResponse(reply, d.Req) {
-		log.Tracef("Received empty AAAA response, checking DNS64")
-		reply, u, err = p.checkDNS64(d.Req, reply, upstreams)
+	start := time.Now()
+
+	// Perform the DNS request.
+	var reply *dns.Msg
+	var u upstream.Upstream
+	reply, u, err = p.exchange(req, upstreams)
+	if p.isNAT64PrefixAvailable() && p.isEmptyAAAAResponse(reply, req) {
+		log.Tracef("Received an empty AAAA response, checking DNS64")
+		reply, u, err = p.checkDNS64(req, reply, upstreams)
 	} else if p.isBogusNXDomain(reply) {
 		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")
-		reply = p.genNXDomain(reply)
+		reply = p.genWithRCode(reply, dns.RcodeNameError)
 	}
 
-	rtt := int(time.Since(startTime) / time.Millisecond)
-	log.Tracef("RTT: %d ms", rtt)
+	log.Tracef("RTT: %s", time.Since(start))
 
 	if err != nil && p.Fallbacks != nil {
 		log.Tracef("Using the fallback upstream due to %s", err)
-		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, d.Req)
+
+		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, req)
 	}
 
-	// set Upstream that resolved DNS request to DNSContext
 	if reply != nil {
+		// This branch handles the successfully exchanged response.
+
+		// Set upstream that have resolved the request to DNSContext.
 		d.Upstream = u
-
 		p.setMinMaxTTL(reply)
-
-		// Saving cached response
-		p.setInCache(d, reply)
-	}
-
-	if reply == nil {
-		d.Res = p.genServerFailure(d.Req)
+		ok = true
 	} else {
-		d.Res = reply
+		reply = p.genServerFailure(req)
+		d.hasEDNS0 = false
+	}
+	d.Res = reply
+
+	return ok, err
+}
+
+// addDO adds EDNS0 RR if needed and sets DO bit of msg to true.
+func addDO(msg *dns.Msg) {
+	if o := msg.IsEdns0(); o != nil {
+		if !o.Do() {
+			o.SetDo()
+		}
+
+		return
 	}
 
-	// truncate and compress the response
+	msg.SetEdns0(defaultUDPBufSize, true)
+}
+
+// defaultUDPBufSize defines the default size of UDP buffer for EDNS0 RRs.
+const defaultUDPBufSize = 2048
+
+// Resolve is the default resolving method used by the DNS proxy to query
+// upstream servers.
+func (p *Proxy) Resolve(d *DNSContext) (err error) {
+	if p.Config.EnableEDNSClientSubnet {
+		p.processECS(d)
+	}
+
+	d.calcFlagsAndSize()
+
+	// Use cache only if it's enabled and the query doesn't use custom
+	// upstreams.
+	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
+	if cacheWorks {
+		if p.replyFromCache(d) {
+			// Complete the response from cache.
+			d.scrub()
+
+			return nil
+		}
+
+		// On cache miss request for DNSSEC from the upstream to cache
+		// it afterwards.
+		addDO(d.Req)
+	}
+
+	var ok bool
+	ok, err = p.replyFromUpstream(d)
+
+	if cacheWorks && ok {
+		// Cache the response with DNSSEC RRs.
+		p.setInCache(d)
+	}
+
+	filterMsg(d.Res, d.Res, d.adBit, d.doBit, 0)
+
+	// Complete the response.
 	d.scrub()
 
 	if p.ResponseHandler != nil {
@@ -474,4 +538,15 @@ func (p *Proxy) processECS(d *DNSContext) {
 
 	d.ecsReqIP = ip
 	d.ecsReqMask = mask
+}
+
+// newDNSContext returns a new properly initialized *DNSContext.
+func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
+	return &DNSContext{
+		Proto:     proto,
+		Req:       req,
+		StartTime: time.Now(),
+
+		RequestID: atomic.AddUint64(&p.counter, 1),
+	}
 }

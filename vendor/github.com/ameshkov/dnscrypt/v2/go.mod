@@ -6,7 +6,7 @@ require (
 	github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635
 	github.com/ameshkov/dnsstamps v1.0.1
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/miekg/dns v1.1.29
+	github.com/miekg/dns v1.1.40
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/crypto v0.0.0-20200323165209-0ec3e9974c59
 	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e

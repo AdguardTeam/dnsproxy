@@ -6,13 +6,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestPingSingleIP(t *testing.T) {
+	ip := net.ParseIP("127.0.0.1")
+	f := NewFastestAddr()
+	found, res := f.pingAll("test", []net.IP{ip})
+	require.True(t, found)
+	require.NotNil(t, res)
+	require.True(t, res.success)
+	require.Equal(t, ip, res.ip)
+
+	// There was no ping so the port is zero
+	require.Equal(t, uint(0), res.tcpPort)
+
+	// Nothing in the cache since there was no ping
+	ce := f.cacheFind(ip)
+	require.Nil(t, ce)
+}
 
 func TestPingSuccess(t *testing.T) {
 	// Listener that we're using for TCP checks
 	listener, err := net.Listen("tcp", ":0")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	ip := net.ParseIP("127.0.0.1")
 	port := uint(listener.Addr().(*net.TCPAddr).Port)
 	defer listener.Close()
@@ -20,29 +37,32 @@ func TestPingSuccess(t *testing.T) {
 	f := NewFastestAddr()
 	f.tcpPorts = []uint{port}
 
-	found, res := f.pingAll("test", []net.IP{ip})
-	assert.True(t, found)
-	assert.NotNil(t, res)
-	assert.True(t, res.success)
-	assert.Equal(t, ip, res.ip)
+	// We need at least two IPs so adding a random remote IP here
+	ips := []net.IP{ip, net.ParseIP("8.8.8.8")}
+	found, res := f.pingAll("test", ips)
+	require.True(t, found)
+	require.NotNil(t, res)
+	require.True(t, res.success)
+	require.Equal(t, ip, res.ip)
+	require.Equal(t, port, res.tcpPort)
 
-	// don't forget to check cache
+	// don't forget to check the cache
 	ce := f.cacheFind(ip)
-	assert.NotNil(t, ce)
-	assert.Equal(t, 0, ce.status)
+	require.NotNil(t, ce)
+	require.Equal(t, 0, ce.status)
 }
 
 func TestPingFail(t *testing.T) {
-
 	ip := net.ParseIP("127.0.0.1")
-	port := uint(getFreePort())
+	ip2 := net.ParseIP("127.0.0.2")
+	port := getFreePort()
 
 	f := NewFastestAddr()
 	f.tcpPorts = []uint{port}
 
-	found, res := f.pingAll("test", []net.IP{ip})
-	assert.False(t, found)
-	assert.Nil(t, res)
+	found, res := f.pingAll("test", []net.IP{ip, ip2})
+	require.False(t, found)
+	require.Nil(t, res)
 
 	if runtime.GOOS != "windows" {
 		// it appears that on Windows connectex has some strange behavior
@@ -52,21 +72,21 @@ func TestPingFail(t *testing.T) {
 
 		// don't forget to check cache
 		ce := f.cacheFind(ip)
-		assert.NotNil(t, ce)
-		assert.Equal(t, 1, ce.status)
+		require.NotNil(t, ce)
+		require.Equal(t, 1, ce.status)
 	}
 }
 
 func TestPingFastest(t *testing.T) {
 	// Listener that we're using for TCP checks
 	listener, err := net.Listen("tcp", ":0")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	ip := net.ParseIP("127.0.0.1")
 	port := uint(listener.Addr().(*net.TCPAddr).Port)
 	defer listener.Close()
 
 	f := NewFastestAddr()
-	f.tcpPorts = []uint{port, 443}
+	f.tcpPorts = []uint{port, 443} // add 443 since it's definitely used by 8.8.8.8
 
 	// test ips
 	ips := []net.IP{ip}
@@ -75,16 +95,17 @@ func TestPingFastest(t *testing.T) {
 	// the test checks that 127.0.0.1 is returned
 	ips = append(ips, net.ParseIP("8.8.8.8"))
 
-	found, res := f.pingAll("test", []net.IP{ip})
-	assert.True(t, found)
-	assert.NotNil(t, res)
-	assert.True(t, res.success)
-	assert.Equal(t, ip, res.ip)
+	found, res := f.pingAll("test", ips)
+	require.True(t, found)
+	require.NotNil(t, res)
+	require.True(t, res.success)
+	require.Equal(t, ip, res.ip)
+	require.Equal(t, port, res.tcpPort)
 
 	// don't forget to check cache
 	ce := f.cacheFind(ip)
-	assert.NotNil(t, ce)
-	assert.Equal(t, 0, ce.status)
+	require.NotNil(t, ce)
+	require.Equal(t, 0, ce.status)
 }
 
 func getFreePort() uint {

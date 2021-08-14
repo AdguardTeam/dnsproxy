@@ -1,6 +1,7 @@
 package flowcontrol
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -49,21 +50,20 @@ func (c *connectionFlowController) IncrementHighestReceived(increment protocol.B
 
 	c.highestReceived += increment
 	if c.checkFlowControlViolation() {
-		return qerr.NewError(qerr.FlowControlError, fmt.Sprintf("Received %d bytes for the connection, allowed %d bytes", c.highestReceived, c.receiveWindow))
+		return &qerr.TransportError{
+			ErrorCode:    qerr.FlowControlError,
+			ErrorMessage: fmt.Sprintf("received %d bytes for the connection, allowed %d bytes", c.highestReceived, c.receiveWindow),
+		}
 	}
 	return nil
 }
 
 func (c *connectionFlowController) AddBytesRead(n protocol.ByteCount) {
-	c.baseFlowController.AddBytesRead(n)
-	c.maybeQueueWindowUpdate()
-}
-
-func (c *connectionFlowController) maybeQueueWindowUpdate() {
 	c.mutex.Lock()
-	hasWindowUpdate := c.hasWindowUpdate()
+	c.baseFlowController.addBytesRead(n)
+	shouldQueueWindowUpdate := c.hasWindowUpdate()
 	c.mutex.Unlock()
-	if hasWindowUpdate {
+	if shouldQueueWindowUpdate {
 		c.queueWindowUpdate()
 	}
 }
@@ -89,4 +89,19 @@ func (c *connectionFlowController) EnsureMinimumWindowSize(inc protocol.ByteCoun
 		c.startNewAutoTuningEpoch(time.Now())
 	}
 	c.mutex.Unlock()
+}
+
+// The flow controller is reset when 0-RTT is rejected.
+// All stream data is invalidated, it's if we had never opened a stream and never sent any data.
+// At that point, we only have sent stream data, but we didn't have the keys to open 1-RTT keys yet.
+func (c *connectionFlowController) Reset() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.bytesRead > 0 || c.highestReceived > 0 || !c.epochStartTime.IsZero() {
+		return errors.New("flow controller reset after reading data")
+	}
+	c.bytesSent = 0
+	c.lastBlockedAt = 0
+	return nil
 }

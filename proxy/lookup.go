@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"net"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 
@@ -16,7 +15,7 @@ type lookupResult struct {
 }
 
 func (p *Proxy) lookupIPAddr(host string, qtype uint16, ch chan *lookupResult) {
-	req := dns.Msg{}
+	req := &dns.Msg{}
 	req.Id = dns.Id()
 	req.RecursionDesired = true
 	req.Question = []dns.Question{
@@ -27,13 +26,9 @@ func (p *Proxy) lookupIPAddr(host string, qtype uint16, ch chan *lookupResult) {
 		},
 	}
 
-	ctx := &DNSContext{
-		Proto:     "udp",
-		Req:       &req,
-		StartTime: time.Now(),
-	}
-	err := p.Resolve(ctx)
-	ch <- &lookupResult{ctx.Res, err}
+	d := p.newDNSContext(ProtoUDP, req)
+	err := p.Resolve(d)
+	ch <- &lookupResult{d.Res, err}
 }
 
 // LookupIPAddr resolves the specified host IP addresses

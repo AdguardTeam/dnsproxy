@@ -50,18 +50,21 @@ func NewStreamFlowController(
 
 // UpdateHighestReceived updates the highestReceived value, if the offset is higher.
 func (c *streamFlowController) UpdateHighestReceived(offset protocol.ByteCount, final bool) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
 	// If the final offset for this stream is already known, check for consistency.
 	if c.receivedFinalOffset {
 		// If we receive another final offset, check that it's the same.
 		if final && offset != c.highestReceived {
-			return qerr.NewError(qerr.FinalSizeError, fmt.Sprintf("Received inconsistent final offset for stream %d (old: %d, new: %d bytes)", c.streamID, c.highestReceived, offset))
+			return &qerr.TransportError{
+				ErrorCode:    qerr.FinalSizeError,
+				ErrorMessage: fmt.Sprintf("received inconsistent final offset for stream %d (old: %d, new: %d bytes)", c.streamID, c.highestReceived, offset),
+			}
 		}
 		// Check that the offset is below the final offset.
 		if offset > c.highestReceived {
-			return qerr.NewError(qerr.FinalSizeError, fmt.Sprintf("Received offset %d for stream %d. Final offset was already received at %d", offset, c.streamID, c.highestReceived))
+			return &qerr.TransportError{
+				ErrorCode:    qerr.FinalSizeError,
+				ErrorMessage: fmt.Sprintf("received offset %d for stream %d, but final offset was already received at %d", offset, c.streamID, c.highestReceived),
+			}
 		}
 	}
 
@@ -75,7 +78,10 @@ func (c *streamFlowController) UpdateHighestReceived(offset protocol.ByteCount, 
 	// This can happen due to reordering.
 	if offset <= c.highestReceived {
 		if final {
-			return qerr.NewError(qerr.FinalSizeError, fmt.Sprintf("Received final offset %d for stream %d, but already received offset %d before", offset, c.streamID, c.highestReceived))
+			return &qerr.TransportError{
+				ErrorCode:    qerr.FinalSizeError,
+				ErrorMessage: fmt.Sprintf("received final offset %d for stream %d, but already received offset %d before", offset, c.streamID, c.highestReceived),
+			}
 		}
 		return nil
 	}
@@ -83,14 +89,22 @@ func (c *streamFlowController) UpdateHighestReceived(offset protocol.ByteCount, 
 	increment := offset - c.highestReceived
 	c.highestReceived = offset
 	if c.checkFlowControlViolation() {
-		return qerr.NewError(qerr.FlowControlError, fmt.Sprintf("Received %d bytes on stream %d, allowed %d bytes", offset, c.streamID, c.receiveWindow))
+		return &qerr.TransportError{
+			ErrorCode:    qerr.FlowControlError,
+			ErrorMessage: fmt.Sprintf("received %d bytes on stream %d, allowed %d bytes", offset, c.streamID, c.receiveWindow),
+		}
 	}
 	return c.connection.IncrementHighestReceived(increment)
 }
 
 func (c *streamFlowController) AddBytesRead(n protocol.ByteCount) {
-	c.baseFlowController.AddBytesRead(n)
-	c.maybeQueueWindowUpdate()
+	c.mutex.Lock()
+	c.baseFlowController.addBytesRead(n)
+	shouldQueueWindowUpdate := c.shouldQueueWindowUpdate()
+	c.mutex.Unlock()
+	if shouldQueueWindowUpdate {
+		c.queueWindowUpdate()
+	}
 	c.connection.AddBytesRead(n)
 }
 
@@ -109,24 +123,18 @@ func (c *streamFlowController) SendWindowSize() protocol.ByteCount {
 	return utils.MinByteCount(c.baseFlowController.sendWindowSize(), c.connection.SendWindowSize())
 }
 
-func (c *streamFlowController) maybeQueueWindowUpdate() {
-	c.mutex.Lock()
-	hasWindowUpdate := !c.receivedFinalOffset && c.hasWindowUpdate()
-	c.mutex.Unlock()
-	if hasWindowUpdate {
-		c.queueWindowUpdate()
-	}
+func (c *streamFlowController) shouldQueueWindowUpdate() bool {
+	return !c.receivedFinalOffset && c.hasWindowUpdate()
 }
 
 func (c *streamFlowController) GetWindowUpdate() protocol.ByteCount {
-	// don't use defer for unlocking the mutex here, GetWindowUpdate() is called frequently and defer shows up in the profiler
-	c.mutex.Lock()
-	// if we already received the final offset for this stream, the peer won't need any additional flow control credit
+	// If we already received the final offset for this stream, the peer won't need any additional flow control credit.
 	if c.receivedFinalOffset {
-		c.mutex.Unlock()
 		return 0
 	}
 
+	// Don't use defer for unlocking the mutex here, GetWindowUpdate() is called frequently and defer shows up in the profiler
+	c.mutex.Lock()
 	oldWindowSize := c.receiveWindowSize
 	offset := c.baseFlowController.getWindowUpdate()
 	if c.receiveWindowSize > oldWindowSize { // auto-tuning enlarged the window size

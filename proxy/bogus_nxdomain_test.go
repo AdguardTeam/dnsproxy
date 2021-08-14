@@ -21,11 +21,10 @@ func TestBogusNXDomainTypeA(t *testing.T) {
 
 	// first request
 	// upstream answers with a bogus IP
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Rrtype = dns.TypeA
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.ParseIP("4.3.2.1")
-	u.aResp.Hdr.Ttl = 10
+	u.aResp = &dns.A{
+		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+		A:   net.ParseIP("4.3.2.1"),
+	}
 
 	clientIP := net.IP{1, 2, 3, 0}
 	d := DNSContext{}
@@ -43,11 +42,28 @@ func TestBogusNXDomainTypeA(t *testing.T) {
 
 	// second request
 	// upstream answers with a normal IP
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Rrtype = dns.TypeA
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.ParseIP("4.3.2.2")
-	u.aResp.Hdr.Ttl = 10
+	u.aResp = &dns.A{
+		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+		A:   net.ParseIP("4.3.2.2"),
+	}
+
+	err = dnsProxy.Resolve(&d)
+	assert.Nil(t, err)
+
+	// check response
+	assert.NotNil(t, d.Res)
+	assert.Equal(t, dns.RcodeSuccess, d.Res.Rcode)
+
+	// third request
+	// upstream answers with two IPs, one of them is bogus
+	u.aRespArr = append(u.aRespArr, &dns.A{
+		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+		A:   net.ParseIP("4.3.2.2"),
+	})
+	u.aRespArr = append(u.aRespArr, &dns.A{
+		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+		A:   net.ParseIP("4.3.2.1"),
+	})
 
 	err = dnsProxy.Resolve(&d)
 	assert.Nil(t, err)

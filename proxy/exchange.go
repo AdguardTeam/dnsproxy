@@ -54,10 +54,7 @@ func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {
 	copy(clone, u)
 
 	sort.Slice(clone, func(i, j int) bool {
-		if p.upstreamRttStats[clone[i].Address()] < p.upstreamRttStats[clone[j].Address()] {
-			return true
-		}
-		return false
+		return p.upstreamRttStats[clone[i].Address()] < p.upstreamRttStats[clone[j].Address()]
 	})
 	p.rttLock.Unlock()
 
@@ -68,13 +65,24 @@ func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {
 func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, error) {
 	startTime := time.Now()
 	reply, err := u.Exchange(req)
-	elapsed := int(time.Since(startTime) / time.Millisecond)
+	elapsed := time.Since(startTime)
 	if err != nil {
-		log.Tracef("upstream %s failed to exchange %s in %d milliseconds. Cause: %s", u.Address(), req.Question[0].String(), elapsed, err)
+		log.Tracef(
+			"upstream %s failed to exchange %s in %s. Cause: %s",
+			u.Address(),
+			req.Question[0].String(),
+			elapsed,
+			err,
+		)
 	} else {
-		log.Tracef("upstream %s successfully finished exchange of %s. Elapsed %d ms.", u.Address(), req.Question[0].String(), elapsed)
+		log.Tracef(
+			"upstream %s successfully finished exchange of %s. Elapsed %s.",
+			u.Address(),
+			req.Question[0].String(),
+			elapsed,
+		)
 	}
-	return reply, elapsed, err
+	return reply, int(elapsed.Milliseconds()), err
 }
 
 // updateRtt updates rtt in upstreamRttStats for given address

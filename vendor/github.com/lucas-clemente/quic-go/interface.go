@@ -2,15 +2,14 @@ package quic
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/logging"
-
 	"github.com/lucas-clemente/quic-go/internal/handshake"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/quictrace"
+	"github.com/lucas-clemente/quic-go/logging"
 )
 
 // RetireBugBackwardsCompatibilityMode controls a backwards compatibility mode, necessary due to a bug in
@@ -28,6 +27,17 @@ type StreamID = protocol.StreamID
 
 // A VersionNumber is a QUIC version number.
 type VersionNumber = protocol.VersionNumber
+
+const (
+	// VersionDraft29 is IETF QUIC draft-29
+	VersionDraft29 = protocol.VersionDraft29
+	// VersionDraft32 is IETF QUIC draft-32
+	VersionDraft32 = protocol.VersionDraft32
+	// VersionDraft34 is IETF QUIC draft-34
+	VersionDraft34 = protocol.VersionDraft34
+	// Version1 is RFC 9000
+	Version1 = protocol.Version1
+)
 
 // A Token can be used to verify the ownership of the client address.
 type Token struct {
@@ -56,11 +66,23 @@ type TokenStore interface {
 	Put(key string, token *ClientToken)
 }
 
-// An ErrorCode is an application-defined error code.
-// Valid values range between 0 and MAX_UINT62.
-type ErrorCode = protocol.ApplicationErrorCode
+// Err0RTTRejected is the returned from:
+// * Open{Uni}Stream{Sync}
+// * Accept{Uni}Stream
+// * Stream.Read and Stream.Write
+// when the server rejects a 0-RTT connection attempt.
+var Err0RTTRejected = errors.New("0-RTT rejected")
+
+// SessionTracingKey can be used to associate a ConnectionTracer with a Session.
+// It is set on the Session.Context() context,
+// as well as on the context passed to logging.Tracer.NewConnectionTracer.
+var SessionTracingKey = sessionTracingCtxKey{}
+
+type sessionTracingCtxKey struct{}
 
 // Stream is the interface implemented by QUIC streams
+// In addition to the errors listed on the Session,
+// calls to stream functions can return a StreamError if the stream is canceled.
 type Stream interface {
 	ReceiveStream
 	SendStream
@@ -86,7 +108,7 @@ type ReceiveStream interface {
 	// It will ask the peer to stop transmitting stream data.
 	// Read will unblock immediately, and future Read calls will fail.
 	// When called multiple times or after reading the io.EOF it is a no-op.
-	CancelRead(ErrorCode)
+	CancelRead(StreamErrorCode)
 	// SetReadDeadline sets the deadline for future Read calls and
 	// any currently-blocked Read call.
 	// A zero value for t means Read will not time out.
@@ -115,7 +137,7 @@ type SendStream interface {
 	// Data already written, but not yet delivered to the peer is not guaranteed to be delivered reliably.
 	// Write will unblock immediately, and future calls to Write will fail.
 	// When called multiple times or after closing the stream it is a no-op.
-	CancelWrite(ErrorCode)
+	CancelWrite(StreamErrorCode)
 	// The context is canceled as soon as the write-side of the stream is closed.
 	// This happens when Close() or CancelWrite() is called, or when the peer
 	// cancels the read-side of their stream.
@@ -129,16 +151,14 @@ type SendStream interface {
 	SetWriteDeadline(t time.Time) error
 }
 
-// StreamError is returned by Read and Write when the peer cancels the stream.
-type StreamError interface {
-	error
-	Canceled() bool
-	ErrorCode() ErrorCode
-}
-
-type ConnectionState = handshake.ConnectionState
-
 // A Session is a QUIC connection between two peers.
+// Calls to the session (and to streams) can return the following types of errors:
+// * ApplicationError: for errors triggered by the application running on top of QUIC
+// * TransportError: for errors triggered by the QUIC transport (in many cases a misbehaving peer)
+// * IdleTimeoutError: when the peer goes away unexpectedly (this is a net.Error timeout error)
+// * HandshakeTimeoutError: when the cryptographic handshake takes too long (this is a net.Error timeout error)
+// * StatelessResetError: when we receive a stateless reset (this is a net.Error temporary error)
+// * VersionNegotiationError: returned by the client, when there's no version overlap between the peers
 type Session interface {
 	// AcceptStream returns the next stream opened by the peer, blocking until one is available.
 	// If the session was closed due to a timeout, the error satisfies
@@ -174,9 +194,9 @@ type Session interface {
 	LocalAddr() net.Addr
 	// RemoteAddr returns the address of the peer.
 	RemoteAddr() net.Addr
-	// Close the connection with an error.
+	// CloseWithError closes the connection with an error.
 	// The error string will be sent to the peer.
-	CloseWithError(ErrorCode, string) error
+	CloseWithError(ApplicationErrorCode, string) error
 	// The context is cancelled when the session is closed.
 	// Warning: This API should not be considered stable and might change soon.
 	Context() context.Context
@@ -184,6 +204,13 @@ type Session interface {
 	// It blocks until the handshake completes.
 	// Warning: This API should not be considered stable and might change soon.
 	ConnectionState() ConnectionState
+
+	// SendMessage sends a message as a datagram.
+	// See https://datatracker.ietf.org/doc/draft-pauly-quic-datagram/.
+	SendMessage([]byte) error
+	// ReceiveMessage gets a message received in a datagram.
+	// See https://datatracker.ietf.org/doc/draft-pauly-quic-datagram/.
+	ReceiveMessage() ([]byte, error)
 }
 
 // An EarlySession is a session that is handshaking.
@@ -197,6 +224,8 @@ type EarlySession interface {
 	// Data sent before completion of the handshake is encrypted with 1-RTT keys.
 	// Note that the client's identity hasn't been verified yet.
 	HandshakeComplete() context.Context
+
+	NextSession() Session
 }
 
 // Config contains all configuration data needed for a QUIC server or client.
@@ -212,10 +241,10 @@ type Config struct {
 	// If used for a server, or dialing on a packet conn, a 4 byte connection ID will be used.
 	// When dialing on a packet conn, the ConnectionIDLength value must be the same for every Dial call.
 	ConnectionIDLength int
-	// HandshakeTimeout is the maximum duration that the cryptographic handshake may take.
-	// If the timeout is exceeded, the connection is closed.
-	// If this value is zero, the timeout is set to 10 seconds.
-	HandshakeTimeout time.Duration
+	// HandshakeIdleTimeout is the idle timeout before completion of the handshake.
+	// Specifically, if we don't receive any packet from the peer within this time, the connection attempt is aborted.
+	// If this value is zero, the timeout is set to 5 seconds.
+	HandshakeIdleTimeout time.Duration
 	// MaxIdleTimeout is the maximum duration that may pass without any incoming network activity.
 	// The actual value for the idle timeout is the minimum of this value and the peer's.
 	// This value only applies after the handshake has completed.
@@ -235,12 +264,22 @@ type Config struct {
 	// The key used to store tokens is the ServerName from the tls.Config, if set
 	// otherwise the token is associated with the server's IP address.
 	TokenStore TokenStore
-	// MaxReceiveStreamFlowControlWindow is the maximum stream-level flow control window for receiving data.
-	// If this value is zero, it will default to 1 MB for the server and 6 MB for the client.
-	MaxReceiveStreamFlowControlWindow uint64
-	// MaxReceiveConnectionFlowControlWindow is the connection-level flow control window for receiving data.
-	// If this value is zero, it will default to 1.5 MB for the server and 15 MB for the client.
-	MaxReceiveConnectionFlowControlWindow uint64
+	// InitialStreamReceiveWindow is the initial size of the stream-level flow control window for receiving data.
+	// If the application is consuming data quickly enough, the flow control auto-tuning algorithm
+	// will increase the window up to MaxStreamReceiveWindow.
+	// If this value is zero, it will default to 512 KB.
+	InitialStreamReceiveWindow uint64
+	// MaxStreamReceiveWindow is the maximum stream-level flow control window for receiving data.
+	// If this value is zero, it will default to 6 MB.
+	MaxStreamReceiveWindow uint64
+	// InitialConnectionReceiveWindow is the initial size of the stream-level flow control window for receiving data.
+	// If the application is consuming data quickly enough, the flow control auto-tuning algorithm
+	// will increase the window up to MaxConnectionReceiveWindow.
+	// If this value is zero, it will default to 512 KB.
+	InitialConnectionReceiveWindow uint64
+	// MaxConnectionReceiveWindow is the connection-level flow control window for receiving data.
+	// If this value is zero, it will default to 15 MB.
+	MaxConnectionReceiveWindow uint64
 	// MaxIncomingStreams is the maximum number of concurrent bidirectional streams that a peer is allowed to open.
 	// Values above 2^60 are invalid.
 	// If not set, it will default to 100.
@@ -256,10 +295,19 @@ type Config struct {
 	StatelessResetKey []byte
 	// KeepAlive defines whether this peer will periodically send a packet to keep the connection alive.
 	KeepAlive bool
-	// QUIC Event Tracer.
-	// Warning: Experimental. This API should not be considered stable and will change soon.
-	QuicTracer quictrace.Tracer
-	Tracer     logging.Tracer
+	// DisablePathMTUDiscovery disables Path MTU Discovery (RFC 8899).
+	// Packets will then be at most 1252 (IPv4) / 1232 (IPv6) bytes in size.
+	DisablePathMTUDiscovery bool
+	// See https://datatracker.ietf.org/doc/draft-ietf-quic-datagram/.
+	// Datagrams will only be available when both peers enable datagram support.
+	EnableDatagrams bool
+	Tracer          logging.Tracer
+}
+
+// ConnectionState records basic details about a QUIC connection
+type ConnectionState struct {
+	TLS               handshake.ConnectionState
+	SupportsDatagrams bool
 }
 
 // A Listener for incoming QUIC connections

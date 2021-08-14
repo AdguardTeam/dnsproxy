@@ -2,16 +2,15 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/joomcode/errorx"
-
-	"github.com/miekg/dns"
-
 	"github.com/lucas-clemente/quic-go"
+	"github.com/miekg/dns"
 )
 
 const handshakeTimeout = time.Second
@@ -27,13 +26,43 @@ type dnsOverQUIC struct {
 	sync.RWMutex            // protects session and bytesPool
 }
 
-func (p *dnsOverQUIC) Address() string { return p.boot.address }
+// type check
+var _ Upstream = &dnsOverQUIC{}
+
+func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 
 func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	session, err := p.getSession(true)
 	if err != nil {
 		return nil, err
 	}
+
+	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
+	// this is a fatal error and the recipient of the defective message MUST forcibly abort
+	// the connection immediately.
+	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2
+	if opt := m.IsEdns0(); opt != nil {
+		for _, option := range opt.Option {
+			// Check for EDNS TCP keepalive option
+			if option.Option() == dns.EDNS0TCPKEEPALIVE {
+				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
+				return nil, errors.New("EDNS0 TCP keepalive option is set")
+			}
+		}
+	}
+
+	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.4
+	// When sending queries over a QUIC connection, the DNS Message ID MUST be set to zero.
+	id := m.Id
+	var reply *dns.Msg
+	m.Id = 0
+	defer func() {
+		// Restore the original ID to not break compatibility with proxies
+		m.Id = id
+		if reply != nil {
+			reply.Id = id
+		}
+	}()
 
 	stream, err := p.openStream(session)
 	if err != nil {
@@ -57,20 +86,17 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	_ = stream.Close()
 
 	pool := p.getBytesPool()
-	var respBuf []byte
-	respBuf = pool.Get().([]byte)
+	bufPtr := pool.Get().(*[]byte)
 
-	// Linter says that the argument needs to be pointer-like
-	// But it's already pointer-like
-	// nolint
-	defer pool.Put(respBuf)
+	defer pool.Put(bufPtr)
 
+	respBuf := *bufPtr
 	n, err := stream.Read(respBuf)
 	if err != nil && n == 0 {
 		return nil, errorx.Decorate(err, "failed to read response from %s due to %v", p.Address(), err)
 	}
 
-	reply := new(dns.Msg)
+	reply = new(dns.Msg)
 	err = reply.Unpack(respBuf)
 	if err != nil {
 		return nil, errorx.Decorate(err, "failed to unpack response from %s", p.Address())
@@ -84,7 +110,9 @@ func (p *dnsOverQUIC) getBytesPool() *sync.Pool {
 	if p.bytesPool == nil {
 		p.bytesPool = &sync.Pool{
 			New: func() interface{} {
-				return make([]byte, dns.MaxMsgSize)
+				b := make([]byte, dns.MaxMsgSize)
+
+				return &b
 			},
 		}
 	}
@@ -132,8 +160,8 @@ func (p *dnsOverQUIC) getSession(useCached bool) (quic.Session, error) {
 func (p *dnsOverQUIC) openStream(session quic.Session) (quic.Stream, error) {
 	ctx := context.Background()
 
-	if p.boot.timeout > 0 {
-		deadline := time.Now().Add(p.boot.timeout)
+	if p.boot.options.Timeout > 0 {
+		deadline := time.Now().Add(p.boot.options.Timeout)
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithDeadline(context.Background(), deadline)
 		defer cancel() // avoid resource leak
@@ -176,7 +204,7 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 
 	addr := udpConn.RemoteAddr().String()
 	quicConfig := &quic.Config{
-		HandshakeTimeout: handshakeTimeout,
+		HandshakeIdleTimeout: handshakeTimeout,
 	}
 	session, err := quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {

@@ -1,9 +1,16 @@
 language: go
 
+before_script: if [[ $TRAVIS_GO_VERSION =~ (^1\.8) ]]; then cd $GOPATH/src/github.com/stretchr/testify/ && git checkout v1.2.2 && cd -; fi
+
 go:
   - "1.8.x"
-  - "1.9.x"
-  - "1.10.x"
   - "1.11.x"
   - "1.12.x"
-  - tip
+  - "1.13.x"
+  - "1.14.x"
+  - "1.15.x"
+  - master
+
+env:
+  global:
+    - GO111MODULE=on

@@ -42,7 +42,7 @@ func (p *Proxy) createTLSListeners() error {
 // or "tls".
 //
 // See also the comment on Proxy.requestGoroutinesSema.
-func (p *Proxy) tcpPacketLoop(l net.Listener, proto string, requestGoroutinesSema semaphore) {
+func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema semaphore) {
 	log.Printf("Entering the %s listener loop on %s", proto, l.Addr())
 	for {
 		clientConn, err := l.Accept()
@@ -66,7 +66,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto string, requestGoroutinesSem
 
 // handleTCPConnection starts a loop that handles an incoming TCP connection
 // proto is either "tcp" or "tls"
-func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
+func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 	log.Tracef("Start handling the new %s connection %s", proto, conn.RemoteAddr())
 	defer conn.Close()
 
@@ -83,19 +83,16 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 			return
 		}
 
-		msg := &dns.Msg{}
-		err = msg.Unpack(packet)
+		req := &dns.Msg{}
+		err = req.Unpack(packet)
 		if err != nil {
 			log.Info("error handling TCP packet: %s", err)
 			return
 		}
 
-		d := &DNSContext{
-			Proto: proto,
-			Req:   msg,
-			Addr:  conn.RemoteAddr(),
-			Conn:  conn,
-		}
+		d := p.newDNSContext(proto, req)
+		d.Addr = conn.RemoteAddr()
+		d.Conn = conn
 
 		err = p.handleDNSRequest(d)
 		if err != nil {
@@ -108,6 +105,11 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto string) {
 func (p *Proxy) respondTCP(d *DNSContext) error {
 	resp := d.Res
 	conn := d.Conn
+
+	if resp == nil {
+		// If no response has been written, close the connection right away
+		return conn.Close()
+	}
 
 	bytes, err := resp.Pack()
 	if err != nil {

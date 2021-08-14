@@ -10,19 +10,19 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 )
 
-// EncryptedQuery - a structure for encrypting and decrypting client queries
+// EncryptedQuery is a structure for encrypting and decrypting client queries
 //
 // <dnscrypt-query> ::= <client-magic> <client-pk> <client-nonce> <encrypted-query>
 // <encrypted-query> ::= AE(<shared-key> <client-nonce> <client-nonce-pad>, <client-query> <client-query-pad>)
 type EncryptedQuery struct {
-	// EsVersion - encryption to use
+	// EsVersion is the encryption to use
 	EsVersion CryptoConstruction
 
-	// ClientMagic - a 8 byte identifier for the resolver certificate
+	// ClientMagic is a 8 byte identifier for the resolver certificate
 	// chosen by the client.
 	ClientMagic [clientMagicSize]byte
 
-	// ClientPk - the client's public key
+	// ClientPk is the client's public key
 	ClientPk [keySize]byte
 
 	// With a 24 bytes nonce, a question sent by a DNSCrypt client must be
@@ -36,7 +36,7 @@ type EncryptedQuery struct {
 	Nonce [nonceSize]byte
 }
 
-// Encrypt - encrypts the specified DNS query, returns encrypted data ready to be sent.
+// Encrypt encrypts the specified DNS query, returns encrypted data ready to be sent.
 //
 // Note that this method will generate a random nonce automatically.
 //
@@ -79,7 +79,7 @@ func (q *EncryptedQuery) Encrypt(packet []byte, sharedKey [sharedKeySize]byte) (
 	return query, nil
 }
 
-// Decrypt - decrypts the client query, returns decrypted DNS packet.
+// Decrypt decrypts the client query, returns decrypted DNS packet.
 //
 // Please note, that before calling this method the following fields must be set:
 // * ClientMagic -- to verify the query

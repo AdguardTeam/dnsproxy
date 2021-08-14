@@ -26,7 +26,7 @@ func TestQuicProxy(t *testing.T) {
 	tlsConfig := &tls.Config{
 		ServerName: tlsServerName,
 		RootCAs:    roots,
-		NextProtos: []string{NextProtoDQ},
+		NextProtos: append([]string{NextProtoDQ}, compatProtoDQ...),
 	}
 
 	// Create a DNS-over-QUIC client connection

@@ -23,7 +23,10 @@ type dnsCrypt struct {
 	sync.RWMutex // protects DNSCrypt client
 }
 
-func (p *dnsCrypt) Address() string { return p.boot.address }
+// type check
+var _ Upstream = &dnsCrypt{}
+
+func (p *dnsCrypt) Address() string { return p.boot.URL.String() }
 
 func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	reply, err := p.exchangeDNSCrypt(m)
@@ -59,12 +62,19 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (*dns.Msg, error) {
 		p.Lock()
 
 		// Using "udp" for DNSCrypt upstreams by default
-		client = &dnscrypt.Client{Timeout: p.boot.timeout}
-		ri, err := client.Dial(p.boot.address)
-
+		client = &dnscrypt.Client{Timeout: p.boot.options.Timeout}
+		ri, err := client.Dial(p.Address())
 		if err != nil {
 			p.Unlock()
 			return nil, errorx.Decorate(err, "failed to fetch certificate info from %s", p.Address())
+		}
+
+		if p.boot.options.VerifyDNSCryptCertificate != nil {
+			err = p.boot.options.VerifyDNSCryptCertificate(ri.ResolverCert)
+		}
+		if err != nil {
+			p.Unlock()
+			return nil, errorx.Decorate(err, "failed to verify certificate info from %s", p.Address())
 		}
 
 		p.client = client
@@ -77,7 +87,7 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (*dns.Msg, error) {
 
 	if reply != nil && reply.Truncated {
 		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
-		tcpClient := dnscrypt.Client{Timeout: p.boot.timeout, Net: "tcp"}
+		tcpClient := dnscrypt.Client{Timeout: p.boot.options.Timeout, Net: "tcp"}
 		reply, err = tcpClient.Exchange(m, resolverInfo)
 	}
 

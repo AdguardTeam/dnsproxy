@@ -8,10 +8,6 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 )
 
-// defaultPingWaitTimeout is the default period of time for waiting ping
-// operations to finish.
-const defaultPingWaitTimeout = 1 * time.Second
-
 // pingTCPTimeout is a TCP connection timeout.  It's higher than pingWaitTimeout
 // since the slower connections will be cached anyway.
 const pingTCPTimeout = 4 * time.Second

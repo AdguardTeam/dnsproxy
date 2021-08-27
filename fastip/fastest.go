@@ -14,6 +14,10 @@ import (
 	"github.com/miekg/dns"
 )
 
+// DefaultPingWaitTimeout is the default period of time for waiting ping
+// operations to finish.
+const DefaultPingWaitTimeout = 1 * time.Second
+
 // FastestAddr provides methods to determine the fastest network addresses.
 type FastestAddr struct {
 	// ipCacheLock protects ipCache.
@@ -44,7 +48,7 @@ func NewFastestAddr() (f *FastestAddr) {
 			EnableLRU: true,
 		}),
 		pingPorts:       []uint{80, 443},
-		PingWaitTimeout: defaultPingWaitTimeout,
+		PingWaitTimeout: DefaultPingWaitTimeout,
 		pinger:          &net.Dialer{Timeout: pingTCPTimeout},
 	}
 }

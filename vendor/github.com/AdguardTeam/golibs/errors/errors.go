@@ -97,12 +97,12 @@ type deferredError struct {
 	error
 }
 
-// Deferred implementds the Deferred interface for deferredError.
+// Deferred implements the Deferred interface for deferredError.
 func (err deferredError) Deferred() (ok bool) {
 	return true
 }
 
-// Error implementds the error interface for deferredError.
+// Error implements the error interface for deferredError.
 func (err deferredError) Error() (msg string) {
 	return fmt.Sprintf("deferred: %s", err.error)
 }

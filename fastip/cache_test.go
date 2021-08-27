@@ -90,7 +90,7 @@ func TestCache(t *testing.T) {
 	}
 	// f.cacheAdd(&ent, net.ParseIP("1.1.1.1"), fastestAddrCacheMinTTLSec)
 	val := packCacheEntry(&ent, 1) // ttl=1
-	f.cache.Set(net.ParseIP("1.1.1.1").To4(), val)
+	f.ipCache.Set(net.ParseIP("1.1.1.1").To4(), val)
 	ent = cacheEntry{
 		status:      0,
 		latencyMsec: 222,

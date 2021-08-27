@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -23,6 +24,20 @@ const (
 	INFO
 	DEBUG
 )
+
+// String implements fmt.Stringer for Level
+func (l Level) String() string {
+	switch l {
+	case DEBUG:
+		return "debug"
+	case INFO:
+		return "info"
+	case ERROR:
+		return "error"
+	default:
+		panic(fmt.Sprintf("not a valid Level: %d", l))
+	}
+}
 
 // level is the current logging level.  It must only be updated atomically.
 var level = uint32(INFO)
@@ -146,10 +161,7 @@ func Debug(format string, args ...interface{}) {
 // Tracef writes to debug log and adds the calling function's name
 func Tracef(format string, args ...interface{}) {
 	if atomic.LoadUint32(&level) >= uint32(DEBUG) {
-		pc := make([]uintptr, 10)
-		runtime.Callers(2, pc)
-		f := runtime.FuncForPC(pc[0])
-		writeLog("debug", f.Name(), format, args...)
+		writeLog("debug", getCallerName(), format, args...)
 	}
 }
 
@@ -228,16 +240,81 @@ func (w *stdLogWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// OnPanic is a convinient deferred helper function to log a panic in
+// OnPanic is a convenient deferred helper function to log a panic in
 // a goroutine.  It should not be used where proper error handling is required.
 func OnPanic(prefix string) {
 	if v := recover(); v != nil {
 		if prefix != "" {
 			Error("%s: recovered from panic: %v", prefix, v)
+			debug.PrintStack()
 
 			return
 		}
 
 		Error("recovered from panic: %v", v)
+		debug.PrintStack()
 	}
+}
+
+// OnPanicAndExit is a convenient deferred helper function to log a panic in
+// a goroutine.  Once a panic happens, it logs it and then calls os.Exit with
+// the specified exit code.
+func OnPanicAndExit(prefix string, exitCode int) {
+	if v := recover(); v != nil {
+		if prefix != "" {
+			Error("%s: panic encountered, exiting: %v", prefix, v)
+			debug.PrintStack()
+
+			os.Exit(exitCode)
+			return
+		}
+
+		Error("panic encountered, exiting: %v", v)
+		debug.PrintStack()
+		os.Exit(exitCode)
+	}
+}
+
+// OnCloserError is a convenient helper to log errors returned by io.Closer
+// The point is to not lose information from deferred Close calls. The error is
+// logged with the specified logging level.
+//
+// Instead of:
+//
+//   defer f.Close()
+//
+// You can now write:
+//
+//   defer log.OnCloserError(f, log.DEBUG)
+//
+// Note that if closer is nil, it is simply ignored.
+func OnCloserError(closer io.Closer, l Level) {
+	if closer == nil {
+		return
+	}
+
+	err := closer.Close()
+	if err == nil {
+		return
+	}
+
+	if atomic.LoadUint32(&level) >= uint32(l) {
+		format := "error occurred in a Close call: %v"
+		writeLog(l.String(), getCallerName(), format, err)
+	}
+}
+
+// getCallerName tries to get the caller name.
+// Returns empty string if it fails.
+func getCallerName() string {
+	pc := make([]uintptr, 10)
+
+	// This method is supposed to be used only from other log package
+	// so it skips three calls.
+	runtime.Callers(3, pc)
+	if len(pc) > 0 {
+		f := runtime.FuncForPC(pc[0])
+		return f.Name()
+	}
+	return ""
 }

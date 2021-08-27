@@ -184,6 +184,9 @@ func (p *Proxy) Init() (err error) {
 	if p.UpstreamMode == UModeFastestAddr {
 		log.Printf("Fastest IP is enabled")
 		p.fastestAddr = fastip.NewFastestAddr()
+		if timeout := p.FastestPingTimeout; timeout > 0 {
+			p.fastestAddr.PingWaitTimeout = timeout
+		}
 	}
 
 	p.proxyVerifier, err = newSubnetDetector(p.TrustedProxies)

@@ -2,11 +2,11 @@ package upstream
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
@@ -19,6 +19,10 @@ type exchangeResult struct {
 	err      error    // Error
 }
 
+// ErrNoUpstreams is returned from the methods that expect at least a single
+// upstream to work with when no upstreams specified.
+const ErrNoUpstreams errors.Error = "no upstream specified"
+
 // ExchangeParallel function is called to parallel exchange dns request by many upstreams
 // First answer without error will be returned
 // We will return nil and error if count of errors equals count of upstreams
@@ -26,7 +30,7 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, Upstream, error) {
 	size := len(u)
 
 	if size == 0 {
-		return nil, nil, errors.New("no upstream specified")
+		return nil, nil, ErrNoUpstreams
 	}
 
 	if size == 1 {
@@ -66,58 +70,54 @@ type ExchangeAllResult struct {
 	Upstream Upstream // upstream server
 }
 
-// ExchangeAll - receive responses from all upstream servers and return the results
-func ExchangeAll(upstreams []Upstream, req *dns.Msg) ([]ExchangeAllResult, error) {
-	replies := []ExchangeAllResult{}
+// ExchangeAll receives a response from each of ups.
+func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err error) {
+	upsl := len(ups)
+	if upsl == 0 {
+		return nil, ErrNoUpstreams
+	}
 
-	if len(upstreams) == 0 {
-		return replies, errors.New("no upstream specified")
-	} else if len(upstreams) == 1 {
-		reply, err := exchange(upstreams[0], req)
-		res := ExchangeAllResult{
-			Resp:     reply,
-			Upstream: upstreams[0],
+	res = make([]ExchangeAllResult, 0, upsl)
+	errs := make([]error, 0, upsl)
+	resCh := make(chan *exchangeResult, upsl)
+
+	// Start exchanging concurrently.
+	for _, u := range ups {
+		go exchangeAsync(u, req, resCh)
+	}
+
+	// Wait for all exchanges to finish.
+	for i := 0; i < upsl; i++ {
+		rep := <-resCh
+		if rep.err != nil {
+			errs = append(errs, rep.err)
+
+			continue
 		}
-		replies = append(replies, res)
-		return replies, err
-	}
 
-	errs := []error{}
-	ch := make(chan *exchangeResult, len(upstreams))
+		if rep.reply == nil {
+			errs = append(errs, errors.Error("no reply"))
 
-	// schedule async exchanges
-	for _, f := range upstreams {
-		go exchangeAsync(f, req, ch)
-	}
-
-	// wait for all exchanges to finish
-	for n := 0; n < len(upstreams); n++ {
-		select {
-		case rep := <-ch:
-			if rep.err != nil {
-				errs = append(errs, rep.err)
-			} else if rep.reply != nil {
-				res := ExchangeAllResult{
-					Resp:     rep.reply,
-					Upstream: rep.upstream,
-				}
-				replies = append(replies, res)
-			}
+			continue
 		}
+
+		res = append(res, ExchangeAllResult{
+			Resp:     rep.reply,
+			Upstream: rep.upstream,
+		})
+	}
+	if len(errs) == upsl {
+		return res, errors.List("all upstreams failed to exchange", errs...)
 	}
 
-	if len(errs) == len(upstreams) {
-		return replies, errorx.DecorateMany("all upstreams failed to exchange", errs...)
-	}
-
-	return replies, nil
+	return res, nil
 }
 
 // exchangeAsync tries to resolve DNS request with one upstream and send result to resp channel
-func exchangeAsync(u Upstream, req *dns.Msg, resp chan *exchangeResult) {
-	reply, err := u.Exchange(req.Copy())
-	resp <- &exchangeResult{
-		reply:    reply,
+func exchangeAsync(u Upstream, req *dns.Msg, respCh chan *exchangeResult) {
+	resp, err := u.Exchange(req.Copy())
+	respCh <- &exchangeResult{
+		reply:    resp,
 		upstream: u,
 		err:      err,
 	}
@@ -159,7 +159,7 @@ func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]
 	size := len(resolvers)
 
 	if size == 0 {
-		return nil, errors.New("no resolvers specified")
+		return nil, errors.Error("no resolvers specified")
 	}
 	if size == 1 {
 		address, err := lookup(ctx, resolvers[0], host)

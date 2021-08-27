@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
@@ -75,6 +76,10 @@ type Config struct {
 	UpstreamConfig *UpstreamConfig     // Upstream DNS servers configuration
 	Fallbacks      []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
 	UpstreamMode   UpstreamModeType    // How to request the upstream servers
+	// FastestPingTimeout is the timeout for waiting the first successful
+	// dialing when the UpstreamMode is set to UModeFastestAddr.
+	// Non-positive value will be replaced with the default one.
+	FastestPingTimeout time.Duration
 
 	// BogusNXDomain - transforms responses that contain at least one of the given IP addresses into NXDOMAIN
 	// Similar to dnsmasq's "bogus-nxdomain"

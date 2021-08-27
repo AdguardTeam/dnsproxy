@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/utils"
+	"github.com/AdguardTeam/golibs/netutil"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 )
@@ -110,7 +110,7 @@ func parseUpstreamLine(l string) (string, []string, error) {
 		// split domains list
 		for _, host := range strings.Split(domainsAndUpstream[0], "/") {
 			if host != "" {
-				if err := utils.IsValidHostname(host); err != nil {
+				if err := netutil.ValidateDomainName(host); err != nil {
 					return "", nil, err
 				}
 				hosts = append(hosts, strings.ToLower(host+"."))

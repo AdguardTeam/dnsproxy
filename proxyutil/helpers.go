@@ -37,6 +37,7 @@ func GetIPFromDNSRecord(r dns.RR) net.IP {
 	case *dns.AAAA:
 		return addr.AAAA
 	}
+
 	return nil
 }
 

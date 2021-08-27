@@ -2,155 +2,157 @@ package fastip
 
 import (
 	"net"
-	"strconv"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 )
 
-// Time we're waiting for ping operations to finish to
-// If we don't receive any result for this period of time,
-// we ignore all scheduled ping checks and return what we have
-const pingWaitTimeout = 1 * time.Second
+// defaultPingWaitTimeout is the default period of time for waiting ping
+// operations to finish.
+const defaultPingWaitTimeout = 1 * time.Second
 
-// TCP connection timeout. Note that it's higher that pingWaitTimeout
-// If the connection really takes more than "pingWaitTimeout" to succeed,
-// it will be ignored at first. However, we will record it to the cache
-// and consider the IP address next time it's checked.
-const pingTCPTimeout = 10 * time.Second
+// pingTCPTimeout is a TCP connection timeout.  It's higher than pingWaitTimeout
+// since the slower connections will be cached anyway.
+const pingTCPTimeout = 4 * time.Second
 
-// pingResult - represents the ping result
+// pingResult is the result of dialing the address.
 type pingResult struct {
-	ip      net.IP // ip address
-	tcpPort uint   // tcp port that was probed
-	latency uint   // ip latency (milliseconds)
-	success bool   // if true -- the ping operation was successful
+	// ipp is the address-port pair the result is related to.
+	ipp netutil.IPPort
+	// latency is the duration of dialing process in milliseconds.
+	latency uint
+	// success is true when the dialing succeeded.
+	success bool
 }
 
-// pingAll -- pings all apps in parallel and returns as soon as the fastest one is found
-// returns true if at least one ping was successful
-// returns false if it failed to connect to all IPs
-// returns the fastest address ping result
-func (f *FastestAddr) pingAll(host string, ips []net.IP) (bool, *pingResult) {
-	if len(ips) == 0 {
-		return false, nil
-	}
-
-	if len(ips) == 1 {
-		return true, &pingResult{
-			ip:      ips[0],
+// pingAll pings all ips concurrently and returns as soon as the fastest one is
+// found or the timeout is exceeded.
+func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
+	ipN := len(ips)
+	switch ipN {
+	case 0:
+		return nil
+	case 1:
+		return &pingResult{
+			ipp:     netutil.IPPort{IP: ips[0]},
 			success: true,
 		}
 	}
 
-	// channel that we will use to get the ping result
-	ch := make(chan *pingResult, len(ips)*len(f.tcpPorts))
-
-	// fastest cached address
-	var fCached *pingResult
-
-	// the number of scheduled ping operations
+	portN := len(f.pingPorts)
+	resCh := make(chan *pingResult, ipN*portN)
 	scheduled := 0
 
-	// find the fastest cached IP address (if any)
+	// Find the fastest cached IP address and start pinging others.
 	for _, ip := range ips {
 		cached := f.cacheFind(ip)
 		if cached == nil {
-			// start async ping checks
-			for _, port := range f.tcpPorts {
-				// async ping the specified IP
-				go f.pingDoTCP(host, ip, port, ch)
-				scheduled++
+			for _, port := range f.pingPorts {
+				go f.pingDoTCP(host, netutil.IPPort{IP: ip, Port: int(port)}, resCh)
 			}
+			scheduled += portN
 
+			continue
+		} else if cached.status != 0 {
 			continue
 		}
 
-		if cached.status == 0 {
-			if fCached == nil || fCached.latency > cached.latencyMsec {
-				fCached = &pingResult{
-					ip:      ip,
-					latency: cached.latencyMsec,
-				}
+		if pr == nil || cached.latencyMsec < pr.latency {
+			pr = &pingResult{
+				ipp:     netutil.IPPort{IP: ip},
+				latency: cached.latencyMsec,
+				success: true,
 			}
 		}
 	}
 
-	// if there was no ping operations scheduled,
-	// and there's a cached result, return it right away
-	if fCached != nil && scheduled == 0 {
-		log.Debug("pingAll: %s: return cached response: %s", host, fCached.ip)
-		return true, fCached
+	cached := pr != nil
+	if scheduled == 0 {
+		if cached {
+			log.Debug("pingAll: %s: return cached response: %s", host, pr.ipp)
+		} else {
+			log.Debug("pingAll: %s: returning nothing", host)
+		}
+
+		return pr
 	}
 
-	// wait for the first successful ping result
-	// or until ping timeout is finished
-	for i := 0; i < scheduled; i++ {
+	// Wait for the first successful ping result or the timeout.
+	for i, after := 0, time.After(f.PingWaitTimeout); i < scheduled; i++ {
 		select {
-		case res := <-ch:
-			log.Debug("pingAll: %s: got result for %s status %v", host, res.ip, res.success)
-
-			// if the result was successful, compare it to the fastest cached
-			// and return the fastest one of them
-			// if the result was not successful, just ignore it and do nothing
-			if res.success {
-				// Check what's faster -- cached or this one
-				if fCached != nil && fCached.latency < res.latency {
-					return true, fCached
-				}
-
-				return true, res
+		case res := <-resCh:
+			log.Debug(
+				"pingAll: %s: got result for %s status %v",
+				host,
+				res.ipp,
+				res.success,
+			)
+			if !res.success {
+				continue
 			}
-		case <-time.After(pingWaitTimeout):
-			if fCached != nil {
-				log.Debug("pingAll: %s: ping checks timed out, returning cached response: %s", host, fCached.ip)
+
+			if !cached || pr.latency >= res.latency {
+				pr = res
+			}
+
+			return pr
+		case <-after:
+			if cached {
+				log.Debug(
+					"pingAll: %s: pinging timed out, returning cached: %s",
+					host,
+					pr.ipp,
+				)
 			} else {
-				log.Debug("pingAll: %s: ping checks timed out, returning nothing", host)
+				log.Debug(
+					"pingAll: %s: ping checks timed out, returning nothing",
+					host,
+				)
 			}
 
-			return fCached != nil, fCached
+			return pr
 		}
 	}
 
-	if fCached != nil {
-		log.Debug("pingAll: %s: no successful ping check, returning cached response: %s", host, fCached.ip)
-	} else {
-		log.Debug("pingAll: %s: no successful ping check, returning nothing", host)
-	}
-	return fCached != nil, fCached
+	return pr
 }
 
-// pingDoTCP - connects to the specified IP:port and writes result to the channel
-func (f *FastestAddr) pingDoTCP(host string, ip net.IP, port uint, ch chan *pingResult) {
-	res := &pingResult{
-		ip:      ip,
-		tcpPort: port,
-		success: true,
-	}
-
-	log.Debug("pingDoTCP: %s: connecting to %s:%d", host, ip, port)
+// pingDoTCP sends the result of dialing the specified address into resCh.
+func (f *FastestAddr) pingDoTCP(host string, ipp netutil.IPPort, resCh chan *pingResult) {
+	log.Debug("pingDoTCP: %s: connecting to %s", host, ipp)
+	addr := ipp.String()
 
 	start := time.Now()
-	addr := net.JoinHostPort(ip.String(), strconv.Itoa(int(port)))
-	conn, err := net.DialTimeout("tcp", addr, pingTCPTimeout)
-
+	conn, err := f.pinger.Dial("tcp", addr)
 	elapsed := time.Since(start)
-	// regardless of the result, save elapsed ms
-	res.latency = uint(elapsed.Milliseconds())
 
-	if err != nil {
-		log.Debug("pingDoTCP: %s: failed to connect to %s:%d, elapsed %s ms: %v", host, ip, port, elapsed, err)
-
-		res.success = false
-		f.cacheAddFailure(ip)
-
-		// notify of the result
-		ch <- res
-		return
+	success := err == nil
+	if success {
+		if cerr := conn.Close(); cerr != nil {
+			log.Debug("closing tcp connection: %s", cerr)
+		}
 	}
 
-	log.Debug("pingDoTCP: %s: elapsed %s ms on %s:%d", host, elapsed, ip, port)
-	_ = conn.Close()
-	f.cacheAddSuccessful(ip, res.latency)
-	ch <- res
+	latency := uint(elapsed.Milliseconds())
+
+	resCh <- &pingResult{
+		ipp:     ipp,
+		latency: latency,
+		success: success,
+	}
+
+	if success {
+		log.Debug("pingDoTCP: %s: elapsed %s ms on %s", host, elapsed, ipp)
+		f.cacheAddSuccessful(ipp.IP, latency)
+	} else {
+		log.Debug(
+			"pingDoTCP: %s: failed to connect to %s, elapsed %s ms: %v",
+			host,
+			ipp,
+			elapsed,
+			err,
+		)
+		f.cacheAddFailure(ipp.IP)
+	}
 }

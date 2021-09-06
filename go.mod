@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/AdguardTeam/golibs v0.9.2
-	github.com/ameshkov/dnscrypt/v2 v2.1.3
+	github.com/ameshkov/dnscrypt/v2 v2.2.2
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20200827232406-6cde80facd47
 	github.com/go-test/deep v1.0.5

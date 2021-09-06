@@ -16,6 +16,10 @@ import (
 type Client struct {
 	Net     string        // protocol (can be "udp" or "tcp", by default - "udp")
 	Timeout time.Duration // read/write timeout
+
+	// UDPSize is the maximum size of a DNS response (or query) this client can
+	// sent or receive. If not set, we use dns.MinMsgSize by default.
+	UDPSize int
 }
 
 // ResolverInfo contains DNSCrypt resolver information necessary for decryption/encryption
@@ -158,7 +162,11 @@ func (c *Client) readResponse(conn net.Conn) ([]byte, error) {
 	}
 
 	if proto == "udp" {
-		response := make([]byte, maxQueryLen)
+		bufSize := c.UDPSize
+		if bufSize == 0 {
+			bufSize = dns.MinMsgSize
+		}
+		response := make([]byte, bufSize)
 		n, err := conn.Read(response)
 		if err != nil {
 			return nil, err
@@ -182,7 +190,12 @@ func (c *Client) encrypt(m *dns.Msg, resolverInfo *ResolverInfo) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	return q.Encrypt(query, resolverInfo.SharedKey)
+	b, err := q.Encrypt(query, resolverInfo.SharedKey)
+	if len(b) > c.maxQuerySize() {
+		return nil, ErrQueryTooLarge
+	}
+
+	return b, err
 }
 
 // decrypts decrypts a DNS message using a shared key from the resolver info
@@ -212,7 +225,8 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (*Cert, error) {
 
 	query := new(dns.Msg)
 	query.SetQuestion(providerName, dns.TypeTXT)
-	client := dns.Client{Net: c.Net, UDPSize: uint16(maxQueryLen), Timeout: c.Timeout}
+	// use 1252 as a UDPSize for this client to make sure the buffer is not too small
+	client := dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
 	r, _, err := client.Exchange(query, stamp.ServerAddrStr)
 	if err != nil {
 		return nil, err
@@ -283,4 +297,16 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (*Cert, error) {
 	}
 
 	return nil, certErr
+}
+
+func (c *Client) maxQuerySize() int {
+	if c.Net == "tcp" {
+		return dns.MaxMsgSize
+	}
+
+	if c.UDPSize > 0 {
+		return c.UDPSize
+	}
+
+	return dns.MinMsgSize
 }

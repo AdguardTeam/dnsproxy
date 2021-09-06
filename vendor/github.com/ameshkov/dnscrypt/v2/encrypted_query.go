@@ -72,10 +72,6 @@ func (q *EncryptedQuery) Encrypt(packet []byte, sharedKey [sharedKeySize]byte) (
 		return nil, ErrEsVersion
 	}
 
-	if len(query) > maxQueryLen {
-		return nil, ErrQueryTooLarge
-	}
-
 	return query, nil
 }
 

@@ -53,7 +53,10 @@ type Config struct {
 	// Encryption configuration
 	// --
 
-	TLSConfig            *tls.Config    // necessary for TLS, HTTPS, QUIC
+	TLSConfig *tls.Config // necessary for TLS, HTTPS, QUIC
+
+	DoHClientTLSConfig *tls.Config // necessary for DoH Client Authentication
+
 	DNSCryptProviderName string         // DNSCrypt provider name
 	DNSCryptResolverCert *dnscrypt.Cert // DNSCrypt resolver certificate
 

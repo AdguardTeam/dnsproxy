@@ -75,6 +75,15 @@ type Options struct {
 	// Upstream DNS servers settings
 	// --
 
+	// DoH Upstream Authentication
+	ClientAuth bool `short:"a" long:"auth" description:"Enable DoH Client authentication" optional:"yes" optional-value:"false"`
+
+	// Path to the .crt with the clien-side certificate for upstream client authentication
+	TLSAuthCertPath string `long:"a-tls-crt" description:"Path to a file with the client certificate"`
+
+	// Path to the file with the clien-side private key for upstream client authentication
+	TLSAuthKeyPath string `long:"a-tls-key" description:"Path to a file with the client private key"`
+
 	// DNS upstreams
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" required:"true"`
 
@@ -249,6 +258,7 @@ func createProxyConfig(options *Options) proxy.Config {
 		MaxGoroutines:          options.MaxGoRoutines,
 	}
 
+	initDoHClientTLSConfig(&config, options)
 	initUpstreams(&config, options)
 	initEDNS(&config, options)
 	initBogusNXDomain(&config, options)
@@ -262,6 +272,7 @@ func createProxyConfig(options *Options) proxy.Config {
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
+
 	upstreams := loadServersList(options.Upstreams)
 	upstreamConfig, err := proxy.ParseUpstreamsConfig(
 		upstreams,
@@ -269,6 +280,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 			InsecureSkipVerify: options.Insecure,
 			Bootstrap:          options.BootstrapDNS,
 			Timeout:            defaultTimeout,
+			DoHClientTLSConfig: config.DoHClientTLSConfig,
 		})
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
@@ -298,6 +310,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		}
 		config.Fallbacks = fallbacks
 	}
+
 }
 
 // initEDNS inits EDNS-related config
@@ -339,6 +352,17 @@ func initTLSConfig(config *proxy.Config, options *Options) {
 			log.Fatalf("failed to load TLS config: %s", err)
 		}
 		config.TLSConfig = tlsConfig
+	}
+}
+
+// initTLSConfig inits the DoH Client Auth TLS config
+func initDoHClientTLSConfig(config *proxy.Config, options *Options) {
+	if options.TLSAuthCertPath != "" && options.TLSAuthKeyPath != "" {
+		tlsConfig, err := newTLSConfig(options)
+		if err != nil {
+			log.Fatalf("failed to load DoH Client-auth TLS config: %s", err)
+		}
+		config.DoHClientTLSConfig = tlsConfig
 	}
 }
 

@@ -86,6 +86,7 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 			}
 		}
 	}
+
 	return &UpstreamConfig{
 		Upstreams:               upstreams,
 		DomainReservedUpstreams: domainReservedUpstreams,

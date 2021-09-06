@@ -185,15 +185,31 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
+
+	//caCert, err := ioutil.ReadFile("/home/marino/certificates/root/ca-full.cert.pem")
+	//if err != nil {
+	//        log.Println("could not load TLS cert: %s", err)
+	//}
+
+	//caCertPool := x509.NewCertPool()
+	//caCertPool.AppendCertsFromPEM(caCert)
+
+	cert, err := tls.LoadX509KeyPair("/home/ivan/certs/root/ca/intermediate/certs/dohclient.cert.pem", "/home/ivan/certs/root/ca/intermediate/private/dohclient.key.pem")
+	if err != nil {
+		log.Println("could not load TLS cert: %s", err)
+	}
+
 	tlsConfig := &tls.Config{
 		ServerName:            host,
 		RootCAs:               RootCAs,
+		Certificates:          []tls.Certificate{cert},
 		CipherSuites:          CipherSuites,
 		MinVersion:            tls.VersionTLS12,
 		InsecureSkipVerify:    n.options.InsecureSkipVerify,
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
+	//TLSConfig := p.DoHClientTLSConfig.Clone()
 	// The supported application level protocols should be specified only
 	// for DNS-over-HTTPS and DNS-over-QUIC connections.
 	//

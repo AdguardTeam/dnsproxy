@@ -135,14 +135,18 @@ You can also send a DNSCrypt request using a command that does not require stamp
 ### <a id="client"></a> Client
 
 ```go
+import (
+    "github.com/ameshkov/dnscrypt/v2"
+)
+
 // AdGuard DNS stamp
-stampStr := "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
+stampStr := "sdns://AQMAAAAAAAAAETk0LjE0MC4xNC4xNDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
 
 // Initializing the DNSCrypt client
 c := dnscrypt.Client{Net: "udp", Timeout: 10 * time.Second}
 
 // Fetching and validating the server certificate
-resolverInfo, err := client.Dial(stampStr)
+resolverInfo, err := c.Dial(stampStr)
 if err != nil {
     return err
 }
@@ -152,7 +156,11 @@ req := dns.Msg{}
 req.Id = dns.Id()
 req.RecursionDesired = true
 req.Question = []dns.Question{
-    {Name: "google-public-dns-a.google.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET},
+    {
+        Name: "google-public-dns-a.google.com.",
+        Qtype: dns.TypeA,
+        Qclass: dns.ClassINET,
+    },
 }
 
 // Get the DNS response
@@ -162,6 +170,10 @@ reply, err := c.Exchange(&req, resolverInfo)
 ## <a id="server"></a> Server
 
 ```go
+import (
+    "github.com/ameshkov/dnscrypt/v2"
+)
+
 // Prepare the test DNSCrypt server config
 rc, err := dnscrypt.GenerateResolverConfig("example.org", nil)
 if err != nil {

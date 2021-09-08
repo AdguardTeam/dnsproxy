@@ -14,6 +14,10 @@ import (
 	"golang.org/x/net/http2"
 )
 
+const (
+	transportDefaultReadIdleTimeout = 30 * time.Second
+)
+
 // dnsOverHTTPS represents DNS-over-HTTPS upstream.
 type dnsOverHTTPS struct {
 	boot *bootstrapper
@@ -148,9 +152,16 @@ func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 		DisableCompression: true,
 		DialContext:        dialContext,
 	}
-	// It appears that this is important to explicitly configure transport to use HTTP2
+
+	// It appears that this is important to explicitly configure transport to
+	// use HTTP2.
 	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11
-	_, err = http2.ConfigureTransports(transport)
+	var transportH2 *http2.Transport
+	transportH2, err = http2.ConfigureTransports(transport)
+
+	// This setting enables HTTP2 pings on idle connections.
+	transportH2.ReadIdleTimeout = transportDefaultReadIdleTimeout
+
 	if err != nil {
 		return nil, err
 	}

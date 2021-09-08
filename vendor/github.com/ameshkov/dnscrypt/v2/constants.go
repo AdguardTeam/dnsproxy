@@ -61,9 +61,6 @@ const (
 	// Some servers do not work if padded length is less than 256. Example: Quad9
 	minUDPQuestionSize = 256
 
-	// <max-query-len> is the maximum allowed query length
-	maxQueryLen = 1252
-
 	// Minimum possible DNS packet size
 	minDNSPacketSize = 12 + 5
 

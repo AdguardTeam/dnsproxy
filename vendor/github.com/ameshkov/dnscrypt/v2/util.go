@@ -184,6 +184,25 @@ func unpackTxtString(s string) ([]byte, error) {
 	return msg, nil
 }
 
+// normalize truncates the DNS response if needed depending on the protocol
+func normalize(proto string, req *dns.Msg, res *dns.Msg) {
+	size := dnsSize(proto, req)
+	// DNSCrypt encryption adds a header to each message, we should
+	// consider this when truncating a message.
+	// 64 should cover all cases
+	size = size - 64
+
+	// Truncate response message
+	res.Truncate(size)
+
+	// In case of UDP it is safer to simply remove all response records
+	// dns.Msg.Truncate method will not consider that we need a response
+	// shorter than dns.MinMsgSize
+	if res.Truncated && proto == "udp" {
+		res.Answer = nil
+	}
+}
+
 // dnsSize returns if buffer size *advertised* in the requests OPT record.
 // Or when the request was over TCP, we return the maximum allowed size of 64K.
 func dnsSize(proto string, r *dns.Msg) int {

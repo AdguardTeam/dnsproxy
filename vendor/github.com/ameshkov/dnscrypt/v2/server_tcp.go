@@ -35,7 +35,7 @@ func (w *TCPResponseWriter) RemoteAddr() net.Addr {
 
 // WriteMsg writes DNS message to the client
 func (w *TCPResponseWriter) WriteMsg(m *dns.Msg) error {
-	m.Truncate(dnsSize("tcp", w.req))
+	normalize("tcp", w.req, m)
 
 	res, err := w.encrypt(m, w.query)
 	if err != nil {

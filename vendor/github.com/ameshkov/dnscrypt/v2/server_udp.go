@@ -20,7 +20,7 @@ type encryptionFunc func(m *dns.Msg, q EncryptedQuery) ([]byte, error)
 type UDPResponseWriter struct {
 	udpConn *net.UDPConn    // UDP connection
 	sess    *dns.SessionUDP // SessionUDP (necessary to use dns.WriteToSessionUDP)
-	encrypt encryptionFunc  // DNSCRypt encryption function
+	encrypt encryptionFunc  // DNSCrypt encryption function
 	req     *dns.Msg        // DNS query that was processed
 	query   EncryptedQuery  // DNSCrypt query properties
 }
@@ -35,12 +35,12 @@ func (w *UDPResponseWriter) LocalAddr() net.Addr {
 
 // RemoteAddr is the client's address
 func (w *UDPResponseWriter) RemoteAddr() net.Addr {
-	return w.udpConn.RemoteAddr()
+	return w.sess.RemoteAddr()
 }
 
 // WriteMsg writes DNS message to the client
 func (w *UDPResponseWriter) WriteMsg(m *dns.Msg) error {
-	m.Truncate(dnsSize("udp", w.req))
+	normalize("udp", w.req, m)
 
 	res, err := w.encrypt(m, w.query)
 	if err != nil {
@@ -157,7 +157,7 @@ func (s *Server) cleanUpUDP(udpWg *sync.WaitGroup, l *net.UDPConn) {
 // readUDPMsg reads incoming UDP message
 func (s *Server) readUDPMsg(l *net.UDPConn) ([]byte, *dns.SessionUDP, error) {
 	_ = l.SetReadDeadline(time.Now().Add(defaultReadTimeout))
-	b := make([]byte, dns.MinMsgSize)
+	b := make([]byte, s.UDPSize)
 	n, sess, err := dns.ReadFromSessionUDP(l, b)
 	if err != nil {
 		return nil, nil, err

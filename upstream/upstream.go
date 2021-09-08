@@ -49,6 +49,8 @@ type Options struct {
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 
 	DoHClientTLSConfig *tls.Config // TLS config when DoH Client Authentication is used
+
+	DoHClient bool
 }
 
 // Parse "host:port" string and validate port number
@@ -75,11 +77,13 @@ func parseHostAndPort(addr string) (string, string, error) {
 // * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
 // options -- Upstream customization options, nil means default options.
 func AddressToUpstream(address string, options *Options) (Upstream, error) {
+
 	if options == nil {
 		options = &Options{}
 	}
 
 	if strings.Contains(address, "://") {
+
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
 			return nil, errorx.Decorate(err, "failed to parse %s", address)
@@ -153,6 +157,11 @@ func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 		if upstreamURL.Port() == "" {
 			upstreamURL.Host += ":443"
 		}
+
+		log.Printf("Upstream URL : ", upstreamURL.Host)
+		log.Printf("dohclient")
+
+		//log.Printf("Certificates : ", opts.DoHClientTLSConfig.Certificates)
 
 		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {

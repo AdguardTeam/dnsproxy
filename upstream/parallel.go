@@ -157,7 +157,7 @@ type lookupResult struct {
 // Return nil and error if count of errors equals count of resolvers
 func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]net.IPAddr, error) {
 	size := len(resolvers)
-
+	log.Printf("passe par la??")
 	if size == 0 {
 		return nil, errors.Error("no resolvers specified")
 	}

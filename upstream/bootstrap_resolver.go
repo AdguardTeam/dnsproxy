@@ -26,7 +26,7 @@ type Resolver struct {
 // options.
 func NewResolver(resolverAddress string, options *Options) (*Resolver, error) {
 	r := &Resolver{}
-
+	log.Printf("dohauth new resolver??")
 	// set default net.Resolver as a resolver if resolverAddress is empty
 	if resolverAddress == "" {
 		r.resolver = &net.Resolver{}
@@ -122,6 +122,7 @@ type resultError struct {
 }
 
 func (r *Resolver) resolve(host string, qtype uint16, ch chan *resultError) {
+
 	req := dns.Msg{}
 	req.Id = dns.Id()
 	req.RecursionDesired = true
@@ -138,6 +139,7 @@ func (r *Resolver) resolve(host string, qtype uint16, ch chan *resultError) {
 
 // LookupIPAddr returns result of LookupIPAddr method of Resolver's net.Resolver
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
+	log.Printf("pass par la?")
 	if r.resolver != nil {
 		// use system resolver
 		addrs, err := r.resolver.LookupIPAddr(ctx, host)

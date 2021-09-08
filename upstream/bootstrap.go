@@ -68,7 +68,6 @@ func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, 
 	}
 	b.dialContext = b.createDialContext(resolverAddresses)
 	b.resolvedConfig = b.createTLSConfig(host)
-
 	return b, nil
 }
 
@@ -77,6 +76,8 @@ func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, 
 // options -- Upstream customization options
 func newBootstrapper(address *url.URL, options *Options) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
+	log.Printf("dohauth ??")
+	log.Printf("url ??", address)
 	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
 		for _, boot := range options.Bootstrap {
@@ -180,12 +181,15 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 	n.dialContext = n.createDialContext(resolved)
 	n.resolvedConfig = n.createTLSConfig(host)
+	log.Printf("are we here get?")
+	log.Printf("are we here get?", addr)
 	return n.resolvedConfig, n.dialContext, nil
 }
 
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 
+	log.Printf("are we here create ?")
 	//caCert, err := ioutil.ReadFile("/home/marino/certificates/root/ca-full.cert.pem")
 	//if err != nil {
 	//        log.Println("could not load TLS cert: %s", err)

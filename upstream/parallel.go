@@ -156,8 +156,8 @@ type lookupResult struct {
 // First answer without error will be returned
 // Return nil and error if count of errors equals count of resolvers
 func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]net.IPAddr, error) {
+	log.Printf("pass par la : lookupParallel:parallel.go")
 	size := len(resolvers)
-	log.Printf("passe par la??")
 	if size == 0 {
 		return nil, errors.Error("no resolvers specified")
 	}
@@ -205,6 +205,7 @@ func lookupAsync(ctx context.Context, r *Resolver, host string, res chan *lookup
 }
 
 func lookup(ctx context.Context, r *Resolver, host string) ([]net.IPAddr, error) {
+	log.Printf("pass par la : lookup:parallel.go")
 	start := time.Now()
 	address, err := r.LookupIPAddr(ctx, host)
 	elapsed := time.Since(start)

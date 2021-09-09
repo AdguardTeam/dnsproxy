@@ -51,6 +51,7 @@ type bootstrapper struct {
 // options -- Upstream customization options
 func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, error) {
 	// get a host without port
+	log.Printf("pass par la newBootstrapper ??")
 	host, port, err := net.SplitHostPort(upsURL.Host)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrapper requires port in address %s", upsURL.String())
@@ -135,6 +136,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		defer n.Unlock()
 
 		n.dialContext = n.createDialContext([]string{resolverAddress})
+		log.Printf("pass par la : get:bootstrap.go, call createTLSConfig")
 		n.resolvedConfig = n.createTLSConfig(host)
 		return n.resolvedConfig, n.dialContext, nil
 	}
@@ -156,7 +158,7 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	} else {
 		ctx = context.Background()
 	}
-
+	log.Printf("pass par la : get:bootstrap.go, Lookupparallel")
 	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {
 		return nil, nil, errorx.Decorate(err, "failed to lookup %s", host)
@@ -180,16 +182,15 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	defer n.Unlock()
 
 	n.dialContext = n.createDialContext(resolved)
+	log.Printf("pass par la : get:bootstrap.go, createTLSConfig")
 	n.resolvedConfig = n.createTLSConfig(host)
-	log.Printf("are we here get?")
-	log.Printf("are we here get?", addr)
 	return n.resolvedConfig, n.dialContext, nil
 }
 
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 
-	log.Printf("are we here create ?")
+	log.Printf("pass par la : createTLSConfig:bootstrap.go")
 	//caCert, err := ioutil.ReadFile("/home/marino/certificates/root/ca-full.cert.pem")
 	//if err != nil {
 	//        log.Println("could not load TLS cert: %s", err)
@@ -198,7 +199,7 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	//caCertPool := x509.NewCertPool()
 	//caCertPool.AppendCertsFromPEM(caCert)
 
-	cert, err := tls.LoadX509KeyPair("/home/ivan/certs/root/ca/intermediate/certs/dohclient.cert.pem", "/home/ivan/certs/root/ca/intermediate/private/dohclient.key.pem")
+	cert, err := tls.LoadX509KeyPair("/home/marino/certificates/root/ca/intermediate/certs/dohclient.cert.pem", "/home/marino/certificates/root/ca/intermediate/private/dohclient.key.pem")
 	if err != nil {
 		log.Println("could not load TLS cert: %s", err)
 	}

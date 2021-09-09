@@ -139,7 +139,7 @@ func (r *Resolver) resolve(host string, qtype uint16, ch chan *resultError) {
 
 // LookupIPAddr returns result of LookupIPAddr method of Resolver's net.Resolver
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
-	log.Printf("pass par la?")
+	log.Printf("pass par la : LookupIPAddr:bootstrap_resolver.go")
 	if r.resolver != nil {
 		// use system resolver
 		addrs, err := r.resolver.LookupIPAddr(ctx, host)

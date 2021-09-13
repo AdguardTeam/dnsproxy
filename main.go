@@ -76,7 +76,6 @@ type Options struct {
 	// --
 
 	// DoH Upstream Authentication
-	ClientAuth bool `short:"a" long:"auth" description:"Enable DoH Client authentication" optional:"yes" optional-value:"false"`
 
 	// Path to the .crt with the clien-side certificate for upstream client authentication
 	TLSAuthCertPath string `long:"a-tls-crt" description:"Path to a file with the client certificate"`

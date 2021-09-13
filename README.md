@@ -115,12 +115,12 @@ DNS-over-TLS upstream:
 ./dnsproxy -u tls://dns.adguard.com
 ```
 
-DNS-over-HTTPS upstream with specified bootstrap DNS and Client authentication:
+DNS-over-HTTPS upstream with specified bootstrap DNS:
 ```shell
 ./dnsproxy -u https://dns.adguard.com/dns-query -b 1.1.1.1:53
 ```
 
-DNS-over-HTTPS upstream with specified bootstrap DNS:
+DNS-over-HTTPS upstream with specified bootstrap DNS and Client authentication:
 ```shell
 ./dnsproxy -l 127.0.0.1 -u https://dns.plido.net/dns-query --a-tls-crt=/home/.../dohclient.cert.pem --a-tls-key=/home/.../dohclient.key.pem -b 1.1.1.1:53
 ```

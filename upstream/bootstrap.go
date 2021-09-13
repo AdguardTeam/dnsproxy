@@ -136,7 +136,8 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		defer n.Unlock()
 
 		n.dialContext = n.createDialContext([]string{resolverAddress})
-		log.Printf("pass par la : get:bootstrap.go, call createTLSConfig")
+		log.Printf("pass par la : get:bootstrap.go, DoH client bool", n.options.DoHClient)
+
 		n.resolvedConfig = n.createTLSConfig(host)
 		return n.resolvedConfig, n.dialContext, nil
 	}
@@ -182,39 +183,30 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	defer n.Unlock()
 
 	n.dialContext = n.createDialContext(resolved)
-	log.Printf("pass par la : get:bootstrap.go, createTLSConfig")
-	n.resolvedConfig = n.createTLSConfig(host)
+
+	if n.options.DoHClient {
+		n.resolvedConfig = n.loadTLSConfig(host)
+		log.Printf("Loading the TLS Configuration for DoH client authentication")
+	} else {
+		n.resolvedConfig = n.createTLSConfig(host)
+		log.Printf("Creating a new TLS configuration without client authentication / Classical DoH")
+	}
 	return n.resolvedConfig, n.dialContext, nil
 }
 
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
-
 	log.Printf("pass par la : createTLSConfig:bootstrap.go")
-	//caCert, err := ioutil.ReadFile("/home/marino/certificates/root/ca-full.cert.pem")
-	//if err != nil {
-	//        log.Println("could not load TLS cert: %s", err)
-	//}
-
-	//caCertPool := x509.NewCertPool()
-	//caCertPool.AppendCertsFromPEM(caCert)
-
-	cert, err := tls.LoadX509KeyPair("/home/marino/certificates/root/ca/intermediate/certs/dohclient.cert.pem", "/home/marino/certificates/root/ca/intermediate/private/dohclient.key.pem")
-	if err != nil {
-		log.Println("could not load TLS cert: %s", err)
-	}
 
 	tlsConfig := &tls.Config{
 		ServerName:            host,
 		RootCAs:               RootCAs,
-		Certificates:          []tls.Certificate{cert},
 		CipherSuites:          CipherSuites,
 		MinVersion:            tls.VersionTLS12,
 		InsecureSkipVerify:    n.options.InsecureSkipVerify,
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
-	//TLSConfig := p.DoHClientTLSConfig.Clone()
 	// The supported application level protocols should be specified only
 	// for DNS-over-HTTPS and DNS-over-QUIC connections.
 	//
@@ -225,6 +217,20 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		}, compatProtoDQ...)
 	}
 
+	return tlsConfig
+}
+
+func (n *bootstrapper) loadTLSConfig(host string) *tls.Config {
+
+	tlsConfig := &tls.Config{
+		ServerName:            host,
+		Certificates:          n.options.DoHClientTLSConfig.Clone().Certificates,
+		RootCAs:               RootCAs,
+		CipherSuites:          CipherSuites,
+		MinVersion:            tls.VersionTLS12,
+		InsecureSkipVerify:    n.options.InsecureSkipVerify,
+		VerifyPeerCertificate: n.options.VerifyServerCertificate,
+	}
 	return tlsConfig
 }
 

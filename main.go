@@ -289,8 +289,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 			// upstream servers until it is possible to configure it
 			// separately.
 			//
-			// See
-			// https://github.com/AdguardTeam/dnsproxy/issues/161.
+			// See https://github.com/AdguardTeam/dnsproxy/issues/161.
 			fallback, err := upstream.AddressToUpstream(f, upsOpts)
 			if err != nil {
 				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)

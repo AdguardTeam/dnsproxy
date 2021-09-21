@@ -14,8 +14,23 @@ import (
 	"golang.org/x/net/http2"
 )
 
+// Values to configure HTTP and HTTP/2 transport.
 const (
+	// transportDefaultReadIdleTimeout is the default timeout for pinging
+	// idle connections in HTTP/2 transport.
 	transportDefaultReadIdleTimeout = 30 * time.Second
+
+	// transportDefaultIdleConnTimeout is the default timeout for idle
+	// connections in HTTP transport.
+	transportDefaultIdleConnTimeout = 5 * time.Minute
+
+	// dohMaxConnsPerHost controls the maximum number of connections for
+	// each host.
+	dohMaxConnsPerHost = 1
+
+	// dohMaxIdleConns controls the maximum number of connections being idle
+	// at the same time.
+	dohMaxIdleConns = 1
 )
 
 // dnsOverHTTPS represents DNS-over-HTTPS upstream.
@@ -151,20 +166,22 @@ func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
 		DialContext:        dialContext,
+		IdleConnTimeout:    transportDefaultIdleConnTimeout,
+		MaxConnsPerHost:    dohMaxConnsPerHost,
+		MaxIdleConns:       dohMaxIdleConns,
 	}
 
-	// It appears that this is important to explicitly configure transport to
-	// use HTTP2.
-	// Relevant issue: https://github.com/AdguardTeam/dnsproxy/issues/11
+	// Explicitly configure transport to use HTTP/2.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/11.
 	var transportH2 *http2.Transport
 	transportH2, err = http2.ConfigureTransports(transport)
-
-	// This setting enables HTTP2 pings on idle connections.
-	transportH2.ReadIdleTimeout = transportDefaultReadIdleTimeout
-
 	if err != nil {
 		return nil, err
 	}
+
+	// Enable HTTP/2 pings on idle connections.
+	transportH2.ReadIdleTimeout = transportDefaultReadIdleTimeout
 
 	return transport, nil
 }

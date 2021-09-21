@@ -15,7 +15,9 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
-	goFlags "github.com/jessevdk/go-flags"
+
+	//goFlags "github.com/jessevdk/go-flags"
+	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,54 +25,54 @@ import (
 type Options struct {
 	// Log settings
 	// --
-
+	Title string
 	// Should we write
-	Verbose bool `short:"v" long:"verbose" description:"Verbose output (optional)" optional:"yes" optional-value:"true"`
+	Verbose bool //`short:"v" long:"verbose" description:"Verbose output (optional)" optional:"yes" optional-value:"true"`
 
 	// Path to a log file
-	LogOutput string `short:"o" long:"output" description:"Path to the log file. If not set, write to stdout." default:""`
+	LogOutput string //`short:"o" long:"output" description:"Path to the log file. If not set, write to stdout." default:""`
 
 	// Listen addrs
 	// --
 
 	// Server listen address
-	ListenAddrs []string `short:"l" long:"listen" description:"Listening addresses" default:"0.0.0.0"`
+	ListenAddrs []string //`short:"l" long:"listen" description:"Listening addresses" default:"0.0.0.0"`
 
 	// Server listen ports
-	ListenPorts []int `short:"p" long:"port" description:"Listening ports. Zero value disables TCP and UDP listeners" default:"53"`
+	ListenPorts []int //`short:"p" long:"port" description:"Listening ports. Zero value disables TCP and UDP listeners" default:"53"`
 
 	// HTTPS listen ports
-	HTTPSListenPorts []int `short:"s" long:"https-port" description:"Listening ports for DNS-over-HTTPS"`
+	HTTPSListenPorts []int //`short:"s" long:"https-port" description:"Listening ports for DNS-over-HTTPS"`
 
 	// TLS listen ports
-	TLSListenPorts []int `short:"t" long:"tls-port" description:"Listening ports for DNS-over-TLS"`
+	TLSListenPorts []int //`short:"t" long:"tls-port" description:"Listening ports for DNS-over-TLS"`
 
 	// QUIC listen ports
-	QUICListenPorts []int `short:"q" long:"quic-port" description:"Listening ports for DNS-over-QUIC"`
+	QUICListenPorts []int //`short:"q" long:"quic-port" description:"Listening ports for DNS-over-QUIC"`
 
 	// DNSCrypt listen ports
-	DNSCryptListenPorts []int `short:"y" long:"dnscrypt-port" description:"Listening ports for DNSCrypt"`
+	DNSCryptListenPorts []int //`short:"y" long:"dnscrypt-port" description:"Listening ports for DNSCrypt"`
 
 	// Encryption config
 	// --
 
 	// Path to the .crt with the certificate chain
-	TLSCertPath string `short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
+	TLSCertPath string //`short:"c" long:"tls-crt" description:"Path to a file with the certificate chain"`
 
 	// Path to the file with the private key
-	TLSKeyPath string `short:"k" long:"tls-key" description:"Path to a file with the private key"`
+	TLSKeyPath string //`short:"k" long:"tls-key" description:"Path to a file with the private key"`
 
 	// Minimum TLS version
-	TLSMinVersion float32 `long:"tls-min-version" description:"Minimum TLS version, for example 1.0" optional:"yes"`
+	TLSMinVersion float32 //`long:"tls-min-version" description:"Minimum TLS version, for example 1.0" optional:"yes"`
 
 	// Minimum TLS version
-	TLSMaxVersion float32 `long:"tls-max-version" description:"Maximum TLS version, for example 1.3" optional:"yes"`
+	TLSMaxVersion float32 //`long:"tls-max-version" description:"Maximum TLS version, for example 1.3" optional:"yes"`
 
 	// Disable TLS certificate verification
-	Insecure bool `long:"insecure" description:"Disable secure TLS certificate validation" optional:"yes" optional-value:"false"`
+	Insecure bool //`long:"insecure" description:"Disable secure TLS certificate validation" optional:"yes" optional-value:"false"`
 
 	// Path to the DNSCrypt configuration file
-	DNSCryptConfigPath string `short:"g" long:"dnscrypt-config" description:"Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt"`
+	DNSCryptConfigPath string //`short:"g" long:"dnscrypt-config" description:"Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt"`
 
 	// Upstream DNS servers settings
 	// --
@@ -78,89 +80,89 @@ type Options struct {
 	// DoH Upstream Authentication
 
 	// Path to the .crt with the clien-side certificate for upstream client authentication
-	TLSAuthCertPath string `long:"a-tls-crt" description:"Path to a file with the client certificate"`
+	TLSAuthCertPath string //`long:"a-tls-crt" description:"Path to a file with the client certificate"`
 
 	// Path to the file with the clien-side private key for upstream client authentication
-	TLSAuthKeyPath string `long:"a-tls-key" description:"Path to a file with the client private key"`
+	TLSAuthKeyPath string //`long:"a-tls-key" description:"Path to a file with the client private key"`
 
 	// DNS upstreams
-	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" required:"true"`
+	Upstreams []string //`short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" required:"true"`
 
 	// Bootstrap DNS
-	BootstrapDNS []string `short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)"`
+	BootstrapDNS []string //`short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)"`
 
 	// Fallback DNS resolver
-	Fallbacks []string `short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
+	Fallbacks []string //`short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
 
 	// If true, parallel queries to all configured upstream servers
-	AllServers bool `long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
+	AllServers bool //`long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
 
 	// Respond to A or AAAA requests only with the fastest IP address
 	//  detected by ICMP response time or TCP connection time
-	FastestAddress bool `long:"fastest-addr" description:"Respond to A or AAAA requests only with the fastest IP address" optional:"yes" optional-value:"true"`
+	FastestAddress bool //`long:"fastest-addr" description:"Respond to A or AAAA requests only with the fastest IP address" optional:"yes" optional-value:"true"`
 
 	// Cache settings
 	// --
 
 	// If true, DNS cache is enabled
-	Cache bool `long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
+	Cache bool //`long:"cache" description:"If specified, DNS cache is enabled" optional:"yes" optional-value:"true"`
 
 	// Cache size value
-	CacheSizeBytes int `long:"cache-size" description:"Cache size (in bytes). Default: 64k"`
+	CacheSizeBytes int //`long:"cache-size" description:"Cache size (in bytes). Default: 64k"`
 
 	// DNS cache minimum TTL value - overrides record value
-	CacheMinTTL uint32 `long:"cache-min-ttl" description:"Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration."`
+	CacheMinTTL uint32 //`long:"cache-min-ttl" description:"Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration."`
 
 	// DNS cache maximum TTL value - overrides record value
-	CacheMaxTTL uint32 `long:"cache-max-ttl" description:"Maximum TTL value for DNS entries, in seconds."`
+	CacheMaxTTL uint32 //`long:"cache-max-ttl" description:"Maximum TTL value for DNS entries, in seconds."`
 
 	// CacheOptimistic, if set to true, enables the optimistic DNS cache. That means that cached results will be served even if their cache TTL has already expired.
-	CacheOptimistic bool `long:"cache-optimistic" description:"If specified, optimistic DNS cache is enabled" optional:"yes" optional-value:"true"`
+	CacheOptimistic bool //`long:"cache-optimistic" description:"If specified, optimistic DNS cache is enabled" optional:"yes" optional-value:"true"`
 
 	// Anti-DNS amplification measures
 	// --
 
 	// Ratelimit value
-	Ratelimit int `short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
+	Ratelimit int //`short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
 
 	// If true, refuse ANY requests
-	RefuseAny bool `long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
+	RefuseAny bool //`long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
 
 	// ECS settings
 	// --
 
 	// Use EDNS Client Subnet extension
-	EnableEDNSSubnet bool `long:"edns" description:"Use EDNS Client Subnet extension" optional:"yes" optional-value:"true"`
+	EnableEDNSSubnet bool //`long:"edns" description:"Use EDNS Client Subnet extension" optional:"yes" optional-value:"true"`
 
 	// Use Custom EDNS Client Address
-	EDNSAddr string `long:"edns-addr" description:"Send EDNS Client Address"`
+	EDNSAddr string //`long:"edns-addr" description:"Send EDNS Client Address"`
 
 	// DNS64 settings
 	// --
 
 	// Defines whether DNS64 functionality is enabled or not
-	DNS64 bool `long:"dns64" description:"If specified, dnsproxy will act as a DNS64 server" optional:"yes" optional-value:"true"`
+	DNS64 bool //`long:"dns64" description:"If specified, dnsproxy will act as a DNS64 server" optional:"yes" optional-value:"true"`
 
 	// DNS64Prefix defines the DNS64 prefix that dnsproxy should use when it acts as a DNS64 server
-	DNS64Prefix string `long:"dns64-prefix" description:"If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::" required:"false"`
+	DNS64Prefix string //`long:"dns64-prefix" description:"If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::" required:"false"`
 
 	// Other settings and options
 	// --
 
 	// If true, all AAAA requests will be replied with NoError RCode and empty answer
-	IPv6Disabled bool `long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
+	IPv6Disabled bool //`long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
 	// Transform responses that contain at least one of the given IP addresses into NXDOMAIN
-	BogusNXDomain []string `long:"bogus-nxdomain" description:"Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times."`
+	BogusNXDomain []string //`long:"bogus-nxdomain" description:"Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times."`
 
 	// UDP buffer size value
-	UDPBufferSize int `long:"udp-buf-size" description:"Set the size of the UDP buffer in bytes. A value <= 0 will use the system default." default:"0"`
+	UDPBufferSize int //`long:"udp-buf-size" description:"Set the size of the UDP buffer in bytes. A value <= 0 will use the system default." default:"0"`
 
 	// The maximum number of go routines
-	MaxGoRoutines int `long:"max-go-routines" description:"Set the maximum number of go routines. A value <= 0 will not not set a maximum." default:"0"`
+	MaxGoRoutines int //`long:"max-go-routines" description:"Set the maximum number of go routines. A value <= 0 will not not set a maximum." default:"0"`
 
 	// Print DNSProxy version (just for the help)
-	Version bool `long:"version" description:"Prints the program version"`
+	Version bool //`long:"version" description:"Prints the program version"`
 }
 
 // VersionString will be set through ldflags, contains current version
@@ -175,25 +177,18 @@ var dohauth = false
 const defaultDNS64Prefix = "64:ff9b::/96"
 
 func main() {
-	options := &Options{}
-	parser := goFlags.NewParser(options, goFlags.Default)
+	//options := &Options{}
+	//parser := goFlags.NewParser(options, goFlags.Default)
 
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
-		fmt.Printf("dnsproxy version: %s\n", VersionString)
-		os.Exit(0)
-	}
-
-	_, err := parser.Parse()
-	if err != nil {
-		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
-			os.Exit(0)
-		} else {
-			os.Exit(1)
-		}
+	var options Options
+	if _, err := toml.DecodeFile("config.toml", &options); err != nil {
+		fmt.Println(err)
+		return
 	}
 
 	log.Println("Starting the DNS proxy")
-	run(options)
+	log.Println("Options loaded?", options.Title)
+	run(&options)
 }
 
 func run(options *Options) {

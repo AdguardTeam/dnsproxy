@@ -111,5 +111,5 @@ golang.org/x/text/unicode/norm
 # gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 ## explicit
 gopkg.in/yaml.v3
-## explicit
 github.com/BurntSushi/toml v0.4.1
+## explicit

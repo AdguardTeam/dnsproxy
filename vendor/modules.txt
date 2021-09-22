@@ -5,6 +5,10 @@ github.com/AdguardTeam/golibs/errors
 github.com/AdguardTeam/golibs/log
 github.com/AdguardTeam/golibs/netutil
 github.com/AdguardTeam/golibs/stringutil
+# github.com/BurntSushi/toml v0.4.1
+## explicit
+github.com/BurntSushi/toml
+github.com/BurntSushi/toml/internal
 # github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da
 github.com/aead/chacha20/chacha
 # github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635
@@ -111,6 +115,3 @@ golang.org/x/text/unicode/norm
 # gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 ## explicit
 gopkg.in/yaml.v3
-github.com/BurntSushi/toml v0.4.1
-## explicit
-

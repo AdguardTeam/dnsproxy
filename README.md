@@ -34,55 +34,120 @@ $ go build -mod=vendor
 
 ```
 Usage:
-  dnsproxy [OPTIONS]
-
-Application Options:
-  -v, --verbose          Verbose output (optional)
-  -o, --output=          Path to the log file. If not set, write to stdout.
-  -l, --listen=          Listening addresses (default: 0.0.0.0)
-  -p, --port=            Listening ports. Zero value disables TCP and UDP listeners (default: 53)
-  -s, --https-port=      Listening ports for DNS-over-HTTPS
-  -t, --tls-port=        Listening ports for DNS-over-TLS
-  -q, --quic-port=       Listening ports for DNS-over-QUIC
-  -y, --dnscrypt-port=   Listening ports for DNSCrypt
-  -c, --tls-crt=         Path to a file with the certificate chain
-  -k, --tls-key=         Path to a file with the private key
-      --tls-min-version= Minimum TLS version, for example 1.0
-      --tls-max-version= Maximum TLS version, for example 1.3
-      --insecure         Disable secure TLS certificate validation
-  -g, --dnscrypt-config= Path to a file with DNSCrypt configuration. You can generate one using
-                         https://github.com/ameshkov/dnscrypt
-  -u, --upstream=        An upstream to be used (can be specified multiple times). You can also specify path to a file with
-                         the list of servers
-  -b, --bootstrap=       Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)
-  -f, --fallback=        Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can
-                         also specify path to a file with the list of servers
-      --all-servers      If specified, parallel queries to all configured upstream servers are enabled
-      --fastest-addr     Respond to A or AAAA requests only with the fastest IP address
-      --cache            If specified, DNS cache is enabled
-      --cache-size=      Cache size (in bytes). Default: 64k
-      --cache-min-ttl=   Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should
-                         only be done with careful consideration.
-      --cache-max-ttl=   Maximum TTL value for DNS entries, in seconds.
-  -r, --ratelimit=       Ratelimit (requests per second) (default: 0)
-      --refuse-any       If specified, refuse ANY requests
-      --edns             Use EDNS Client Subnet extension
-      --edns-addr=       Send EDNS Client Address
-      --dns64            If specified, dnsproxy will act as a DNS64 server
-      --dns64-prefix=    If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not
-                         specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::
-      --ipv6-disabled    If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be
-                         specified multiple times.
-      --udp-buf-size=    Set the size of the UDP buffer in bytes. A value <= 0 will use the system default. (default: 0)
-      --max-go-routines= Set the maximum number of go routines. A value <= 0 will not not set a maximum. (default: 0)
-      --version          Prints the program version
-      --a-tls-crt=       Path to the file to the tls certificate used to DoH Client when client-authentication is enabled
-      --a-tls-key=       Path to the file to the tls key used to DoH Client when client-authentication is enabled
-
-Help Options:
-  -h, --help             Show this help message
+  dnsproxy -c [Path to the .toml config file]
 ```
+
+## Example configuration file:
+
+```
+# Configuration file for dnsproxy
+# Log settings
+# // --
+
+Verbose = false # Verbose output (optional)
+LogOutput = "" # Path to a log file, if not set, write to stdout
+
+# Listen addrs
+# --
+
+ListenAddrs = ["127.0.0.1"] # Server listen address
+
+# Server listen ports 
+ListenPorts = [53] # Listening ports. Zero value disables TCP and UDP listeners
+#HTTPSListenPorts = [] # Listening ports for DNS-over-HTTPS
+#TLSListenPorts = [] # Listening ports for DNS-over-TLS
+#QUICListenPorts = [] # Listening ports for DNS-over-QUIC
+#DNSCryptListenPorts = [] # Listening ports for DNSCrypt
+
+# Encryption config
+# --
+
+#TLSCertPath = "" # Path to the .crt/.pem with the certificate chain, when the proxy is used as a DNS server
+#TLSKeyPath = "" # Path to a file with the private key, when the proxy is used as a DNS server
+#TLSMinVersion = # Minimum TLS version, for example 1.0
+#TLSMaxVersion = # Maximum TLS version, for example 1.3
+Insecure = false # Disable secure TLS certificate validation, for DNS server
+#DNSCryptConfigPath = "" # Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
+
+#DoH Upstream Authentication
+TLSAuthCertPath = "/home/marino/certificates/root/ca/intermediate/certs/dohclient.cert.pem" # Path to a file with the client certificate, coment if you don't want to use client auth
+TLSAuthKeyPath = "/home/marino/certificates/root/ca/intermediate/private/dohclient.key.pem" # Path to a file with the client private key, coment if you don't want to use client auth
+
+#Upstream DNS servers settings
+#--
+Upstreams = ["https://dns.plido.net/dns-query"] # An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers, it must be set
+BootstrapDNS = ["1.1.1.1:53"] # Bootstrap DNS for DoH and DoT, can be specified multiple times 
+#Fallbacks = [""] # Fallback DNS resolver to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
+#AllServers = false # If true, parallel queries to all configured upstream servers
+#FastestAddress = # Respond to A or AAAA requests only with the fastest IP address, detected by ICMP response time or TCP connection time
+
+# Cache settings
+# --
+
+#Cache = true # If true, DNS cache is enabled
+#CacheSizeBytes = 64000 # Cache size value, default: 64k
+#CacheMinTTL = # Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration."`
+#CacheMaxTTL = # Maximum TTL value for DNS entries, in seconds
+#CacheOptimistic = # CacheOptimistic, if set to true, enables the optimistic DNS cache. That means that cached results will be served even if their cache TTL has already expired
+
+# Anti-DNS amplification measures
+# --
+
+Ratelimit = 0 # Ratelimit (requests per second)
+#RefuseAny = false # If true, refuse ANY requests
+
+# ECS settings
+# --
+
+#EnableEDNSSubnet = true # Use EDNS Client Subnet extension
+#EDNSAddr = "" # Send EDNS custom client address
+
+#DNS64 settings
+#
+
+#DNS64 = true # If specified, dnsproxy will act as a DNS64 server
+#DNS64Prefix = "" # If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::
+
+#Other settings and options
+#--
+
+IPv6Disabled = false # If true, all AAAA requests will be replied with NoError RCode and empty answer
+# BogusNXDomain = [""] # Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times
+UDPBufferSize = 0 # Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
+MaxGoRoutines = 0 # Set the maximum number of go routines. A value <= 0 will not not set a maximum default to 0
+Version = false # Prints the program version"`
+```
+
+#### Linux (`systemd`)
+
+To run the `dnsproxy` as a daemon and without `root` under Linux with `systemd` as init system follow the instructions.
+This example will connect to the Cloudflare DNS service.
+1. Build the binary (see [Build](#Build)).
+2. Copy the binary to `/usr/bin` as `root`:
+   ```
+   # cp dnsproxy /usr/bin/
+   ```
+3. Copy the config files to `/etc/systemd/system/` as `root`:
+   ```
+   # cp dnsproxy.service /etc/systemd/system
+   ```
+   If the location of the binary is different from above then change the path in `dnsproxy.service` under `ExecStart`. 
+4. Reload `systemd` manager configuration:
+   ```
+   # systemctl daemon-reload
+   ```
+5. Enable the `dnsproxy` as a daemon:
+   ```
+   # systemctl enable dnsproxy
+   ```
+6. Reboot the system or start the daemon manually:
+   ```
+   # systemctl start dnsproxy
+   ```
+7. Adjust the `/etc/resolv.conf` by adding the following line. The address should be the same as in the config file (ListenAddrs):
+   ```
+   nameserver 127.0.0.1
+   ```
 
 ## Examples
 

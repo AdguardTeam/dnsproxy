@@ -8,6 +8,7 @@
 A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, `DNSCrypt`, and `DNS-over-QUIC`. Moreover, it can work as a `DNS-over-HTTPS`, `DNS-over-TLS` or `DNS-over-QUIC` server.
 
 > Note that `DNS-over-QUIC` support is experimental, don't use it in production.
+
 > Note that `DNS-over-HTTPS` with client certs is experimental and need client certificates provided from your DNS resolver, don't use it in production.
 
 - [How to build](#how-to-build)
@@ -34,8 +35,8 @@ $ go build -mod=vendor
 ## Usage
 
 ```
-Usage:
-  dnsproxy -c [Path to the .toml config file]
+It can be executed from command line with : 
+ sudo dnsproxy -c [Path to the .toml config file]
 ```
 
 ## Example configuration file:
@@ -171,7 +172,7 @@ Runs a DNS proxy on `127.0.0.1:5353` with multiple upstreams.
 ```shell
 ListenAddrs = ["127.0.0.1"]
 Upstreams = ["8.8.8.8:53","1.1.1.1:53"]
-ListenPorts = [53]
+ListenPorts = [5353]
 ```
 
 Listen on multiple interfaces and ports:
@@ -228,7 +229,7 @@ Fallbacks = ["8.8.8.8:53","1.1.1.1:53"]
 Runs a DNS-over-TLS proxy on `127.0.0.1:853`.
 ```shell
 ListenAddrs = ["127.0.0.1"]
-TLSListenPorts = ["853"]
+TLSListenPorts = [853]
 TLSCertPath = "/home/.../example.cert.pem"
 TLSKeyPath = "/home/.../example.key.pem"
 Upstreams = ["8.8.8.8:53"]
@@ -352,8 +353,8 @@ You can specify upstreams that will be used for a specific domain(s). We use the
 If one or more domains are specified, that upstream (`upstreamString`) is used only for those domains. Usually, it is used for private nameservers. For instance, if you have a nameserver on your network which deals with `xxx.internal.local` at `192.168.0.1` then you can specify `[/internal.local/]192.168.0.1`, and dnsproxy will send all queries to that nameserver. Everything else will be sent to the default upstreams (which are mandatory!).
 
 1. An empty domain specification, // has the special meaning of "unqualified names only" ie names without any dots in them.
-2. More specific domains take precedence over less specific domains, so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send queries for *.host.com to 1.2.3.4, except *.www.host.com, which will go to 2.3.4.5
-3. The special server address '#' means, "use the standard servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for *.host.com to 1.2.3.4, except *.www.host.com which will be forwarded as usual.
+2. More specific domains take precedence over less specific domains, so: `Upstreams = ["[/host.com/]1.2.3.4","[/www.host.com/]2.3.4.5"` will send queries for *.host.com to 1.2.3.4, except *.www.host.com, which will go to 2.3.4.5
+3. The special server address '#' means, "use the standard servers", so: `Upstreams = ["[/host.com/]1.2.3.4","[/www.host.com/]#"` will send queries for *.host.com to 1.2.3.4, except *.www.host.com which will be forwarded as usual.
 
 **Examples**
 
@@ -369,7 +370,7 @@ Upstreams = ["8.8.8.8:53","[/host.com/]1.1.1.1:53","[/maps.host.com/]#`"]
 
 ### EDNS Client Subnet
 
-To enable support for EDNS Client Subnet extension you should run dnsproxy with `--edns` flag:
+To enable support for EDNS Client Subnet extension you should run dnsproxy with `EnableEDNSSubnet` entry:
 
 ```shell
 Upstreams = ["8.8.8.8:53"]
@@ -378,7 +379,7 @@ EnableEDNSSubnet = true
 
 Now if you connect to the proxy from the Internet - it will pass through your original IP address's prefix to the upstream server.  This way the upstream server may respond with IP addresses of the servers that are located near you to minimize latency.
 
-If you want to use EDNS CS feature when you're connecting to the proxy from a local network, you need to set `--edns-addr=PUBLIC_IP` argument:
+If you want to use EDNS CS feature when you're connecting to the proxy from a local network, you need to set `EDNSAddr = "PUBLIC_IP"` argument:
 
 ```shell
 Upstreams = ["8.8.8.8:53"]
@@ -390,7 +391,7 @@ Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy w
 
 ### Bogus NXDomain
 
-This option is similar to dnsmasq `bogus-nxdomain`. If specified, `dnsproxy` transforms responses that contain at least one of the given IP addresses into `NXDOMAIN`. Can be specified multiple times.
+This option is similar to dnsmasq `BogusNXDomain`. If specified, `dnsproxy` transforms responses that contain at least one of the given IP addresses into `NXDOMAIN`. Can be specified multiple times.
 
 In the example below, we use AdGuard DNS server that returns `0.0.0.0` for blocked domains, and transform them to `NXDOMAIN`.
 

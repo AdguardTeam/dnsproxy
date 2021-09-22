@@ -16,6 +16,7 @@ require (
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/stretchr/testify v1.7.0
+	github.com/BurntSushi/toml v0.4.1
 	golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9 // indirect
 	golang.org/x/net v0.0.0-20210726213435-c6fcb2dbf985
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect

@@ -36,7 +36,7 @@ $ go build -mod=vendor
 
 ```
 It can be executed from command line with : 
- sudo dnsproxy -c [Path to the .toml config file]
+ sudo dnsproxy -c [Path to the dnsproxy.toml config file]
 ```
 
 ## Example configuration file:
@@ -124,7 +124,7 @@ Version = false # Prints the program version"`
 
 To run the `dnsproxy` as a daemon and without `root` under Linux with `systemd` as init system follow the instructions.
 This example will connect to the Cloudflare DNS service.
-1. Build the binary (see [Build](#Build)).
+1. Build the binary (see [Build](#how-to-build)).
 2. Copy the binary to `/usr/bin` as `root`:
    ```
    # cp dnsproxy /usr/bin/
@@ -154,7 +154,7 @@ This example will connect to the Cloudflare DNS service.
 
 ## Examples
 
-### Simple options. Change the toml options to the specified values :
+### Simple options. Change the `dnsproxy.toml's` options to the specified values :
 
 Runs a DNS proxy on `0.0.0.0:53` with a single upstream - Google DNS.
 ```shell
@@ -195,7 +195,7 @@ Upstreams = ["https://dns.adguard.com/dns-query"]
 BootstrapDNS = ["1.1.1.1:53"]
 ```
 
-DNS-over-HTTPS upstream with specified bootstrap DNS and Client authentication []:
+DNS-over-HTTPS upstream with specified bootstrap DNS and Client authentication:
 ```shell
 Upstreams = ["https://dns.plido.net/dns-query"]
 TLSAuthCertPath = "/home/.../dohclient.cert.pem"

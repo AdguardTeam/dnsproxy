@@ -126,29 +126,29 @@ To run the `dnsproxy` as a daemon and without `root` under Linux with `systemd` 
 This example will connect to the Cloudflare DNS service.
 1. Build the binary (see [Build](#how-to-build)).
 2. Copy the binary to `/usr/bin` as `root`:
-   ```
+   ```shell
    # cp dnsproxy /usr/bin/
    ```
 3. Copy the config files to `/etc/systemd/system/` and `/etc/dnsproxy` as `root`:
-   ```
+   ```shell
    # cp dnsproxy.service /etc/systemd/system
    # mkdir -p /etc/dnsproxy && cp dnsproxy.toml $_
    ```
    If the location of the binary is different from above then change the path in `dnsproxy.service` under `ExecStart`. 
 4. Reload `systemd` manager configuration:
-   ```
+   ```shell
    # systemctl daemon-reload
    ```
 5. Enable the `dnsproxy` as a daemon:
-   ```
+   ```shell
    # systemctl enable dnsproxy
    ```
 6. Reboot the system or start the daemon manually:
-   ```
+   ```shell
    # systemctl start dnsproxy
    ```
 7. Adjust the `/etc/resolv.conf` by adding the following line. The address should be the same as in the config file (ListenAddrs):
-   ```
+   ```shell
    nameserver 127.0.0.1
    ```
 

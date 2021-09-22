@@ -3,7 +3,7 @@ Description=DNS Proxy AdguadTeam with DoH Client authentication
 #Before=nss-lookup.target
 
 [Service]
-ExecStart=/usr/bin/dnsproxy -l 127.0.0.1 -u https://dns.plido.net/dns-query --a-tls-crt=/home/marino/certificates/root/ca/intermediate/certs/dohclient.cert.pem --a-tls-key=/home/marino/certificates/root/ca/intermediate/private/dohclient.key.pem -b 1.1.1.1:53
+ExecStart=/usr/bin/dnsproxy 
 User=root
 Group=root
 
@@ -12,49 +12,9 @@ Group=root
 ## Scheduling
 Nice=-20
 
-
 # Credentials
 ## A UNIX user and group pair is allocated dynamically when the unit is started.
 DynamicUser=yes
-
-
-# Sandboxing
-## The entire file system hierarchy is mounted read-only.
-#ProtectSystem=strict
-# The directories /home, /root and /run/user are made inaccessible and empty.
-#ProtectHome=no
-# Kernel variables accessible will be made read-only to all processes of the unit.
-#ProtectKernelTunables=yes
-# Explicit kernel module loading will be denied.
-#ProtectKernelModules=yes
-# The Linux Control Groups will be made read-only to all processes of the unit.
-#ProtectControlGroups=yes
-# LockPersonality=yes
-
-# Capabilities
-## Controls which capabilities to include in the capability bounding set for the executed process.
-#CapabilityBoundingSet=
-
-
-# Security
-## Ensures that the service process and all its children can never gain new privileges through execve()
-#NoNewPrivileges=yes
-
-## Controls the secure bits set for the executed process.
-#SecureBits=keep-caps,keep-caps-locked
-#SecureBits=no-setuid-fixup,no-setuid-fixup-locked
-#SecureBits=noroot,noroot-locked
-#SecureBits=no-cap-ambient-raise,no-cap-ambient-raise-locked
-
-
-# System Call Filtering
-##
-#SystemCallFilter=access arch_prctl bind brk clone close connect dup epoll_create1 epoll_ctl
-#SystemCallFilter=epoll_wait eventfd2 execve futex getrandom getsockopt ioctl mmap mprotect
-#SystemCallFilter=munmap newfstatat openat poll prctl pread64 prlimit64 read recvfrom rt_sigaction
-#SystemCallFilter=rt_sigprocmask sched_getaffinity sched_yield sendto set_robust_list 
-#SystemCallFilter=set_tid_address setsockopt shutdown sigaltstack socket statx write writev
-##
 SystemCallErrorNumber=EPERM
 
 [Install]

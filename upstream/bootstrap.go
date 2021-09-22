@@ -51,7 +51,6 @@ type bootstrapper struct {
 // options -- Upstream customization options
 func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, error) {
 	// get a host without port
-	log.Printf("pass par la newBootstrapper ??")
 	host, port, err := net.SplitHostPort(upsURL.Host)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrapper requires port in address %s", upsURL.String())
@@ -77,8 +76,6 @@ func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, 
 // options -- Upstream customization options
 func newBootstrapper(address *url.URL, options *Options) (*bootstrapper, error) {
 	resolvers := []*Resolver{}
-	log.Printf("dohauth ??")
-	log.Printf("url ??", address)
 	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
 		for _, boot := range options.Bootstrap {
@@ -136,8 +133,6 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		defer n.Unlock()
 
 		n.dialContext = n.createDialContext([]string{resolverAddress})
-		log.Printf("pass par la : get:bootstrap.go, DoH client bool", n.options.DoHClient)
-
 		n.resolvedConfig = n.createTLSConfig(host)
 		return n.resolvedConfig, n.dialContext, nil
 	}
@@ -159,7 +154,6 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	} else {
 		ctx = context.Background()
 	}
-	log.Printf("pass par la : get:bootstrap.go, Lookupparallel")
 	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {
 		return nil, nil, errorx.Decorate(err, "failed to lookup %s", host)
@@ -196,7 +190,6 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
-	log.Printf("pass par la : createTLSConfig:bootstrap.go")
 
 	tlsConfig := &tls.Config{
 		ServerName:            host,

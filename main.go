@@ -228,8 +228,6 @@ func createProxyConfig(options *Options) proxy.Config {
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
-
-	log.Printf("dohauth : ", dohauth)
 	upstreams := loadServersList(options.Upstreams)
 	upstreamConfig, err := proxy.ParseUpstreamsConfig(
 		upstreams,
@@ -315,16 +313,12 @@ func initTLSConfig(config *proxy.Config, options *Options) {
 
 // initTLSConfig inits the DoH Client Auth TLS config
 func initDoHClientTLSConfig(config *proxy.Config, options *Options) {
-	log.Printf("Config certificates : ", options.TLSAuthCertPath)
-	log.Printf("Config certificates : ", options.TLSAuthKeyPath)
-
 	if options.TLSAuthCertPath != "" && options.TLSAuthKeyPath != "" {
 		tlsConfig, err := newTLSConfig(options, true)
 		if err != nil {
 			log.Fatalf("failed to load DDoH Client-auth TLS config: %s", err)
 		}
 		dohauth = true
-		log.Printf("dohauth true")
 		config.DoHClientTLSConfig = tlsConfig
 	}
 }

@@ -128,9 +128,10 @@ This example will connect to the Cloudflare DNS service.
    ```
    # cp dnsproxy /usr/bin/
    ```
-3. Copy the config files to `/etc/systemd/system/` as `root`:
+3. Copy the config files to `/etc/systemd/system/` and `/etc/dnsproxy` as `root`:
    ```
    # cp dnsproxy.service /etc/systemd/system
+   # mkdir -p /etc/dnsproxy && cp dnsproxy.toml $_
    ```
    If the location of the binary is different from above then change the path in `dnsproxy.service` under `ExecStart`. 
 4. Reload `systemd` manager configuration:

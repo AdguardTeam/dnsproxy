@@ -158,11 +158,6 @@ func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 			upstreamURL.Host += ":443"
 		}
 
-		log.Printf("Upstream URL : ", upstreamURL.Host)
-		log.Printf("dohclient")
-
-		//log.Printf("Certificates : ", opts.DoHClientTLSConfig.Certificates)
-
 		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {
 			return nil, errorx.Decorate(err, "couldn't create tls bootstrapper")

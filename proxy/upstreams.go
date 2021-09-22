@@ -54,7 +54,6 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 			dnsUpstream, ok := upstreamsIndex[u]
 			if !ok {
 				// create an upstream
-				log.Printf("DoHClient :", options.DoHClient)
 				dnsUpstream, err = upstream.AddressToUpstream(
 					u,
 					&upstream.Options{

@@ -7,3 +7,5 @@ dnsproxy.exe
 example.crt
 example.key
 coverage.txt
+dohclient.cert.pem
+dohclient.key.pem

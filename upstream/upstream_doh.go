@@ -169,6 +169,10 @@ func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 		IdleConnTimeout:    transportDefaultIdleConnTimeout,
 		MaxConnsPerHost:    dohMaxConnsPerHost,
 		MaxIdleConns:       dohMaxIdleConns,
+		// Since we have a custom DialContext, we need to use this field to
+		// make golang http.Client attempt to use HTTP/2. Otherwise, it would
+		// only be used when negotiated on the TLS level.
+		ForceAttemptHTTP2: true,
 	}
 
 	// Explicitly configure transport to use HTTP/2.

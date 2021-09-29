@@ -19,7 +19,6 @@ import (
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
-	"golang.org/x/net/http2"
 )
 
 const (
@@ -140,12 +139,6 @@ type Proxy struct {
 // Init - initializes the proxy structures but does not start it
 func (p *Proxy) Init() (err error) {
 	p.initCache()
-
-	if p.TLSConfig != nil && len(p.TLSConfig.NextProtos) == 0 {
-		p.TLSConfig.NextProtos = append([]string{
-			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
-		}, compatProtoDQ...)
-	}
 
 	if p.MaxGoroutines > 0 {
 		log.Info("MaxGoroutines is set to %d", p.MaxGoroutines)

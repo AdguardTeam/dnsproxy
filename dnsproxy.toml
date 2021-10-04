@@ -3,7 +3,7 @@
 # Log settings
 # // --
 
-Verbose = false # Verbose output (optional)
+Verbose = true # Verbose output (optional)
 LogOutput = "" # Path to a log file, if not set, write to stdout
 
 # Listen addrs
@@ -29,12 +29,16 @@ Insecure = false # Disable secure TLS certificate validation, for DNS server
 #DNSCryptConfigPath = "" # Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
 
 #DoH Upstream Authentication
-#TLSAuthCertPath = "/home/.../dohclient.cert.pem" # Path to a file with the client certificate, coment if you don't want to use client auth
-#TLSAuthKeyPath = "/home/.../dohclient.key.pem" # Path to a file with the client private key, coment if you don't want to use client auth
+#TLSAuthCertPath = "/home/ivan/certs/root/ca/intermediate/certs/dohclient.cert.pem" # Path to a file with the client certificate, coment if you don't want to use client auth
+#TLSAuthKeyPath = "/home/ivan/certs/root/ca/intermediate/private/dohclient.key.pem" # Path to a file with the client private key, coment if you don't want to use client auth
+
+TLSAuthKeyPath = "/home/ivan/Desktop/client.key.pem"
+TLSAuthCertPath = "/home/ivan/Desktop/client.cert.pem"
 
 #Upstream DNS servers settings
 #--
-Upstreams = ["https://dns.adguard.com/dns-query"] # An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers, it must be set
+#Upstreams = ["https://dns.plido.net/dns-query"] # An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers, it must be set
+Upstreams = ["[/company.fr/]https://dns.plido.net/dns-query", "1.1.1.1:53"]
 BootstrapDNS = ["1.1.1.1:53"] # Bootstrap DNS for DoH and DoT, can be specified multiple times 
 #Fallbacks = [""] # Fallback DNS resolver to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
 #AllServers = false # If true, parallel queries to all configured upstream servers

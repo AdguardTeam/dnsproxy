@@ -180,10 +180,10 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 	if n.options.DoHClient {
 		n.resolvedConfig = n.loadTLSConfig(host)
-		log.Printf("Loading the TLS Configuration for DoH client authentication")
+		log.Debug("Loading the TLS Configuration for DoH client authentication")
 	} else {
 		n.resolvedConfig = n.createTLSConfig(host)
-		log.Printf("Creating a new TLS configuration without client authentication / Classical DoH")
+		log.Debug("Creating a new TLS configuration without client authentication / Classical DoH")
 	}
 	return n.resolvedConfig, n.dialContext, nil
 }

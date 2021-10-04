@@ -10,12 +10,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
-
 	"github.com/BurntSushi/toml"
 	goFlags "github.com/jessevdk/go-flags"
 	"gopkg.in/yaml.v3"
@@ -121,7 +119,6 @@ var dohauth = false
 const defaultDNS64Prefix = "64:ff9b::/96"
 
 func main() {
-
 	consoleargs := &ConsoleArgs{}
 	parser := goFlags.NewParser(consoleargs, goFlags.Default)
 

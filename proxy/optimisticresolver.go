@@ -53,7 +53,6 @@ func (s *optimisticResolver) ResolveOnce(dctx *DNSContext, key []byte) {
 	if _, ok := s.reqs.LoadOrStore(keyHexed, unit{}); ok {
 		return
 	}
-
 	defer s.reqs.Delete(keyHexed)
 
 	ok, err := s.resolve(dctx)

@@ -288,13 +288,12 @@ func createProxyConfig(options *Options) proxy.Config {
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
 	upstreams := loadServersList(options.Upstreams)
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(
-		upstreams,
-		&upstream.Options{
-			InsecureSkipVerify: options.Insecure,
-			Bootstrap:          options.BootstrapDNS,
-			Timeout:            defaultTimeout,
-		})
+	upsOpts := &upstream.Options{
+		InsecureSkipVerify: options.Insecure,
+		Bootstrap:          options.BootstrapDNS,
+		Timeout:            defaultTimeout,
+	}
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(upstreams, upsOpts)
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}
@@ -311,10 +310,12 @@ func initUpstreams(config *proxy.Config, options *Options) {
 	if options.Fallbacks != nil {
 		fallbacks := []upstream.Upstream{}
 		for i, f := range loadServersList(options.Fallbacks) {
-			fallback, err := upstream.AddressToUpstream(
-				f,
-				&upstream.Options{Timeout: defaultTimeout},
-			)
+			// Use the same options for fallback servers as for
+			// upstream servers until it is possible to configure it
+			// separately.
+			//
+			// See https://github.com/AdguardTeam/dnsproxy/issues/161.
+			fallback, err := upstream.AddressToUpstream(f, upsOpts)
 			if err != nil {
 				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)
 			}

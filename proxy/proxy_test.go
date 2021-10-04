@@ -732,8 +732,10 @@ func TestResponseInRequest(t *testing.T) {
 // Server must respond with SERVFAIL to requests without a Question
 func TestNoQuestion(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
-	err := dnsProxy.Start()
-	assert.Nil(t, err)
+	require.NoError(t, dnsProxy.Start())
+	t.Cleanup(func() {
+		require.NoError(t, dnsProxy.Stop())
+	})
 
 	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
@@ -742,10 +744,79 @@ func TestNoQuestion(t *testing.T) {
 	req.Question = nil
 
 	r, _, err := client.Exchange(req, addr.String())
-	assert.Nil(t, err)
-	assert.Equal(t, dns.RcodeServerFailure, r.Rcode)
+	require.NoError(t, err)
 
-	_ = dnsProxy.Stop()
+	assert.Equal(t, dns.RcodeServerFailure, r.Rcode)
+}
+
+// funcUpstream is a mock upstream implementation to simplify testing.  It
+// allows assigning custom Exchange and Address methods.
+type funcUpstream struct {
+	exchangeFunc func(m *dns.Msg) (resp *dns.Msg, err error)
+	addressFunc  func() (addr string)
+}
+
+// Exchange implements upstream.Upstream interface for *funcUpstream.
+func (wu *funcUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
+	if wu.exchangeFunc == nil {
+		return nil, nil
+	}
+
+	return wu.exchangeFunc(m)
+}
+
+// Address implements upstream.Upstream interface for *funcUpstream.
+func (wu *funcUpstream) Address() string {
+	if wu.addressFunc == nil {
+		return "stub"
+	}
+
+	return wu.addressFunc()
+}
+
+func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
+	dnsProxy := createTestProxy(t, nil)
+	require.NoError(t, dnsProxy.Start())
+	t.Cleanup(func() {
+		require.NoError(t, dnsProxy.Stop())
+	})
+
+	exchangeFunc := func(m *dns.Msg) (resp *dns.Msg, err error) {
+		resp = &dns.Msg{}
+		resp.SetReply(m)
+		hdr := dns.RR_Header{
+			Name:   m.Question[0].Name,
+			Class:  dns.ClassINET,
+			Rrtype: uint16(dns.TypeA),
+		}
+		resp.Answer = append(resp.Answer, &dns.A{
+			Hdr: hdr,
+			A:   net.IP{1, 2, 3, 4},
+		})
+		// Make the response invalid.
+		resp.Question = []dns.Question{}
+
+		return resp, nil
+	}
+	u := &funcUpstream{
+		exchangeFunc: exchangeFunc,
+	}
+
+	d := &DNSContext{
+		CustomUpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+		Req:                  createHostTestMessage("host"),
+		Addr: &net.TCPAddr{
+			IP: net.IP{1, 2, 3, 0},
+		},
+	}
+
+	var err error
+	require.NotPanics(t, func() {
+		err = dnsProxy.Resolve(d)
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, d.Req.Question[0], d.Res.Question[0])
 }
 
 func TestExchangeCustomUpstreamConfig(t *testing.T) {

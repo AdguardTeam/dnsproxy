@@ -18,6 +18,10 @@ const defaultReadTimeout = 2 * time.Second
 // then we start using defaultTCPIdleTimeout
 const defaultTCPIdleTimeout = 8 * time.Second
 
+// defaultUDPSize is the size of the UDP read buffer. Using 1252 by default,
+// see here: https://github.com/AdguardTeam/AdGuardDNS/issues/188
+const defaultUDPSize = 1252
+
 // helper struct that is used in several SetReadDeadline calls
 var longTimeAgo = time.Unix(1, 0)
 
@@ -47,6 +51,10 @@ type Server struct {
 
 	// ResolverCert contains resolver certificate.
 	ResolverCert *Cert
+
+	// UDPSize is the default buffer size to use to read incoming UDP messages.
+	// If not set it defaults to defaultUDPSize (1252 B).
+	UDPSize int
 
 	// Handler to invoke. If nil, uses DefaultHandler.
 	Handler Handler
@@ -148,6 +156,10 @@ func (s *Server) init() {
 	s.tcpConns = map[net.Conn]struct{}{}
 	s.udpListeners = map[*net.UDPConn]struct{}{}
 	s.tcpListeners = map[net.Listener]struct{}{}
+
+	if s.UDPSize == 0 {
+		s.UDPSize = defaultUDPSize
+	}
 }
 
 // isStarted returns true if the server is processing queries right now

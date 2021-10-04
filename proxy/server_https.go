@@ -12,6 +12,7 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
+	"golang.org/x/net/http2"
 )
 
 func (p *Proxy) createHTTPSListeners() error {
@@ -24,12 +25,16 @@ func (p *Proxy) createHTTPSListeners() error {
 		p.httpsListen = append(p.httpsListen, tcpListen)
 		log.Info("Listening to https://%s", tcpListen.Addr())
 
+		tlsConfig := p.TLSConfig.Clone()
+		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
+
 		srv := &http.Server{
-			TLSConfig:         p.TLSConfig.Clone(),
+			TLSConfig:         tlsConfig,
 			Handler:           p,
 			ReadHeaderTimeout: defaultTimeout,
 			WriteTimeout:      defaultTimeout,
 		}
+
 		p.httpsServer = append(p.httpsServer, srv)
 	}
 

@@ -64,6 +64,7 @@ Application Options:
       --cache-min-ttl=   Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should
                          only be done with careful consideration.
       --cache-max-ttl=   Maximum TTL value for DNS entries, in seconds.
+      --cache-optimistic Respond with expired cached answers and simultaneously try to refresh them.
   -r, --ratelimit=       Ratelimit (requests per second) (default: 0)
       --refuse-any       If specified, refuse ANY requests
       --edns             Use EDNS Client Subnet extension

@@ -8,6 +8,7 @@
 A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, `DNSCrypt`, and `DNS-over-QUIC`. Moreover, it can work as a `DNS-over-HTTPS`, `DNS-over-TLS` or `DNS-over-QUIC` server.
 
 > Note that `DNS-over-QUIC` support is experimental, don't use it in production.
+> Note that `DoH/DoT/DoQ` client authentication support is experimental, only DoH authentication has been tested
 
 - [How to build](#how-to-build)
 - [Usage](#usage)
@@ -77,8 +78,8 @@ Application Options:
       --udp-buf-size=    Set the size of the UDP buffer in bytes. A value <= 0 will use the system default. (default: 0)
       --max-go-routines= Set the maximum number of go routines. A value <= 0 will not not set a maximum. (default: 0)
       --version          Prints the program version
-      --a-tls-crt=       Path to the file to the tls certificate used to DoH Client when client-authentication is enabled
-      --a-tls-key=       Path to the file to the tls key used to DoH Client when client-authentication is enabled
+      --a-tls-crt=       Path to the file to the tls certificate used to DoH/DoT/DoQ Client when client-authentication is enabled
+      --a-tls-key=       Path to the file to the tls key used to DoH/DoT/DoQ Client when client-authentication is enabled
 
 Help Options:
   -h, --help             Show this help message

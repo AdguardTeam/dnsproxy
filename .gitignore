@@ -7,3 +7,5 @@ dnsproxy.exe
 example.crt
 example.key
 coverage.txt
+client.crt
+client.key

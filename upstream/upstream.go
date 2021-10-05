@@ -48,9 +48,9 @@ type Options struct {
 	// is called in dnsCrypt.exchangeDNSCrypt; if error != nil then Upstream.Exchange() will return it
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 
-	DoHClientTLSConfig *tls.Config // TLS config when DoH Client Authentication is used
+	TLSClientConfig *tls.Config // TLS config when DoH/DoT/DoQ Client Authentication is used
 
-	DoHClient bool
+	TLSClient bool // TLS client authentication flag when DoH/DoT/DoQ Client Authentication is used
 }
 
 // Parse "host:port" string and validate port number
@@ -157,11 +157,6 @@ func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 		if upstreamURL.Port() == "" {
 			upstreamURL.Host += ":443"
 		}
-
-		log.Printf("Upstream URL : ", upstreamURL.Host)
-		log.Printf("dohclient")
-
-		//log.Printf("Certificates : ", opts.DoHClientTLSConfig.Certificates)
 
 		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {

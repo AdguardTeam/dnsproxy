@@ -54,15 +54,14 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 			dnsUpstream, ok := upstreamsIndex[u]
 			if !ok {
 				// create an upstream
-				log.Printf("DoHClient :", options.DoHClient)
 				dnsUpstream, err = upstream.AddressToUpstream(
 					u,
 					&upstream.Options{
 						Bootstrap:          options.Bootstrap,
 						Timeout:            options.Timeout,
 						InsecureSkipVerify: options.InsecureSkipVerify,
-						DoHClientTLSConfig: options.DoHClientTLSConfig.Clone(), //TODO Verify i we need an if
-						DoHClient:          options.DoHClient,
+						TLSClientConfig:    options.TLSClientConfig.Clone(), //TODO Verify i we need an if
+						TLSClient:          options.TLSClient,
 					})
 				if err != nil {
 					err = fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, options.Bootstrap, err)

@@ -168,7 +168,7 @@ var VersionString = "undefined" // nolint:gochecknoglobals
 
 const defaultTimeout = 10 * time.Second
 
-var dohauth = false
+var tlsclient = false
 
 // defaultDNS64Prefix is a so-called "Well-Known Prefix" for DNS64.
 // if dnsproxy operates as a DNS64 server, we'll be using it.
@@ -259,7 +259,7 @@ func createProxyConfig(options *Options) proxy.Config {
 		MaxGoroutines:          options.MaxGoRoutines,
 	}
 
-	initDoHClientTLSConfig(&config, options)
+	initClientTLSConfig(&config, options)
 	initUpstreams(&config, options)
 	initEDNS(&config, options)
 	initBogusNXDomain(&config, options)
@@ -273,8 +273,6 @@ func createProxyConfig(options *Options) proxy.Config {
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
-
-	log.Printf("dohauth : ", dohauth)
 	upstreams := loadServersList(options.Upstreams)
 	upstreamConfig, err := proxy.ParseUpstreamsConfig(
 		upstreams,
@@ -282,8 +280,8 @@ func initUpstreams(config *proxy.Config, options *Options) {
 			InsecureSkipVerify: options.Insecure,
 			Bootstrap:          options.BootstrapDNS,
 			Timeout:            defaultTimeout,
-			DoHClientTLSConfig: config.DoHClientTLSConfig,
-			DoHClient:          dohauth,
+			TLSClientConfig:    config.TLSClientConfig,
+			TLSClient:          tlsclient,
 		})
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
@@ -350,7 +348,7 @@ func initBogusNXDomain(config *proxy.Config, options *Options) {
 // initTLSConfig inits the TLS config
 func initTLSConfig(config *proxy.Config, options *Options) {
 	if options.TLSCertPath != "" && options.TLSKeyPath != "" {
-		tlsConfig, err := newTLSConfig(options, false)
+		tlsConfig, err := newTLSConfig(options)
 		if err != nil {
 			log.Fatalf("failed to load TLS config: %s", err)
 		}
@@ -359,18 +357,14 @@ func initTLSConfig(config *proxy.Config, options *Options) {
 }
 
 // initTLSConfig inits the DoH Client Auth TLS config
-func initDoHClientTLSConfig(config *proxy.Config, options *Options) {
-	log.Printf("Config certificates : ", options.TLSAuthCertPath)
-	log.Printf("Config certificates : ", options.TLSAuthKeyPath)
-
+func initClientTLSConfig(config *proxy.Config, options *Options) {
 	if options.TLSAuthCertPath != "" && options.TLSAuthKeyPath != "" {
-		tlsConfig, err := newTLSConfig(options, true)
+		tlsConfig, err := newTLSConfig(options)
 		if err != nil {
-			log.Fatalf("failed to load DDoH Client-auth TLS config: %s", err)
+			log.Fatalf("failed to load Client-auth TLS config: %s", err)
 		}
-		dohauth = true
-		log.Printf("dohauth true")
-		config.DoHClientTLSConfig = tlsConfig
+		tlsclient = true
+		config.TLSClientConfig = tlsConfig
 	}
 }
 
@@ -503,7 +497,7 @@ func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSConte
 // NewTLSConfig returns a TLS config that includes a certificate
 // Use for server TLS config or when using a client certificate
 // If caPath is empty, system CAs will be used
-func newTLSConfig(options *Options, auth bool) (*tls.Config, error) {
+func newTLSConfig(options *Options) (*tls.Config, error) {
 	// Set default TLS min/max versions
 	tlsMinVersion := tls.VersionTLS10 // Default for crypto/tls
 	tlsMaxVersion := tls.VersionTLS13 // Default for crypto/tls
@@ -526,10 +520,10 @@ func newTLSConfig(options *Options, auth bool) (*tls.Config, error) {
 
 	cert, err := loadX509KeyPair("", "")
 
-	if auth {
+	if options.TLSAuthCertPath != "" {
 		cert, err = loadX509KeyPair(options.TLSAuthCertPath, options.TLSAuthKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("could not load TLS cert for DoH auth: %s", err)
+			return nil, fmt.Errorf("could not load TLS cert for TLS client authentication: %s", err)
 		}
 	} else {
 		cert, err = loadX509KeyPair(options.TLSCertPath, options.TLSKeyPath)

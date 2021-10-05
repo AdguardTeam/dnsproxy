@@ -15,9 +15,9 @@ listen-ports:
 #tls-crt: # Path to the .crt/.pem with the certificate chain, when the proxy is used as a DNS server
 #tls-key: # Path to a file with the private key, when the proxy is used as a DNS server
 #tls-min-version: # Minimum TLS version, for example 1.0
-#tls-max-version = # Maximum TLS version, for example 1.3
+#tls-max-version:  # Maximum TLS version, for example 1.3
 insecure: false # Disable secure TLS certificate validation, for DNS server
-#dnscrypt-config = "" # Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
+#dnscrypt-config:  "" # Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
 
 #Upstream DNS servers settings
 #--
@@ -41,13 +41,12 @@ cache-size: 64000 # Cache size value, default: 64k
 # Anti-DNS amplification measures
 # --
 ratelimit: 0 # Ratelimit (requests per second)
-#refuse-any = false # If true, refuse ANY requests
+#refuse-any: false # If true, refuse ANY requests
 
 # ECS settings
 # --
-#EnableEDNSSubnet = true # Use EDNS Client Subnet extension
-#edns = true # Send EDNS custom client address
-#edns-addr= 
+#edns: true # Send EDNS custom client address
+#edns-addr: 
 
 #DNS64 settings
 # --
@@ -58,7 +57,7 @@ ratelimit: 0 # Ratelimit (requests per second)
 #--
 
 ipv6-disabled: false # If true, all AAAA requests will be replied with NoError RCode and empty answer
-# bogus-nxdomain = [""] # Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times
+# bogus-nxdomain: # Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times
 udp-buf-size: 0 # Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
 max-go-routines: 0 # Set the maximum number of go routines. A value <= 0 will not not set a maximum default to 0
 version: false # Prints the program version"`

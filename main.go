@@ -187,9 +187,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to unmarshal config file: %v", err)
 		}
-		log.Println("Verbose--: ", options.Verbose)
-		log.Println("Upstreams: ", options.Upstreams)
-		log.Println("ListenAddrs: ", options.ListenAddrs)
 	}
 
 	parser := goFlags.NewParser(options, goFlags.Default)
@@ -202,12 +199,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-
-	log.Println("Upstreams: ", options.Upstreams)
-	log.Println("ListenAddrs: ", options.ListenAddrs)
-
 	log.Println("Starting the DNS proxy")
-
 	run(options)
 }
 

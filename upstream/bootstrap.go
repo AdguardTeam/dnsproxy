@@ -212,20 +212,6 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	return tlsConfig
 }
 
-func (n *bootstrapper) loadTLSConfig(host string) *tls.Config {
-
-	tlsConfig := &tls.Config{
-		ServerName:            host,
-		Certificates:          n.options.TLSClientConfig.Clone().Certificates,
-		RootCAs:               RootCAs,
-		CipherSuites:          CipherSuites,
-		MinVersion:            tls.VersionTLS12,
-		InsecureSkipVerify:    n.options.InsecureSkipVerify,
-		VerifyPeerCertificate: n.options.VerifyServerCertificate,
-	}
-	return tlsConfig
-}
-
 // createDialContext returns dialContext function that tries to establish connection with all given addresses one by one
 func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHandler) {
 	dialer := &net.Dialer{

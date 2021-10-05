@@ -37,6 +37,7 @@ Usage:
   dnsproxy [OPTIONS]
 
 Application Options:
+      --config-path      Path to yaml configuration file
   -v, --verbose          Verbose output (optional)
   -o, --output=          Path to the log file. If not set, write to stdout.
   -l, --listen=          Listening addresses (default: 0.0.0.0)

@@ -37,7 +37,6 @@ Usage:
   dnsproxy [OPTIONS]
 
 Application Options:
-<<<<<<< HEAD
       --config-path=      yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the
                           ones from this file.
   -v, --verbose           Verbose output (optional)
@@ -78,7 +77,6 @@ Application Options:
       --udp-buf-size=     Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
       --max-go-routines=  Set the maximum number of go routines. A value <= 0 will not not set a maximum.
       --version           Prints the program version
-=======
       --config-path      Path to yaml configuration file
   -v, --verbose          Verbose output (optional)
   -o, --output=          Path to the log file. If not set, write to stdout.
@@ -121,7 +119,6 @@ Application Options:
       --udp-buf-size=    Set the size of the UDP buffer in bytes. A value <= 0 will use the system default. (default: 0)
       --max-go-routines= Set the maximum number of go routines. A value <= 0 will not not set a maximum. (default: 0)
       --version          Prints the program version
->>>>>>> 23bf0d388ad8d269ef17c2d15dbba2808abe1535
 
 Help Options:
   -h, --help              Show this help message

@@ -22,8 +22,8 @@ import (
 // Options represents console arguments
 type Options struct {
 
-	// Configuration file path (yaml)
-	ConfigPath string `long:"config-path" description:"yaml configuration file." default:""`
+	// Configuration file path (yaml), the config path should be read wothout using goFlags in order not to have default values overriding yaml options
+	ConfigPath string `long:"config-path" description:"yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file." default:""`
 
 	// Log settings
 	// --
@@ -80,7 +80,7 @@ type Options struct {
 	// --
 
 	// DNS upstreams
-	Upstreams []string `yaml:"upstream" short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" optional:"true"`
+	Upstreams []string `yaml:"upstream" short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" optional:"false"`
 
 	// Bootstrap DNS
 	BootstrapDNS []string `yaml:"bootstrap" short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)"`
@@ -117,7 +117,7 @@ type Options struct {
 	// --
 
 	// Ratelimit value
-	Ratelimit int `yaml:"ratelimit" short:"r" long:"ratelimit" description:"Ratelimit (requests per second)" default:"0"`
+	Ratelimit int `yaml:"ratelimit" short:"r" long:"ratelimit" description:"Ratelimit (requests per second)"`
 
 	// If true, refuse ANY requests
 	RefuseAny bool `yaml:"refuse-any" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
@@ -171,21 +171,24 @@ const defaultDNS64Prefix = "64:ff9b::/96"
 func main() {
 	options := &Options{}
 
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
-		fmt.Printf("dnsproxy version: %s\n", VersionString)
-		os.Exit(0)
-	}
-
-	if len(os.Args) > 1 && os.Args[1][:13] == "--config-path" {
-		fmt.Printf("Path: %s\n", os.Args[1][14:])
-		b, err := ioutil.ReadFile(os.Args[1][14:])
-		if err != nil {
-			log.Fatalf("failed to read yaml config file %s: %v", os.Args[1][14:], err)
+	for _, arg := range os.Args {
+		if arg == "--version" {
+			fmt.Printf("dnsproxy version: %s\n", VersionString)
+			os.Exit(0)
 		}
 
-		err = yaml.Unmarshal(b, options)
-		if err != nil {
-			log.Fatalf("failed to unmarshal config file: %v", err)
+		if len(arg) > 13 {
+			if arg[:13] == "--config-path" {
+				fmt.Printf("Path: %s\n", arg[14:])
+				b, err := ioutil.ReadFile(arg[14:])
+				if err != nil {
+					log.Fatalf("failed to read yaml config file %s: %v", arg[14:], err)
+				}
+				err = yaml.Unmarshal(b, options)
+				if err != nil {
+					log.Fatalf("failed to unmarshal config file: %v", err)
+				}
+			}
 		}
 	}
 
@@ -195,11 +198,9 @@ func main() {
 		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
 			os.Exit(0)
 		} else {
-			fmt.Printf("Parser error: %s\n", err)
 			os.Exit(1)
 		}
 	}
-	log.Println("Starting the DNS proxy")
 	run(options)
 }
 

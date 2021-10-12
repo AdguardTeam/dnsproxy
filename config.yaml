@@ -1,9 +1,9 @@
 ---
 #Verbose: true
-verbose: true
+verbose: false
 output: # Path to a log file, if not set, write to stdout
-listen-addrs: 
-  - "127.0.0.1" # Server listen address
+#listen-addrs: 
+#  - "127.0.0.2" # Server listen address
 listen-ports: 
   - 53 # Listening ports. Zero value disables TCP and UDP listeners
 #https-port: # Listening ports for DNS-over-HTTPS
@@ -14,9 +14,9 @@ listen-ports:
 # --
 #tls-crt: # Path to the .crt/.pem with the certificate chain, when the proxy is used as a DNS server
 #tls-key: # Path to a file with the private key, when the proxy is used as a DNS server
-#tls-min-version: # Minimum TLS version, for example 1.0
+tls-min-version: 1.3 # Minimum TLS version, for example 1.0
 #tls-max-version:  # Maximum TLS version, for example 1.3
-insecure: false # Disable secure TLS certificate validation, for DNS server
+#insecure: false # Disable secure TLS certificate validation, for DNS server
 #dnscrypt-config:  "" # Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
 
 #Upstream DNS servers settings

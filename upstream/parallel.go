@@ -157,13 +157,6 @@ type lookupResult struct {
 // Return nil and error if count of errors equals count of resolvers
 func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]net.IPAddr, error) {
 	size := len(resolvers)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 	if size == 0 {
 		return nil, errors.Error("no resolvers specified")
 	}

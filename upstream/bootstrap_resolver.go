@@ -139,6 +139,10 @@ func (r *Resolver) resolve(host string, qtype uint16, ch chan *resultError) {
 // LookupIPAddr returns result of LookupIPAddr method of Resolver's net.Resolver
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+	log.Printf("passe par la?")
+>>>>>>> Stashed changes
 =======
 	log.Printf("passe par la?")
 >>>>>>> Stashed changes

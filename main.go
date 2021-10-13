@@ -182,7 +182,7 @@ func main() {
 				fmt.Printf("Path: %s\n", arg[14:])
 				b, err := ioutil.ReadFile(arg[14:])
 				if err != nil {
-					log.Fatalf("failed to read yaml config file %s: %v", arg[14:], err)
+					log.Fatalf("failed to read the config file %s: %v", arg[14:], err)
 				}
 				err = yaml.Unmarshal(b, options)
 				if err != nil {

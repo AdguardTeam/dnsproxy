@@ -395,7 +395,7 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 		options.ListenAddrs = []string{"0.0.0.0"}
 	}
 
-	if len(options.ListenPorts) == 0 { // if ListenAddrs has not been parsed through config file nor command line we set it to 53
+	if len(options.ListenPorts) == 0 { // if ListenPorts has not been parsed through config file nor command line we set it to 53
 		options.ListenPorts = []int{53}
 	}
 

@@ -77,10 +77,10 @@ type Options struct {
 
 	// DoH Upstream Authentication
 
-	// Path to the .crt with the clien-side certificate for upstream client authentication
+	// Path to the .crt with the client-side certificate for upstream client authentication
 	TLSAuthCertPath string `long:"a-tls-crt" description:"Path to a file with the client certificate"`
 
-	// Path to the file with the clien-side private key for upstream client authentication
+	// Path to the file with the client-side private key for upstream client authentication
 	TLSAuthKeyPath string `long:"a-tls-key" description:"Path to a file with the client private key"`
 
 	// DNS upstreams
@@ -167,8 +167,6 @@ type Options struct {
 var VersionString = "undefined" // nolint:gochecknoglobals
 
 const defaultTimeout = 10 * time.Second
-
-var tlsclient = false
 
 // defaultDNS64Prefix is a so-called "Well-Known Prefix" for DNS64.
 // if dnsproxy operates as a DNS64 server, we'll be using it.
@@ -277,11 +275,10 @@ func initUpstreams(config *proxy.Config, options *Options) {
 	upstreamConfig, err := proxy.ParseUpstreamsConfig(
 		upstreams,
 		&upstream.Options{
-			InsecureSkipVerify: options.Insecure,
-			Bootstrap:          options.BootstrapDNS,
-			Timeout:            defaultTimeout,
-			TLSClientConfig:    config.TLSClientConfig,
-			TLSClient:          tlsclient,
+			InsecureSkipVerify:    options.Insecure,
+			Bootstrap:             options.BootstrapDNS,
+			Timeout:               defaultTimeout,
+			TLSClientCertificates: config.TLSClientCertificates,
 		})
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
@@ -359,12 +356,12 @@ func initTLSConfig(config *proxy.Config, options *Options) {
 // initTLSConfig inits the DoH Client Auth TLS config
 func initClientTLSConfig(config *proxy.Config, options *Options) {
 	if options.TLSAuthCertPath != "" && options.TLSAuthKeyPath != "" {
-		tlsConfig, err := newTLSConfig(options)
+		cert, err := loadX509KeyPair(options.TLSAuthCertPath, options.TLSAuthKeyPath)
 		if err != nil {
-			log.Fatalf("failed to load Client-auth TLS config: %s", err)
+			log.Fatalf("could not load TLS cert for TLS client authentication: %s", err)
+			return
 		}
-		tlsclient = true
-		config.TLSClientConfig = tlsConfig
+		config.TLSClientCertificates = &cert
 	}
 }
 
@@ -518,20 +515,10 @@ func newTLSConfig(options *Options) (*tls.Config, error) {
 		tlsMaxVersion = tls.VersionTLS12
 	}
 
-	cert, err := loadX509KeyPair("", "")
-
-	if options.TLSAuthCertPath != "" {
-		cert, err = loadX509KeyPair(options.TLSAuthCertPath, options.TLSAuthKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("could not load TLS cert for TLS client authentication: %s", err)
-		}
-	} else {
-		cert, err = loadX509KeyPair(options.TLSCertPath, options.TLSKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("could not load TLS cert for TLS server: %s", err)
-		}
+	cert, err := loadX509KeyPair(options.TLSCertPath, options.TLSKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not load TLS cert for TLS server: %s", err)
 	}
-
 	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: uint16(tlsMinVersion), MaxVersion: uint16(tlsMaxVersion)}, nil
 }
 

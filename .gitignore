@@ -9,3 +9,5 @@ example.key
 coverage.txt
 client.crt
 client.key
+tlsclient.crt
+tlsclient.key

@@ -193,12 +193,13 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
-	if n.options.TLSClient {
+	if n.options.TLSClientCertificates != nil {
 		log.Printf("Creating a new TLS configuration with client authentication")
 		tlsConfig = &tls.Config{
-			Certificates: n.options.TLSClientConfig.Clone().Certificates,
+			Certificates: []tls.Certificate{*n.options.TLSClientCertificates},
 		}
 	}
+
 	// The supported application level protocols should be specified only
 	// for DNS-over-HTTPS and DNS-over-QUIC connections.
 	//

@@ -48,9 +48,7 @@ type Options struct {
 	// is called in dnsCrypt.exchangeDNSCrypt; if error != nil then Upstream.Exchange() will return it
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 
-	TLSClientConfig *tls.Config // TLS config when DoH/DoT/DoQ Client Authentication is used
-
-	TLSClient bool // TLS client authentication flag when DoH/DoT/DoQ Client Authentication is used
+	TLSClientCertificates *tls.Certificate // TLS certificates when DoH/DoT/DoQ Client Authentication is used
 }
 
 // Parse "host:port" string and validate port number
@@ -77,7 +75,6 @@ func parseHostAndPort(addr string) (string, string, error) {
 // * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
 // options -- Upstream customization options, nil means default options.
 func AddressToUpstream(address string, options *Options) (Upstream, error) {
-
 	if options == nil {
 		options = &Options{}
 	}

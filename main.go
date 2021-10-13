@@ -186,7 +186,7 @@ func main() {
 				}
 				err = yaml.Unmarshal(b, options)
 				if err != nil {
-					log.Fatalf("failed to unmarshal config file: %v", err)
+					log.Fatalf("failed to unmarshal the config file %s: %v", arg[14:], err)
 				}
 			}
 		}

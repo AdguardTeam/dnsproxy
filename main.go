@@ -19,7 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Options represents console arguments
+// Options represents console arguments. For further additions, please do not use the default: option, it will genrate some problems when config files are used
 type Options struct {
 
 	// Configuration file path (yaml), the config path should be read wothout using goFlags in order not to have default values overriding yaml options
@@ -390,6 +390,15 @@ func initDNSCryptConfig(config *proxy.Config, options *Options) {
 // initListenAddrs inits listen addrs
 func initListenAddrs(config *proxy.Config, options *Options) {
 	listenIPs := []net.IP{}
+
+	if len(options.ListenAddrs) == 0 { // if ListenAddrs has not been parsed through config file nor command line we set it to "0.0.0.0"
+		options.ListenAddrs = []string{"0.0.0.0"}
+	}
+
+	if len(options.ListenPorts) == 0 { // if ListenAddrs has not been parsed through config file nor command line we set it to 53
+		options.ListenPorts = []int{53}
+	}
+
 	for _, a := range options.ListenAddrs {
 		ip := net.ParseIP(a)
 		if ip == nil {

@@ -76,6 +76,8 @@ Application Options:
       --bogus-nxdomain=   Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times.
       --udp-buf-size=     Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
       --max-go-routines=  Set the maximum number of go routines. A value <= 0 will not not set a maximum.
+      --tls-client-crt=   Path to the file with the TLS certificate used for TLS client authentication (supported by DoH/DoT/DoQ)
+      --tls-client-key=   Path to the file with the TLS certificate used for TLS client authentication (supported by DoH/DoT/DoQ)
       --version           Prints the program version
 
 Help Options:

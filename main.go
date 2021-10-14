@@ -78,10 +78,10 @@ type Options struct {
 	// DoH Upstream Authentication
 
 	// Path to the .crt with the client-side certificate for upstream client authentication
-	TLSAuthCertPath string `long:"a-tls-crt" description:"Path to a file with the client certificate"`
+	TLSClientCertPath string `long:"tls-client-crt" description:"Path to the file with the TLS certificate used for TLS client authentication (supported by DoH/DoT/DoQ)"`
 
 	// Path to the file with the client-side private key for upstream client authentication
-	TLSAuthKeyPath string `long:"a-tls-key" description:"Path to a file with the client private key"`
+	TLSClientKeyPath string `long:"tls-client-key" description:"Path to the file with the TLS certificate used for TLS client authentication (supported by DoH/DoT/DoQ)"`
 
 	// DNS upstreams
 	Upstreams []string `short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" required:"true"`
@@ -257,7 +257,7 @@ func createProxyConfig(options *Options) proxy.Config {
 		MaxGoroutines:          options.MaxGoRoutines,
 	}
 
-	initClientTLSConfig(&config, options)
+	initTLSClient(&config, options)
 	initUpstreams(&config, options)
 	initEDNS(&config, options)
 	initBogusNXDomain(&config, options)
@@ -354,9 +354,9 @@ func initTLSConfig(config *proxy.Config, options *Options) {
 }
 
 // initTLSConfig inits the DoH Client Auth TLS config
-func initClientTLSConfig(config *proxy.Config, options *Options) {
-	if options.TLSAuthCertPath != "" && options.TLSAuthKeyPath != "" {
-		cert, err := loadX509KeyPair(options.TLSAuthCertPath, options.TLSAuthKeyPath)
+func initTLSClient(config *proxy.Config, options *Options) {
+	if options.TLSClientCertPath != "" && options.TLSClientKeyPath != "" {
+		cert, err := loadX509KeyPair(options.TLSClientCertPath, options.TLSClientKeyPath)
 		if err != nil {
 			log.Fatalf("could not load TLS cert for TLS client authentication: %s", err)
 			return

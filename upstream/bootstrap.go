@@ -183,7 +183,6 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 // createTLSConfig creates a client TLS config
 func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
-
 	tlsConfig := &tls.Config{
 		ServerName:            host,
 		RootCAs:               RootCAs,
@@ -194,7 +193,7 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	}
 
 	if n.options.TLSClientCertificates != nil {
-		log.Printf("Creating a new TLS configuration with client authentication")
+		log.Printf("Passing TLS configuration with client authentication")
 		tlsConfig = &tls.Config{
 			Certificates: []tls.Certificate{*n.options.TLSClientCertificates},
 		}

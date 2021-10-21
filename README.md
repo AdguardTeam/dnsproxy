@@ -37,8 +37,9 @@ Usage:
   dnsproxy [OPTIONS]
 
 Application Options:
-      --config-path      yaml configuration file. Minimal working configuration in config.yaml.dist. 
-                         Options passed through command line will override the ones from this file
+      --config-path      yaml configuration file.  Minimal working configuration
+                         is given in the config.yaml.dist.  Passed command line
+                         options will override the ones from the specified file.
   -v, --verbose          Verbose output (optional)
   -o, --output=          Path to the log file. If not set, write to stdout.
   -l, --listen=          Listening addresses (default: 0.0.0.0)

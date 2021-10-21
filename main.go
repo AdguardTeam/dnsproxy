@@ -19,11 +19,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Options represents console arguments. For further additions, please do not use the default: option, it will genrate some problems when config files are used
+// Options represents console arguments.  For further additions, please do not
+// use the default option since it will cause some problems when config files
+// are used.
 type Options struct {
 
-	// Configuration file path (yaml), the config path should be read wothout
-	// using goFlags in order not to have default values overriding yaml options
+	// Configuration file path (yaml), the config path should be read without
+	// using goFlags in order not to have default values overriding yaml
+	// options.
 	ConfigPath string `long:"config-path" description:"yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file." default:""`
 
 	// Log settings
@@ -178,6 +181,10 @@ func main() {
 			os.Exit(0)
 		}
 
+		// TODO(e.burkov, a.garipov):  Use flag package and remove the manual
+		// options parsing.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/182.
 		if len(arg) > 13 {
 			if arg[:13] == "--config-path" {
 				fmt.Printf("Path: %s\n", arg[14:])

@@ -22,7 +22,8 @@ import (
 // Options represents console arguments. For further additions, please do not use the default: option, it will genrate some problems when config files are used
 type Options struct {
 
-	// Configuration file path (yaml), the config path should be read wothout using goFlags in order not to have default values overriding yaml options
+	// Configuration file path (yaml), the config path should be read wothout
+	// using goFlags in order not to have default values overriding yaml options
 	ConfigPath string `long:"config-path" description:"yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file." default:""`
 
 	// Log settings
@@ -391,11 +392,15 @@ func initDNSCryptConfig(config *proxy.Config, options *Options) {
 func initListenAddrs(config *proxy.Config, options *Options) {
 	listenIPs := []net.IP{}
 
-	if len(options.ListenAddrs) == 0 { // if ListenAddrs has not been parsed through config file nor command line we set it to "0.0.0.0"
+	if len(options.ListenAddrs) == 0 {
+		// If ListenAddrs has not been parsed through config file nor command
+		// line we set it to "0.0.0.0".
 		options.ListenAddrs = []string{"0.0.0.0"}
 	}
 
-	if len(options.ListenPorts) == 0 { // if ListenPorts has not been parsed through config file nor command line we set it to 53
+	if len(options.ListenPorts) == 0 {
+		// If ListenPorts has not been parsed through config file nor command
+		// line we set it to 53.
 		options.ListenPorts = []int{53}
 	}
 

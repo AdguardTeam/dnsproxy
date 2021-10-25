@@ -187,83 +187,90 @@ func (c *cache) SetWithSubnet(m *dns.Msg, ip net.IP, mask uint8) {
 	c.itemsWithSubnet.Set(key, data)
 }
 
-// isCacheable checks if m is valid to be cached.
+// isCacheable checks if m is valid to be cached.  For negative answers it
+// follows RFC 2308 on how to cache NXDOMAIN and NODATA kinds of responses.
+//
+// See https://datatracker.ietf.org/doc/html/rfc2308#section-2.1,
+// https://datatracker.ietf.org/doc/html/rfc2308#section-2.2.
 func isCacheable(m *dns.Msg) bool {
-	if m == nil {
+	switch {
+	case m == nil:
 		return false
-	}
-
-	// Truncated messages aren't valid.
-	if m.Truncated {
-		log.Tracef("Refusing to cache truncated message")
+	case m.Truncated:
+		log.Tracef("refusing to cache truncated message")
 
 		return false
-	}
-
-	// If has wrong number of questions, also don't cache.
-	if len(m.Question) != 1 {
-		log.Tracef("Refusing to cache message with wrong number of questions")
+	case len(m.Question) != 1:
+		log.Tracef("refusing to cache message with wrong number of questions")
 
 		return false
-	}
-
-	if findLowestTTL(m) == 0 {
+	case lowestTTL(m) == 0:
 		return false
 	}
 
 	qName := m.Question[0].Name
-	rcode := m.Rcode
-	if rcode != dns.RcodeSuccess && rcode != dns.RcodeNameError {
+	switch rcode := m.Rcode; rcode {
+	case dns.RcodeSuccess:
+		if qType := m.Question[0].Qtype; qType != dns.TypeA && qType != dns.TypeAAAA {
+			return true
+		}
+
+		return hasIPAns(m) || isCacheableNegative(m)
+	case dns.RcodeNameError:
+		return isCacheableNegative(m)
+	default:
 		log.Tracef(
-			"%s: refusing to cache message with response type %s",
+			"%s: refusing to cache message with response code %s",
 			qName,
 			dns.RcodeToString[rcode],
 		)
 
 		return false
 	}
+}
 
-	if qType := m.Question[0].Qtype; m.Rcode != dns.RcodeSuccess ||
-		(qType != dns.TypeA && qType != dns.TypeAAAA) {
-		return true
-	}
-
-	// Now verify that it contains at least one A or AAAA record.
-	if len(m.Answer) == 0 {
-		log.Tracef(
-			"%s: refusing to cache a NOERROR response with no answers",
-			qName,
-		)
-
-		return false
-	}
-
+// hasIPAns check the m for containing at least one A or AAAA RR in answer
+// section.
+func hasIPAns(m *dns.Msg) (ok bool) {
 	for _, rr := range m.Answer {
-		if h := rr.Header(); h.Rrtype == dns.TypeA || h.Rrtype == dns.TypeAAAA {
+		if t := rr.Header().Rrtype; t == dns.TypeA || t == dns.TypeAAAA {
 			return true
 		}
 	}
 
-	log.Tracef("%s: refusing to cache a response with no A and AAAA answers", qName)
-
 	return false
 }
 
-// findLowestTTL returns the lowest TTL in m's RRs or 0 if the information is
+// isCacheableNegative returns true if m's header has at least a single SOA RR
+// and no NS records so that it can be declared authoritative.
+//
+// See https://datatracker.ietf.org/doc/html/rfc2308#section-5 for the
+// information on the responses from the authoritative server that should be
+// cached by the forwarder.
+func isCacheableNegative(m *dns.Msg) (ok bool) {
+	for _, rr := range m.Ns {
+		switch rr.Header().Rrtype {
+		case dns.TypeSOA:
+			ok = true
+		case dns.TypeNS:
+			return false
+		default:
+			// Go on.
+		}
+	}
+
+	return ok
+}
+
+// lowestTTL returns the lowest TTL in m's RRs or 0 if the information is
 // absent.
-func findLowestTTL(m *dns.Msg) (ttl uint32) {
+func lowestTTL(m *dns.Msg) (ttl uint32) {
 	ttl = math.MaxUint32
 
-	for _, r := range m.Answer {
-		ttl = getTTLIfLower(r.Header(), ttl)
-	}
-
-	for _, r := range m.Ns {
-		ttl = getTTLIfLower(r.Header(), ttl)
-	}
-
-	for _, r := range m.Extra {
-		ttl = getTTLIfLower(r.Header(), ttl)
+	for _, rrset := range [...][]dns.RR{m.Answer, m.Ns, m.Extra} {
+		for _, r := range rrset {
+			ttl = minTTL(r.Header(), ttl)
+		}
 	}
 
 	if ttl == math.MaxUint32 {
@@ -273,15 +280,16 @@ func findLowestTTL(m *dns.Msg) (ttl uint32) {
 	return ttl
 }
 
-// getTTLIfLower returns the minimum of h's ttl and the passed ttl.
-func getTTLIfLower(h *dns.RR_Header, ttl uint32) uint32 {
-	if h.Rrtype == dns.TypeOPT {
+// minTTL returns the minimum of h's ttl and the passed ttl.
+func minTTL(h *dns.RR_Header, ttl uint32) uint32 {
+	switch {
+	case h.Rrtype == dns.TypeOPT:
+		return ttl
+	case h.Ttl < ttl:
+		return h.Ttl
+	default:
 		return ttl
 	}
-	if h.Ttl < ttl {
-		return h.Ttl
-	}
-	return ttl
 }
 
 // Updates a given TTL to fall within the range specified by the cacheMinTTL and
@@ -298,16 +306,20 @@ func respectTTLOverrides(ttl uint32, cacheMinTTL uint32, cacheMaxTTL uint32) uin
 	return ttl
 }
 
+// uint16sz is the size of uint16 type in bytes.
+const uint16sz = 2
+
 // msgToKey constructs the cache key from type, class and question's name of m.
-func msgToKey(m *dns.Msg) []byte {
+func msgToKey(m *dns.Msg) (b []byte) {
 	q := m.Question[0]
 	name := q.Name
-	b := make([]byte, 2+2+len(name))
+	b = make([]byte, uint16sz+uint16sz+len(name))
 
-	// put qtype, qclass, name
+	// Put QTYPE, QCLASS, and QNAME.
 	binary.BigEndian.PutUint16(b, q.Qtype)
-	binary.BigEndian.PutUint16(b[2:], q.Qclass)
-	copy(b[4:], strings.ToLower(name))
+	binary.BigEndian.PutUint16(b[uint16sz:], q.Qclass)
+	copy(b[2*uint16sz:], strings.ToLower(name))
+
 	return b
 }
 
@@ -361,7 +373,13 @@ func msgToKeyWithSubnet(m *dns.Msg, ip net.IP, mask uint8) []byte {
 // RRSIG/SIG are DNSSEC records.
 func isDNSSEC(r dns.RR) bool {
 	switch r.Header().Rrtype {
-	case dns.TypeNSEC, dns.TypeNSEC3, dns.TypeDS, dns.TypeRRSIG, dns.TypeSIG, dns.TypeDNSKEY:
+	case
+		dns.TypeNSEC,
+		dns.TypeNSEC3,
+		dns.TypeDS,
+		dns.TypeRRSIG,
+		dns.TypeSIG,
+		dns.TypeDNSKEY:
 		return true
 	default:
 		return false
@@ -380,12 +398,10 @@ func filterRRSlice(rrs []dns.RR, do bool, ttl uint32, except uint16) (filtered [
 	j := 0
 	rs := make([]dns.RR, rrsLen)
 	for _, r := range rrs {
-		if !do && isDNSSEC(r) && r.Header().Rrtype != except {
+		if (!do && isDNSSEC(r) && r.Header().Rrtype != except) || r.Header().Rrtype == dns.TypeOPT {
 			continue
 		}
-		if r.Header().Rrtype == dns.TypeOPT {
-			continue
-		}
+
 		if ttl != 0 {
 			r.Header().Ttl = ttl
 		}
@@ -400,7 +416,7 @@ func filterRRSlice(rrs []dns.RR, do bool, ttl uint32, except uint16) (filtered [
 // value.
 func packResponse(m *dns.Msg) []byte {
 	pm, _ := m.Pack()
-	actualTTL := findLowestTTL(m)
+	actualTTL := lowestTTL(m)
 	expire := uint32(time.Now().Unix()) + actualTTL
 	d := make([]byte, 4+len(pm))
 	binary.BigEndian.PutUint32(d, expire)

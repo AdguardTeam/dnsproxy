@@ -28,7 +28,8 @@ const NextProtoDQ = "doq-i02"
 var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq"}
 
 // NextProtoDoT is a registered ALPN for DNS-over-TLS.
-// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
+//
+// See https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids.
 const NextProtoDoT = "dot"
 
 // RootCAs is the CertPool that must be used by all upstreams
@@ -207,7 +208,10 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 	// the client.
 	switch n.URL.Scheme {
 	case "tls":
-		tlsConfig.NextProtos = []string{NextProtoDoT}
+		// Don't use the ALPN since some servers currently do not accept it.
+		//
+		// See https://github.com/ameshkov/dnslookup/issues/19.
+		// tlsConfig.NextProtos = []string{NextProtoDoT}
 	case "https":
 		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 	case "quic":

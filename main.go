@@ -164,7 +164,7 @@ type Options struct {
 }
 
 // VersionString will be set through ldflags, contains current version
-var VersionString = "undefined" // nolint:gochecknoglobals
+var VersionString = "dev" // nolint:gochecknoglobals
 
 const defaultTimeout = 10 * time.Second
 
@@ -224,6 +224,9 @@ func run(options *Options) {
 		defer file.Close() //nolint
 		log.SetOutput(file)
 	}
+
+	// Log the dnsproxy startup + version
+	log.Info("Starting dnsproxy %s", VersionString)
 
 	// Prepare the proxy server
 	config := createProxyConfig(options)

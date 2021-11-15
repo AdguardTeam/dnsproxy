@@ -2,6 +2,7 @@
 package upstream
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net"
@@ -46,6 +47,8 @@ type Options struct {
 	// VerifyDNSCryptCertificate is callback to which the DNSCrypt server certificate will be passed.
 	// is called in dnsCrypt.exchangeDNSCrypt; if error != nil then Upstream.Exchange() will return it
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
+
+	TLSClientCertificates *tls.Certificate // TLS certificates when DoH/DoT/DoQ Client Authentication is used
 }
 
 // Parse "host:port" string and validate port number
@@ -77,6 +80,7 @@ func AddressToUpstream(address string, options *Options) (Upstream, error) {
 	}
 
 	if strings.Contains(address, "://") {
+
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
 			return nil, errorx.Decorate(err, "failed to parse %s", address)

@@ -83,6 +83,14 @@ type Options struct {
 	// Upstream DNS servers settings
 	// --
 
+	// DoH Upstream Authentication
+
+	// Path to the .crt with the client-side certificate for upstream client authentication
+	TLSClientCertPath string `yaml:"tls-client-crt" long:"tls-client-crt" description:"Path to the file with the TLS certificate used for TLS client authentication (supported by DoH/DoT/DoQ)"`
+
+	// Path to the file with the client-side private key for upstream client authentication
+	TLSClientKeyPath string `yaml:"tls-client-key" long:"tls-client-key" description:"Path to the file with the TLS certificate used for TLS client authentication (supported by DoH/DoT/DoQ)"`
+
 	// DNS upstreams
 	Upstreams []string `yaml:"upstream" short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" optional:"false"`
 
@@ -278,6 +286,7 @@ func createProxyConfig(options *Options) proxy.Config {
 		MaxGoroutines:          options.MaxGoRoutines,
 	}
 
+	initTLSClient(&config, options)
 	initUpstreams(&config, options)
 	initEDNS(&config, options)
 	initBogusNXDomain(&config, options)
@@ -292,12 +301,14 @@ func createProxyConfig(options *Options) proxy.Config {
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
 	upstreams := loadServersList(options.Upstreams)
-	upsOpts := &upstream.Options{
-		InsecureSkipVerify: options.Insecure,
-		Bootstrap:          options.BootstrapDNS,
-		Timeout:            defaultTimeout,
-	}
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(upstreams, upsOpts)
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(
+		upstreams,
+		&upstream.Options{
+			InsecureSkipVerify:    options.Insecure,
+			Bootstrap:             options.BootstrapDNS,
+			Timeout:               defaultTimeout,
+			TLSClientCertificates: config.TLSClientCertificates,
+		})
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}
@@ -328,6 +339,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		}
 		config.Fallbacks = fallbacks
 	}
+
 }
 
 // initEDNS inits EDNS-related config
@@ -369,6 +381,18 @@ func initTLSConfig(config *proxy.Config, options *Options) {
 			log.Fatalf("failed to load TLS config: %s", err)
 		}
 		config.TLSConfig = tlsConfig
+	}
+}
+
+// initTLSConfig inits the DoH Client Auth TLS config
+func initTLSClient(config *proxy.Config, options *Options) {
+	if options.TLSClientCertPath != "" && options.TLSClientKeyPath != "" {
+		cert, err := loadX509KeyPair(options.TLSClientCertPath, options.TLSClientKeyPath)
+		if err != nil {
+			log.Fatalf("could not load TLS cert for TLS client authentication: %s", err)
+			return
+		}
+		config.TLSClientCertificates = &cert
 	}
 }
 
@@ -537,9 +561,8 @@ func newTLSConfig(options *Options) (*tls.Config, error) {
 
 	cert, err := loadX509KeyPair(options.TLSCertPath, options.TLSKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("could not load TLS cert: %s", err)
+		return nil, fmt.Errorf("could not load TLS cert for TLS server: %s", err)
 	}
-
 	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: uint16(tlsMinVersion), MaxVersion: uint16(tlsMaxVersion)}, nil
 }
 

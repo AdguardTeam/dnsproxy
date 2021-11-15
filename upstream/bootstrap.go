@@ -78,7 +78,6 @@ func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, 
 	}
 	b.dialContext = b.createDialContext(resolverAddresses)
 	b.resolvedConfig = b.createTLSConfig(host)
-
 	return b, nil
 }
 
@@ -165,7 +164,6 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	} else {
 		ctx = context.Background()
 	}
-
 	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {
 		return nil, nil, errorx.Decorate(err, "failed to lookup %s", host)
@@ -184,12 +182,12 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		// couldn't find any suitable IP address
 		return nil, nil, fmt.Errorf("couldn't find any suitable IP address for host %s", host)
 	}
-
 	n.Lock()
 	defer n.Unlock()
 
 	n.dialContext = n.createDialContext(resolved)
 	n.resolvedConfig = n.createTLSConfig(host)
+
 	return n.resolvedConfig, n.dialContext, nil
 }
 
@@ -216,6 +214,22 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 	case "quic":
 		tlsConfig.NextProtos = compatProtoDQ
+
+  if n.options.TLSClientCertificates != nil {
+		log.Printf("Passing TLS configuration with client authentication")
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{*n.options.TLSClientCertificates},
+		}
+	}
+
+	// The supported application level protocols should be specified only
+	// for DNS-over-HTTPS and DNS-over-QUIC connections.
+	//
+	// See https://github.com/AdguardTeam/AdGuardHome/issues/2681.
+	if n.URL.Scheme != "tls" {
+		tlsConfig.NextProtos = append([]string{
+			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
+		}, compatProtoDQ...)
 	}
 
 	return tlsConfig

@@ -57,9 +57,10 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 				dnsUpstream, err = upstream.AddressToUpstream(
 					u,
 					&upstream.Options{
-						Bootstrap:          options.Bootstrap,
-						Timeout:            options.Timeout,
-						InsecureSkipVerify: options.InsecureSkipVerify,
+						Bootstrap:             options.Bootstrap,
+						Timeout:               options.Timeout,
+						InsecureSkipVerify:    options.InsecureSkipVerify,
+						TLSClientCertificates: options.TLSClientCertificates,
 					})
 				if err != nil {
 					err = fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, options.Bootstrap, err)
@@ -86,6 +87,7 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 			}
 		}
 	}
+
 	return &UpstreamConfig{
 		Upstreams:               upstreams,
 		DomainReservedUpstreams: domainReservedUpstreams,

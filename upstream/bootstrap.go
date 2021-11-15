@@ -15,12 +15,22 @@ import (
 	"golang.org/x/net/http2"
 )
 
-// NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
-// by selecting the ALPN token "dq" in the crypto handshake.
+// NextProtoDQ is the ALPN token for DoQ. During connection establishment,
+// DNS/QUIC support is indicated by selecting the ALPN token "dq" in the
+// crypto handshake.
+// Current draft version:
+// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02
 const NextProtoDQ = "doq-i02"
 
-// compatProtoDQ - ALPNs for backwards compatibility
-var compatProtoDQ = []string{"doq-i00", "dq", "doq"}
+// compatProtoDQ is a list of ALPN tokens used by a QUIC connection.
+// NextProtoDQ is the latest draft version supported by dnsproxy, but it also
+// includes previous drafts.
+var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq"}
+
+// NextProtoDoT is a registered ALPN for DNS-over-TLS.
+//
+// See https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids.
+const NextProtoDoT = "dot"
 
 // RootCAs is the CertPool that must be used by all upstreams
 // Redefining RootCAs makes sense on iOS to overcome the 15MB memory limit of the NEPacketTunnelProvider
@@ -192,11 +202,23 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
 	}
 
+	// Depending on the URL scheme, we choose what ALPN will be advertised by
+	// the client.
+	switch n.URL.Scheme {
+	case "tls":
+		// Don't use the ALPN since some servers currently do not accept it.
+		//
+		// See https://github.com/ameshkov/dnslookup/issues/19.
+		// tlsConfig.NextProtos = []string{NextProtoDoT}
+	case "https":
+		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
+	case "quic":
+		tlsConfig.NextProtos = compatProtoDQ
+	}
+
 	if n.options.TLSClientCertificates != nil {
 		log.Printf("Passing TLS configuration with client authentication")
-		tlsConfig = &tls.Config{
-			Certificates: []tls.Certificate{*n.options.TLSClientCertificates},
-		}
+		tlsConfig.Certificates = []tls.Certificate{*n.options.TLSClientCertificates}
 	}
 
 	// The supported application level protocols should be specified only

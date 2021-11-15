@@ -628,3 +628,197 @@ func TestSubnet(t *testing.T) {
 	a = resp.Answer[0].(*dns.A)
 	assert.True(t, a.A.String() == "3.3.3.3")
 }
+
+func TestCache_IsCacheable_negative(t *testing.T) {
+	msgHdr := func(rcode int) (hdr dns.MsgHdr) { return dns.MsgHdr{Id: dns.Id(), Rcode: rcode} }
+	aQuestions := func(name string) []dns.Question {
+		return []dns.Question{{
+			Name:   name,
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}}
+	}
+
+	cnameAns := func(name, cname string) (rr dns.RR) {
+		return &dns.CNAME{
+			Hdr: dns.RR_Header{
+				Name:   name,
+				Rrtype: dns.TypeCNAME,
+				Class:  dns.ClassINET,
+				Ttl:    3600,
+			},
+			Target: cname,
+		}
+	}
+
+	soaAns := func(name, ns, mbox string) (rr dns.RR) {
+		return &dns.SOA{
+			Hdr: dns.RR_Header{
+				Name:   name,
+				Rrtype: dns.TypeSOA,
+				Class:  dns.ClassINET,
+				Ttl:    3600,
+			},
+			Ns:   ns,
+			Mbox: mbox,
+		}
+	}
+
+	nsAns := func(name, ns string) (rr dns.RR) {
+		return &dns.NS{
+			Hdr: dns.RR_Header{
+				Name:   name,
+				Rrtype: dns.TypeNS,
+				Class:  dns.ClassINET,
+				Ttl:    3600,
+			},
+			Ns: ns,
+		}
+	}
+
+	aAns := func(name string, a net.IP) (rr dns.RR) {
+		return &dns.A{
+			Hdr: dns.RR_Header{
+				Name:   name,
+				Rrtype: dns.TypeA,
+				Class:  dns.ClassINET,
+				Ttl:    3600,
+			},
+			A: a,
+		}
+	}
+
+	const (
+		hostname        = "AN.EXAMPLE."
+		anotherHostname = "ANOTHER.EXAMPLE."
+		cname           = "TRIPPLE.XX."
+		mbox            = "HOSTMASTER.NS1.XX."
+		ns1, ns2        = "NS1.XX.", "NS2.XX."
+		xx              = "XX."
+	)
+
+	// See https://datatracker.ietf.org/doc/html/rfc2308.
+	testCases := []struct {
+		req  *dns.Msg
+		want assert.BoolAssertionFunc
+		name string
+	}{{
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeNameError),
+			Question: aQuestions(hostname),
+			Answer:   []dns.RR{cnameAns(hostname, cname)},
+			Ns: []dns.RR{
+				soaAns(xx, ns1, mbox),
+				nsAns(xx, ns1),
+				nsAns(xx, ns2),
+			},
+			Extra: []dns.RR{
+				aAns(ns1, net.IP{127, 0, 0, 2}),
+				aAns(ns2, net.IP{127, 0, 0, 3}),
+			},
+		},
+		want: assert.False,
+		name: "rfc2308_nxdomain_response_type_1",
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeNameError),
+			Question: aQuestions(hostname),
+			Answer:   []dns.RR{cnameAns(hostname, cname)},
+			Ns:       []dns.RR{soaAns("XX.", ns1, mbox)},
+		},
+		want: assert.True,
+		name: "rfc2308_nxdomain_response_type_2",
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeNameError),
+			Question: aQuestions(hostname),
+			Answer:   []dns.RR{cnameAns(hostname, cname)},
+		},
+		want: assert.False,
+		name: "rfc2308_nxdomain_response_type_3",
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeNameError),
+			Question: aQuestions(hostname),
+			Answer:   []dns.RR{cnameAns(hostname, cname)},
+			Ns: []dns.RR{
+				nsAns(xx, ns1),
+				nsAns(xx, ns2),
+			},
+			Extra: []dns.RR{
+				aAns(ns1, net.IP{127, 0, 0, 2}),
+				aAns(ns2, net.IP{127, 0, 0, 3}),
+			},
+		},
+		want: assert.False,
+		name: "rfc2308_nxdomain_response_type_4",
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(hostname),
+			Answer:   []dns.RR{cnameAns(hostname, cname)},
+			Ns: []dns.RR{
+				nsAns(xx, ns1),
+				nsAns(xx, ns2),
+			},
+			Extra: []dns.RR{
+				aAns(ns1, net.IP{127, 0, 0, 2}),
+				aAns(ns2, net.IP{127, 0, 0, 3}),
+			},
+		},
+		want: assert.False,
+		name: "rfc2308_nxdomain_referral_response",
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(anotherHostname),
+			Ns: []dns.RR{
+				soaAns(xx, ns1, mbox),
+				nsAns(xx, ns1),
+				nsAns(xx, ns2),
+			},
+			Extra: []dns.RR{
+				aAns(ns1, net.IP{127, 0, 0, 2}),
+				aAns(ns2, net.IP{127, 0, 0, 3}),
+			},
+		},
+		name: "rfc2308_nodata_response_type_1",
+		want: assert.False,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(anotherHostname),
+			Ns:       []dns.RR{soaAns(xx, ns1, mbox)},
+		},
+		name: "rfc2308_nodata_response_type_2",
+		want: assert.True,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(anotherHostname),
+		},
+		name: "rfc2308_nodata_response_type_3",
+		want: assert.False,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(anotherHostname),
+			Ns: []dns.RR{
+				nsAns(xx, ns1),
+				nsAns(xx, ns2),
+			},
+			Extra: []dns.RR{
+				aAns(ns1, net.IP{127, 0, 0, 2}),
+				aAns(ns2, net.IP{127, 0, 0, 3}),
+			},
+		},
+		name: "rfc2308_nodata_referral_response",
+		want: assert.False,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.want(t, isCacheable(tc.req))
+		})
+	}
+}

@@ -1,9 +1,8 @@
 package proxy
 
 import (
-	"net"
-
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -33,25 +32,24 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 
 	if p.cache.optimistic && hit && expired {
 		// Build the minimal copy of current context to avoid data race.
-		minCtxCopy := &DNSContext{
-			// It is only readed inside the optimistic resolver.
+		minCtxClone := &DNSContext{
+			// It is only read inside the optimistic resolver.
 			CustomUpstreamConfig: d.CustomUpstreamConfig,
 			ecsReqMask:           d.ecsReqMask,
 		}
 		if ecsReqIP := d.ecsReqIP; ecsReqIP != nil {
-			minCtxCopy.ecsReqIP = make(net.IP, len(ecsReqIP))
-			copy(minCtxCopy.ecsReqIP, ecsReqIP)
+			minCtxClone.ecsReqIP = netutil.CloneIP(ecsReqIP)
 		}
 		if d.Req != nil {
 			req := d.Req.Copy()
 			addDO(req)
-			minCtxCopy.Req = req
+			minCtxClone.Req = req
 		}
 
 		if !withSubnet {
-			go p.shortFlighter.ResolveOnce(minCtxCopy, key)
+			go p.shortFlighter.ResolveOnce(minCtxClone, key)
 		} else {
-			go p.shortFlighterWithSubnet.ResolveOnce(minCtxCopy, key)
+			go p.shortFlighterWithSubnet.ResolveOnce(minCtxClone, key)
 		}
 	}
 

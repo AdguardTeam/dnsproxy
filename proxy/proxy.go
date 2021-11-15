@@ -19,7 +19,6 @@ import (
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
-	"golang.org/x/net/http2"
 )
 
 const (
@@ -140,12 +139,6 @@ type Proxy struct {
 // Init - initializes the proxy structures but does not start it
 func (p *Proxy) Init() (err error) {
 	p.initCache()
-
-	if p.TLSConfig != nil && len(p.TLSConfig.NextProtos) == 0 {
-		p.TLSConfig.NextProtos = append([]string{
-			"http/1.1", http2.NextProtoTLS, NextProtoDQ,
-		}, compatProtoDQ...)
-	}
 
 	if p.MaxGoroutines > 0 {
 		log.Info("MaxGoroutines is set to %d", p.MaxGoroutines)
@@ -413,7 +406,6 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	start := time.Now()
-
 	// Perform the DNS request.
 	var reply *dns.Msg
 	var u upstream.Upstream
@@ -434,13 +426,22 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, req)
 	}
 
-	if reply != nil {
+	if ok = reply != nil; ok {
 		// This branch handles the successfully exchanged response.
 
 		// Set upstream that have resolved the request to DNSContext.
 		d.Upstream = u
 		p.setMinMaxTTL(reply)
-		ok = true
+
+		// Explicitly construct the question section since some
+		// upstreams may respond with invalidly constructed messages
+		// which cause out-of-range panics afterwards.
+		//
+		// See https://github.com/AdguardTeam/AdGuardHome/issues/3551.
+		if len(req.Question) > 0 && len(reply.Question) == 0 {
+			reply.Question = make([]dns.Question, 1)
+			reply.Question[0] = req.Question[0]
+		}
 	} else {
 		reply = p.genServerFailure(req)
 		d.hasEDNS0 = false

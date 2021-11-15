@@ -12,23 +12,29 @@ import (
 	"github.com/miekg/dns"
 )
 
-// NextProtoDQ - During connection establishment, DNS/QUIC support is indicated
-// by selecting the ALPN token "dq" in the crypto handshake.
-// Current draft version: https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02
+// NextProtoDQ is the ALPN token for DoQ. During connection establishment,
+// DNS/QUIC support is indicated by selecting the ALPN token "dq" in the
+// crypto handshake.
+// Current draft version:
+// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02
 const NextProtoDQ = "doq-i02"
+
+// compatProtoDQ is a list of ALPN tokens used by a QUIC connection.
+// NextProtoDQ is the latest draft version supported by dnsproxy, but it also
+// includes previous drafts.
+var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq"}
 
 // maxQuicIdleTimeout - maximum QUIC idle timeout.
 // Default value in quic-go is 30, but our internal tests show that
 // a higher value works better for clients written with ngtcp2
 const maxQuicIdleTimeout = 5 * time.Minute
 
-// compatProtoDQ - ALPNs for backwards compatibility
-var compatProtoDQ = []string{"doq-i00", "dq", "doq"}
-
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
 		log.Info("Creating a QUIC listener")
-		quicListen, err := quic.ListenAddr(a.String(), p.TLSConfig, &quic.Config{MaxIdleTimeout: maxQuicIdleTimeout})
+		tlsConfig := p.TLSConfig.Clone()
+		tlsConfig.NextProtos = compatProtoDQ
+		quicListen, err := quic.ListenAddr(a.String(), tlsConfig, &quic.Config{MaxIdleTimeout: maxQuicIdleTimeout})
 		if err != nil {
 			return errorx.Decorate(err, "could not start QUIC listener")
 		}

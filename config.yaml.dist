@@ -1,0 +1,17 @@
+# This is the yaml configuration file for dnsproxy with minimal working
+# configuration, all the options available can be seen with ./dnsproxy --help.
+# To use it within dnsproxy specify the --config-path=/<path-to-config.yaml>
+# option.  Any other command-line options specified will override the values
+# from the config file.
+---
+bootstrap: 
+  - "8.8.8.8:53"
+listen-addrs: 
+  - "0.0.0.0"
+listen-ports: 
+  - 53
+max-go-routines: 0
+ratelimit: 0
+udp-buf-size: 0
+upstream: 
+  - "1.1.1.1:53"

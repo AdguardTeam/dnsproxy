@@ -214,12 +214,11 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 	case "quic":
 		tlsConfig.NextProtos = compatProtoDQ
+	}
 
-  if n.options.TLSClientCertificates != nil {
+	if n.options.TLSClientCertificates != nil {
 		log.Printf("Passing TLS configuration with client authentication")
-		tlsConfig = &tls.Config{
-			Certificates: []tls.Certificate{*n.options.TLSClientCertificates},
-		}
+		tlsConfig.Certificates = []tls.Certificate{*n.options.TLSClientCertificates}
 	}
 
 	// The supported application level protocols should be specified only

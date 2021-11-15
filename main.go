@@ -297,18 +297,16 @@ func createProxyConfig(options *Options) proxy.Config {
 	return config
 }
 
-// initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
 	upstreams := loadServersList(options.Upstreams)
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(
-		upstreams,
-		&upstream.Options{
-			InsecureSkipVerify:    options.Insecure,
-			Bootstrap:             options.BootstrapDNS,
-			Timeout:               defaultTimeout,
-			TLSClientCertificates: config.TLSClientCertificates,
-		})
+	upsOpts := &upstream.Options{
+		InsecureSkipVerify:    options.Insecure,
+		Bootstrap:             options.BootstrapDNS,
+		Timeout:               defaultTimeout,
+		TLSClientCertificates: config.TLSClientCertificates,
+	}
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(upstreams, upsOpts)
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}
@@ -339,7 +337,6 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		}
 		config.Fallbacks = fallbacks
 	}
-
 }
 
 // initEDNS inits EDNS-related config

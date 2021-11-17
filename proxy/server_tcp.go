@@ -11,14 +11,6 @@ import (
 	"github.com/miekg/dns"
 )
 
-// NextProtoDoT is a registered ALPN for DNS-over-TLS.
-// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-// However, note that we do not use it currently anywhere and do not make it
-// mandatory since most of the existing clients do not send any ALPN.
-// In the future we might need that for this:
-// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-xfr-over-tls
-const NextProtoDoT = "dot"
-
 func (p *Proxy) createTCPListeners() error {
 	for _, a := range p.TCPListenAddr {
 		log.Printf("Creating a TCP server socket")
@@ -39,9 +31,6 @@ func (p *Proxy) createTLSListeners() error {
 		if err != nil {
 			return errorx.Decorate(err, "could not start TLS listener")
 		}
-
-		tlsConfig := p.TLSConfig.Clone()
-		tlsConfig.NextProtos = []string{NextProtoDoT}
 
 		l := tls.NewListener(tcpListen, p.TLSConfig)
 		p.tlsListen = append(p.tlsListen, l)

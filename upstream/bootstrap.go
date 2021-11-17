@@ -27,11 +27,6 @@ const NextProtoDQ = "doq-i02"
 // includes previous drafts.
 var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq"}
 
-// NextProtoDoT is a registered ALPN for DNS-over-TLS.
-//
-// See https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids.
-const NextProtoDoT = "dot"
-
 // RootCAs is the CertPool that must be used by all upstreams
 // Redefining RootCAs makes sense on iOS to overcome the 15MB memory limit of the NEPacketTunnelProvider
 // nolint
@@ -211,7 +206,6 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		// Don't use the ALPN since some servers currently do not accept it.
 		//
 		// See https://github.com/ameshkov/dnslookup/issues/19.
-		// tlsConfig.NextProtos = []string{NextProtoDoT}
 	case "https":
 		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 	case "quic":

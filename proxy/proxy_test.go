@@ -284,16 +284,16 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 				t.Fatalf("wanted length has unexpected value %d", tc.wantLen)
 			}
 
-			cached, expired, key := p.cache.Get(dctx.Req)
+			cached, expired, key := p.cache.get(dctx.Req)
 			require.NotNil(t, cached)
-			require.Len(t, cached.Answer, 2)
+			require.Len(t, cached.m.Answer, 2)
 			assert.False(t, expired)
 			assert.Equal(t, key, msgToKey(dctx.Req))
 
 			// Just make it match.
-			cached.Answer[0].Header().Ttl = defaultTestTTL
-			assert.Equal(t, tc.wantAns.String(), cached.Answer[0].String())
-			assert.Equal(t, rrsig.String(), cached.Answer[1].String())
+			cached.m.Answer[0].Header().Ttl = defaultTestTTL
+			assert.Equal(t, tc.wantAns.String(), cached.m.Answer[0].String())
+			assert.Equal(t, rrsig.String(), cached.m.Answer[1].String())
 		})
 
 	}
@@ -970,13 +970,13 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	u.aResp.Hdr.Ttl = 10
 	u.ecsIP = clientIP
 	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+	require.NoError(t, err)
 
 	// get from cache - check min TTL
-	m, expired, key := dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	ci, expired, key := dnsProxy.cache.getWithSubnet(d.Req, clientIP, 24)
 	assert.False(t, expired)
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMinTTL)
+	assert.True(t, ci.m.Answer[0].Header().Ttl == dnsProxy.CacheMinTTL)
 
 	// 2nd request
 	clientIP = net.IP{1, 2, 4, 0}
@@ -994,10 +994,10 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	assert.True(t, err == nil)
 
 	// get from cache - check max TTL
-	m, expired, key = dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	ci, expired, key = dnsProxy.cache.getWithSubnet(d.Req, clientIP, 24)
 	assert.False(t, expired)
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
+	assert.True(t, ci.m.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
 
 	_ = dnsProxy.Stop()
 }
@@ -1267,6 +1267,8 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	const (
 		host             = "some.domain.name."
 		nonOptimisticTTL = 3600
+
+		upsAddr = "https://upstream.address"
 	)
 
 	buildCtx := func() (dctx *DNSContext) {
@@ -1325,7 +1327,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			// Wait for tests to finish.
 			<-in
 
-			p.setInCache(dctx)
+			p.cacheResp(dctx)
 		}
 		p.shortFlighter.delete = func(k []byte) {
 			defer func() {
@@ -1337,7 +1339,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			// Wait for tests to finish.
 			<-in
 
-			p.cache.Delete(k)
+			p.cache.del(k)
 		}
 
 		// Two different contexts are made to emulate two different
@@ -1348,7 +1350,10 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 		// Add expired response into cache.
 		req := firstCtx.Req
 		key := msgToKey(req)
-		data := packResponse(buildResp(req, 0))
+		data := (&cacheItem{
+			m: buildResp(req, 0),
+			u: testUpsAddr,
+		}).pack()
 		items := glcache.New(glcache.Config{
 			EnableLRU: true,
 		})
@@ -1382,12 +1387,12 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 		// Should be served from cache.
 		data := p.cache.items.Get(msgToKey(firstCtx.Req))
-		unpacked, expired := unpackResponse(data, firstCtx.Req, false)
+		unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
 		require.False(t, expired)
 		require.NotNil(t, unpacked)
-		require.Len(t, unpacked.Answer, 1)
+		require.Len(t, unpacked.m.Answer, 1)
 
-		assert.EqualValues(t, nonOptimisticTTL, unpacked.Answer[0].Header().Ttl)
+		assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
 	})
 
 	t.Run("unsuccessful", func(t *testing.T) {

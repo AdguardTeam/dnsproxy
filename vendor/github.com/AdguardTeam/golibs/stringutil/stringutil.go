@@ -7,6 +7,20 @@ import (
 	"unicode/utf8"
 )
 
+// AllUnique returns true if all items of strs are unique.
+func AllUnique(strs []string) (ok bool) {
+	set := NewSet()
+	for _, s := range strs {
+		if set.Has(s) {
+			return false
+		}
+
+		set.Add(s)
+	}
+
+	return true
+}
+
 // CloneSliceOrEmpty returns the copy of strs or empty strings slice if strs is
 // a nil slice.
 func CloneSliceOrEmpty(strs []string) (clone []string) {

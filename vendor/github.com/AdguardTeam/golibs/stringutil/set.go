@@ -37,6 +37,23 @@ func (set *Set) Del(s string) {
 	}
 }
 
+// Equal returns true if set is equal to other.
+func (set *Set) Equal(other *Set) (ok bool) {
+	if set == nil || other == nil {
+		return set == other
+	} else if set.Len() != other.Len() {
+		return false
+	}
+
+	for s := range set.m {
+		if _, ok = other.m[s]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Has returns true if s is in the set.  Calling Has on a nil set returns false,
 // just like indexing on an empty map does.
 func (set *Set) Has(s string) (ok bool) {
@@ -55,6 +72,20 @@ func (set *Set) Len() (n int) {
 	}
 
 	return len(set.m)
+}
+
+// Range calls f with each value of the set in an undefined order.  If cont is
+// false, Range stops the iteration.  Calling Range on a nil *Set has no effect.
+func (set *Set) Range(f func(s string) (cont bool)) {
+	if set == nil {
+		return
+	}
+
+	for s := range set.m {
+		if !f(s) {
+			break
+		}
+	}
 }
 
 // String implements the fmt.Stringer interface for *Set.

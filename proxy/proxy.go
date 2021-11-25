@@ -497,7 +497,7 @@ func (p *Proxy) Resolve(d *DNSContext) (err error) {
 
 	if cacheWorks && ok {
 		// Cache the response with DNSSEC RRs.
-		p.setInCache(d)
+		p.cacheResp(d)
 	}
 
 	filterMsg(d.Res, d.Res, d.adBit, d.doBit, 0)

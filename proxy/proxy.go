@@ -14,6 +14,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/joomcode/errorx"
 	"github.com/lucas-clemente/quic-go"
@@ -24,9 +25,6 @@ import (
 const (
 	defaultTimeout   = 10 * time.Second
 	minDNSPacketSize = 12 + 5
-
-	ednsCSDefaultNetmaskV4 = 24  // default network mask for IPv4 address for EDNS ClientSubnet option
-	ednsCSDefaultNetmaskV6 = 112 // default network mask for IPv6 address for EDNS ClientSubnet option
 )
 
 // Proto is the DNS protocol.
@@ -524,12 +522,7 @@ func (p *Proxy) processECS(d *DNSContext) {
 		if p.Config.EDNSAddr != nil {
 			clientIP = p.Config.EDNSAddr
 		} else {
-			switch addr := d.Addr.(type) {
-			case *net.UDPAddr:
-				clientIP = addr.IP
-			case *net.TCPAddr:
-				clientIP = addr.IP
-			}
+			clientIP, _ = netutil.IPAndPortFromAddr(d.Addr)
 		}
 
 		if clientIP != nil && isPublicIP(clientIP) {

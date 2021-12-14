@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	rate "github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -33,22 +34,23 @@ func (p *Proxy) isRatelimited(addr net.Addr) bool {
 		return false
 	}
 
-	ip := getIPString(addr)
-	if ip == "" {
+	ip, _ := netutil.IPAndPortFromAddr(addr)
+	if ip == nil {
 		log.Printf("failed to split %v into host/port", addr)
+
 		return false
 	}
 
+	ipStr := ip.String()
 	if len(p.RatelimitWhitelist) > 0 {
-		i := sort.SearchStrings(p.RatelimitWhitelist, ip)
-
-		if i < len(p.RatelimitWhitelist) && p.RatelimitWhitelist[i] == ip {
-			// found, don't ratelimit
+		i := sort.SearchStrings(p.RatelimitWhitelist, ipStr)
+		if i < len(p.RatelimitWhitelist) && p.RatelimitWhitelist[i] == ipStr {
+			// Don't ratelimit if the ip is allowlisted.
 			return false
 		}
 	}
 
-	value := p.limiterForIP(ip)
+	value := p.limiterForIP(ipStr)
 	rl, ok := value.(*rate.RateLimiter)
 	if !ok {
 		log.Println("SHOULD NOT HAPPEN: non-bool entry found in safebrowsing lookup cache")

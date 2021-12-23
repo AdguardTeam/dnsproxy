@@ -1,13 +1,12 @@
 package proxy
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -130,12 +129,13 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		}
 
 		if err != nil {
-			err = errorx.Decorate(err, "talking to dnsUpstream failed")
+			err = fmt.Errorf("talking to dns upstream: %w", err)
 		}
 	}
 
 	p.logDNSMessage(d.Res)
 	p.respond(d)
+
 	return err
 }
 

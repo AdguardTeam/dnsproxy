@@ -73,6 +73,9 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/bodgit/tsig
 * https://github.com/v2fly/v2ray-core (test only)
 * https://kuma.io/
+* https://www.misaka.io/services/dns
+* https://ping.sx/dig
+* https://fleetdeck.io/
 
 
 Send pull request if you want to be listed here.
@@ -171,6 +174,7 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 8080 - EdDSA for DNSSEC
 * 8499 - DNS Terminology
 * 8659 - DNS Certification Authority Authorization (CAA) Resource Record
+* 8914 - Extended DNS Errors
 * 8976 - Message Digest for DNS Zones (ZONEMD RR)
 
 ## Loosely Based Upon

@@ -18,8 +18,12 @@ const defaultReadTimeout = 2 * time.Second
 // then we start using defaultTCPIdleTimeout
 const defaultTCPIdleTimeout = 8 * time.Second
 
-// defaultUDPSize is the size of the UDP read buffer. Using 1252 by default,
-// see here: https://github.com/AdguardTeam/AdGuardDNS/issues/188
+// defaultUDPSize is the default size of the UDP read buffer.  The release notes
+// for dnscrypt-proxy version 1.1.0-RC1 claim that this size was chosen as the
+// maximum one "for compatibility with some scary network setups", and making it
+// smaller seems to break things for some people.
+//
+// See also: https://github.com/AdguardTeam/AdGuardDNS/issues/188.
 const defaultUDPSize = 1252
 
 // helper struct that is used in several SetReadDeadline calls

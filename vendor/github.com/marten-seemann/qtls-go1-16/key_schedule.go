@@ -5,7 +5,6 @@
 package qtls
 
 import (
-	"crypto"
 	"crypto/elliptic"
 	"crypto/hmac"
 	"errors"
@@ -32,20 +31,8 @@ const (
 	trafficUpdateLabel            = "traffic upd"
 )
 
-// HkdfExtract generates a pseudorandom key for use with Expand from an input secret and an optional independent salt.
-func HkdfExtract(hash crypto.Hash, newSecret, currentSecret []byte) []byte {
-	if newSecret == nil {
-		newSecret = make([]byte, hash.Size())
-	}
-	return hkdf.Extract(hash.New, newSecret, currentSecret)
-}
-
-// HkdfExpandLabel HKDF expands a label
-func HkdfExpandLabel(hash crypto.Hash, secret, hashValue []byte, label string, L int) []byte {
-	return hkdfExpandLabel(hash, secret, hashValue, label, L)
-}
-
-func hkdfExpandLabel(hash crypto.Hash, secret, context []byte, label string, length int) []byte {
+// expandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
+func (c *cipherSuiteTLS13) expandLabel(secret []byte, label string, context []byte, length int) []byte {
 	var hkdfLabel cryptobyte.Builder
 	hkdfLabel.AddUint16(uint16(length))
 	hkdfLabel.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -56,16 +43,11 @@ func hkdfExpandLabel(hash crypto.Hash, secret, context []byte, label string, len
 		b.AddBytes(context)
 	})
 	out := make([]byte, length)
-	n, err := hkdf.Expand(hash.New, secret, hkdfLabel.BytesOrPanic()).Read(out)
+	n, err := hkdf.Expand(c.hash.New, secret, hkdfLabel.BytesOrPanic()).Read(out)
 	if err != nil || n != length {
 		panic("tls: HKDF-Expand-Label invocation failed unexpectedly")
 	}
 	return out
-}
-
-// expandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
-func (c *cipherSuiteTLS13) expandLabel(secret []byte, label string, context []byte, length int) []byte {
-	return hkdfExpandLabel(c.hash, secret, context, label, length)
 }
 
 // deriveSecret implements Derive-Secret from RFC 8446, Section 7.1.
@@ -78,7 +60,10 @@ func (c *cipherSuiteTLS13) deriveSecret(secret []byte, label string, transcript 
 
 // extract implements HKDF-Extract with the cipher suite hash.
 func (c *cipherSuiteTLS13) extract(newSecret, currentSecret []byte) []byte {
-	return HkdfExtract(c.hash, newSecret, currentSecret)
+	if newSecret == nil {
+		newSecret = make([]byte, c.hash.Size())
+	}
+	return hkdf.Extract(c.hash.New, newSecret, currentSecret)
 }
 
 // nextTrafficSecret generates the next traffic secret, given the current one,

@@ -8,7 +8,6 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -48,20 +47,20 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (*dns.Msg, Upstream, error) {
 
 	errs := []error{}
 	for n := 0; n < len(u); n++ {
-		select {
-		case rep := <-ch:
-			if rep.err != nil {
-				errs = append(errs, rep.err)
-			} else if rep.reply != nil {
-				return rep.reply, rep.upstream, nil
-			}
+		rep := <-ch
+		if rep.err != nil {
+			errs = append(errs, rep.err)
+		} else if rep.reply != nil {
+			return rep.reply, rep.upstream, nil
 		}
 	}
 
 	if len(errs) == 0 {
+		// All responses had nil replies.
 		return nil, nil, fmt.Errorf("none of upstream servers responded")
 	}
-	return nil, nil, errorx.DecorateMany("all upstreams failed to respond", errs...)
+
+	return nil, nil, errors.List("all upstreams failed to respond", errs...)
 }
 
 // ExchangeAllResult - result of ExchangeAll()
@@ -174,25 +173,20 @@ func LookupParallel(ctx context.Context, resolvers []*Resolver, host string) ([]
 		go lookupAsync(ctx, res, host, ch)
 	}
 
-	errs := []error{}
-	n := 0
-	for {
-		select {
-		case result := <-ch:
-			n++
+	var errs []error
+	for n := 0; n < size; n++ {
+		result := <-ch
 
-			if result.err != nil {
-				errs = append(errs, result.err)
-				break
-			}
+		if result.err != nil {
+			errs = append(errs, result.err)
 
-			return result.address, nil
+			continue
 		}
 
-		if n == size {
-			return nil, errorx.DecorateMany("all resolvers failed to lookup", errs...)
-		}
+		return result.address, nil
 	}
+
+	return nil, errors.List("all resolvers failed", errs...)
 }
 
 // lookupAsync tries to lookup for host ip with one Resolver and sends lookupResult to res channel

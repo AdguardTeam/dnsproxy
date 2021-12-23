@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joomcode/errorx"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 )
@@ -66,7 +65,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	stream, err := p.openStream(session)
 	if err != nil {
-		return nil, errorx.Decorate(err, "failed to open new stream to %s", p.Address())
+		return nil, fmt.Errorf("open new stream to %s: %w", p.Address(), err)
 	}
 
 	buf, err := m.Pack()
@@ -93,13 +92,13 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	respBuf := *bufPtr
 	n, err := stream.Read(respBuf)
 	if err != nil && n == 0 {
-		return nil, errorx.Decorate(err, "failed to read response from %s due to %v", p.Address(), err)
+		return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
 	}
 
 	reply = new(dns.Msg)
 	err = reply.Unpack(respBuf)
 	if err != nil {
-		return nil, errorx.Decorate(err, "failed to unpack response from %s", p.Address())
+		return nil, fmt.Errorf("unpacking response from %s: %w", p.Address(), err)
 	}
 
 	return reply, nil
@@ -190,7 +189,7 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 	// we're using bootstrapped address instead of what's passed to the function
 	// it does not create an actual connection, but it helps us determine
 	// what IP is actually reachable (when there're v4/v6 addresses)
-	rawConn, err := dialContext(context.TODO(), "udp", "")
+	rawConn, err := dialContext(context.Background(), "udp", "")
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +207,7 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 	}
 	session, err := quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {
-		return nil, errorx.Decorate(err, "failed to open QUIC session to %s", p.Address())
+		return nil, fmt.Errorf("opening quic session to %s: %w", p.Address(), err)
 	}
 
 	return session, nil

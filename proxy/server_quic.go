@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 )
@@ -36,8 +35,9 @@ func (p *Proxy) createQUICListeners() error {
 		tlsConfig.NextProtos = compatProtoDQ
 		quicListen, err := quic.ListenAddr(a.String(), tlsConfig, &quic.Config{MaxIdleTimeout: maxQuicIdleTimeout})
 		if err != nil {
-			return errorx.Decorate(err, "could not start QUIC listener")
+			return fmt.Errorf("starting quic listener: %w", err)
 		}
+
 		p.quicListen = append(p.quicListen, quicListen)
 		log.Info("Listening to quic://%s", quicListen.Addr())
 	}
@@ -180,16 +180,17 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 
 	bytes, err := resp.Pack()
 	if err != nil {
-		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
+		return fmt.Errorf("couldn't convert message into wire format: %w", err)
 	}
 
 	n, err := d.QUICStream.Write(bytes)
 	if err != nil {
-		return errorx.Decorate(err, "conn.Write() returned error")
+		return fmt.Errorf("conn.Write(): %w", err)
 	}
 	if n != len(bytes) {
 		return fmt.Errorf("conn.Write() returned with %d != %d", n, len(bytes))
 	}
+
 	return nil
 }
 

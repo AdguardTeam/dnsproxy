@@ -1267,8 +1267,6 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	const (
 		host             = "some.domain.name."
 		nonOptimisticTTL = 3600
-
-		upsAddr = "https://upstream.address"
 	)
 
 	buildCtx := func() (dctx *DNSContext) {

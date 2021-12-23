@@ -3,14 +3,13 @@ package proxy
 import (
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 	"golang.org/x/net/http2"
 )
@@ -20,7 +19,7 @@ func (p *Proxy) createHTTPSListeners() error {
 		log.Info("Creating an HTTPS server")
 		tcpListen, err := net.ListenTCP("tcp", a)
 		if err != nil {
-			return errorx.Decorate(err, "could not start HTTPS listener")
+			return fmt.Errorf("starting https listener: %w", err)
 		}
 		p.httpsListen = append(p.httpsListen, tcpListen)
 		log.Info("Listening to https://%s", tcpListen.Addr())
@@ -81,7 +80,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		buf, err = ioutil.ReadAll(r.Body)
+		buf, err = io.ReadAll(r.Body)
 		if err != nil {
 			log.Tracef("Cannot read the request body: %s", err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -155,13 +154,16 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 
 	bytes, err := resp.Pack()
 	if err != nil {
+
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
+
+		return fmt.Errorf("packing message: %w", err)
 	}
 
 	w.Header().Set("Server", "AdGuard DNS")
 	w.Header().Set("Content-Type", "application/dns-message")
 	_, err = w.Write(bytes)
+
 	return err
 }
 
@@ -175,7 +177,7 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 //   4. X-Forwarded-For
 //
 func realIPFromHdrs(r *http.Request) (realIP net.IP) {
-	for _, h := range [...]string{
+	for _, h := range []string{
 		// Headers set by CloudFlare proxy servers.
 		"CF-Connecting-IP",
 		"True-Client-IP",

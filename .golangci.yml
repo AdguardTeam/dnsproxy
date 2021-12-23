@@ -62,7 +62,7 @@ issues:
     - G302
     # errcheck defer Close
     - error return value not checked \(defer .*\.Close()\)
-    # gosec: False positive is triggered by 'src, err := ioutil.ReadFile(filename)'
+    # gosec: False positive is triggered by 'src, err := os.ReadFile(filename)'
     - Potential file inclusion via variable
     # gosec: TLS InsecureSkipVerify may be true
     # We have a configuration option that allows to do this

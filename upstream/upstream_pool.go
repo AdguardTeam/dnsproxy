@@ -3,12 +3,12 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 )
 
 const dialTimeout = 10 * time.Second
@@ -74,8 +74,9 @@ func (n *TLSPool) Create() (net.Conn, error) {
 	// we'll need a new connection, dial now
 	conn, err := tlsDial(dialContext, "tcp", tlsConfig)
 	if err != nil {
-		return nil, errorx.Decorate(err, "Failed to connect to %s", tlsConfig.ServerName)
+		return nil, fmt.Errorf("connecting to %s: %w", tlsConfig.ServerName, err)
 	}
+
 	return conn, nil
 }
 
@@ -92,7 +93,7 @@ func (n *TLSPool) Put(c net.Conn) {
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own dialContext function to get connection
 func tlsDial(dialContext dialHandler, network string, config *tls.Config) (*tls.Conn, error) {
 	// we're using bootstrapped address instead of what's passed to the function
-	rawConn, err := dialContext(context.TODO(), network, "")
+	rawConn, err := dialContext(context.Background(), network, "")
 	if err != nil {
 		return nil, err
 	}

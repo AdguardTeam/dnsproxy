@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"golang.org/x/net/http2"
 )
 
@@ -154,16 +154,16 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 
 	var ctx context.Context
 	if n.options.Timeout > 0 {
-		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), n.options.Timeout)
-		defer cancel() // important to avoid a resource leak
-		ctx = ctxWithTimeout
+		var cancel func()
+		ctx, cancel = context.WithTimeout(context.Background(), n.options.Timeout)
+		defer cancel()
 	} else {
 		ctx = context.Background()
 	}
 
 	addrs, err := LookupParallel(ctx, n.resolvers, host)
 	if err != nil {
-		return nil, nil, errorx.Decorate(err, "failed to lookup %s", host)
+		return nil, nil, fmt.Errorf("lookup %s: %w", host, err)
 	}
 
 	resolved := []string{}
@@ -221,29 +221,31 @@ func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHa
 		Timeout: n.options.Timeout,
 	}
 
-	dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		errs := []error{}
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		if len(addresses) == 0 {
+			return nil, errors.Error("no addresses")
+		}
+
+		var errs []error
 
 		// Return first connection without error
 		// Note that we're using bootstrapped resolverAddress instead of what's passed to the function
 		for _, resolverAddress := range addresses {
 			log.Tracef("Dialing to %s", resolverAddress)
 			start := time.Now()
-			con, err := dialer.DialContext(ctx, network, resolverAddress)
+			conn, err := dialer.DialContext(ctx, network, resolverAddress)
 			elapsed := time.Since(start)
-
 			if err == nil {
 				log.Tracef("dialer has successfully initialized connection to %s in %s", resolverAddress, elapsed)
-				return con, err
+
+				return conn, nil
 			}
+
 			errs = append(errs, err)
+
 			log.Tracef("dialer failed to initialize connection to %s, in %s, cause: %s", resolverAddress, elapsed, err)
 		}
 
-		if len(errs) == 0 {
-			return nil, fmt.Errorf("all dialers failed to initialize connection")
-		}
-		return nil, errorx.DecorateMany("all dialers failed to initialize connection: ", errs...)
+		return nil, errors.List("all dialers failed", errs...)
 	}
-	return
 }

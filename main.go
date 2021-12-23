@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
@@ -188,7 +187,7 @@ func main() {
 		if len(arg) > 13 {
 			if arg[:13] == "--config-path" {
 				fmt.Printf("Path: %s\n", arg[14:])
-				b, err := ioutil.ReadFile(arg[14:])
+				b, err := os.ReadFile(arg[14:])
 				if err != nil {
 					log.Fatalf("failed to read the config file %s: %v", arg[14:], err)
 				}
@@ -378,7 +377,7 @@ func initDNSCryptConfig(config *proxy.Config, options *Options) {
 		return
 	}
 
-	b, err := ioutil.ReadFile(options.DNSCryptConfigPath)
+	b, err := os.ReadFile(options.DNSCryptConfigPath)
 	if err != nil {
 		log.Fatalf("failed to read DNSCrypt config %s: %v", options.DNSCryptConfigPath, err)
 	}
@@ -549,11 +548,11 @@ func newTLSConfig(options *Options) (*tls.Config, error) {
 // form a certificate chain. On successful return, Certificate.Leaf will
 // be nil because the parsed form of the certificate is not retained.
 func loadX509KeyPair(certFile, keyFile string) (tls.Certificate, error) {
-	certPEMBlock, err := ioutil.ReadFile(certFile)
+	certPEMBlock, err := os.ReadFile(certFile)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	keyPEMBlock, err := ioutil.ReadFile(keyFile)
+	keyPEMBlock, err := os.ReadFile(keyFile)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
@@ -568,7 +567,7 @@ func loadServersList(sources []string) []string {
 	var servers []string
 
 	for _, source := range sources {
-		data, err := ioutil.ReadFile(source)
+		data, err := os.ReadFile(source)
 		if err != nil {
 			// Ignore errors, just consider it a server address
 			// and not a file

@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -44,7 +44,8 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 		errs = append(errs, err)
 		p.updateRtt(dnsUpstream.Address(), int(defaultTimeout/time.Millisecond))
 	}
-	return nil, nil, errorx.DecorateMany("all upstreams failed to exchange request", errs...)
+
+	return nil, nil, errors.List("all upstreams failed to exchange request", errs...)
 }
 
 func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {

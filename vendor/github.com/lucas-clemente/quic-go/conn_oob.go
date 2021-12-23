@@ -1,3 +1,4 @@
+//go:build darwin || linux || freebsd
 // +build darwin linux freebsd
 
 package quic
@@ -7,18 +8,30 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"runtime"
 	"syscall"
 	"time"
-	"unsafe"
 
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
 
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/utils"
 )
 
-const ecnMask uint8 = 0x3
+const (
+	ecnMask       = 0x3
+	oobBufferSize = 128
+)
+
+// Contrary to what the naming suggests, the ipv{4,6}.Message is not dependent on the IP version.
+// They're both just aliases for x/net/internal/socket.Message.
+// This means we can use this struct to read from a socket that receives both IPv4 and IPv6 messages.
+var _ ipv4.Message = ipv6.Message{}
+
+type batchConn interface {
+	ReadBatch(ms []ipv4.Message, flags int) (int, error)
+}
 
 func inspectReadBuffer(c interface{}) (int, error) {
 	conn, ok := c.(interface {
@@ -43,7 +56,12 @@ func inspectReadBuffer(c interface{}) (int, error) {
 
 type oobConn struct {
 	OOBCapablePacketConn
-	oobBuffer []byte
+	batchConn batchConn
+
+	readPos uint8
+	// Packets received from the kernel, but not yet returned by ReadPacket().
+	messages []ipv4.Message
+	buffers  [batchSize]*packetBuffer
 }
 
 var _ connection = &oobConn{}
@@ -94,23 +112,52 @@ func newConn(c OOBCapablePacketConn) (*oobConn, error) {
 			return nil, errors.New("activating packet info failed for both IPv4 and IPv6")
 		}
 	}
-	return &oobConn{
+
+	// Allows callers to pass in a connection that already satisfies batchConn interface
+	// to make use of the optimisation. Otherwise, ipv4.NewPacketConn would unwrap the file descriptor
+	// via SyscallConn(), and read it that way, which might not be what the caller wants.
+	var bc batchConn
+	if ibc, ok := c.(batchConn); ok {
+		bc = ibc
+	} else {
+		bc = ipv4.NewPacketConn(c)
+	}
+
+	oobConn := &oobConn{
 		OOBCapablePacketConn: c,
-		oobBuffer:            make([]byte, 128),
-	}, nil
+		batchConn:            bc,
+		messages:             make([]ipv4.Message, batchSize),
+		readPos:              batchSize,
+	}
+	for i := 0; i < batchSize; i++ {
+		oobConn.messages[i].OOB = make([]byte, oobBufferSize)
+	}
+	return oobConn, nil
 }
 
 func (c *oobConn) ReadPacket() (*receivedPacket, error) {
-	buffer := getPacketBuffer()
-	// The packet size should not exceed protocol.MaxPacketBufferSize bytes
-	// If it does, we only read a truncated packet, which will then end up undecryptable
-	buffer.Data = buffer.Data[:protocol.MaxPacketBufferSize]
-	c.oobBuffer = c.oobBuffer[:cap(c.oobBuffer)]
-	n, oobn, _, addr, err := c.OOBCapablePacketConn.ReadMsgUDP(buffer.Data, c.oobBuffer)
-	if err != nil {
-		return nil, err
+	if len(c.messages) == int(c.readPos) { // all messages read. Read the next batch of messages.
+		c.messages = c.messages[:batchSize]
+		// replace buffers data buffers up to the packet that has been consumed during the last ReadBatch call
+		for i := uint8(0); i < c.readPos; i++ {
+			buffer := getPacketBuffer()
+			buffer.Data = buffer.Data[:protocol.MaxPacketBufferSize]
+			c.buffers[i] = buffer
+			c.messages[i].Buffers = [][]byte{c.buffers[i].Data}
+		}
+		c.readPos = 0
+
+		n, err := c.batchConn.ReadBatch(c.messages, 0)
+		if n == 0 || err != nil {
+			return nil, err
+		}
+		c.messages = c.messages[:n]
 	}
-	ctrlMsgs, err := unix.ParseSocketControlMessage(c.oobBuffer[:oobn])
+
+	msg := c.messages[c.readPos]
+	buffer := c.buffers[c.readPos]
+	c.readPos++
+	ctrlMsgs, err := unix.ParseSocketControlMessage(msg.OOB[:msg.NN])
 	if err != nil {
 		return nil, err
 	}
@@ -129,13 +176,15 @@ func (c *oobConn) ReadPacket() (*receivedPacket, error) {
 				// 	struct in_addr ipi_addr;     /* Header Destination
 				// 									address */
 				// };
+				ip := make([]byte, 4)
 				if len(ctrlMsg.Data) == 12 {
 					ifIndex = binary.LittleEndian.Uint32(ctrlMsg.Data)
-					destIP = net.IP(ctrlMsg.Data[8:12])
+					copy(ip, ctrlMsg.Data[8:12])
 				} else if len(ctrlMsg.Data) == 4 {
 					// FreeBSD
-					destIP = net.IP(ctrlMsg.Data)
+					copy(ip, ctrlMsg.Data)
 				}
+				destIP = net.IP(ip)
 			}
 		}
 		if ctrlMsg.Header.Level == unix.IPPROTO_IPV6 {
@@ -148,7 +197,9 @@ func (c *oobConn) ReadPacket() (*receivedPacket, error) {
 				// 	unsigned int    ipi6_ifindex; /* send/recv interface index */
 				// };
 				if len(ctrlMsg.Data) == 20 {
-					destIP = net.IP(ctrlMsg.Data[:16])
+					ip := make([]byte, 16)
+					copy(ip, ctrlMsg.Data[:16])
+					destIP = net.IP(ip)
 					ifIndex = binary.LittleEndian.Uint32(ctrlMsg.Data[16:])
 				}
 			}
@@ -162,9 +213,9 @@ func (c *oobConn) ReadPacket() (*receivedPacket, error) {
 		}
 	}
 	return &receivedPacket{
-		remoteAddr: addr,
+		remoteAddr: msg.Addr,
 		rcvTime:    time.Now(),
-		data:       buffer.Data[:n],
+		data:       msg.Buffers[0][:msg.N],
 		ecn:        ecn,
 		info:       info,
 		buffer:     buffer,
@@ -186,50 +237,21 @@ func (info *packetInfo) OOB() []byte {
 		// 	struct in_addr ipi_spec_dst; /* Local address */
 		// 	struct in_addr ipi_addr;     /* Header Destination address */
 		// };
-		msgLen := 12
-		if runtime.GOOS == "freebsd" {
-			msgLen = 4
+		cm := ipv4.ControlMessage{
+			Src:     ip4,
+			IfIndex: int(info.ifIndex),
 		}
-		cmsglen := cmsgLen(msgLen)
-		oob := make([]byte, cmsglen)
-		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[0]))
-		cmsg.Level = syscall.IPPROTO_TCP
-		cmsg.Type = msgTypeIPv4PKTINFO
-		cmsg.SetLen(cmsglen)
-		off := cmsgLen(0)
-		if runtime.GOOS != "freebsd" {
-			// FreeBSD does not support in_pktinfo, just an in_addr is sent
-			binary.LittleEndian.PutUint32(oob[off:], info.ifIndex)
-			off += 4
-		}
-		copy(oob[off:], ip4)
-		return oob
+		return cm.Marshal()
 	} else if len(info.addr) == 16 {
 		// struct in6_pktinfo {
 		// 	struct in6_addr ipi6_addr;    /* src/dst IPv6 address */
 		// 	unsigned int    ipi6_ifindex; /* send/recv interface index */
 		// };
-		const msgLen = 20
-		cmsglen := cmsgLen(msgLen)
-		oob := make([]byte, cmsglen)
-		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[0]))
-		cmsg.Level = syscall.IPPROTO_IPV6
-		cmsg.Type = msgTypeIPv6PKTINFO
-		cmsg.SetLen(cmsglen)
-		off := cmsgLen(0)
-		off += copy(oob[off:], info.addr)
-		binary.LittleEndian.PutUint32(oob[off:], info.ifIndex)
-		return oob
+		cm := ipv6.ControlMessage{
+			Src:     info.addr,
+			IfIndex: int(info.ifIndex),
+		}
+		return cm.Marshal()
 	}
 	return nil
-}
-
-func cmsgLen(datalen int) int {
-	return cmsgAlign(syscall.SizeofCmsghdr) + datalen
-}
-
-func cmsgAlign(salen int) int {
-	const sizeOfPtr = 0x8
-	salign := sizeOfPtr
-	return (salen + salign - 1) & ^(salign - 1)
 }

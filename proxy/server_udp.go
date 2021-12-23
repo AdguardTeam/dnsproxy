@@ -5,9 +5,7 @@ import (
 	"net"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
-
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -28,21 +26,23 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 	log.Info("Creating the UDP server socket")
 	udpListen, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
+		return nil, fmt.Errorf("listening to udp socket: %w", err)
 	}
 
 	if p.Config.UDPBufferSize > 0 {
 		err = udpListen.SetReadBuffer(p.Config.UDPBufferSize)
 		if err != nil {
 			_ = udpListen.Close()
-			return nil, errorx.Decorate(err, "setting UDP buffer size failed")
+
+			return nil, fmt.Errorf("setting udp buf size: %w", err)
 		}
 	}
 
 	err = proxyutil.UDPSetOptions(udpListen)
 	if err != nil {
 		_ = udpListen.Close()
-		return nil, errorx.Decorate(err, "udpSetOptions failed")
+
+		return nil, fmt.Errorf("setting udp opts: %w", err)
 	}
 
 	log.Info("Listening to udp://%s", udpListen.LocalAddr())
@@ -119,7 +119,7 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 
 	bytes, err := resp.Pack()
 	if err != nil {
-		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
+		return fmt.Errorf("packing message: %w", err)
 	}
 
 	conn := d.Conn.(*net.UDPConn)
@@ -128,11 +128,14 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 	if n == 0 && proxyutil.IsConnClosed(err) {
 		return err
 	}
+
 	if err != nil {
-		return errorx.Decorate(err, "udpWrite() returned error")
+		return fmt.Errorf("udpWrite(): %w", err)
 	}
+
 	if n != len(bytes) {
 		return fmt.Errorf("udpWrite() returned with %d != %d", n, len(bytes))
 	}
+
 	return nil
 }

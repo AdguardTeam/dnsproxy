@@ -13,10 +13,10 @@ import (
 	"github.com/AdguardTeam/dnsproxy/fastip"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
-	"github.com/joomcode/errorx"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
@@ -229,7 +229,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.tcpListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close TCP listening socket"))
+			errs = append(errs, fmt.Errorf("closing tcp listening socket: %w", err))
 		}
 	}
 	p.tcpListen = nil
@@ -237,7 +237,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.udpListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close UDP listening socket"))
+			errs = append(errs, fmt.Errorf("closing udp listening socket: %w", err))
 		}
 	}
 	p.udpListen = nil
@@ -245,7 +245,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.tlsListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close TLS listening socket"))
+			errs = append(errs, fmt.Errorf("closing tls listening socket: %w", err))
 		}
 	}
 	p.tlsListen = nil
@@ -253,7 +253,7 @@ func (p *Proxy) Stop() error {
 	for _, srv := range p.httpsServer {
 		err := srv.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close HTTPS server"))
+			errs = append(errs, fmt.Errorf("closing https server: %w", err))
 		}
 	}
 	p.httpsListen = nil
@@ -262,7 +262,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.quicListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close QUIC listener"))
+			errs = append(errs, fmt.Errorf("closing quic listener: %w", err))
 		}
 	}
 	p.quicListen = nil
@@ -270,7 +270,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.dnsCryptUDPListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close DNSCrypt UDP listening socket"))
+			errs = append(errs, fmt.Errorf("closing dnscrypt udp listening socket: %w", err))
 		}
 	}
 	p.dnsCryptUDPListen = nil
@@ -278,16 +278,17 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.dnsCryptTCPListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close DNCrypt TCP listening socket"))
+			errs = append(errs, fmt.Errorf("closing dnscrypt tcp listening socket: %w", err))
 		}
 	}
 	p.dnsCryptTCPListen = nil
 
 	p.started = false
 	log.Println("Stopped the DNS proxy server")
-	if len(errs) != 0 {
-		return errorx.DecorateMany("Failed to stop DNS proxy server", errs...)
+	if len(errs) > 0 {
+		return errors.List("stopping dns proxy server", errs...)
 	}
+
 	return nil
 }
 

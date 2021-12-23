@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -24,7 +24,7 @@ type dnsCrypt struct {
 }
 
 // type check
-var _ Upstream = &dnsCrypt{}
+var _ Upstream = (*dnsCrypt)(nil)
 
 func (p *dnsCrypt) Address() string { return p.boot.URL.String() }
 
@@ -48,52 +48,54 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 }
 
 // exchangeDNSCrypt attempts to send the DNS query and returns the response
-func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (*dns.Msg, error) {
-	var client *dnscrypt.Client
-	var resolverInfo *dnscrypt.ResolverInfo
-
+func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (reply *dns.Msg, err error) {
 	p.RLock()
-	client = p.client
-	resolverInfo = p.serverInfo
+	client := p.client
+	resolverInfo := p.serverInfo
 	p.RUnlock()
 
 	now := uint32(time.Now().Unix())
 	if client == nil || resolverInfo == nil || resolverInfo.ResolverCert.NotAfter < now {
-		p.Lock()
-
-		// Using "udp" for DNSCrypt upstreams by default
-		client = &dnscrypt.Client{Timeout: p.boot.options.Timeout}
-		ri, err := client.Dial(p.Address())
+		client, resolverInfo, err = p.resetClient()
 		if err != nil {
-			p.Unlock()
-			return nil, errorx.Decorate(err, "failed to fetch certificate info from %s", p.Address())
+			// Don't wrap the error, because it's informative enough as is.
+			return nil, err
 		}
-
-		if p.boot.options.VerifyDNSCryptCertificate != nil {
-			err = p.boot.options.VerifyDNSCryptCertificate(ri.ResolverCert)
-		}
-		if err != nil {
-			p.Unlock()
-			return nil, errorx.Decorate(err, "failed to verify certificate info from %s", p.Address())
-		}
-
-		p.client = client
-		p.serverInfo = ri
-		resolverInfo = ri
-		p.Unlock()
 	}
 
-	reply, err := client.Exchange(m, resolverInfo)
-
+	reply, err = client.Exchange(m, resolverInfo)
 	if reply != nil && reply.Truncated {
-		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
+		log.Tracef("truncated message received, retrying over tcp, question: %v", m.Question[0])
 		tcpClient := dnscrypt.Client{Timeout: p.boot.options.Timeout, Net: "tcp"}
 		reply, err = tcpClient.Exchange(m, resolverInfo)
 	}
-
 	if err == nil && reply != nil && reply.Id != m.Id {
 		err = dns.ErrId
 	}
 
 	return reply, err
+}
+
+func (p *dnsCrypt) resetClient() (client *dnscrypt.Client, ri *dnscrypt.ResolverInfo, err error) {
+	p.Lock()
+	defer p.Unlock()
+
+	// Using "udp" for DNSCrypt upstreams by default.
+	client = &dnscrypt.Client{Timeout: p.boot.options.Timeout, Net: "udp"}
+	ri, err = client.Dial(p.Address())
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching certificate info from %s: %w", p.Address(), err)
+	}
+
+	if p.boot.options.VerifyDNSCryptCertificate != nil {
+		err = p.boot.options.VerifyDNSCryptCertificate(ri.ResolverCert)
+		if err != nil {
+			return nil, nil, fmt.Errorf("verifying certificate info from %s: %w", p.Address(), err)
+		}
+	}
+
+	p.client = client
+	p.serverInfo = ri
+
+	return client, ri, nil
 }

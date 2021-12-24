@@ -2,16 +2,16 @@ package proxyutil
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/miekg/dns"
 )
 
-// ErrTooLarge - DNS message is larger than 64kb
-var ErrTooLarge = errors.New("DNS message is too large")
+// ErrTooLarge means that a DNS message is larger than 64KiB.
+const ErrTooLarge errors.Error = "dns message is too large"
 
 // DNSSize returns if buffer size *advertised* in the requests OPT record.
 // Or when the request was over TCP, we return the maximum allowed size of 64K.

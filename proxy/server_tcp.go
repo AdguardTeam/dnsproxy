@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
@@ -50,11 +51,12 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 		clientConn, err := l.Accept()
 
 		if err != nil {
-			if proxyutil.IsConnClosed(err) {
-				log.Tracef("TCP connection has been closed, exiting loop")
+			if errors.Is(err, net.ErrClosed) {
+				log.Debug("tcpPacketLoop: connection closed")
 			} else {
 				log.Info("got error when reading from TCP listen: %s", err)
 			}
+
 			break
 		} else {
 			requestGoroutinesSema.acquire()
@@ -134,11 +136,8 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 	}
 
 	err = proxyutil.WritePrefixed(bytes, conn)
-	if proxyutil.IsConnClosed(err) {
-		return err
-	}
-	if err != nil {
-		return fmt.Errorf("conn.Write(): %w", err)
+	if err != nil && !errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("writing message: %w", err)
 	}
 
 	return nil

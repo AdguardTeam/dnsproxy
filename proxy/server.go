@@ -167,11 +167,10 @@ func (p *Proxy) respond(d *DNSContext) {
 
 	if err != nil {
 		if isNonCriticalError(err) {
-			// We're probably restarting, so log this with the debug
-			// level.
-			log.Debug("error while responding to a dns request: %s", err)
+			// We're probably restarting, so log this with the debug level.
+			log.Debug("responding to %s request: %s", d.Proto, err)
 		} else {
-			log.Printf("error while responding to a dns request: %s", err)
+			log.Info("responding to %s request: %s", d.Proto, err)
 		}
 	}
 }

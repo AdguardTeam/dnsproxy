@@ -2,12 +2,12 @@ package upstream
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 )
@@ -45,7 +45,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 			// Check for EDNS TCP keepalive option
 			if option.Option() == dns.EDNS0TCPKEEPALIVE {
 				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
-				return nil, errors.New("EDNS0 TCP keepalive option is set")
+				return nil, errors.Error("EDNS0 TCP keepalive option is set")
 			}
 		}
 	}

@@ -5,26 +5,17 @@ package proxyutil
 import (
 	"bytes"
 	"net"
-	"strings"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/miekg/dns"
 )
 
-// IsConnClosed - checks if the error signals of a closed server connecting
+// IsConnClosed returns true if the error signals of a closed server connecting.
+//
+// Deprecated: This function is deprecated.  Use errors.Is(err, net.ErrClosed)
+// instead.
 func IsConnClosed(err error) bool {
-	if err == nil {
-		return false
-	}
-	nerr, ok := err.(*net.OpError)
-	if !ok {
-		return false
-	}
-
-	if strings.Contains(nerr.Err.Error(), "use of closed network connection") {
-		return true
-	}
-
-	return false
+	return errors.Is(err, net.ErrClosed)
 }
 
 // GetIPFromDNSRecord - extracts IP address for a DNS record

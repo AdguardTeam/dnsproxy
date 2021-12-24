@@ -1,11 +1,11 @@
 package proxy
 
 import (
-	"errors"
 	"fmt"
 	"net"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
@@ -66,7 +66,7 @@ func (p *Proxy) createDNS64MappedResponse(newAResp, oldAAAAResp *dns.Msg) (*dns.
 	p.nat64PrefixLock.Unlock()
 
 	if len(nat64Prefix) != NAT64PrefixLength {
-		return nil, errors.New("cannot create a mapped response, no NAT64 prefix specified")
+		return nil, errors.Error("cannot create a mapped response, no NAT64 prefix specified")
 	}
 
 	// check if there are no answers

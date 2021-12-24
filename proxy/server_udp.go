@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
@@ -46,6 +47,7 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 	}
 
 	log.Info("Listening to udp://%s", udpListen.LocalAddr())
+
 	return udpListen, nil
 }
 
@@ -76,11 +78,12 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, requestGoroutinesSema semaphore
 			}()
 		}
 		if err != nil {
-			if proxyutil.IsConnClosed(err) {
-				log.Info("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
+			if errors.Is(err, net.ErrClosed) {
+				log.Debug("udpPacketLoop: connection closed")
 			} else {
-				log.Info("got error when reading from UDP listen: %s", err)
+				log.Error("got error when reading from UDP listen: %s", err)
 			}
+
 			break
 		}
 	}
@@ -125,12 +128,12 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 	conn := d.Conn.(*net.UDPConn)
 	rAddr := d.Addr.(*net.UDPAddr)
 	n, err := proxyutil.UDPWrite(bytes, conn, rAddr, d.localIP)
-	if n == 0 && proxyutil.IsConnClosed(err) {
-		return err
-	}
-
 	if err != nil {
-		return fmt.Errorf("udpWrite(): %w", err)
+		if errors.Is(err, net.ErrClosed) {
+			return nil
+		}
+
+		return fmt.Errorf("writing message: %w", err)
 	}
 
 	if n != len(bytes) {

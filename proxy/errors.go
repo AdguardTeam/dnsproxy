@@ -4,8 +4,9 @@
 package proxy
 
 import (
-	"errors"
 	"syscall"
+
+	"github.com/AdguardTeam/golibs/errors"
 )
 
 // isEPIPE checks if the underlying error is EPIPE.  syscall.EPIPE exists on all

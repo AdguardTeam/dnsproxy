@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/miekg/dns"
 	"golang.org/x/net/http2"
 )
@@ -84,10 +85,11 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		// TODO: consider using errors.As
-		if os.IsTimeout(err) {
-			// If this is a timeout error, trying to forcibly re-create the HTTP client instance
-			// See https://github.com/AdguardTeam/AdGuardHome/issues/3217 for more details on this
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			// If this is a timeout error, trying to forcibly re-create the HTTP
+			// client instance.
+			//
+			// See https://github.com/AdguardTeam/AdGuardHome/issues/3217.
 			p.clientGuard.Lock()
 			p.client = nil
 			p.clientGuard.Unlock()

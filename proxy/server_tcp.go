@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -96,7 +97,11 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 
 		packet, err := proxyutil.ReadPrefixed(conn)
 		if err != nil {
-			log.Error("handling tcp: reading: %s", err)
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+				continue
+			}
+
+			log.Error("handling tcp: reading msg: %s", err)
 
 			return
 		}
@@ -104,7 +109,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		req := &dns.Msg{}
 		err = req.Unpack(packet)
 		if err != nil {
-			log.Error("handling tcp: unpacking: %s", err)
+			log.Error("handling tcp: unpacking msg: %s", err)
 
 			return
 		}

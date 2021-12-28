@@ -23,7 +23,7 @@ jobs:
         with:
           # This field is required.  Dont set the patch version to always use
           # the latest patch version.
-          version: v1.32
+          version: v1.43
   notify:
     needs:
       - golangci
@@ -47,7 +47,7 @@ jobs:
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ env.WORKFLOW_CONCLUSION }}
-          fields: workflow, repo, message, commit, author, eventName,ref
+          fields: workflow, repo, message, commit, author, eventName, ref
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

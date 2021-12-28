@@ -38,7 +38,7 @@ Test:
             golangci-lint run
 
             # Run tests.
-            go test --bench . --coverprofile coverage.txt --race -v ./...
+            make VERBOSE=1 test
   final-tasks:
     - clean
   requirements:

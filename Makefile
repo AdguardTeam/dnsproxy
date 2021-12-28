@@ -1,43 +1,48 @@
-NAME=dnsproxy
-BASE_BUILDDIR=build
-BUILDNAME=$(GOOS)-$(GOARCH)$(GOARM)
-BUILDDIR=$(BASE_BUILDDIR)/$(BUILDNAME)
-VERSION?=dev
+# Keep the Makefile POSIX-compliant.  We currently allow hyphens in
+# target names, but that may change in the future.
+#
+# See https://pubs.opengroup.org/onlinepubs/9699919799/utilities/make.html.
+.POSIX:
 
-ifeq ($(GOOS),windows)
-  ext=.exe
-  archiveCmd=zip -9 -r $(NAME)-$(BUILDNAME)-$(VERSION).zip $(BUILDNAME)
-else
-  ext=
-  archiveCmd=tar czpvf $(NAME)-$(BUILDNAME)-$(VERSION).tar.gz $(BUILDNAME)
-endif
+# Don't name this macro "GO", because GNU Make apparenly makes it an
+# exported environment variable with the literal value of "${GO:-go}",
+# which is not what we need.  Use a dot in the name to make sure that
+# users don't have an environment variable with the same name.
+#
+# See https://unix.stackexchange.com/q/646255/105635.
+GO.MACRO = $${GO:-go}
+GOPROXY = https://goproxy.cn|https://proxy.golang.org|direct
+DIST_DIR=build
+OUT = dnsproxy
+RACE = 0
+VERBOSE = 0
+VERSION = dev
 
-.PHONY: default
-default: build
+ENV = env\
+	DIST_DIR='$(DIST_DIR)'\
+	GO="$(GO.MACRO)"\
+	GOPROXY='$(GOPROXY)'\
+	OUT='$(OUT)'\
+	RACE='$(RACE)'\
+	VERBOSE='$(VERBOSE)'\
+	VERSION='$(VERSION)'\
 
-build: clean test
-	go build -mod=vendor
+# Keep the line above blank.
 
-release: check-env-release
-	mkdir -p $(BUILDDIR)
-	cp LICENSE $(BUILDDIR)/
-	cp README.md $(BUILDDIR)/
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -mod=vendor -ldflags "-s -w -X main.VersionString=$(VERSION)" -o $(BUILDDIR)/$(NAME)$(ext)
-	cd $(BASE_BUILDDIR) ; $(archiveCmd)
+# Keep this target first, so that a naked make invocation triggers
+# a full build.
+build:   ; $(ENV) "$(SHELL)" ./scripts/make/build.sh
 
-test:
-	go test -race -v -bench=. ./...
+clean:   ; $(ENV) $(GO.MACRO) clean && rm -f -r '$(DIST_DIR)'
+test:    ; $(ENV) RACE='1' "$(SHELL)" ./scripts/make/test.sh
 
-clean:
-	go clean
-	rm -rf $(BASE_BUILDDIR)
+release: clean
+	$(ENV) "$(SHELL)" ./scripts/make/release.sh
 
-check-env-release:
-	@ if [ "$(GOOS)" = "" ]; then \
-		echo "Environment variable GOOS not set"; \
-		exit 1; \
-	fi
-	@ if [ "$(GOARCH)" = "" ]; then \
-		echo "Environment variable GOOS not set"; \
-		exit 1; \
-	fi
+# A quick check to make sure that all supported operating systems can be
+# typechecked and built successfully.
+os-check:
+	env GOOS='darwin'  "$(GO.MACRO)" vet ./...
+	env GOOS='freebsd' "$(GO.MACRO)" vet ./...
+	env GOOS='linux'   "$(GO.MACRO)" vet ./...
+	env GOOS='windows' "$(GO.MACRO)" vet ./...

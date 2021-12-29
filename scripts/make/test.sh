@@ -39,7 +39,6 @@ readonly go
 
 count_flags='--count=1'
 cover_flags='--coverprofile=./coverage.txt'
-shuffle_flags='--shuffle=on'
-readonly count_flags cover_flags shuffle_flags
+readonly count_flags cover_flags
 
-"$go" test "$count_flags" "$cover_flags" "$race_flags" "$shuffle_flags" "$x_flags" "$v_flags" ./...
+"$go" test "$count_flags" "$cover_flags" "$race_flags" "$x_flags" "$v_flags" ./...

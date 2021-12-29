@@ -53,7 +53,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				log.Debug("tcpPacketLoop: connection closed")
+				log.Debug("tcpPacketLoop: connection closed: %s", err)
 			} else {
 				log.Info("got error when reading from TCP listen: %s", err)
 			}
@@ -98,12 +98,12 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		packet, err := proxyutil.ReadPrefixed(conn)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-				continue
+				log.Debug("handling tcp: connection closed: %s", err)
+			} else {
+				log.Error("handling tcp: reading msg: %s", err)
 			}
 
-			log.Error("handling tcp: reading msg: %s", err)
-
-			return
+			break
 		}
 
 		req := &dns.Msg{}

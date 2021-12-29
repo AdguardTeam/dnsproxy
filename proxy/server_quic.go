@@ -57,6 +57,7 @@ func (p *Proxy) quicPacketLoop(l quic.Listener, requestGoroutinesSema semaphore)
 			} else {
 				log.Info("got error when reading from QUIC listen: %s", err)
 			}
+
 			break
 		} else {
 			requestGoroutinesSema.acquire()
@@ -86,8 +87,10 @@ func (p *Proxy) handleQUICSession(session quic.Session, requestGoroutinesSema se
 			} else {
 				log.Info("got error when accepting a new QUIC stream: %s", err)
 			}
+
 			// Close the session to make sure resources are freed
 			_ = session.CloseWithError(0, "")
+
 			return
 		}
 

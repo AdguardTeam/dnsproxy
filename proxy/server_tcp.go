@@ -110,6 +110,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		err = req.Unpack(packet)
 		if err != nil {
 			log.Error("handling tcp: unpacking msg: %s", err)
+			log.Error("handling tcp: invalid msg: %v", packet)
 
 			return
 		}

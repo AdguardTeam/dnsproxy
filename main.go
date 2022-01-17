@@ -216,7 +216,7 @@ func run(options *Options) {
 		log.SetLevel(log.DEBUG)
 	}
 	if options.LogOutput != "" {
-		file, err := os.OpenFile(options.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		file, err := os.OpenFile(options.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
 			log.Fatalf("cannot create a log file: %s", err)
 		}

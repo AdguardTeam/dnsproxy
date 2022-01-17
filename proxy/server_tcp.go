@@ -69,8 +69,8 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 	}
 }
 
-// handleTCPConnection starts a loop that handles an incoming TCP connection
-// proto is either "tcp" or "tls"
+// handleTCPConnection starts a loop that handles an incoming TCP connection.
+// proto must be either ProtoTCP or ProtoTLS.
 func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 	defer log.OnPanic("proxy.handleTCPConnection")
 
@@ -78,7 +78,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 	defer func() {
 		err := conn.Close()
 		if err != nil {
-			log.Error("handling tcp: closing conn: %s", err)
+			logWithClosed(err, "handling tcp: closing conn")
 		}
 	}()
 
@@ -92,16 +92,12 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		err := conn.SetDeadline(time.Now().Add(defaultTimeout))
 		if err != nil {
 			// Consider deadline errors non-critical.
-			log.Error("handling tcp: setting deadline: %s", err)
+			logWithClosed(err, "handling tcp: setting deadline")
 		}
 
 		packet, err := proxyutil.ReadPrefixed(conn)
 		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-				log.Debug("handling tcp: connection closed: %s", err)
-			} else {
-				log.Error("handling tcp: reading msg: %s", err)
-			}
+			logWithClosed(err, "handling tcp: reading msg")
 
 			break
 		}
@@ -122,6 +118,16 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		if err != nil {
 			log.Error("handling tcp: handling %s request: %s", d.Proto, err)
 		}
+	}
+}
+
+// logWithClosed logs the error on the appropriate level depending on whether
+// err is an error about a closed connection.
+func logWithClosed(err error, msg string) {
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		log.Debug("%s: connection is closed; original error: %s", msg, err)
+	} else {
+		log.Error("%s: %s", msg, err)
 	}
 }
 

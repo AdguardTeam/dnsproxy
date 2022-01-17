@@ -126,8 +126,9 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 
 	txtDataChunkNum := txtDataLen / txtDataChunkLen
 	if txtDataLen%txtDataChunkLen > 0 {
-		txtDataChunkNum += 1
+		txtDataChunkNum++
 	}
+
 	txts := make([]string, txtDataChunkNum)
 	randData := make([]byte, txtDataLen)
 	n, err := rand.Read(randData)

@@ -85,7 +85,7 @@ func SortIPAddrs(ipAddrs []net.IPAddr) []net.IPAddr {
 	return ipAddrs
 }
 
-func compareIPAddrs(left net.IPAddr, right net.IPAddr) int {
+func compareIPAddrs(left, right net.IPAddr) int {
 	l4 := left.IP.To4()
 	r4 := right.IP.To4()
 	if l4 != nil && r4 == nil {

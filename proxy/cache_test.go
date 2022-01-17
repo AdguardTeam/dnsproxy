@@ -569,7 +569,7 @@ type testCase struct {
 
 // requireEqualMsgs asserts the messages are equal except their ID, Rdlength, and
 // the case of questions.
-func requireEqualMsgs(t *testing.T, expected *dns.Msg, actual *dns.Msg) {
+func requireEqualMsgs(t *testing.T, expected, actual *dns.Msg) {
 	t.Helper()
 
 	temp := *expected

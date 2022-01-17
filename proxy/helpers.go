@@ -67,7 +67,7 @@ func genSOA(request *dns.Msg, retry uint32) []dns.RR {
 }
 
 // parseECS parses the EDNS client subnet option from m.
-func parseECS(m *dns.Msg) (addr net.IP, mask uint8, scope uint8) {
+func parseECS(m *dns.Msg) (addr net.IP, mask, scope uint8) {
 	opt := m.IsEdns0()
 	if opt == nil {
 		return nil, 0, 0

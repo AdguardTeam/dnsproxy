@@ -276,3 +276,43 @@ In the example below, we use AdGuard DNS server that returns `0.0.0.0` for block
 ```
 ./dnsproxy -u 94.140.14.14:53 --bogus-nxdomain=0.0.0.0
 ```
+### windows service setup and autostart
+
+For windows user, if you want to auto start dnsproxy at the boot time, you may want to set a windows services.
+Thanks for winsw project, we can easy create the start configure file, for example
+```
+<configuration>
+
+  <!-- ID of the service. It should be unique accross the Windows system-->
+  <id>dnsproxy</id>
+  <!-- Display name of the service -->
+  <name>dnsproxy</name>
+  <!-- Service description -->
+  <description>dnsproxy start scripts</description>
+  <workingdirectory>%BASE%</workingdirectory>
+
+  <!-- Path to the executable, which should be started -->
+
+  <executable>%BASE%\dnsproxy.exe</executable>
+  <arguments>-u https://dns.adguard.com/dns-query -b 1.1.1.1:53</arguments>
+  <onfailure action="restart" delay="1 sec"/>
+  <log mode="reset">
+  </log>
+
+</configuration>
+```
+
+put all the winsw.exe, winsw.xml and dnsproxy.exe in the same directory, then run in admin powershell
+```
+.\winsw.exe install
+.\winsw.exe start
+
+```
+
+After setup, dnsproxy will auto boot at the system startup. it will listen dns query on 127.0.0.1:53 udp && tcp port.
+If you want to uninstall , you just do the same command in the admin powershell
+
+```
+.\winsw.exe stop
+.\winsw.exe uninstall
+```

@@ -13,10 +13,12 @@ import (
 	"github.com/miekg/dns"
 )
 
-func (p *Proxy) createTCPListeners() error {
+func (p *Proxy) createTCPListeners() (err error) {
 	for _, a := range p.TCPListenAddr {
 		log.Printf("Creating a TCP server socket")
-		tcpListen, err := net.ListenTCP("tcp", a)
+
+		var tcpListen *net.TCPListener
+		tcpListen, err = net.ListenTCP("tcp", a)
 		if err != nil {
 			return fmt.Errorf("starting listening on tcp socket: %w", err)
 		}
@@ -24,13 +26,16 @@ func (p *Proxy) createTCPListeners() error {
 		p.tcpListen = append(p.tcpListen, tcpListen)
 		log.Printf("Listening to tcp://%s", tcpListen.Addr())
 	}
+
 	return nil
 }
 
-func (p *Proxy) createTLSListeners() error {
+func (p *Proxy) createTLSListeners() (err error) {
 	for _, a := range p.TLSListenAddr {
 		log.Printf("Creating a TLS server socket")
-		tcpListen, err := net.ListenTCP("tcp", a)
+
+		var tcpListen *net.TCPListener
+		tcpListen, err = net.ListenTCP("tcp", a)
 		if err != nil {
 			return fmt.Errorf("starting tls listener: %w", err)
 		}
@@ -39,6 +44,7 @@ func (p *Proxy) createTLSListeners() error {
 		p.tlsListen = append(p.tlsListen, l)
 		log.Printf("Listening to tls://%s", l.Addr())
 	}
+
 	return nil
 }
 
@@ -78,7 +84,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 	defer func() {
 		err := conn.Close()
 		if err != nil {
-			logWithClosed(err, "handling tcp: closing conn")
+			logWithNonCrit(err, "handling tcp: closing conn")
 		}
 	}()
 
@@ -92,12 +98,12 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		err := conn.SetDeadline(time.Now().Add(defaultTimeout))
 		if err != nil {
 			// Consider deadline errors non-critical.
-			logWithClosed(err, "handling tcp: setting deadline")
+			logWithNonCrit(err, "handling tcp: setting deadline")
 		}
 
 		packet, err := proxyutil.ReadPrefixed(conn)
 		if err != nil {
-			logWithClosed(err, "handling tcp: reading msg")
+			logWithNonCrit(err, "handling tcp: reading msg")
 
 			break
 		}
@@ -121,11 +127,13 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 	}
 }
 
-// logWithClosed logs the error on the appropriate level depending on whether
-// err is an error about a closed connection.
-func logWithClosed(err error, msg string) {
+// logWithNonCrit logs the error on the appropriate level depending on whether
+// err is a critical error or not.
+func logWithNonCrit(err error, msg string) {
 	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 		log.Debug("%s: connection is closed; original error: %s", msg, err)
+	} else if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
+		log.Debug("%s: connection timed out; original error: %s", msg, err)
 	} else {
 		log.Error("%s: %s", msg, err)
 	}

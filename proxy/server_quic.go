@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/stringutil"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 )
@@ -23,17 +24,17 @@ const NextProtoDQ = "doq-i02"
 // includes previous drafts.
 var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq"}
 
-// maxQuicIdleTimeout - maximum QUIC idle timeout.
-// Default value in quic-go is 30, but our internal tests show that
-// a higher value works better for clients written with ngtcp2
-const maxQuicIdleTimeout = 5 * time.Minute
+// maxQUICIdleTimeout is maximum QUIC idle timeout.  The default value in
+// quic-go is 30 seconds, but our internal tests show that a higher value works
+// better for clients written with ngtcp2.
+const maxQUICIdleTimeout = 5 * time.Minute
 
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
 		log.Info("Creating a QUIC listener")
 		tlsConfig := p.TLSConfig.Clone()
 		tlsConfig.NextProtos = compatProtoDQ
-		quicListen, err := quic.ListenAddr(a.String(), tlsConfig, &quic.Config{MaxIdleTimeout: maxQuicIdleTimeout})
+		quicListen, err := quic.ListenAddr(a.String(), tlsConfig, &quic.Config{MaxIdleTimeout: maxQUICIdleTimeout})
 		if err != nil {
 			return fmt.Errorf("starting quic listener: %w", err)
 		}
@@ -52,20 +53,20 @@ func (p *Proxy) quicPacketLoop(l quic.Listener, requestGoroutinesSema semaphore)
 	for {
 		session, err := l.Accept(context.Background())
 		if err != nil {
-			if isQuicConnClosedErr(err) {
-				log.Tracef("QUIC connection has been closed")
+			if isQUICNonCrit(err) {
+				log.Tracef("quic connection closed or timeout: %s", err)
 			} else {
-				log.Info("got error when reading from QUIC listen: %s", err)
+				log.Error("reading from quic listen: %s", err)
 			}
 
 			break
-		} else {
-			requestGoroutinesSema.acquire()
-			go func() {
-				p.handleQUICSession(session, requestGoroutinesSema)
-				requestGoroutinesSema.release()
-			}()
 		}
+
+		requestGoroutinesSema.acquire()
+		go func() {
+			p.handleQUICSession(session, requestGoroutinesSema)
+			requestGoroutinesSema.release()
+		}()
 	}
 }
 
@@ -82,8 +83,8 @@ func (p *Proxy) handleQUICSession(session quic.Session, requestGoroutinesSema se
 		// bidirectional stream
 		stream, err := session.AcceptStream(context.Background())
 		if err != nil {
-			if isQuicConnClosedErr(err) {
-				log.Tracef("QUIC connection has been closed: %v", err)
+			if isQUICNonCrit(err) {
+				log.Tracef("quic connection closed or timeout: %s", err)
 			} else {
 				log.Info("got error when accepting a new QUIC stream: %s", err)
 			}
@@ -124,14 +125,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	defer stream.Close()
 
 	if n < minDNSPacketSize {
-		switch {
-		case err != nil && isQuicConnClosedErr(err):
-			return
-		case err != nil && !isQuicConnClosedErr(err):
-			log.Info("error while reading from a QUIC stream: %v", err)
-		default:
-			log.Info("too short packet for a DNS query")
-		}
+		logShortQUICRead(err)
 
 		return
 	}
@@ -139,7 +133,9 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	req := &dns.Msg{}
 	err = req.Unpack(buf)
 	if err != nil {
-		log.Info("failed to unpack a DNS query: %v", err)
+		log.Error("unpacking quic packet: %s", err)
+
+		return
 	}
 
 	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
@@ -171,6 +167,21 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	}
 }
 
+// logShortQUICRead is a logging helper for short reads from a QUIC stream.
+func logShortQUICRead(err error) {
+	if err == nil {
+		log.Info("quic packet too short for dns query")
+
+		return
+	}
+
+	if isQUICNonCrit(err) {
+		log.Tracef("quic connection closed or timeout: %s", err)
+	} else {
+		log.Error("reading from quic stream: %s", err)
+	}
+}
+
 // Writes a response to the QUIC stream
 func (p *Proxy) respondQUIC(d *DNSContext) error {
 	resp := d.Res
@@ -197,28 +208,19 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 	return nil
 }
 
-func isQuicConnClosedErr(err error) bool {
+// isQUICNonCrit returns true if err is a non-critical error, most probably
+// a timeout or a closed connection.
+//
+// TODO(a.garipov): Inspect and rewrite with modern error handling.
+func isQUICNonCrit(err error) (ok bool) {
 	if err == nil {
 		return false
 	}
 
-	str := err.Error()
+	errStr := err.Error()
 
-	if strings.Contains(str, "server closed") {
-		return true
-	}
-
-	if strings.Contains(str, "No recent network activity") {
-		return true
-	}
-
-	if strings.HasSuffix(str, "Application error 0x0") {
-		return true
-	}
-
-	if err.Error() == "EOF" {
-		return true
-	}
-
-	return false
+	return strings.Contains(errStr, "server closed") ||
+		stringutil.ContainsFold(errStr, "no recent network activity") ||
+		strings.HasSuffix(errStr, "Application error 0x0") ||
+		errStr == "EOF"
 }

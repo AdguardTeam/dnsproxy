@@ -96,7 +96,8 @@ func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.U
 	req := &dns.Msg{}
 	err := req.Unpack(packet)
 	if err != nil {
-		log.Printf("error handling UDP packet: %s", err)
+		log.Error("unpacking udp packet: %s", err)
+
 		return
 	}
 

@@ -83,7 +83,7 @@ type Config struct {
 
 	// BogusNXDomain - transforms responses that contain at least one of the given IP addresses into NXDOMAIN
 	// Similar to dnsmasq's "bogus-nxdomain"
-	BogusNXDomain []net.IP
+	BogusNXDomain []*net.IPNet
 
 	// Enable EDNS Client Subnet option
 	// DNS requests to the upstream server will contain an OPT record with Client Subnet option.

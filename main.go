@@ -13,6 +13,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	goFlags "github.com/jessevdk/go-flags"
 	"gopkg.in/yaml.v3"
@@ -150,7 +151,7 @@ type Options struct {
 	IPv6Disabled bool `yaml:"ipv6-disabled" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
 	// Transform responses that contain at least one of the given IP addresses into NXDOMAIN
-	BogusNXDomain []string `yaml:"bogus-nxdomain" long:"bogus-nxdomain" description:"Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be specified multiple times."`
+	BogusNXDomain []string `yaml:"bogus-nxdomain" long:"bogus-nxdomain" description:"Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times."`
 
 	// UDP buffer size value
 	UDPBufferSize int `yaml:"udp-buf-size" long:"udp-buf-size" description:"Set the size of the UDP buffer in bytes. A value <= 0 will use the system default."`
@@ -346,17 +347,19 @@ func initEDNS(config *proxy.Config, options *Options) {
 
 // initBogusNXDomain inits BogusNXDomain structure
 func initBogusNXDomain(config *proxy.Config, options *Options) {
-	if len(options.BogusNXDomain) > 0 {
-		bogusIP := []net.IP{}
-		for _, s := range options.BogusNXDomain {
-			ip := net.ParseIP(s)
-			if ip == nil {
-				log.Error("Invalid IP: %s", s)
-			} else {
-				bogusIP = append(bogusIP, ip)
-			}
+	if len(options.BogusNXDomain) == 0 {
+		return
+	}
+
+	for _, s := range options.BogusNXDomain {
+		subnet, err := netutil.ParseSubnet(s)
+		if err != nil {
+			log.Error("%s", err)
+
+			continue
 		}
-		config.BogusNXDomain = bogusIP
+
+		config.BogusNXDomain = append(config.BogusNXDomain, subnet)
 	}
 }
 

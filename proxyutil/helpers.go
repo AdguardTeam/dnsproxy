@@ -6,36 +6,32 @@ import (
 	"bytes"
 	"net"
 
-	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
-// IsConnClosed returns true if the error signals of a closed server connecting.
-//
-// Deprecated: This function is deprecated.  Use errors.Is(err, net.ErrClosed)
-// instead.
-func IsConnClosed(err error) bool {
-	return errors.Is(err, net.ErrClosed)
-}
-
-// GetIPFromDNSRecord - extracts IP address for a DNS record
-// returns null if the record is of a wrong type
-func GetIPFromDNSRecord(r dns.RR) net.IP {
-	switch addr := r.(type) {
+// IPFromRR returns the IP address from rr if any.
+func IPFromRR(rr dns.RR) (ip net.IP) {
+	switch rr := rr.(type) {
 	case *dns.A:
-		return addr.A.To4()
-
+		ip = rr.A.To4()
 	case *dns.AAAA:
-		return addr.AAAA
+		ip = rr.AAAA
+	default:
+		// Go on.
 	}
 
-	return nil
+	return ip
 }
 
-// ContainsIP checks if the specified IP is in the array
-func ContainsIP(ips []net.IP, ip net.IP) bool {
-	for _, i := range ips {
-		if i.Equal(ip) {
+// ContainsIP returns true if any of nets contains ip.
+func ContainsIP(nets []*net.IPNet, ip net.IP) (ok bool) {
+	if netutil.ValidateIP(ip) != nil {
+		return false
+	}
+
+	for _, n := range nets {
+		if n.Contains(ip) {
 			return true
 		}
 	}
@@ -59,7 +55,8 @@ func AppendIPAddrs(ipAddrs *[]net.IPAddr, answers []dns.RR) {
 // SortIPAddrs sorts the specified IP addresses array
 // IPv4 addresses go first, then IPv6 addresses
 func SortIPAddrs(ipAddrs []net.IPAddr) []net.IPAddr {
-	if len(ipAddrs) < 2 {
+	l := len(ipAddrs)
+	if l <= 1 {
 		return ipAddrs
 	}
 
@@ -85,13 +82,13 @@ func SortIPAddrs(ipAddrs []net.IPAddr) []net.IPAddr {
 	return ipAddrs
 }
 
-func compareIPAddrs(left, right net.IPAddr) int {
-	l4 := left.IP.To4()
-	r4 := right.IP.To4()
+func compareIPAddrs(a, b net.IPAddr) int {
+	l4 := a.IP.To4()
+	r4 := b.IP.To4()
 	if l4 != nil && r4 == nil {
 		return -1 // IPv4 addresses first
 	} else if l4 == nil && r4 != nil {
 		return 1 // IPv4 addresses first
 	}
-	return bytes.Compare(left.IP, right.IP)
+	return bytes.Compare(a.IP, b.IP)
 }

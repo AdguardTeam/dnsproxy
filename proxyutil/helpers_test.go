@@ -23,19 +23,69 @@ func TestSortIPAddrs(t *testing.T) {
 }
 
 func TestContainsIP(t *testing.T) {
-	ips := []net.IP{}
-	ips = append(ips, net.ParseIP("94.140.14.15"))
-	ips = append(ips, net.ParseIP("2a10:50c0::bad1:ff"))
+	nets := []*net.IPNet{{
+		// IPv4.
+		IP:   net.IP{1, 2, 3, 0},
+		Mask: net.IPv4Mask(255, 255, 255, 0),
+	}, {
+		// IPv6 from IPv4.
+		IP:   net.IPv4(1, 2, 4, 0),
+		Mask: net.CIDRMask(16, 32),
+	}, {
+		// IPv6.
+		IP:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0},
+		Mask: net.CIDRMask(120, net.IPv6len*8),
+	}}
 
-	ip := net.ParseIP("94.140.14.15")
-	assert.True(t, ContainsIP(ips, ip))
+	testCases := []struct {
+		name string
+		want assert.BoolAssertionFunc
+		ip   net.IP
+	}{{
+		name: "ipv4_yes",
+		want: assert.True,
+		ip:   net.IP{1, 2, 3, 255},
+	}, {
+		name: "ipv4_6_yes",
+		want: assert.True,
+		ip:   net.IPv4(1, 2, 4, 254),
+	}, {
+		name: "ipv6_yes",
+		want: assert.True,
+		ip:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+	}, {
+		name: "ipv6_4_yes",
+		want: assert.True,
+		ip:   net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 1, 2, 3, 0},
+	}, {
+		name: "ipv4_no",
+		want: assert.False,
+		ip:   net.IP{2, 1, 3, 255},
+	}, {
+		name: "ipv4_6_no",
+		want: assert.False,
+		ip:   net.IPv4(2, 1, 4, 254),
+	}, {
+		name: "ipv6_no",
+		want: assert.False,
+		ip:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 15},
+	}, {
+		name: "ipv6_4_no",
+		want: assert.False,
+		ip:   net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 2, 1, 4, 0},
+	}, {
+		name: "nil_no",
+		want: assert.False,
+		ip:   nil,
+	}, {
+		name: "bad_ip",
+		want: assert.False,
+		ip:   net.IP{42},
+	}}
 
-	ip = net.ParseIP("2a10:50c0::bad1:ff")
-	assert.True(t, ContainsIP(ips, ip))
-
-	ip = net.ParseIP("2a10:50c0::bad1:ff1")
-	assert.False(t, ContainsIP(ips, ip))
-
-	ip = net.ParseIP("127.0.0.1")
-	assert.False(t, ContainsIP(ips, ip))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.want(t, ContainsIP(nets, tc.ip))
+		})
+	}
 }

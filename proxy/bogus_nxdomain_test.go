@@ -5,72 +5,99 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestBogusNXDomainTypeA(t *testing.T) {
-	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.CacheEnabled = true
-	dnsProxy.BogusNXDomain = []net.IP{net.ParseIP("4.3.2.1")}
+func TestProxy_IsBogusNXDomain(t *testing.T) {
+	prx := createTestProxy(t, nil)
+	prx.CacheEnabled = true
+
+	prx.BogusNXDomain = []*net.IPNet{{
+		IP:   net.IP{4, 3, 2, 1},
+		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+	}, {
+		IP:   net.IPv4(1, 2, 3, 4),
+		Mask: net.IPv4Mask(255, 0, 0, 0),
+	}, {
+		IP:   net.IP{10, 11, 12, 13},
+		Mask: net.CIDRMask(netutil.IPv4BitLen, netutil.IPv4BitLen),
+	}, {
+		IP:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		Mask: net.CIDRMask(120, netutil.IPv6BitLen),
+	}}
+
+	testCases := []struct {
+		name      string
+		ans       []dns.RR
+		wantRcode int
+	}{{
+		name: "bogus_subnet",
+		ans: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+			A:   net.ParseIP("4.3.2.1"),
+		}},
+		wantRcode: dns.RcodeNameError,
+	}, {
+		name: "bogus_big_subnet",
+		ans: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+			A:   net.ParseIP("1.254.254.254"),
+		}},
+		wantRcode: dns.RcodeNameError,
+	}, {
+		name: "bogus_single_ip",
+		ans: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+			A:   net.ParseIP("10.11.12.13"),
+		}},
+		wantRcode: dns.RcodeNameError,
+	}, {
+		name: "bogus_6",
+		ans: []dns.RR{&dns.AAAA{
+			Hdr:  dns.RR_Header{Rrtype: dns.TypeAAAA, Name: "host.", Ttl: 10},
+			AAAA: net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 99},
+		}},
+		wantRcode: dns.RcodeNameError,
+	}, {
+		name: "non-bogus",
+		ans: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
+			A:   net.ParseIP("10.11.12.14"),
+		}},
+		wantRcode: dns.RcodeSuccess,
+	}, {
+		name: "non-bogus_6",
+		ans: []dns.RR{&dns.AAAA{
+			Hdr:  dns.RR_Header{Rrtype: dns.TypeAAAA, Name: "host.", Ttl: 10},
+			AAAA: net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 15},
+		}},
+		wantRcode: dns.RcodeSuccess,
+	}}
 
 	u := testUpstream{}
-	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
-	err := dnsProxy.Start()
-	assert.Nil(t, err)
+	prx.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
 
-	// first request
-	// upstream answers with a bogus IP
-	u.aResp = &dns.A{
-		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
-		A:   net.ParseIP("4.3.2.1"),
+	err := prx.Start()
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, prx.Stop)
+
+	d := &DNSContext{
+		Req: createHostTestMessage("host"),
 	}
 
-	clientIP := net.IP{1, 2, 3, 0}
-	d := DNSContext{}
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: clientIP,
+	for _, tc := range testCases {
+		u.ans = tc.ans
+
+		t.Run(tc.name, func(t *testing.T) {
+			err = prx.Resolve(d)
+			require.NoError(t, err)
+			require.NotNil(t, d.Res)
+
+			assert.Equal(t, tc.wantRcode, d.Res.Rcode)
+		})
 	}
-
-	err = dnsProxy.Resolve(&d)
-	assert.Nil(t, err)
-
-	// check response
-	assert.NotNil(t, d.Res)
-	assert.Equal(t, dns.RcodeNameError, d.Res.Rcode)
-
-	// second request
-	// upstream answers with a normal IP
-	u.aResp = &dns.A{
-		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
-		A:   net.ParseIP("4.3.2.2"),
-	}
-
-	err = dnsProxy.Resolve(&d)
-	assert.Nil(t, err)
-
-	// check response
-	assert.NotNil(t, d.Res)
-	assert.Equal(t, dns.RcodeSuccess, d.Res.Rcode)
-
-	// third request
-	// upstream answers with two IPs, one of them is bogus
-	u.aRespArr = append(u.aRespArr, &dns.A{
-		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
-		A:   net.ParseIP("4.3.2.2"),
-	})
-	u.aRespArr = append(u.aRespArr, &dns.A{
-		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 10},
-		A:   net.ParseIP("4.3.2.1"),
-	})
-
-	err = dnsProxy.Resolve(&d)
-	assert.Nil(t, err)
-
-	// check response
-	assert.NotNil(t, d.Res)
-	assert.Equal(t, dns.RcodeSuccess, d.Res.Rcode)
-
-	_ = dnsProxy.Stop()
 }

@@ -364,14 +364,14 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		d.Req = createHostTestMessage("host")
 		d.Addr = &net.TCPAddr{}
 
-		u.aResp = &dns.A{
+		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
 				Rrtype: dns.TypeA,
 				Name:   "host.",
 				Ttl:    10,
 			},
 			A: net.IP{4, 3, 2, 1},
-		}
+		}}
 
 		err = dnsProxy.Resolve(d)
 		require.NoError(t, err)
@@ -388,14 +388,14 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		d.Req = createHostTestMessage("host2")
 		d.Addr = &net.TCPAddr{}
 
-		u.aResp = &dns.A{
+		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
 				Rrtype: dns.TypeA,
 				Name:   "host2.",
 				Ttl:    60,
 			},
 			A: net.IP{4, 3, 2, 1},
-		}
+		}}
 
 		err = dnsProxy.Resolve(d)
 		assert.Nil(t, err)

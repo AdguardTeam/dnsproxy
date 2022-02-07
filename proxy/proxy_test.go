@@ -1324,96 +1324,69 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 		},
 	}
 
-	testFunc := func(t *testing.T, responsed bool) (firstCtx *DNSContext) {
-		p.initCache()
-		out, in := make(chan unit), make(chan unit)
-		p.shortFlighter.resolve = func(dctx *DNSContext) (ok bool, err error) {
+	p.initCache()
+	out, in := make(chan unit), make(chan unit)
+	p.shortFlighter.cr = &testCachingResolver{
+		onReplyFromUpstream: func(dctx *DNSContext) (ok bool, err error) {
 			dctx.Res = buildResp(dctx.Req, nonOptimisticTTL)
 
-			return responsed, nil
-		}
-		p.shortFlighter.set = func(dctx *DNSContext) {
-			defer func() {
-				out <- unit{}
-			}()
-
+			return true, nil
+		},
+		onCacheResp: func(dctx *DNSContext) {
 			// Report adding to cache is in process.
 			out <- unit{}
 			// Wait for tests to finish.
 			<-in
 
 			p.cacheResp(dctx)
-		}
-		p.shortFlighter.delete = func(k []byte) {
-			defer func() {
-				out <- unit{}
-			}()
 
-			// Report deleting from cache is in process.
+			// Report adding tocache is finished.
 			out <- unit{}
-			// Wait for tests to finish.
-			<-in
-
-			p.cache.del(k)
-		}
-
-		// Two different contexts are made to emulate two different
-		// requests with the same question section.
-		var secondCtx *DNSContext
-		firstCtx, secondCtx = buildCtx(), buildCtx()
-
-		// Add expired response into cache.
-		req := firstCtx.Req
-		key := msgToKey(req)
-		data := (&cacheItem{
-			m: buildResp(req, 0),
-			u: testUpsAddr,
-		}).pack()
-		items := glcache.New(glcache.Config{
-			EnableLRU: true,
-		})
-		items.Set(key, data)
-		p.cache.items = items
-
-		err := p.Resolve(firstCtx)
-		require.NoError(t, err)
-		require.Len(t, firstCtx.Res.Answer, 1)
-
-		assert.EqualValues(t, optimisticTTL, firstCtx.Res.Answer[0].Header().Ttl)
-
-		// Wait for optimisticResolver to reach the tested function.
-		<-out
-
-		err = p.Resolve(secondCtx)
-		require.NoError(t, err)
-		require.Len(t, secondCtx.Res.Answer, 1)
-
-		assert.EqualValues(t, optimisticTTL, secondCtx.Res.Answer[0].Header().Ttl)
-
-		// Continue and wait for it to finish.
-		in <- unit{}
-		<-out
-
-		return firstCtx
+		},
 	}
 
-	t.Run("successful", func(t *testing.T) {
-		firstCtx := testFunc(t, true)
+	// Two different contexts are made to emulate two different requests
+	// with the same question section.
+	firstCtx, secondCtx := buildCtx(), buildCtx()
 
-		// Should be served from cache.
-		data := p.cache.items.Get(msgToKey(firstCtx.Req))
-		unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
-		require.False(t, expired)
-		require.NotNil(t, unpacked)
-		require.Len(t, unpacked.m.Answer, 1)
-
-		assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
+	// Add expired response into cache.
+	req := firstCtx.Req
+	key := msgToKey(req)
+	data := (&cacheItem{
+		m: buildResp(req, 0),
+		u: testUpsAddr,
+	}).pack()
+	items := glcache.New(glcache.Config{
+		EnableLRU: true,
 	})
+	items.Set(key, data)
+	p.cache.items = items
 
-	t.Run("unsuccessful", func(t *testing.T) {
-		firstCtx := testFunc(t, false)
+	err := p.Resolve(firstCtx)
+	require.NoError(t, err)
+	require.Len(t, firstCtx.Res.Answer, 1)
 
-		// Should be removed from cache.
-		assert.Nil(t, p.cache.items.Get(msgToKey(firstCtx.Req)))
-	})
+	assert.EqualValues(t, optimisticTTL, firstCtx.Res.Answer[0].Header().Ttl)
+
+	// Wait for optimisticResolver to reach the tested function.
+	<-out
+
+	err = p.Resolve(secondCtx)
+	require.NoError(t, err)
+	require.Len(t, secondCtx.Res.Answer, 1)
+
+	assert.EqualValues(t, optimisticTTL, secondCtx.Res.Answer[0].Header().Ttl)
+
+	// Continue and wait for it to finish.
+	in <- unit{}
+	<-out
+
+	// Should be served from cache.
+	data = p.cache.items.Get(msgToKey(firstCtx.Req))
+	unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
+	require.False(t, expired)
+	require.NotNil(t, unpacked)
+	require.Len(t, unpacked.m.Answer, 1)
+
+	assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
 }

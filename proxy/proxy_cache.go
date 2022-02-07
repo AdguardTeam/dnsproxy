@@ -12,14 +12,13 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	hitMsg := "serving cached response"
 
 	var expired bool
-	var withSubnet bool
 	var key []byte
 	if !p.Config.EnableEDNSClientSubnet {
 		ci, expired, key = p.cache.get(d.Req)
-	} else if withSubnet = d.ecsReqMask != 0; withSubnet {
+	} else if d.ecsReqMask != 0 {
 		ci, expired, key = p.cache.getWithSubnet(d.Req, d.ecsReqIP, d.ecsReqMask)
 		hitMsg = "serving response from subnet cache"
-	} else if d.ecsReqMask == 0 {
+	} else {
 		ci, expired, key = p.cache.get(d.Req)
 		hitMsg = "serving response from general cache"
 	}
@@ -49,11 +48,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 			minCtxClone.Req = req
 		}
 
-		if !withSubnet {
-			go p.shortFlighter.ResolveOnce(minCtxClone, key)
-		} else {
-			go p.shortFlighterWithSubnet.ResolveOnce(minCtxClone, key)
-		}
+		go p.shortFlighter.ResolveOnce(minCtxClone, key)
 	}
 
 	return hit

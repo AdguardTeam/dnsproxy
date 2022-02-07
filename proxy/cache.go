@@ -152,16 +152,7 @@ func (p *Proxy) initCache() {
 		c.initLazyWithSubnet()
 	}
 
-	p.shortFlighter = newOptimisticResolver(
-		p.replyFromUpstream,
-		p.cacheResp,
-		c.del,
-	)
-	p.shortFlighterWithSubnet = newOptimisticResolver(
-		p.replyFromUpstream,
-		p.cacheResp,
-		c.delWithSubnet,
-	)
+	p.shortFlighter = newOptimisticResolver(p)
 }
 
 // get returns cached item for the req if it's found.  expired is true if the
@@ -527,26 +518,4 @@ func filterMsg(dst, m *dns.Msg, ad, do bool, ttl uint32) {
 	dst.Answer = filterRRSlice(m.Answer, do, ttl, m.Question[0].Qtype)
 	dst.Ns = filterRRSlice(m.Ns, do, ttl, dns.TypeNone)
 	dst.Extra = filterRRSlice(m.Extra, do, ttl, dns.TypeNone)
-}
-
-func (c *cache) del(key []byte) {
-	c.itemsLock.RLock()
-	defer c.itemsLock.RUnlock()
-
-	if c.items == nil {
-		return
-	}
-
-	c.items.Del(key)
-}
-
-func (c *cache) delWithSubnet(key []byte) {
-	c.itemsWithSubnetLock.RLock()
-	defer c.itemsWithSubnetLock.RUnlock()
-
-	if c.itemsWithSubnet == nil {
-		return
-	}
-
-	c.itemsWithSubnet.Del(key)
 }

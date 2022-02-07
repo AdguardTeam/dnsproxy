@@ -7,35 +7,33 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 )
 
-// resolveFunc is the signature of a method to resolve expired cached requests.
-// This is exactly the signature of Proxy.replyFromUpstream.
-type resolveFunc func(dctx *DNSContext) (ok bool, err error)
+// cachingResolver is the DNS resolver that is also able to cache responses.
+type cachingResolver interface {
+	// replyFromUpstream returns true if the request from dctx is successfully
+	// resolved and the response may be cached.
+	//
+	// TODO(e.burkov):  Find out when ok can be false with nil err.
+	replyFromUpstream(dctx *DNSContext) (ok bool, err error)
 
-// setFunc is the signature of a method to cache response.  This is exactly the
-// signature of Proxy.setInCache method.
-type setFunc func(dctx *DNSContext)
+	// cacheResp caches the response from dctx.
+	cacheResp(dctx *DNSContext)
+}
 
-// deleteFunc is the signature of a method to remove the response from cache.
-type deleteFunc func(key []byte)
+// type check
+var _ cachingResolver = (*Proxy)(nil)
 
 // optimisticResolver is used to eventually resolve expired cached requests.
-//
-// TODO(e.burkov):  Think about generalizing all function-fields into a single
-// interface.
 type optimisticResolver struct {
-	reqs    *sync.Map
-	resolve resolveFunc
-	set     setFunc
-	delete  deleteFunc
+	reqs *sync.Map
+	cr   cachingResolver
 }
 
 // newOptimisticResolver returns the new resolver for expired cached requests.
-func newOptimisticResolver(rf resolveFunc, sf setFunc, df deleteFunc) (s *optimisticResolver) {
+// cr must not be nil.
+func newOptimisticResolver(cr cachingResolver) (s *optimisticResolver) {
 	return &optimisticResolver{
-		reqs:    &sync.Map{},
-		resolve: rf,
-		set:     sf,
-		delete:  df,
+		reqs: &sync.Map{},
+		cr:   cr,
 	}
 }
 
@@ -55,14 +53,12 @@ func (s *optimisticResolver) ResolveOnce(dctx *DNSContext, key []byte) {
 	}
 	defer s.reqs.Delete(keyHexed)
 
-	ok, err := s.resolve(dctx)
+	ok, err := s.cr.replyFromUpstream(dctx)
 	if err != nil {
 		log.Debug("resolving request for optimistic cache: %s", err)
 	}
 
 	if ok {
-		s.set(dctx)
-	} else {
-		s.delete(key)
+		s.cr.cacheResp(dctx)
 	}
 }

@@ -104,10 +104,6 @@ type Proxy struct {
 	// shortFlighter is used to resolve the expired cached requests without
 	// repetitions.
 	shortFlighter *optimisticResolver
-	// shortFlighterWithSubnet is used to resolve the expired cached
-	// requests making sure that only one request for each cache item is
-	// performed at a time.
-	shortFlighterWithSubnet *optimisticResolver
 
 	// FastestAddr module
 	// --
@@ -388,8 +384,7 @@ func (p *Proxy) Addr(proto Proto) net.Addr {
 	}
 }
 
-// replyFromUpstream tries to resolve the request and caches it if cacheWorks is
-// true.
+// replyFromUpstream tries to resolve the request.
 func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	req := d.Req
 	host := req.Question[0].Name
@@ -410,7 +405,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	var u upstream.Upstream
 	reply, u, err = p.exchange(req, upstreams)
 	if p.isNAT64PrefixAvailable() && p.isEmptyAAAAResponse(reply, req) {
-		log.Tracef("Received an empty AAAA response, checking DNS64")
+		log.Tracef("received an empty AAAA response, checking DNS64")
 		reply, u, err = p.checkDNS64(req, reply, upstreams)
 	} else if p.isBogusNXDomain(reply) {
 		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")
@@ -420,7 +415,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	log.Tracef("RTT: %s", time.Since(start))
 
 	if err != nil && p.Fallbacks != nil {
-		log.Tracef("Using the fallback upstream due to %s", err)
+		log.Tracef("using the fallback upstream due to %s", err)
 
 		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, req)
 	}
@@ -432,9 +427,9 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		d.Upstream = u
 		p.setMinMaxTTL(reply)
 
-		// Explicitly construct the question section since some
-		// upstreams may respond with invalidly constructed messages
-		// which cause out-of-range panics afterwards.
+		// Explicitly construct the question section since some upstreams may
+		// respond with invalidly constructed messages which cause out-of-range
+		// panics afterwards.
 		//
 		// See https://github.com/AdguardTeam/AdGuardHome/issues/3551.
 		if len(req.Question) > 0 && len(reply.Question) == 0 {

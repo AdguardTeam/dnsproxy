@@ -5,9 +5,8 @@ import (
 	"net"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
-
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -28,24 +27,27 @@ func (p *Proxy) udpCreate(udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 	log.Info("Creating the UDP server socket")
 	udpListen, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return nil, errorx.Decorate(err, "couldn't listen to UDP socket")
+		return nil, fmt.Errorf("listening to udp socket: %w", err)
 	}
 
 	if p.Config.UDPBufferSize > 0 {
 		err = udpListen.SetReadBuffer(p.Config.UDPBufferSize)
 		if err != nil {
 			_ = udpListen.Close()
-			return nil, errorx.Decorate(err, "setting UDP buffer size failed")
+
+			return nil, fmt.Errorf("setting udp buf size: %w", err)
 		}
 	}
 
 	err = proxyutil.UDPSetOptions(udpListen)
 	if err != nil {
 		_ = udpListen.Close()
-		return nil, errorx.Decorate(err, "udpSetOptions failed")
+
+		return nil, fmt.Errorf("setting udp opts: %w", err)
 	}
 
 	log.Info("Listening to udp://%s", udpListen.LocalAddr())
+
 	return udpListen, nil
 }
 
@@ -76,11 +78,12 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, requestGoroutinesSema semaphore
 			}()
 		}
 		if err != nil {
-			if proxyutil.IsConnClosed(err) {
-				log.Info("udpListen.ReadFrom() returned because we're reading from a closed connection, exiting loop")
+			if errors.Is(err, net.ErrClosed) {
+				log.Debug("udpPacketLoop: connection closed")
 			} else {
-				log.Info("got error when reading from UDP listen: %s", err)
+				log.Error("got error when reading from UDP listen: %s", err)
 			}
+
 			break
 		}
 	}
@@ -93,7 +96,8 @@ func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.U
 	req := &dns.Msg{}
 	err := req.Unpack(packet)
 	if err != nil {
-		log.Printf("error handling UDP packet: %s", err)
+		log.Error("unpacking udp packet: %s", err)
+
 		return
 	}
 
@@ -119,20 +123,23 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 
 	bytes, err := resp.Pack()
 	if err != nil {
-		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
+		return fmt.Errorf("packing message: %w", err)
 	}
 
 	conn := d.Conn.(*net.UDPConn)
 	rAddr := d.Addr.(*net.UDPAddr)
 	n, err := proxyutil.UDPWrite(bytes, conn, rAddr, d.localIP)
-	if n == 0 && proxyutil.IsConnClosed(err) {
-		return err
-	}
 	if err != nil {
-		return errorx.Decorate(err, "udpWrite() returned error")
+		if errors.Is(err, net.ErrClosed) {
+			return nil
+		}
+
+		return fmt.Errorf("writing message: %w", err)
 	}
+
 	if n != len(bytes) {
 		return fmt.Errorf("udpWrite() returned with %d != %d", n, len(bytes))
 	}
+
 	return nil
 }

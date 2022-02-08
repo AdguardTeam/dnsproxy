@@ -3,35 +3,37 @@ package proxy
 import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
-	"github.com/miekg/dns"
 )
 
 // replyFromCache tries to get the response from general or subnet cache.
 // Returns true on success.
 func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
-	var val *dns.Msg
-	hitMsg := "Serving cached response"
+	var ci *cacheItem
+	hitMsg := "serving cached response"
 
 	var expired bool
-	var withSubnet bool
 	var key []byte
 	if !p.Config.EnableEDNSClientSubnet {
-		val, expired, key = p.cache.Get(d.Req)
-	} else if withSubnet = d.ecsReqMask != 0; withSubnet {
-		val, expired, key = p.cache.GetWithSubnet(d.Req, d.ecsReqIP, d.ecsReqMask)
-		hitMsg = "Serving response from subnet cache"
-	} else if d.ecsReqMask == 0 {
-		val, expired, key = p.cache.Get(d.Req)
-		hitMsg = "Serving response from general cache"
+		ci, expired, key = p.cache.get(d.Req)
+	} else if d.ecsReqMask != 0 {
+		ci, expired, key = p.cache.getWithSubnet(d.Req, d.ecsReqIP, d.ecsReqMask)
+		hitMsg = "serving response from subnet cache"
+	} else {
+		ci, expired, key = p.cache.get(d.Req)
+		hitMsg = "serving response from general cache"
 	}
 
-	if hit = val != nil; hit {
-		d.Res = val
-		log.Debug(hitMsg)
+	if hit = ci != nil; !hit {
+		return hit
 	}
 
-	if p.cache.optimistic && hit && expired {
-		// Build the minimal copy of current context to avoid data race.
+	d.Res = ci.m
+	d.CachedUpstreamAddr = ci.u
+
+	log.Debug(hitMsg)
+
+	if p.cache.optimistic && expired {
+		// Build a reduced clone of the current context to avoid data race.
 		minCtxClone := &DNSContext{
 			// It is only read inside the optimistic resolver.
 			CustomUpstreamConfig: d.CustomUpstreamConfig,
@@ -46,21 +48,25 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 			minCtxClone.Req = req
 		}
 
-		if !withSubnet {
-			go p.shortFlighter.ResolveOnce(minCtxClone, key)
-		} else {
-			go p.shortFlighterWithSubnet.ResolveOnce(minCtxClone, key)
-		}
+		go p.shortFlighter.ResolveOnce(minCtxClone, key)
 	}
 
 	return hit
 }
 
-// setInCache stores the response in general or subnet cache.
-func (p *Proxy) setInCache(d *DNSContext) {
+// cacheResp stores the response of d if any in general or subnet cache.
+func (p *Proxy) cacheResp(d *DNSContext) {
+	upsAddr := ""
+	if u := d.Upstream; u != nil {
+		upsAddr = u.Address()
+	}
 	res := d.Res
+	item := &cacheItem{
+		m: res,
+		u: upsAddr,
+	}
 	if !p.Config.EnableEDNSClientSubnet {
-		p.cache.Set(res)
+		p.cache.set(item)
 
 		return
 	}
@@ -69,15 +75,15 @@ func (p *Proxy) setInCache(d *DNSContext) {
 	if ip != nil {
 		if ip.Equal(d.ecsReqIP) && mask == d.ecsReqMask {
 			log.Debug("ECS option in response: %s/%d", ip, scope)
-			p.cache.SetWithSubnet(res, ip, scope)
+			p.cache.setWithSubnet(item, ip, scope)
 		} else {
 			log.Debug("Invalid response from server: ECS data mismatch: %s/%d -- %s/%d",
 				d.ecsReqIP, d.ecsReqMask, ip, mask)
 		}
 	} else if d.ecsReqIP != nil {
 		// server doesn't support ECS - cache response for all subnets
-		p.cache.SetWithSubnet(res, ip, scope)
+		p.cache.setWithSubnet(item, ip, scope)
 	} else {
-		p.cache.Set(res) // use general cache
+		p.cache.set(item) // use general cache
 	}
 }

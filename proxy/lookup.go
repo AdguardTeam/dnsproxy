@@ -44,23 +44,13 @@ func (p *Proxy) LookupIPAddr(host string) ([]net.IPAddr, error) {
 
 	var ipAddrs []net.IPAddr
 	var errs []error
-	n := 0
-wait:
-	for {
-		var result *lookupResult
-		select {
-		case result = <-ch:
-			if result.err != nil {
-				errs = append(errs, result.err)
-			} else {
-				// copy IP addresses from dns.RR to the resulting IPs array
-				proxyutil.AppendIPAddrs(&ipAddrs, result.resp.Answer)
-			}
-			n++
-			if n == 2 {
-				// Two parallel lookups are finished
-				break wait
-			}
+	for n := 0; n < 2; n++ {
+		result := <-ch
+		if result.err != nil {
+			errs = append(errs, result.err)
+		} else {
+			// Copy IP addresses from dns.RR to the resulting IP slice.
+			proxyutil.AppendIPAddrs(&ipAddrs, result.resp.Answer)
 		}
 	}
 

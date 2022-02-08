@@ -67,7 +67,16 @@ func (f *FastestAddr) ExchangeFastest(req *dns.Msg, ups []upstream.Upstream) (
 	}
 
 	host := strings.ToLower(req.Question[0].Name)
-	ips := f.extractIPs(replies)
+
+	ips := make([]net.IP, 0, len(replies))
+	for _, r := range replies {
+		for _, rr := range r.Resp.Answer {
+			ip := proxyutil.IPFromRR(rr)
+			if ip != nil && !containsIP(ips, ip) {
+				ips = append(ips, ip)
+			}
+		}
+	}
 
 	if pingRes := f.pingAll(host, ips); pingRes != nil {
 		return f.prepareReply(pingRes, replies)
@@ -88,7 +97,7 @@ func (f *FastestAddr) prepareReply(pingRes *pingResult, replies []upstream.Excha
 ) {
 	ip := pingRes.ipp.IP
 	for _, r := range replies {
-		if hasAns(r.Resp, ip) {
+		if hasInAns(r.Resp, ip) {
 			m = r.Resp
 			u = r.Upstream
 
@@ -128,30 +137,16 @@ func (f *FastestAddr) prepareReply(pingRes *pingResult, replies []upstream.Excha
 	return m, u, nil
 }
 
-// hasAns returns true if m contains ip in its answer section.
-func hasAns(m *dns.Msg, ip net.IP) (ok bool) {
+// hasInAns returns true if m contains ip in its Answer section.
+func hasInAns(m *dns.Msg, ip net.IP) (ok bool) {
 	for _, rr := range m.Answer {
-		respIP := proxyutil.GetIPFromDNSRecord(rr)
+		respIP := proxyutil.IPFromRR(rr)
 		if respIP != nil && respIP.Equal(ip) {
 			return true
 		}
 	}
 
 	return false
-}
-
-// extractIPs extracts all IP addresses from results.
-func (f *FastestAddr) extractIPs(results []upstream.ExchangeAllResult) (ips []net.IP) {
-	for _, r := range results {
-		for _, rr := range r.Resp.Answer {
-			ip := proxyutil.GetIPFromDNSRecord(rr)
-			if ip != nil && !containsIP(ips, ip) {
-				ips = append(ips, ip)
-			}
-		}
-	}
-
-	return ips
 }
 
 // containsIP returns true if ips contains the ip.

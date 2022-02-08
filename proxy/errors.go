@@ -1,10 +1,12 @@
+//go:build !plan9
 // +build !plan9
 
 package proxy
 
 import (
-	"errors"
 	"syscall"
+
+	"github.com/AdguardTeam/golibs/errors"
 )
 
 // isEPIPE checks if the underlying error is EPIPE.  syscall.EPIPE exists on all

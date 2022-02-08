@@ -66,74 +66,80 @@ func genSOA(request *dns.Msg, retry uint32) []dns.RR {
 	return []dns.RR{&soa}
 }
 
-// getIPString is a helper function that extracts IP address from net.Addr
-func getIPString(addr net.Addr) string {
-	switch addr := addr.(type) {
-	case *net.UDPAddr:
-		return addr.IP.String()
-	case *net.TCPAddr:
-		return addr.IP.String()
+// parseECS parses the EDNS client subnet option from m.
+func parseECS(m *dns.Msg) (addr net.IP, mask, scope uint8) {
+	opt := m.IsEdns0()
+	if opt == nil {
+		return nil, 0, 0
 	}
-	return ""
-}
 
-// Parse ECS option from DNS response
-// Return IP, mask, scope
-func parseECS(m *dns.Msg) (net.IP, uint8, uint8) {
-	for _, ex := range m.Extra {
-		opt, ok := ex.(*dns.OPT)
+	for _, e := range opt.Option {
+		sn, ok := e.(*dns.EDNS0_SUBNET)
 		if !ok {
 			continue
 		}
-		for _, e := range opt.Option {
-			sn, ok := e.(*dns.EDNS0_SUBNET)
-			if !ok {
-				continue
-			}
-			switch sn.Family {
-			case 0, 1:
-				return sn.Address.To4(), sn.SourceNetmask, sn.SourceScope
-			case 2:
-				return sn.Address, sn.SourceNetmask, sn.SourceScope
-			}
+
+		switch sn.Family {
+		case 1:
+			return sn.Address.To4(), sn.SourceNetmask, sn.SourceScope
+		case 2:
+			return sn.Address, sn.SourceNetmask, sn.SourceScope
+		default:
+			// Go on.
 		}
 	}
+
 	return nil, 0, 0
 }
 
-// Set EDNS Client Subnet option in DNS request object
-// Return masked IP and mask
+// setECS sets the EDNS client subnet option based on ip and scope into m.  It
+// returns masked IP and mask length.
 func setECS(m *dns.Msg, ip net.IP, scope uint8) (net.IP, uint8) {
-	e := new(dns.EDNS0_SUBNET)
-	e.Code = dns.EDNS0SUBNET
-	if ip.To4() != nil {
+	const (
+		// defaultECSv4 is the default length of network mask for IPv4 address
+		// in EDNS client subnet option.
+		defaultECSv4 = 24
+		// defaultECSv6 is the default length of network mask for IPv6 address
+		// in EDNS client subnet option.  The size of 7 bytes is chosen as a
+		// reasonable minimum since at least Google's public DNS refuses
+		// requests containing the options with longer network masks.
+		defaultECSv6 = 56
+	)
+
+	e := &dns.EDNS0_SUBNET{
+		Code:        dns.EDNS0SUBNET,
+		SourceScope: scope,
+	}
+	if ip4 := ip.To4(); ip4 != nil {
 		e.Family = 1
-		e.SourceNetmask = ednsCSDefaultNetmaskV4
-		e.Address = ip.To4().Mask(net.CIDRMask(int(e.SourceNetmask), 32))
+		e.SourceNetmask = defaultECSv4
+		e.Address = ip4.Mask(net.CIDRMask(defaultECSv4, net.IPv4len*8))
 	} else {
+		// Assume the IP address has already been validated.
 		e.Family = 2
-		e.SourceNetmask = ednsCSDefaultNetmaskV6
-		e.Address = ip.Mask(net.CIDRMask(int(e.SourceNetmask), 128))
-	}
-	e.SourceScope = scope
-
-	// If OPT record already exists - add EDNS option inside it
-	// Note that servers may return FORMERR if they meet 2 OPT records.
-	for _, ex := range m.Extra {
-		if ex.Header().Rrtype == dns.TypeOPT {
-			opt := ex.(*dns.OPT)
-			opt.Option = append(opt.Option, e)
-			return e.Address, e.SourceNetmask
-		}
+		e.SourceNetmask = defaultECSv6
+		e.Address = ip.Mask(net.CIDRMask(defaultECSv6, net.IPv6len*8))
 	}
 
-	// Create an OPT record and add EDNS option inside it
-	o := new(dns.OPT)
+	// If OPT record already exists so just add EDNS option inside it.  Note
+	// that servers may return FORMERR if they meet several OPT RRs.
+	if opt := m.IsEdns0(); opt != nil {
+		opt.Option = append(opt.Option, e)
+
+		return e.Address, e.SourceNetmask
+	}
+
+	// Create an OPT record and add EDNS option inside it.
+	o := &dns.OPT{
+		Hdr: dns.RR_Header{
+			Name:   ".",
+			Rrtype: dns.TypeOPT,
+		},
+		Option: []dns.EDNS0{e},
+	}
 	o.SetUDPSize(4096)
-	o.Hdr.Name = "."
-	o.Hdr.Rrtype = dns.TypeOPT
-	o.Option = append(o.Option, e)
 	m.Extra = append(m.Extra, o)
+
 	return e.Address, e.SourceNetmask
 }
 

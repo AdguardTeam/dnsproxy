@@ -13,9 +13,10 @@ import (
 	"github.com/AdguardTeam/dnsproxy/fastip"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
-	"github.com/joomcode/errorx"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
@@ -24,9 +25,6 @@ import (
 const (
 	defaultTimeout   = 10 * time.Second
 	minDNSPacketSize = 12 + 5
-
-	ednsCSDefaultNetmaskV4 = 24  // default network mask for IPv4 address for EDNS ClientSubnet option
-	ednsCSDefaultNetmaskV6 = 112 // default network mask for IPv6 address for EDNS ClientSubnet option
 )
 
 // Proto is the DNS protocol.
@@ -106,10 +104,6 @@ type Proxy struct {
 	// shortFlighter is used to resolve the expired cached requests without
 	// repetitions.
 	shortFlighter *optimisticResolver
-	// shortFlighterWithSubnet is used to resolve the expired cached
-	// requests making sure that only one request for each cache item is
-	// performed at a time.
-	shortFlighterWithSubnet *optimisticResolver
 
 	// FastestAddr module
 	// --
@@ -231,7 +225,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.tcpListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close TCP listening socket"))
+			errs = append(errs, fmt.Errorf("closing tcp listening socket: %w", err))
 		}
 	}
 	p.tcpListen = nil
@@ -239,7 +233,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.udpListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close UDP listening socket"))
+			errs = append(errs, fmt.Errorf("closing udp listening socket: %w", err))
 		}
 	}
 	p.udpListen = nil
@@ -247,7 +241,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.tlsListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close TLS listening socket"))
+			errs = append(errs, fmt.Errorf("closing tls listening socket: %w", err))
 		}
 	}
 	p.tlsListen = nil
@@ -255,7 +249,7 @@ func (p *Proxy) Stop() error {
 	for _, srv := range p.httpsServer {
 		err := srv.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close HTTPS server"))
+			errs = append(errs, fmt.Errorf("closing https server: %w", err))
 		}
 	}
 	p.httpsListen = nil
@@ -264,7 +258,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.quicListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close QUIC listener"))
+			errs = append(errs, fmt.Errorf("closing quic listener: %w", err))
 		}
 	}
 	p.quicListen = nil
@@ -272,7 +266,7 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.dnsCryptUDPListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close DNSCrypt UDP listening socket"))
+			errs = append(errs, fmt.Errorf("closing dnscrypt udp listening socket: %w", err))
 		}
 	}
 	p.dnsCryptUDPListen = nil
@@ -280,16 +274,17 @@ func (p *Proxy) Stop() error {
 	for _, l := range p.dnsCryptTCPListen {
 		err := l.Close()
 		if err != nil {
-			errs = append(errs, errorx.Decorate(err, "couldn't close DNCrypt TCP listening socket"))
+			errs = append(errs, fmt.Errorf("closing dnscrypt tcp listening socket: %w", err))
 		}
 	}
 	p.dnsCryptTCPListen = nil
 
 	p.started = false
 	log.Println("Stopped the DNS proxy server")
-	if len(errs) != 0 {
-		return errorx.DecorateMany("Failed to stop DNS proxy server", errs...)
+	if len(errs) > 0 {
+		return errors.List("stopping dns proxy server", errs...)
 	}
+
 	return nil
 }
 
@@ -389,8 +384,7 @@ func (p *Proxy) Addr(proto Proto) net.Addr {
 	}
 }
 
-// replyFromUpstream tries to resolve the request and caches it if cacheWorks is
-// true.
+// replyFromUpstream tries to resolve the request.
 func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	req := d.Req
 	host := req.Question[0].Name
@@ -411,17 +405,17 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	var u upstream.Upstream
 	reply, u, err = p.exchange(req, upstreams)
 	if p.isNAT64PrefixAvailable() && p.isEmptyAAAAResponse(reply, req) {
-		log.Tracef("Received an empty AAAA response, checking DNS64")
+		log.Tracef("received an empty AAAA response, checking DNS64")
 		reply, u, err = p.checkDNS64(req, reply, upstreams)
 	} else if p.isBogusNXDomain(reply) {
-		log.Tracef("Received IP from the bogus-nxdomain list, replacing response")
+		log.Tracef("response ip is contained in bogus-nxdomain list")
 		reply = p.genWithRCode(reply, dns.RcodeNameError)
 	}
 
 	log.Tracef("RTT: %s", time.Since(start))
 
 	if err != nil && p.Fallbacks != nil {
-		log.Tracef("Using the fallback upstream due to %s", err)
+		log.Tracef("using the fallback upstream due to %s", err)
 
 		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, req)
 	}
@@ -433,9 +427,9 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		d.Upstream = u
 		p.setMinMaxTTL(reply)
 
-		// Explicitly construct the question section since some
-		// upstreams may respond with invalidly constructed messages
-		// which cause out-of-range panics afterwards.
+		// Explicitly construct the question section since some upstreams may
+		// respond with invalidly constructed messages which cause out-of-range
+		// panics afterwards.
 		//
 		// See https://github.com/AdguardTeam/AdGuardHome/issues/3551.
 		if len(req.Question) > 0 && len(reply.Question) == 0 {
@@ -497,7 +491,7 @@ func (p *Proxy) Resolve(d *DNSContext) (err error) {
 
 	if cacheWorks && ok {
 		// Cache the response with DNSSEC RRs.
-		p.setInCache(d)
+		p.cacheResp(d)
 	}
 
 	filterMsg(d.Res, d.Res, d.adBit, d.doBit, 0)
@@ -524,12 +518,7 @@ func (p *Proxy) processECS(d *DNSContext) {
 		if p.Config.EDNSAddr != nil {
 			clientIP = p.Config.EDNSAddr
 		} else {
-			switch addr := d.Addr.(type) {
-			case *net.UDPAddr:
-				clientIP = addr.IP
-			case *net.TCPAddr:
-				clientIP = addr.IP
-			}
+			clientIP, _ = netutil.IPAndPortFromAddr(d.Addr)
 		}
 
 		if clientIP != nil && isPublicIP(clientIP) {

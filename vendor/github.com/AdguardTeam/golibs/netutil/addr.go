@@ -1,7 +1,5 @@
 // Package netutil contains common utilities for IP, MAC, and other kinds of
 // network addresses.
-//
-// TODO(a.garipov): Add more examples.
 package netutil
 
 import (
@@ -15,29 +13,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-// CloneIP returns a clone of an IP address that doesn't share the same
-// underlying array with it.
-func CloneIP(ip net.IP) (clone net.IP) {
-	if ip != nil && len(ip) == 0 {
-		return net.IP{}
-	}
-
-	return append(clone, ip...)
-}
-
-// CloneIPs returns a deep clone of ips.
-func CloneIPs(ips []net.IP) (clone []net.IP) {
-	if ips == nil {
-		return nil
-	}
-
-	clone = make([]net.IP, len(ips))
-	for i, ip := range ips {
-		clone[i] = CloneIP(ip)
-	}
-
-	return clone
-}
+// Various Network Address Utilities
 
 // CloneMAC returns a clone of a MAC address.
 func CloneMAC(mac net.HardwareAddr) (clone net.HardwareAddr) {
@@ -60,27 +36,6 @@ func CloneURL(u *url.URL) (clone *url.URL) {
 	return &cloneVal
 }
 
-// IPAndPortFromAddr returns the IP address and the port from addr.  If addr is
-// neither a *net.TCPAddr nor a *net.UDPAddr, it returns nil and 0.
-func IPAndPortFromAddr(addr net.Addr) (ip net.IP, port int) {
-	switch addr := addr.(type) {
-	case *net.TCPAddr:
-		return addr.IP, addr.Port
-	case *net.UDPAddr:
-		return addr.IP, addr.Port
-	}
-
-	return nil, 0
-}
-
-// IPv4Zero returns a new unspecified (aka empty or null) IPv4 address, 0.0.0.0.
-func IPv4Zero() (ip net.IP) { return net.IP{0, 0, 0, 0} }
-
-// IPv6Zero returns a new unspecified (aka empty or null) IPv6 address, [::].
-func IPv6Zero() (ip net.IP) {
-	return net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-}
-
 // IsValidHostInnerRune returns true if r is a valid inner—that is, neither
 // initial nor final—rune for a hostname label.
 func IsValidHostInnerRune(r rune) (ok bool) {
@@ -99,43 +54,6 @@ func IsValidHostOuterRune(r rune) (ok bool) {
 // int.
 func JoinHostPort(host string, port int) (hostport string) {
 	return net.JoinHostPort(host, strconv.Itoa(port))
-}
-
-// ParseIP is a wrapper around net.ParseIP that returns a useful error.
-//
-// Any error returned will have the underlying type of *AddrError.
-func ParseIP(s string) (ip net.IP, err error) {
-	ip = net.ParseIP(s)
-	if ip == nil {
-		return nil, &AddrError{
-			Kind: AddrKindIP,
-			Addr: s,
-		}
-	}
-
-	return ip, nil
-}
-
-// ParseIPv4 is a wrapper around net.ParseIP that makes sure that the parsed IP
-// is an IPv4 address and returns a useful error.
-//
-// Any error returned will have the underlying type of either *AddrError.
-func ParseIPv4(s string) (ip net.IP, err error) {
-	ip, err = ParseIP(s)
-	if err != nil {
-		err.(*AddrError).Kind = AddrKindIPv4
-
-		return nil, err
-	}
-
-	if ip = ip.To4(); ip == nil {
-		return nil, &AddrError{
-			Kind: AddrKindIPv4,
-			Addr: s,
-		}
-	}
-
-	return ip, nil
 }
 
 // SplitHostPort is a convenient wrapper for net.SplitHostPort with port of type
@@ -177,24 +95,27 @@ func SplitHost(hostport string) (host string, err error) {
 	return host, nil
 }
 
-// ValidateIP returns an error if ip is not a valid IPv4 or IPv6 address.
-//
-// Any error returned will have the underlying type of *AddrError.
-func ValidateIP(ip net.IP) (err error) {
-	defer makeAddrError(&err, ip.String(), AddrKindIP)
-
-	switch l := len(ip); l {
-	case 0:
-		return ErrAddrIsEmpty
-	case net.IPv4len, net.IPv6len:
+// Subdomains returns all subdomains of domain, starting from domain itself.
+// domain must be a valid, non-fully-qualified domain name.  If domain is empty,
+// Subdomains returns nil.
+func Subdomains(domain string) (sub []string) {
+	if domain == "" {
 		return nil
-	default:
-		return &LengthError{
-			Kind:    AddrKindIP,
-			Allowed: []int{net.IPv4len, net.IPv6len},
-			Length:  l,
-		}
 	}
+
+	sub = []string{domain}
+
+	for domain != "" {
+		i := strings.IndexByte(domain, '.')
+		if i < 0 {
+			break
+		}
+
+		domain = domain[i+1:]
+		sub = append(sub, domain)
+	}
+
+	return sub
 }
 
 // ValidateMAC returns an error if mac is not a valid EUI-48, EUI-64, or

@@ -5,24 +5,21 @@ import (
 	"github.com/miekg/dns"
 )
 
-// isBogusNXDomain - checks if the specified DNS message
-// contains AT LEAST ONE ip address from the Proxy.BogusNXDomain list
-func (p *Proxy) isBogusNXDomain(reply *dns.Msg) bool {
-	if reply == nil ||
-		len(p.BogusNXDomain) == 0 ||
-		len(reply.Answer) == 0 ||
-		(reply.Question[0].Qtype != dns.TypeA &&
-			reply.Question[0].Qtype != dns.TypeAAAA) {
+// isBogusNXDomain returns true if m contains at least a single IP address in
+// the Answer section contained in BogusNXDomain subnets of p.
+func (p *Proxy) isBogusNXDomain(m *dns.Msg) (ok bool) {
+	if m == nil || len(p.BogusNXDomain) == 0 || len(m.Question) == 0 {
+		return false
+	} else if qt := m.Question[0].Qtype; qt != dns.TypeA && qt != dns.TypeAAAA {
 		return false
 	}
 
-	for _, rr := range reply.Answer {
-		ip := proxyutil.GetIPFromDNSRecord(rr)
+	for _, rr := range m.Answer {
+		ip := proxyutil.IPFromRR(rr)
 		if proxyutil.ContainsIP(p.BogusNXDomain, ip) {
 			return true
 		}
 	}
 
-	// No IPs are bogus if we got here
 	return false
 }

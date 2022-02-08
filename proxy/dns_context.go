@@ -14,16 +14,24 @@ import (
 
 // DNSContext represents a DNS request message context
 type DNSContext struct {
-	Proto     Proto
-	Req       *dns.Msg          // DNS request
-	Res       *dns.Msg          // DNS response from an upstream
-	Addr      net.Addr          // client address.
-	StartTime time.Time         // processing start time
-	Upstream  upstream.Upstream // upstream that resolved DNS request
+	Proto Proto
+	// Req is the request message.
+	Req *dns.Msg
+	// Res is the response message.
+	Res *dns.Msg
+	// Addr is the address of the client.
+	Addr net.Addr
+	// StartTime is the moment when request processing started.
+	StartTime time.Time
+	// Upstream is the upstream that resolved the request.  In case of cached
+	// response it's nil.
+	Upstream upstream.Upstream
+	// CachedUpstreamAddr is the address of the upstream which the answer was
+	// cached with.  It's empty for responses resolved by the upstream server.
+	CachedUpstreamAddr string
 
-	// CustomUpstreamConfig -- custom upstream servers configuration
-	// to use for this request only.
-	// If set, Resolve() uses it instead of default servers
+	// CustomUpstreamConfig is only used for current request.  The Resolve
+	// method of Proxy uses it instead of the default servers if it's not nil.
 	CustomUpstreamConfig *UpstreamConfig
 
 	// Conn is the underlying client connection.  It is nil if Proto is
@@ -54,8 +62,10 @@ type DNSContext struct {
 	// instance.
 	RequestID uint64
 
-	ecsReqIP   net.IP // ECS IP used in request
-	ecsReqMask uint8  // ECS mask used in request
+	// ecsReqIP is the ECS IP used in the request.
+	ecsReqIP net.IP
+	// ecsReqMask is the length of ECS mask used in the request.
+	ecsReqMask uint8
 
 	// adBit is the authenticated data flag from the request.
 	adBit bool

@@ -14,7 +14,6 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -83,8 +82,9 @@ func AddressToUpstream(address string, options *Options) (Upstream, error) {
 
 		upstreamURL, err := url.Parse(address)
 		if err != nil {
-			return nil, errorx.Decorate(err, "failed to parse %s", address)
+			return nil, fmt.Errorf("failed to parse %s: %w", address, err)
 		}
+
 		return urlToUpstream(upstreamURL, options)
 	}
 
@@ -133,7 +133,7 @@ func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 
 		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {
-			return nil, errorx.Decorate(err, "couldn't create quic bootstrapper")
+			return nil, fmt.Errorf("creating quic bootstrapper: %w", err)
 		}
 
 		return &dnsOverQUIC{boot: b}, nil
@@ -145,7 +145,7 @@ func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 
 		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {
-			return nil, errorx.Decorate(err, "couldn't create tls bootstrapper")
+			return nil, fmt.Errorf("creating tls bootstrapper: %w", err)
 		}
 
 		return &dnsOverTLS{boot: b}, nil
@@ -157,7 +157,7 @@ func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 
 		b, err := urlToBoot(upstreamURL, opts)
 		if err != nil {
-			return nil, errorx.Decorate(err, "couldn't create tls bootstrapper")
+			return nil, fmt.Errorf("creating https bootstrapper: %w", err)
 		}
 
 		return &dnsOverHTTPS{boot: b}, nil
@@ -172,7 +172,7 @@ func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
 func stampToUpstream(upsURL *url.URL, opts *Options) (Upstream, error) {
 	stamp, err := dnsstamps.NewServerStampFromString(upsURL.String())
 	if err != nil {
-		return nil, errorx.Decorate(err, "failed to parse %s", upsURL)
+		return nil, fmt.Errorf("failed to parse %s: %w", upsURL, err)
 	}
 
 	if stamp.ServerAddrStr != "" {

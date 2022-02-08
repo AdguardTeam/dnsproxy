@@ -1,11 +1,11 @@
 package proxy
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -24,8 +24,9 @@ func (p *Proxy) createDNSCryptListeners() error {
 		log.Info("Creating a DNSCrypt TCP listener")
 		tcpListen, err := net.ListenTCP("tcp", a)
 		if err != nil {
-			return errorx.Decorate(err, "couldn't listen to TCP socket")
+			return fmt.Errorf("listening to dnscrypt tcp socket: %w", err)
 		}
+
 		p.dnsCryptTCPListen = append(p.dnsCryptTCPListen, tcpListen)
 		log.Info("Listening for DNSCrypt messages on tcp://%s", tcpListen.Addr())
 	}

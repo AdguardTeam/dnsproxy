@@ -216,8 +216,12 @@ func (err *listError) Unwrap() (unwrapped error) {
 	return err.errs[0]
 }
 
-// Annotate annotates the error with the message, unless the error is nil.  This
-// is a helper function to simplify code like this:
+// Annotate annotates the error with the message, unless the error is nil.  The
+// last verb in format must be a verb compatible with errors, for example "%w".
+//
+// In Defers
+//
+// The primary use case for this function is to simplify code like this:
 //
 //   func (f *foo) doStuff(s string) (err error) {
 //           defer func() {
@@ -232,22 +236,42 @@ func (err *listError) Unwrap() (unwrapped error) {
 // Instead, write:
 //
 //   func (f *foo) doStuff(s string) (err error) {
-//           defer func() { err = errors.Annotate("bad foo %q: %w", err, s) }()
+//           defer func() { err = errors.Annotate(err, "bad foo %q: %w", s) }()
 //
 //           // …
 //   }
 //
-// The last verb in msg must be a verb compatible with errors, for example "%w".
+// At The End Of Functions
+//
+// Another possible use case is to simplify final checks like this:
+//
+//   func (f *foo) doStuff(s string) (err error) {
+//           // …
+//
+//           if err != nil {
+//                   return fmt.Errorf("doing stuff with %s: %w", s, err)
+//           }
+//
+//           return nil
+//   }
+//
+// Instead, you could write:
+//
+//   func (f *foo) doStuff(s string) (err error) {
+//           // …
+//
+//           return errors.Annotate(err, "doing stuff with %s: %w", s)
+//   }
 //
 // Warning
 //
 // This function requires that there be only ONE error named "err" in the
 // function and that it is always the one that is returned.  Example (Bad)
 // provides an example of the incorrect usage of WithDeferred.
-func Annotate(err error, msg string, args ...interface{}) (annotated error) {
+func Annotate(err error, format string, args ...interface{}) (annotated error) {
 	if err == nil {
 		return nil
 	}
 
-	return fmt.Errorf(msg, append(args, err)...)
+	return fmt.Errorf(format, append(args, err)...)
 }

@@ -2,51 +2,49 @@ package proxy
 
 import (
 	"crypto/tls"
+	"fmt"
+	"io"
 	"net"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
-// NextProtoDoT is a registered ALPN for DNS-over-TLS.
-// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-// However, note that we do not use it currently anywhere and do not make it
-// mandatory since most of the existing clients do not send any ALPN.
-// In the future we might need that for this:
-// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-xfr-over-tls
-const NextProtoDoT = "dot"
-
-func (p *Proxy) createTCPListeners() error {
+func (p *Proxy) createTCPListeners() (err error) {
 	for _, a := range p.TCPListenAddr {
 		log.Printf("Creating a TCP server socket")
-		tcpListen, err := net.ListenTCP("tcp", a)
+
+		var tcpListen *net.TCPListener
+		tcpListen, err = net.ListenTCP("tcp", a)
 		if err != nil {
-			return errorx.Decorate(err, "couldn't listen to TCP socket")
+			return fmt.Errorf("starting listening on tcp socket: %w", err)
 		}
+
 		p.tcpListen = append(p.tcpListen, tcpListen)
 		log.Printf("Listening to tcp://%s", tcpListen.Addr())
 	}
+
 	return nil
 }
 
-func (p *Proxy) createTLSListeners() error {
+func (p *Proxy) createTLSListeners() (err error) {
 	for _, a := range p.TLSListenAddr {
 		log.Printf("Creating a TLS server socket")
-		tcpListen, err := net.ListenTCP("tcp", a)
-		if err != nil {
-			return errorx.Decorate(err, "could not start TLS listener")
-		}
 
-		tlsConfig := p.TLSConfig.Clone()
-		tlsConfig.NextProtos = []string{NextProtoDoT}
+		var tcpListen *net.TCPListener
+		tcpListen, err = net.ListenTCP("tcp", a)
+		if err != nil {
+			return fmt.Errorf("starting tls listener: %w", err)
+		}
 
 		l := tls.NewListener(tcpListen, p.TLSConfig)
 		p.tlsListen = append(p.tlsListen, l)
 		log.Printf("Listening to tls://%s", l.Addr())
 	}
+
 	return nil
 }
 
@@ -60,11 +58,12 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 		clientConn, err := l.Accept()
 
 		if err != nil {
-			if proxyutil.IsConnClosed(err) {
-				log.Tracef("TCP connection has been closed, exiting loop")
+			if errors.Is(err, net.ErrClosed) {
+				log.Debug("tcpPacketLoop: connection closed: %s", err)
 			} else {
 				log.Info("got error when reading from TCP listen: %s", err)
 			}
+
 			break
 		} else {
 			requestGoroutinesSema.acquire()
@@ -76,11 +75,18 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 	}
 }
 
-// handleTCPConnection starts a loop that handles an incoming TCP connection
-// proto is either "tcp" or "tls"
+// handleTCPConnection starts a loop that handles an incoming TCP connection.
+// proto must be either ProtoTCP or ProtoTLS.
 func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
-	log.Tracef("Start handling the new %s connection %s", proto, conn.RemoteAddr())
-	defer conn.Close()
+	defer log.OnPanic("proxy.handleTCPConnection")
+
+	log.Tracef("handling tcp: started handling %s request from %s", proto, conn.RemoteAddr())
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			logWithNonCrit(err, "handling tcp: closing conn")
+		}
+	}()
 
 	for {
 		p.RLock()
@@ -89,16 +95,24 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		}
 		p.RUnlock()
 
-		conn.SetDeadline(time.Now().Add(defaultTimeout)) //nolint
+		err := conn.SetDeadline(time.Now().Add(defaultTimeout))
+		if err != nil {
+			// Consider deadline errors non-critical.
+			logWithNonCrit(err, "handling tcp: setting deadline")
+		}
+
 		packet, err := proxyutil.ReadPrefixed(conn)
 		if err != nil {
-			return
+			logWithNonCrit(err, "handling tcp: reading msg")
+
+			break
 		}
 
 		req := &dns.Msg{}
 		err = req.Unpack(packet)
 		if err != nil {
-			log.Info("error handling TCP packet: %s", err)
+			log.Error("handling tcp: unpacking msg: %s", err)
+
 			return
 		}
 
@@ -108,8 +122,20 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 
 		err = p.handleDNSRequest(d)
 		if err != nil {
-			log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
+			log.Error("handling tcp: handling %s request: %s", d.Proto, err)
 		}
+	}
+}
+
+// logWithNonCrit logs the error on the appropriate level depending on whether
+// err is a critical error or not.
+func logWithNonCrit(err error, msg string) {
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		log.Debug("%s: connection is closed; original error: %s", msg, err)
+	} else if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
+		log.Debug("%s: connection timed out; original error: %s", msg, err)
+	} else {
+		log.Error("%s: %s", msg, err)
 	}
 }
 
@@ -125,16 +151,12 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 
 	bytes, err := resp.Pack()
 	if err != nil {
-		return errorx.Decorate(err, "couldn't convert message into wire format: %s", resp.String())
+		return fmt.Errorf("packing message: %w", err)
 	}
 
 	err = proxyutil.WritePrefixed(bytes, conn)
-
-	if proxyutil.IsConnClosed(err) {
-		return err
-	}
-	if err != nil {
-		return errorx.Decorate(err, "conn.Write() returned error")
+	if err != nil && !errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("writing message: %w", err)
 	}
 
 	return nil

@@ -1,11 +1,11 @@
 package upstream
 
 import (
+	"fmt"
 	"net"
 	"sync"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/joomcode/errorx"
 	"github.com/miekg/dns"
 )
 
@@ -40,7 +40,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	poolConn, err := p.pool.Get()
 	p.RUnlock()
 	if err != nil {
-		return nil, errorx.Decorate(err, "Failed to get a connection from TLSPool to %s", p.Address())
+		return nil, fmt.Errorf("getting connection to %s: %w", p.Address(), err)
 	}
 
 	logBegin(p.Address(), m)
@@ -57,7 +57,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		poolConn, err = p.pool.Create()
 		p.RUnlock()
 		if err != nil {
-			return nil, errorx.Decorate(err, "Failed to create a new connection from TLSPool to %s", p.Address())
+			return nil, fmt.Errorf("creating new connection to %s: %w", p.Address(), err)
 		}
 
 		// Retry sending the DNS request
@@ -79,13 +79,14 @@ func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, erro
 	err := c.WriteMsg(m)
 	if err != nil {
 		poolConn.Close()
-		return nil, errorx.Decorate(err, "Failed to send a request to %s", p.Address())
+		return nil, fmt.Errorf("sending request to %s: %w", p.Address(), err)
 	}
 
 	reply, err := c.ReadMsg()
 	if err != nil {
 		poolConn.Close()
-		return nil, errorx.Decorate(err, "Failed to read a request from %s", p.Address())
+
+		return nil, fmt.Errorf("reading request from %s: %w", p.Address(), err)
 	} else if reply.Id != m.Id {
 		err = dns.ErrId
 	}

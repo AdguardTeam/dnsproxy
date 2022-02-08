@@ -2,11 +2,11 @@ package proxy
 
 import (
 	"crypto/tls"
-	"errors"
 	"net"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
 )
@@ -84,7 +84,7 @@ type Config struct {
 
 	// BogusNXDomain - transforms responses that contain at least one of the given IP addresses into NXDOMAIN
 	// Similar to dnsmasq's "bogus-nxdomain"
-	BogusNXDomain []net.IP
+	BogusNXDomain []*net.IPNet
 
 	// Enable EDNS Client Subnet option
 	// DNS requests to the upstream server will contain an OPT record with Client Subnet option.
@@ -145,7 +145,7 @@ type Config struct {
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not
 func (p *Proxy) validateConfig() error {
 	if p.started {
-		return errors.New("server has been already started")
+		return errors.Error("server has been already started")
 	}
 
 	err := p.validateListenAddrs()
@@ -154,14 +154,15 @@ func (p *Proxy) validateConfig() error {
 	}
 
 	if p.UpstreamConfig == nil {
-		return errors.New("no default upstreams specified")
+		return errors.Error("no default upstreams specified")
 	}
 
 	if len(p.UpstreamConfig.Upstreams) == 0 {
 		if len(p.UpstreamConfig.DomainReservedUpstreams) == 0 {
-			return errors.New("no upstreams specified")
+			return errors.Error("no upstreams specified")
 		}
-		return errors.New("no default upstreams specified")
+
+		return errors.Error("no default upstreams specified")
 	}
 
 	if p.CacheMinTTL > 0 || p.CacheMaxTTL > 0 {
@@ -183,27 +184,30 @@ func (p *Proxy) validateConfig() error {
 	return nil
 }
 
-// validateListenAddrs -- checks if listen addrs are properly configured
+// validateListenAddrs returns an error if the addressses are not configured
+// properly.
 func (p *Proxy) validateListenAddrs() error {
 	if !p.hasListenAddrs() {
-		return errors.New("no listen address specified")
+		return errors.Error("no listen address specified")
 	}
 
-	if p.TLSListenAddr != nil && p.TLSConfig == nil {
-		return errors.New("cannot create a TLS listener without TLS config")
-	}
+	if p.TLSConfig == nil {
+		if p.TLSListenAddr != nil {
+			return errors.Error("cannot create tls listener without tls config")
+		}
 
-	if p.HTTPSListenAddr != nil && p.TLSConfig == nil {
-		return errors.New("cannot create an HTTPS listener without TLS config")
-	}
+		if p.HTTPSListenAddr != nil {
+			return errors.Error("cannot create https listener without tls config")
+		}
 
-	if p.QUICListenAddr != nil && p.TLSConfig == nil {
-		return errors.New("cannot create a QUIC listener without TLS config")
+		if p.QUICListenAddr != nil {
+			return errors.Error("cannot create quic listener without tls config")
+		}
 	}
 
 	if (p.DNSCryptTCPListenAddr != nil || p.DNSCryptUDPListenAddr != nil) &&
 		(p.DNSCryptResolverCert == nil || p.DNSCryptProviderName == "") {
-		return errors.New("cannot create a DNSCrypt listener without DNSCrypt config")
+		return errors.Error("cannot create dnscrypt listener without dnscrypt config")
 	}
 
 	return nil

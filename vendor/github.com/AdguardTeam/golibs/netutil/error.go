@@ -31,6 +31,7 @@ type AddrKind string
 // Kinds of addresses for AddrError.
 const (
 	AddrKindARPA     AddrKind = "arpa domain name"
+	AddrKindCIDR     AddrKind = "cidr address"
 	AddrKindHostPort AddrKind = "hostport address"
 	AddrKindIP       AddrKind = "ip address"
 	AddrKindIPPort   AddrKind = "ipport address"

@@ -39,6 +39,20 @@ func NewIPMap(hint int) (m *IPMap) {
 	}
 }
 
+// Clear clears the map but retains its allocated storage.  Calling Clear on
+// a nil *IPMap has no effect, just like calling delete in a loop on an empty
+// map doesn't.
+func (m *IPMap) Clear() {
+	if m == nil {
+		return
+	}
+
+	// This is optimized, see https://github.com/golang/go/issues/20138.
+	for k := range m.m {
+		delete(m.m, k)
+	}
+}
+
 // Del deletes ip from the map.  Calling Del on a nil *IPMap has no effect, just
 // like delete on an empty map doesn't.
 func (m *IPMap) Del(ip net.IP) {

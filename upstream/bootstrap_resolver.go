@@ -101,19 +101,16 @@ func isResolverValidBootstrap(upstream Upstream) bool {
 		return true
 	}
 
-	if strings.HasPrefix(a, "tcp://") {
-		a = a[len("tcp://"):]
-	}
+	a = strings.TrimPrefix(a, "tcp://")
 
 	host, _, err := net.SplitHostPort(a)
 	if err != nil {
 		return false
 	}
+
 	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return true
+
+	return ip != nil
 }
 
 type resultError struct {
@@ -161,21 +158,12 @@ func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr,
 
 	var ipAddrs []net.IPAddr
 	var errs []error
-	n := 0
-wait:
-	for {
-		var re *resultError
-		select {
-		case re = <-ch:
-			if re.err != nil {
-				errs = append(errs, re.err)
-			} else {
-				proxyutil.AppendIPAddrs(&ipAddrs, re.resp.Answer)
-			}
-			n++
-			if n == 2 {
-				break wait
-			}
+	for n := 0; n < 2; n++ {
+		re := <-ch
+		if re.err != nil {
+			errs = append(errs, re.err)
+		} else {
+			proxyutil.AppendIPAddrs(&ipAddrs, re.resp.Answer)
 		}
 	}
 

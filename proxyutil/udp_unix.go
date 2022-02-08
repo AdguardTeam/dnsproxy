@@ -25,9 +25,7 @@ const (
 
 // udpGetOOBSize obtains the destination IP from OOB data.
 func udpGetOOBSize() (oobSize int) {
-	l4, l6 :=
-		len(ipv4.NewControlMessage(ipv4Flags)),
-		len(ipv6.NewControlMessage(ipv6Flags))
+	l4, l6 := len(ipv4.NewControlMessage(ipv4Flags)), len(ipv6.NewControlMessage(ipv6Flags))
 
 	if l4 >= l6 {
 		return l4

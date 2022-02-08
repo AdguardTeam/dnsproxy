@@ -24,7 +24,7 @@ A simple DNS proxy server that supports all existing DNS protocols including `DN
 
 ## How to build
 
-You will need go v1.15 or later.
+You will need Go v1.16 or later.
 
 ```shell
 $ go build -mod=vendor
@@ -76,8 +76,9 @@ Application Options:
       --dns64-prefix=    If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not
                          specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::
       --ipv6-disabled    If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --bogus-nxdomain=  Transform responses that contain at least one of the given IP addresses into NXDOMAIN. Can be
-                         specified multiple times.
+      --bogus-nxdomain=  Transform the responses containing at least a single IP
+                         that matches specified addresses and CIDRs into
+                         NXDOMAIN.  Can be specified multiple times.
       --udp-buf-size=    Set the size of the UDP buffer in bytes. A value <= 0 will use the system default. (default: 0)
       --max-go-routines= Set the maximum number of go routines. A value <= 0 will not not set a maximum. (default: 0)
       --version          Prints the program version
@@ -269,10 +270,20 @@ Now even if your IP address is 192.168.0.1 and it's not a public IP, the proxy w
 
 ### Bogus NXDomain
 
-This option is similar to dnsmasq `bogus-nxdomain`. If specified, `dnsproxy` transforms responses that contain at least one of the given IP addresses into `NXDOMAIN`. Can be specified multiple times.
+This option is similar to dnsmasq `bogus-nxdomain`.  `dnsproxy` will transform
+responses that contain at least a single IP address which is also specified by
+the option into `NXDOMAIN`. Can be specified multiple times.
 
-In the example below, we use AdGuard DNS server that returns `0.0.0.0` for blocked domains, and transform them to `NXDOMAIN`.
+In the example below, we use AdGuard DNS server that returns `0.0.0.0` for
+blocked domains, and transform them to `NXDOMAIN`.
 
 ```
 ./dnsproxy -u 94.140.14.14:53 --bogus-nxdomain=0.0.0.0
+```
+
+CIDR ranges are supported as well.  The following will respond with `NXDOMAIN`
+instead of responses containing any IP from `192.168.0.0`-`192.168.255.255`:
+
+```
+./dnsproxy -u 192.168.0.15:53 --bogus-nxdomain=192.168.0.0/16
 ```

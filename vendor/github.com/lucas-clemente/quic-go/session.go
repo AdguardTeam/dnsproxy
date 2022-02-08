@@ -127,13 +127,12 @@ func (e *errCloseForRecreating) Error() string {
 	return "closing session in order to recreate it"
 }
 
-func (e *errCloseForRecreating) Is(target error) bool {
-	_, ok := target.(*errCloseForRecreating)
-	return ok
-}
-
 var sessionTracingID uint64        // to be accessed atomically
 func nextSessionTracingID() uint64 { return atomic.AddUint64(&sessionTracingID, 1) }
+
+func pathMTUDiscoveryEnabled(config *Config) bool {
+	return !disablePathMTUDiscovery && !config.DisablePathMTUDiscovery
+}
 
 // A Session is a QUIC session
 type session struct {
@@ -595,7 +594,9 @@ runLoop:
 				default:
 				}
 			}
-		} else if !processedUndecryptablePacket {
+		}
+		// If we processed any undecryptable packets, jump to the resetting of the timers directly.
+		if !processedUndecryptablePacket {
 			select {
 			case closeErr = <-s.closeChan:
 				break runLoop
@@ -691,7 +692,7 @@ runLoop:
 	}
 
 	s.handleCloseError(&closeErr)
-	if !errors.Is(closeErr.err, &errCloseForRecreating{}) && s.tracer != nil {
+	if e := (&errCloseForRecreating{}); !errors.As(closeErr.err, &e) && s.tracer != nil {
 		s.tracer.Close()
 	}
 	s.logger.Infof("Connection %s closed.", s.logID)
@@ -748,7 +749,7 @@ func (s *session) maybeResetTimer() {
 			deadline = s.idleTimeoutStartTime().Add(s.idleTimeout)
 		}
 	}
-	if s.handshakeConfirmed && !s.config.DisablePathMTUDiscovery {
+	if s.handshakeConfirmed && pathMTUDiscoveryEnabled(s.config) {
 		if probeTime := s.mtuDiscoverer.NextProbeTime(); !probeTime.IsZero() {
 			deadline = utils.MinTime(deadline, probeTime)
 		}
@@ -812,7 +813,7 @@ func (s *session) handleHandshakeConfirmed() {
 	s.sentPacketHandler.SetHandshakeConfirmed()
 	s.cryptoStreamHandler.SetHandshakeConfirmed()
 
-	if !s.config.DisablePathMTUDiscovery {
+	if pathMTUDiscoveryEnabled(s.config) {
 		maxPacketSize := s.peerParams.MaxUDPPayloadSize
 		if maxPacketSize == 0 {
 			maxPacketSize = protocol.MaxByteCount
@@ -1480,14 +1481,21 @@ func (s *session) handleCloseError(closeErr *closeError) {
 		}()
 	}
 
+	var (
+		statelessResetErr     *StatelessResetError
+		versionNegotiationErr *VersionNegotiationError
+		recreateErr           *errCloseForRecreating
+		applicationErr        *ApplicationError
+		transportErr          *TransportError
+	)
 	switch {
 	case errors.Is(e, qerr.ErrIdleTimeout),
 		errors.Is(e, qerr.ErrHandshakeTimeout),
-		errors.Is(e, &StatelessResetError{}),
-		errors.Is(e, &VersionNegotiationError{}),
-		errors.Is(e, &errCloseForRecreating{}),
-		errors.Is(e, &qerr.ApplicationError{}),
-		errors.Is(e, &qerr.TransportError{}):
+		errors.As(e, &statelessResetErr),
+		errors.As(e, &versionNegotiationErr),
+		errors.As(e, &recreateErr),
+		errors.As(e, &applicationErr),
+		errors.As(e, &transportErr):
 	default:
 		e = &qerr.TransportError{
 			ErrorCode:    qerr.InternalError,
@@ -1501,7 +1509,7 @@ func (s *session) handleCloseError(closeErr *closeError) {
 		s.datagramQueue.CloseWithError(e)
 	}
 
-	if s.tracer != nil && !errors.Is(e, &errCloseForRecreating{}) {
+	if s.tracer != nil && !errors.As(e, &recreateErr) {
 		s.tracer.ClosedConnection(e)
 	}
 
@@ -1766,7 +1774,7 @@ func (s *session) sendPacket() (bool, error) {
 		s.sendQueue.Send(packet.buffer)
 		return true, nil
 	}
-	if !s.config.DisablePathMTUDiscovery && s.mtuDiscoverer.ShouldSendProbe(now) {
+	if pathMTUDiscoveryEnabled(s.config) && s.mtuDiscoverer.ShouldSendProbe(now) {
 		packet, err := s.packer.PackMTUProbePacket(s.mtuDiscoverer.GetPing())
 		if err != nil {
 			return false, err
@@ -1963,8 +1971,7 @@ func (s *session) SendMessage(p []byte) error {
 	}
 	f.Data = make([]byte, len(p))
 	copy(f.Data, p)
-	s.datagramQueue.AddAndWait(f)
-	return nil
+	return s.datagramQueue.AddAndWait(f)
 }
 
 func (s *session) ReceiveMessage() ([]byte, error) {

@@ -1,13 +1,14 @@
+//go:build !plan9
 // +build !plan9
 
 package proxy
 
 import (
-	"errors"
 	"fmt"
 	"syscall"
 	"testing"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,7 +29,7 @@ func TestIsEPIPE(t *testing.T) {
 		want: true,
 	}, {
 		name: "not_epipe",
-		err:  errors.New("test error"),
+		err:  errors.Error("test error"),
 		want: false,
 	}, {
 		name: "wrapped_epipe",

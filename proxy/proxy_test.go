@@ -19,6 +19,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -126,8 +127,9 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 
 	txtDataChunkNum := txtDataLen / txtDataChunkLen
 	if txtDataLen%txtDataChunkLen > 0 {
-		txtDataChunkNum += 1
+		txtDataChunkNum++
 	}
+
 	txts := make([]string, txtDataChunkNum)
 	randData := make([]byte, txtDataLen)
 	n, err := rand.Read(randData)
@@ -284,16 +286,16 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 				t.Fatalf("wanted length has unexpected value %d", tc.wantLen)
 			}
 
-			cached, expired, key := p.cache.Get(dctx.Req)
+			cached, expired, key := p.cache.get(dctx.Req)
 			require.NotNil(t, cached)
-			require.Len(t, cached.Answer, 2)
+			require.Len(t, cached.m.Answer, 2)
 			assert.False(t, expired)
 			assert.Equal(t, key, msgToKey(dctx.Req))
 
 			// Just make it match.
-			cached.Answer[0].Header().Ttl = defaultTestTTL
-			assert.Equal(t, tc.wantAns.String(), cached.Answer[0].String())
-			assert.Equal(t, rrsig.String(), cached.Answer[1].String())
+			cached.m.Answer[0].Header().Ttl = defaultTestTTL
+			assert.Equal(t, tc.wantAns.String(), cached.m.Answer[0].String())
+			assert.Equal(t, rrsig.String(), cached.m.Answer[1].String())
 		})
 
 	}
@@ -820,30 +822,33 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 }
 
 func TestExchangeCustomUpstreamConfig(t *testing.T) {
-	dnsProxy := createTestProxy(t, nil)
-	err := dnsProxy.Start()
-	assert.True(t, err == nil)
+	prx := createTestProxy(t, nil)
+	err := prx.Start()
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, prx.Stop)
 
-	// this upstream will be used as a custom
-	u := testUpstream{}
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Rrtype = dns.TypeA
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.IP{4, 3, 2, 1}
-	u.aResp.Hdr.Ttl = 60
-	config := &UpstreamConfig{Upstreams: []upstream.Upstream{&u}}
-
-	// test request
-	d := DNSContext{}
-	d.CustomUpstreamConfig = config
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: net.IP{1, 2, 3, 0},
+	ansIP := net.IP{4, 3, 2, 1}
+	u := testUpstream{
+		ans: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{
+				Rrtype: dns.TypeA,
+				Name:   "host.",
+				Ttl:    60,
+			},
+			A: ansIP,
+		}},
 	}
 
-	err = dnsProxy.Resolve(&d)
-	assert.Nil(t, err)
-	assert.Equal(t, u.aResp.A, getIPFromResponse(d.Res))
+	d := DNSContext{
+		CustomUpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{&u}},
+		Req:                  createHostTestMessage("host"),
+		Addr:                 &net.TCPAddr{IP: net.IP{1, 2, 3, 0}},
+	}
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
+	assert.Equal(t, ansIP, getIPFromResponse(d.Res))
 }
 
 func TestECS(t *testing.T) {
@@ -858,41 +863,48 @@ func TestECS(t *testing.T) {
 
 // Resolve the same host with the different client subnet values
 func TestECSProxy(t *testing.T) {
-	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.EnableEDNSClientSubnet = true
-	dnsProxy.CacheEnabled = true
-	u := testUpstream{}
-	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
-	err := dnsProxy.Start()
-	assert.True(t, err == nil)
+	prx := createTestProxy(t, nil)
+	prx.EnableEDNSClientSubnet = true
+	prx.CacheEnabled = true
+
+	u := testUpstream{
+		ans: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{
+				Rrtype: dns.TypeA,
+				Name:   "host.",
+				Ttl:    60,
+			},
+			A: net.IP{4, 3, 2, 1},
+		}},
+		ecsIP: net.IP{1, 2, 3, 0},
+	}
+	prx.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
+	err := prx.Start()
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, prx.Stop)
 
 	// first request
-	d := DNSContext{}
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: net.IP{1, 2, 3, 0},
+	d := DNSContext{
+		Req:  createHostTestMessage("host"),
+		Addr: &net.TCPAddr{IP: net.IP{1, 2, 3, 0}},
 	}
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Rrtype = dns.TypeA
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.IP{4, 3, 2, 1}
-	u.aResp.Hdr.Ttl = 60
-	u.ecsIP = net.IP{1, 2, 3, 0}
-	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
 	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 1}))
 	assert.True(t, u.ecsReqIP.Equal(net.IP{1, 2, 3, 0}))
 
 	// request from another client with the same subnet - must be served from cache
 	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: net.IP{1, 2, 3, 1},
-	}
-	u.aResp = nil
+	d.Addr = &net.TCPAddr{IP: net.IP{1, 2, 3, 1}}
+	u.ans = nil
 	u.ecsIP = nil
 	u.ecsReqIP = nil
-	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
 	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 1}))
 	assert.True(t, u.ecsReqIP == nil)
 
@@ -901,82 +913,93 @@ func TestECSProxy(t *testing.T) {
 	d.Addr = &net.TCPAddr{
 		IP: net.IP{2, 2, 3, 0},
 	}
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.IP{4, 3, 2, 2}
-	u.aResp.Hdr.Ttl = 60
+	u.ans = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Rrtype: dns.TypeA,
+			Name:   "host.",
+			Ttl:    60,
+		},
+		A: net.IP{4, 3, 2, 2},
+	}}
 	u.ecsIP = net.IP{2, 2, 3, 0}
-	u.ecsReqIP = nil
-	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
 	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 2}))
 	assert.True(t, u.ecsReqIP.Equal(net.IP{2, 2, 3, 0}))
 
 	// request from a local IP - store in general (not subnet-aware) cache
 	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: net.IP{127, 0, 0, 1},
-	}
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Rrtype = dns.TypeA
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.IP{4, 3, 2, 3}
-	u.aResp.Hdr.Ttl = 60
+	d.Addr = &net.TCPAddr{IP: net.IP{127, 0, 0, 1}}
+	u.ans = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Rrtype: dns.TypeA,
+			Name:   "host.",
+			Ttl:    60,
+		},
+		A: net.IP{4, 3, 2, 3},
+	}}
 	u.ecsIP = nil
 	u.ecsReqIP = nil
-	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
 	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 3}))
 	assert.True(t, u.ecsReqIP == nil)
 
 	// request from another local IP - get from general cache
 	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: net.IP{127, 0, 0, 2},
-	}
-	u.aResp = nil
+	d.Addr = &net.TCPAddr{IP: net.IP{127, 0, 0, 2}}
+	u.ans = nil
 	u.ecsIP = nil
 	u.ecsReqIP = nil
-	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
 	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 3}))
 	assert.True(t, u.ecsReqIP == nil)
-
-	_ = dnsProxy.Stop()
 }
 
 func TestECSProxyCacheMinMaxTTL(t *testing.T) {
-	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.EnableEDNSClientSubnet = true
-	dnsProxy.CacheEnabled = true
-	dnsProxy.CacheMinTTL = 20
-	dnsProxy.CacheMaxTTL = 40
-	u := testUpstream{}
-	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
-	err := dnsProxy.Start()
-	assert.True(t, err == nil)
+	clientIP := net.IP{1, 2, 3, 0}
+
+	prx := createTestProxy(t, nil)
+	prx.EnableEDNSClientSubnet = true
+	prx.CacheEnabled = true
+	prx.CacheMinTTL = 20
+	prx.CacheMaxTTL = 40
+	u := testUpstream{
+		ans: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{
+				Rrtype: dns.TypeA,
+				Name:   "host.",
+				Ttl:    10,
+			},
+			A: net.IP{4, 3, 2, 1},
+		}},
+		ecsIP: clientIP,
+	}
+	prx.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
+	err := prx.Start()
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, prx.Stop)
 
 	// first request
-	clientIP := net.IP{1, 2, 3, 0}
-	d := DNSContext{}
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: clientIP,
+	d := DNSContext{
+		Req:  createHostTestMessage("host"),
+		Addr: &net.TCPAddr{IP: clientIP},
 	}
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Rrtype = dns.TypeA
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.IP{4, 3, 2, 1}
-	u.aResp.Hdr.Ttl = 10
-	u.ecsIP = clientIP
-	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
 
 	// get from cache - check min TTL
-	m, expired, key := dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	ci, expired, key := prx.cache.getWithSubnet(d.Req, clientIP, 24)
 	assert.False(t, expired)
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMinTTL)
+	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMinTTL)
 
 	// 2nd request
 	clientIP = net.IP{1, 2, 4, 0}
@@ -984,22 +1007,23 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	d.Addr = &net.TCPAddr{
 		IP: clientIP,
 	}
-	u.aResp = new(dns.A)
-	u.aResp.Hdr.Rrtype = dns.TypeA
-	u.aResp.Hdr.Name = "host."
-	u.aResp.A = net.IP{4, 3, 2, 1}
-	u.aResp.Hdr.Ttl = 60
+	u.ans = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Rrtype: dns.TypeA,
+			Name:   "host.",
+			Ttl:    60,
+		},
+		A: net.IP{4, 3, 2, 1},
+	}}
 	u.ecsIP = clientIP
-	err = dnsProxy.Resolve(&d)
-	assert.True(t, err == nil)
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
 
 	// get from cache - check max TTL
-	m, expired, key = dnsProxy.cache.GetWithSubnet(d.Req, clientIP, 24)
+	ci, expired, key = prx.cache.getWithSubnet(d.Req, clientIP, 24)
 	assert.False(t, expired)
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, m.Answer[0].Header().Ttl == dnsProxy.CacheMaxTTL)
-
-	_ = dnsProxy.Stop()
+	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMaxTTL)
 }
 
 func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
@@ -1229,34 +1253,27 @@ func getIPFromResponse(resp *dns.Msg) net.IP {
 }
 
 type testUpstream struct {
-	cname1Resp *dns.CNAME
-	aResp      *dns.A
-	aRespArr   []*dns.A
+	ans []dns.RR
+
 	ecsIP      net.IP
 	ecsReqIP   net.IP
 	ecsReqMask uint8
 }
 
-func (u *testUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	resp := dns.Msg{}
+func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+	resp = &dns.Msg{}
 	resp.SetReply(m)
 
-	if u.cname1Resp != nil {
-		resp.Answer = append(resp.Answer, u.cname1Resp)
-	}
-
-	resp.Answer = append(resp.Answer, u.aResp)
-
-	for _, a := range u.aRespArr {
-		resp.Answer = append(resp.Answer, a)
+	if u.ans != nil {
+		resp.Answer = append(resp.Answer, u.ans...)
 	}
 
 	u.ecsReqIP, u.ecsReqMask, _ = parseECS(m)
 	if u.ecsIP != nil {
-		_, _ = setECS(&resp, u.ecsIP, 24)
+		_, _ = setECS(resp, u.ecsIP, 24)
 	}
 
-	return &resp, nil
+	return resp, nil
 }
 
 func (u *testUpstream) Address() string {
@@ -1307,93 +1324,69 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 		},
 	}
 
-	testFunc := func(t *testing.T, responsed bool) (firstCtx *DNSContext) {
-		p.initCache()
-		out, in := make(chan unit), make(chan unit)
-		p.shortFlighter.resolve = func(dctx *DNSContext) (ok bool, err error) {
+	p.initCache()
+	out, in := make(chan unit), make(chan unit)
+	p.shortFlighter.cr = &testCachingResolver{
+		onReplyFromUpstream: func(dctx *DNSContext) (ok bool, err error) {
 			dctx.Res = buildResp(dctx.Req, nonOptimisticTTL)
 
-			return responsed, nil
-		}
-		p.shortFlighter.set = func(dctx *DNSContext) {
-			defer func() {
-				out <- unit{}
-			}()
-
+			return true, nil
+		},
+		onCacheResp: func(dctx *DNSContext) {
 			// Report adding to cache is in process.
 			out <- unit{}
 			// Wait for tests to finish.
 			<-in
 
-			p.setInCache(dctx)
-		}
-		p.shortFlighter.delete = func(k []byte) {
-			defer func() {
-				out <- unit{}
-			}()
+			p.cacheResp(dctx)
 
-			// Report deleting from cache is in process.
+			// Report adding tocache is finished.
 			out <- unit{}
-			// Wait for tests to finish.
-			<-in
-
-			p.cache.Delete(k)
-		}
-
-		// Two different contexts are made to emulate two different
-		// requests with the same question section.
-		var secondCtx *DNSContext
-		firstCtx, secondCtx = buildCtx(), buildCtx()
-
-		// Add expired response into cache.
-		req := firstCtx.Req
-		key := msgToKey(req)
-		data := packResponse(buildResp(req, 0))
-		items := glcache.New(glcache.Config{
-			EnableLRU: true,
-		})
-		items.Set(key, data)
-		p.cache.items = items
-
-		err := p.Resolve(firstCtx)
-		require.NoError(t, err)
-		require.Len(t, firstCtx.Res.Answer, 1)
-
-		assert.EqualValues(t, optimisticTTL, firstCtx.Res.Answer[0].Header().Ttl)
-
-		// Wait for optimisticResolver to reach the tested function.
-		<-out
-
-		err = p.Resolve(secondCtx)
-		require.NoError(t, err)
-		require.Len(t, secondCtx.Res.Answer, 1)
-
-		assert.EqualValues(t, optimisticTTL, secondCtx.Res.Answer[0].Header().Ttl)
-
-		// Continue and wait for it to finish.
-		in <- unit{}
-		<-out
-
-		return firstCtx
+		},
 	}
 
-	t.Run("successful", func(t *testing.T) {
-		firstCtx := testFunc(t, true)
+	// Two different contexts are made to emulate two different requests
+	// with the same question section.
+	firstCtx, secondCtx := buildCtx(), buildCtx()
 
-		// Should be served from cache.
-		data := p.cache.items.Get(msgToKey(firstCtx.Req))
-		unpacked, expired := unpackResponse(data, firstCtx.Req, false)
-		require.False(t, expired)
-		require.NotNil(t, unpacked)
-		require.Len(t, unpacked.Answer, 1)
-
-		assert.EqualValues(t, nonOptimisticTTL, unpacked.Answer[0].Header().Ttl)
+	// Add expired response into cache.
+	req := firstCtx.Req
+	key := msgToKey(req)
+	data := (&cacheItem{
+		m: buildResp(req, 0),
+		u: testUpsAddr,
+	}).pack()
+	items := glcache.New(glcache.Config{
+		EnableLRU: true,
 	})
+	items.Set(key, data)
+	p.cache.items = items
 
-	t.Run("unsuccessful", func(t *testing.T) {
-		firstCtx := testFunc(t, false)
+	err := p.Resolve(firstCtx)
+	require.NoError(t, err)
+	require.Len(t, firstCtx.Res.Answer, 1)
 
-		// Should be removed from cache.
-		assert.Nil(t, p.cache.items.Get(msgToKey(firstCtx.Req)))
-	})
+	assert.EqualValues(t, optimisticTTL, firstCtx.Res.Answer[0].Header().Ttl)
+
+	// Wait for optimisticResolver to reach the tested function.
+	<-out
+
+	err = p.Resolve(secondCtx)
+	require.NoError(t, err)
+	require.Len(t, secondCtx.Res.Answer, 1)
+
+	assert.EqualValues(t, optimisticTTL, secondCtx.Res.Answer[0].Header().Ttl)
+
+	// Continue and wait for it to finish.
+	in <- unit{}
+	<-out
+
+	// Should be served from cache.
+	data = p.cache.items.Get(msgToKey(firstCtx.Req))
+	unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
+	require.False(t, expired)
+	require.NotNil(t, unpacked)
+	require.Len(t, unpacked.m.Answer, 1)
+
+	assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
 }

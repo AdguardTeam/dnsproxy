@@ -5,7 +5,7 @@ plan:
   key: DNSPROXYSPECS
   name: dnsproxy - Build and run tests
 variables:
-  dockerGo: adguard/golang-ubuntu:3.3
+  dockerGo: adguard/golang-ubuntu:4.0
 
 stages:
   - Tests:
@@ -29,16 +29,16 @@ Test:
         interpreter: SHELL
         scripts:
           - |-
-            set -x
-            set -e
+            set -e -f -u -x
+
             go version
             golangci-lint --version
 
-            # Run linter
+            # Run linter.
             golangci-lint run
 
-            # Run tests
-            go test -race -v -bench=. -coverprofile=coverage.txt ./...
+            # Run tests.
+            make VERBOSE=1 test
   final-tasks:
     - clean
   requirements:

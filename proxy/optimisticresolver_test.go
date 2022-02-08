@@ -10,26 +10,45 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// testCachingResolver is a stub implementation of the cachingResolver interface
+// to simplify testing.
+type testCachingResolver struct {
+	onReplyFromUpstream func(dctx *DNSContext) (ok bool, err error)
+	onCacheResp         func(dctx *DNSContext)
+}
+
+// replyFromUpstream implements the cachingResolver interface for
+// *testCachingResolver.
+func (tcr *testCachingResolver) replyFromUpstream(dctx *DNSContext) (ok bool, err error) {
+	return tcr.onReplyFromUpstream(dctx)
+}
+
+// cacheResp implements the cachingResolver interface for *testCachingResolver.
+func (tcr *testCachingResolver) cacheResp(dctx *DNSContext) {
+	tcr.onCacheResp(dctx)
+}
+
 func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 	in, out := make(chan unit), make(chan unit)
-	var timesResolved int
-	testResolveFunc := func(_ *DNSContext) (ok bool, err error) {
-		timesResolved++
+	var timesResolved, timesSet int
 
-		return true, nil
+	tcr := &testCachingResolver{
+		onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) {
+			timesResolved++
+
+			return true, nil
+		},
+		onCacheResp: func(_ *DNSContext) {
+			timesSet++
+
+			// Pass the signal to begin running secondary goroutines.
+			out <- unit{}
+			// Block until all the secondary goroutines finish.
+			<-in
+		},
 	}
 
-	var timesSet int
-	testSetFunc := func(_ *DNSContext) {
-		timesSet++
-
-		// Pass the signal to begin running secondary goroutines.
-		out <- unit{}
-		// Block until all the secondary goroutines finish.
-		<-in
-	}
-
-	s := newOptimisticResolver(testResolveFunc, testSetFunc, nil)
+	s := newOptimisticResolver(tcr)
 	sameKey := []byte{1, 2, 3}
 
 	// Start the primary goroutine.
@@ -61,8 +80,6 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 	key := []byte{1, 2, 3}
 
-	noopSetFunc := func(_ *DNSContext) {}
-
 	t.Run("error", func(t *testing.T) {
 		logOutput := &bytes.Buffer{}
 
@@ -76,29 +93,23 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 		})
 
 		const rerr errors.Error = "sample resolving error"
-		testResolveFunc := func(_ *DNSContext) (ok bool, err error) {
-			return true, rerr
-		}
-
-		s := newOptimisticResolver(testResolveFunc, noopSetFunc, nil)
+		s := newOptimisticResolver(&testCachingResolver{
+			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return true, rerr },
+			onCacheResp:         func(_ *DNSContext) {},
+		})
 		s.ResolveOnce(nil, key)
 
 		assert.Contains(t, logOutput.String(), rerr.Error())
 	})
 
 	t.Run("not_ok", func(t *testing.T) {
-		testResolveFunc := func(_ *DNSContext) (ok bool, err error) {
-			return false, nil
-		}
-
-		var deleteCalled bool
-		testDeleteFunc := func(_ []byte) {
-			deleteCalled = true
-		}
-
-		s := newOptimisticResolver(testResolveFunc, noopSetFunc, testDeleteFunc)
+		cached := false
+		s := newOptimisticResolver(&testCachingResolver{
+			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return false, nil },
+			onCacheResp:         func(_ *DNSContext) { cached = true },
+		})
 		s.ResolveOnce(nil, key)
 
-		assert.True(t, deleteCalled)
+		assert.False(t, cached)
 	})
 }

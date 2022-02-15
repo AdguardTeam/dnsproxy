@@ -5,7 +5,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
@@ -166,17 +165,8 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 
 	if err != nil {
-		if isNonCriticalError(err) {
-			// We're probably restarting, so log this with the debug level.
-			log.Debug("responding to %s request: %s", d.Proto, err)
-		} else {
-			log.Info("responding to %s request: %s", d.Proto, err)
-		}
+		logWithNonCrit(err, fmt.Sprintf("responding %s request", d.Proto))
 	}
-}
-
-func isNonCriticalError(err error) (ok bool) {
-	return isEPIPE(err) || errors.Is(err, net.ErrClosed)
 }
 
 // Set TTL value of all records according to our settings

@@ -122,7 +122,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 
 		err = p.handleDNSRequest(d)
 		if err != nil {
-			log.Error("handling tcp: handling %s request: %s", d.Proto, err)
+			logWithNonCrit(err, fmt.Sprintf("handling tcp: handling %s request", d.Proto))
 		}
 	}
 }
@@ -130,7 +130,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 // logWithNonCrit logs the error on the appropriate level depending on whether
 // err is a critical error or not.
 func logWithNonCrit(err error, msg string) {
-	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || isEPIPE(err) {
 		log.Debug("%s: connection is closed; original error: %s", msg, err)
 	} else if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
 		log.Debug("%s: connection timed out; original error: %s", msg, err)

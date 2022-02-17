@@ -85,25 +85,26 @@ type Config struct {
 	// Similar to dnsmasq's "bogus-nxdomain"
 	BogusNXDomain []*net.IPNet
 
-	// Enable EDNS Client Subnet option
-	// DNS requests to the upstream server will contain an OPT record with Client Subnet option.
-	//  If the original request already has this option set, we pass it through as is.
-	//  Otherwise, we set it ourselves using the client IP with subnet /24 (for IPv4) and /112 (for IPv6).
+	// Enable EDNS Client Subnet option DNS requests to the upstream server will
+	// contain an OPT record with Client Subnet option.  If the original request
+	// already has this option set, we pass it through as is.  Otherwise, we set
+	// it ourselves using the client IP with subnet /24 (for IPv4) and /56 (for
+	// IPv6).
 	//
-	// If the upstream server supports ECS, it sets subnet number in the response.
-	// This subnet number along with the client IP and other data is used as a cache key.
-	// Next time, if a client from the same subnet requests this host name,
-	//  we get the response from cache.
-	// If another client from a different subnet requests this host name,
-	//  we pass his request to the upstream server.
+	// If the upstream server supports ECS, it sets subnet number in the
+	// response.  This subnet number along with the client IP and other data is
+	// used as a cache key.  Next time, if a client from the same subnet
+	// requests this host name, we get the response from cache.  If another
+	// client from a different subnet requests this host name, we pass his
+	// request to the upstream server.
 	//
-	// If the upstream server doesn't support ECS (there's no subnet number in response),
-	//  this response will be cached for all clients.
+	// If the upstream server doesn't support ECS (there's no subnet number in
+	// response), this response will be cached for all clients.
 	//
-	// If client IP is private (i.e. not public), we don't add EDNS record into a request.
-	// And so there will be no EDNS record in response either.
-	// We store these responses in general cache (without subnet)
-	//  so they will never be used for clients with public IP addresses.
+	// If client IP is private (i.e. not public), we don't add EDNS record into
+	// a request.  And so there will be no EDNS record in response either.  We
+	// store these responses in general cache (without subnet) so they will
+	// never be used for clients with public IP addresses.
 	EnableEDNSClientSubnet bool
 	EDNSAddr               net.IP // ECS IP used in request
 

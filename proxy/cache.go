@@ -179,17 +179,15 @@ func (c *cache) get(req *dns.Msg) (ci *cacheItem, expired bool, key []byte) {
 	return ci, expired, key
 }
 
-// getWithSubnet returns cached item for the req if it's found by client's IP
-// and a subnet mask.  expired is true if the item's TTL is expired.  key is the
-// resulting key for req.  It's returned to avoid recalculating it afterwards.
+// getWithSubnet returns cached item for the req if it's found by n.  expired is
+// true if the item's TTL is expired.  k is the resulting key for req.  It's
+// returned to avoid recalculating it afterwards.
 //
 // Note that a slow longest-prefix-match algorithm is used, so cache searches
 // are performed up to mask+1 times.
-func (c *cache) getWithSubnet(req *dns.Msg, cliIP net.IP, mask uint8) (
-	ci *cacheItem,
-	expired bool,
-	key []byte,
-) {
+func (c *cache) getWithSubnet(req *dns.Msg, n *net.IPNet) (ci *cacheItem, expired bool, k []byte) {
+	mask, _ := n.Mask.Size()
+
 	c.itemsWithSubnetLock.RLock()
 	defer c.itemsWithSubnetLock.RUnlock()
 
@@ -200,18 +198,18 @@ func (c *cache) getWithSubnet(req *dns.Msg, cliIP net.IP, mask uint8) (
 	var data []byte
 	for mask++; mask > 0 && data == nil; {
 		mask--
-		key = msgToKeyWithSubnet(req, cliIP, mask)
-		data = c.itemsWithSubnet.Get(key)
+		k = msgToKeyWithSubnet(req, n.IP, mask)
+		data = c.itemsWithSubnet.Get(k)
 	}
 	if data == nil {
-		return nil, false, key
+		return nil, false, k
 	}
 
 	if ci, expired = c.unpackItem(data, req); ci == nil {
-		c.items.Del(key)
+		c.itemsWithSubnet.Del(k)
 	}
 
-	return ci, expired, key
+	return ci, expired, k
 }
 
 // initLazy initializes the cache for general requests.
@@ -267,14 +265,15 @@ func (c *cache) set(ci *cacheItem) {
 
 // setWithSubnet tries to add the ci into cache with subnet and ip used to
 // calculate the key.
-func (c *cache) setWithSubnet(ci *cacheItem, ip net.IP, mask uint8) {
+func (c *cache) setWithSubnet(ci *cacheItem, subnet *net.IPNet) {
 	if !isCacheable(ci.m) {
 		return
 	}
 
 	c.initLazyWithSubnet()
 
-	key := msgToKeyWithSubnet(ci.m, ip, mask)
+	pref, _ := subnet.Mask.Size()
+	key := msgToKeyWithSubnet(ci.m, subnet.IP, pref)
 	packed := ci.pack()
 
 	c.itemsWithSubnetLock.RLock()
@@ -417,11 +416,12 @@ func msgToKey(m *dns.Msg) (b []byte) {
 }
 
 // msgToKeyWithSubnet constructs the cache key from DO bit, type, class, subnet
-// mask, client's IP address and question's name of m.
-func msgToKeyWithSubnet(m *dns.Msg, clientIP net.IP, mask uint8) (key []byte) {
+// mask, client's IP address and question's name of m.  ecsIP is expected to be
+// masked already.
+func msgToKeyWithSubnet(m *dns.Msg, ecsIP net.IP, mask int) (key []byte) {
 	q := m.Question[0]
 	cap := 1 + 2*packedMsgLenSz + 1 + len(q.Name)
-	ipLen := len(clientIP)
+	ipLen := len(ecsIP)
 	masked := mask != 0
 	if masked {
 		cap += ipLen
@@ -448,10 +448,10 @@ func msgToKeyWithSubnet(m *dns.Msg, clientIP net.IP, mask uint8) (key []byte) {
 	k += packedMsgLenSz
 
 	// Add mask.
-	key[k] = mask
+	key[k] = uint8(mask)
 	k++
 	if masked {
-		k += copy(key[k:], clientIP)
+		k += copy(key[k:], ecsIP)
 	}
 	copy(key[k:], strings.ToLower(q.Name))
 

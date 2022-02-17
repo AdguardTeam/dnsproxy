@@ -23,6 +23,10 @@ const (
 	// ErrNotAReversedIP is the underlying error returned from validation
 	// functions when a domain name is not a full reversed IP address.
 	ErrNotAReversedIP errors.Error = "not a full reversed ip address"
+
+	// ErrNotAReversedSubnet is the underlying error returned from validation
+	// functions when a domain name is not a valid reversed IP network.
+	ErrNotAReversedSubnet errors.Error = "not a reversed ip network"
 )
 
 // AddrKind is the kind of address or address part used for error reporting.
@@ -37,8 +41,10 @@ const (
 	AddrKindIPPort   AddrKind = "ipport address"
 	AddrKindIPv4     AddrKind = "ipv4 address"
 	AddrKindLabel    AddrKind = "domain name label"
+	AddrKindSRVLabel AddrKind = "service name label"
 	AddrKindMAC      AddrKind = "mac address"
 	AddrKindName     AddrKind = "domain name"
+	AddrKindSRVName  AddrKind = "service domain name"
 )
 
 // AddrError is the underlying type of errors returned from validation

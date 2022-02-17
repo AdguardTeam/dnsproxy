@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -66,13 +67,15 @@ func genSOA(request *dns.Msg, retry uint32) []dns.RR {
 	return []dns.RR{&soa}
 }
 
-// parseECS parses the EDNS client subnet option from m.
-func parseECS(m *dns.Msg) (addr net.IP, mask, scope uint8) {
+// ecsFromMsg returns the subnet from EDNS Client-Subnet option of m if any.
+func ecsFromMsg(m *dns.Msg) (subnet *net.IPNet, scope int) {
 	opt := m.IsEdns0()
 	if opt == nil {
-		return nil, 0, 0
+		return nil, 0
 	}
 
+	var ip net.IP
+	var mask net.IPMask
 	for _, e := range opt.Option {
 		sn, ok := e.(*dns.EDNS0_SUBNET)
 		if !ok {
@@ -81,26 +84,31 @@ func parseECS(m *dns.Msg) (addr net.IP, mask, scope uint8) {
 
 		switch sn.Family {
 		case 1:
-			return sn.Address.To4(), sn.SourceNetmask, sn.SourceScope
+			ip = sn.Address.To4()
+			mask = net.CIDRMask(int(sn.SourceNetmask), netutil.IPv4BitLen)
 		case 2:
-			return sn.Address, sn.SourceNetmask, sn.SourceScope
+			ip = sn.Address
+			mask = net.CIDRMask(int(sn.SourceNetmask), netutil.IPv6BitLen)
 		default:
-			// Go on.
+			continue
 		}
+
+		return &net.IPNet{IP: ip, Mask: mask}, int(sn.SourceScope)
 	}
 
-	return nil, 0, 0
+	return nil, 0
 }
 
 // setECS sets the EDNS client subnet option based on ip and scope into m.  It
 // returns masked IP and mask length.
-func setECS(m *dns.Msg, ip net.IP, scope uint8) (net.IP, uint8) {
+func setECS(m *dns.Msg, ip net.IP, scope uint8) (subnet *net.IPNet) {
 	const (
 		// defaultECSv4 is the default length of network mask for IPv4 address
 		// in EDNS client subnet option.
 		defaultECSv4 = 24
+
 		// defaultECSv6 is the default length of network mask for IPv6 address
-		// in EDNS client subnet option.  The size of 7 bytes is chosen as a
+		// in EDNS client subnet option.  The size of 7 octets is chosen as a
 		// reasonable minimum since at least Google's public DNS refuses
 		// requests containing the options with longer network masks.
 		defaultECSv6 = 56
@@ -110,23 +118,28 @@ func setECS(m *dns.Msg, ip net.IP, scope uint8) (net.IP, uint8) {
 		Code:        dns.EDNS0SUBNET,
 		SourceScope: scope,
 	}
+
+	subnet = &net.IPNet{}
 	if ip4 := ip.To4(); ip4 != nil {
 		e.Family = 1
 		e.SourceNetmask = defaultECSv4
-		e.Address = ip4.Mask(net.CIDRMask(defaultECSv4, net.IPv4len*8))
+		subnet.Mask = net.CIDRMask(defaultECSv4, netutil.IPv4BitLen)
+		ip = ip4
 	} else {
 		// Assume the IP address has already been validated.
 		e.Family = 2
 		e.SourceNetmask = defaultECSv6
-		e.Address = ip.Mask(net.CIDRMask(defaultECSv6, net.IPv6len*8))
+		subnet.Mask = net.CIDRMask(defaultECSv6, netutil.IPv6BitLen)
 	}
+	subnet.IP = ip.Mask(subnet.Mask)
+	e.Address = subnet.IP
 
 	// If OPT record already exists so just add EDNS option inside it.  Note
 	// that servers may return FORMERR if they meet several OPT RRs.
 	if opt := m.IsEdns0(); opt != nil {
 		opt.Option = append(opt.Option, e)
 
-		return e.Address, e.SourceNetmask
+		return subnet
 	}
 
 	// Create an OPT record and add EDNS option inside it.
@@ -140,59 +153,57 @@ func setECS(m *dns.Msg, ip net.IP, scope uint8) (net.IP, uint8) {
 	o.SetUDPSize(4096)
 	m.Extra = append(m.Extra, o)
 
-	return e.Address, e.SourceNetmask
+	return subnet
 }
 
-// Return TRUE if IP is within public Internet IP range
+// isPublicIP returns true if ip is within public Internet IP range.
+//
+// TODO(e.burkov, a.garipov):  Add an interface-based subnet detector to the
+// netutil.
+//
 // nolint (gocyclo)
-func isPublicIP(ip net.IP) bool {
-	ip4 := ip.To4()
-	if ip4 != nil {
-		switch ip4[0] {
-		case 0:
-			return false // software
-		case 10:
-			return false // private network
-		case 127:
-			return false // loopback
-		case 169:
-			if ip4[1] == 254 {
-				return false // link-local
-			}
-		case 172:
-			if ip4[1] >= 16 && ip4[1] <= 31 {
-				return false // private network
-			}
-		case 192:
-			if (ip4[1] == 0 && ip4[2] == 0) || // private network
-				(ip4[1] == 0 && ip4[2] == 2) || // documentation
-				(ip4[1] == 88 && ip4[2] == 99) || // reserved
-				(ip4[1] == 168) { // private network
-				return false
-			}
-		case 198:
-			if (ip4[1] == 18 || ip4[2] == 19) || // private network
-				(ip4[1] == 51 || ip4[2] == 100) { // documentation
-				return false
-			}
-		case 203:
-			if ip4[1] == 0 && ip4[2] == 113 { // documentation
-				return false
-			}
-		case 224:
-			if ip4[1] == 0 && ip4[2] == 0 { // multicast
-				return false
-			}
-		case 255:
-			if ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 { // subnet
-				return false
-			}
-		}
-	} else {
-		if ip.IsLoopback() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() {
-			return false
-		}
+func isPublicIP(ip net.IP) (ok bool) {
+	if ip = ip.To4(); ip == nil {
+		return !ip.IsLoopback() && !ip.IsLinkLocalMulticast() && !ip.IsLinkLocalUnicast()
 	}
 
-	return true
+	switch ip[0] {
+	case 0, 10, 127:
+		// Software, private network, loopback.
+		return false
+	case 169:
+		// Link-local.
+		return ip[1] != 254
+	case 172:
+		// Private network.
+		return ip[1] < 16 || ip[1] > 31
+	case 192:
+		switch ip[1] {
+		case 0:
+			// Private network, documentation.
+			return ip[2] != 0 && ip[2] != 2
+		case 88:
+			// Reserved.
+			return ip[2] != 99
+		case 168:
+			// Private network.
+			return false
+		default:
+			return true
+		}
+	case 198:
+		// Private network, documentation.
+		return (ip[1] != 18 && ip[2] != 19) && (ip[1] != 51 && ip[2] != 100)
+	case 203:
+		// Documentation.
+		return ip[1] != 0 || ip[2] != 113
+	case 224:
+		// Multicast.
+		return ip[1] != 0 || ip[2] != 0
+	case 255:
+		// Broadcast.
+		return ip[1] != 255 || ip[2] != 255 || ip[3] != 255
+	default:
+		return true
+	}
 }

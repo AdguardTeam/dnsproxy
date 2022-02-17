@@ -19,6 +19,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
@@ -852,13 +853,41 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 }
 
 func TestECS(t *testing.T) {
-	m := &dns.Msg{}
-	_, mask := setECS(m, net.IP{1, 2, 3, 0}, 16)
-	assert.True(t, mask == 24)
-	ip, mask, scope := parseECS(m)
-	assert.True(t, ip.Equal(net.IP{1, 2, 3, 0}))
-	assert.True(t, mask == 24)
-	assert.True(t, scope == 16)
+	t.Run("ipv4", func(t *testing.T) {
+		ip := net.IP{1, 2, 3, 4}
+
+		m := &dns.Msg{}
+		subnet := setECS(m, ip, 16)
+
+		ones, _ := subnet.Mask.Size()
+		assert.Equal(t, 24, ones)
+
+		var scope int
+		subnet, scope = ecsFromMsg(m)
+		assert.Equal(t, ip.Mask(subnet.Mask), subnet.IP)
+
+		ones, _ = subnet.Mask.Size()
+		assert.Equal(t, 24, ones)
+		assert.Equal(t, 16, scope)
+	})
+
+	t.Run("ipv6", func(t *testing.T) {
+		ip := net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+
+		m := &dns.Msg{}
+		subnet := setECS(m, ip, 48)
+
+		ones, _ := subnet.Mask.Size()
+		assert.Equal(t, 56, ones)
+
+		var scope int
+		subnet, scope = ecsFromMsg(m)
+		assert.Equal(t, ip.Mask(subnet.Mask), subnet.IP)
+
+		ones, _ = subnet.Mask.Size()
+		assert.Equal(t, 56, ones)
+		assert.Equal(t, 48, scope)
+	})
 }
 
 // Resolve the same host with the different client subnet values
@@ -867,100 +896,102 @@ func TestECSProxy(t *testing.T) {
 	prx.EnableEDNSClientSubnet = true
 	prx.CacheEnabled = true
 
+	var (
+		ip1230 = net.IP{1, 2, 3, 0}
+		ip2230 = net.IP{2, 2, 3, 0}
+		ip4321 = net.IP{4, 3, 2, 1}
+		ip4322 = net.IP{4, 3, 2, 2}
+		ip4323 = net.IP{4, 3, 2, 3}
+	)
+
 	u := testUpstream{
 		ans: []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{
-				Rrtype: dns.TypeA,
-				Name:   "host.",
-				Ttl:    60,
-			},
-			A: net.IP{4, 3, 2, 1},
+			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
+			A:   ip4321,
 		}},
-		ecsIP: net.IP{1, 2, 3, 0},
+		ecsIP: ip1230,
 	}
 	prx.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
 	err := prx.Start()
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, prx.Stop)
 
-	// first request
-	d := DNSContext{
-		Req:  createHostTestMessage("host"),
-		Addr: &net.TCPAddr{IP: net.IP{1, 2, 3, 0}},
-	}
+	t.Run("cache_subnet", func(t *testing.T) {
+		d := DNSContext{
+			Req:  createHostTestMessage("host"),
+			Addr: &net.TCPAddr{IP: ip1230},
+		}
 
-	err = prx.Resolve(&d)
-	require.NoError(t, err)
+		err = prx.Resolve(&d)
+		require.NoError(t, err)
 
-	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 1}))
-	assert.True(t, u.ecsReqIP.Equal(net.IP{1, 2, 3, 0}))
+		assert.Equal(t, net.IP{4, 3, 2, 1}, getIPFromResponse(d.Res))
+		assert.Equal(t, ip1230, u.ecsReqIP)
+	})
 
-	// request from another client with the same subnet - must be served from cache
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{IP: net.IP{1, 2, 3, 1}}
-	u.ans = nil
-	u.ecsIP = nil
-	u.ecsReqIP = nil
+	t.Run("server_subnet_cache", func(t *testing.T) {
+		d := DNSContext{
+			Req:  createHostTestMessage("host"),
+			Addr: &net.TCPAddr{IP: net.IP{1, 2, 3, 1}},
+		}
+		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
 
-	err = prx.Resolve(&d)
-	require.NoError(t, err)
+		err = prx.Resolve(&d)
+		require.NoError(t, err)
 
-	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 1}))
-	assert.True(t, u.ecsReqIP == nil)
+		assert.Equal(t, ip4321, getIPFromResponse(d.Res))
+		assert.Nil(t, u.ecsReqIP)
+	})
 
-	// request from a different subnet - different response
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: net.IP{2, 2, 3, 0},
-	}
-	u.ans = []dns.RR{&dns.A{
-		Hdr: dns.RR_Header{
-			Rrtype: dns.TypeA,
-			Name:   "host.",
-			Ttl:    60,
-		},
-		A: net.IP{4, 3, 2, 2},
-	}}
-	u.ecsIP = net.IP{2, 2, 3, 0}
+	t.Run("another_subnet", func(t *testing.T) {
+		d := DNSContext{
+			Req:  createHostTestMessage("host"),
+			Addr: &net.TCPAddr{IP: ip2230},
+		}
+		u.ans = []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
+			A:   ip4322,
+		}}
+		u.ecsIP = ip2230
 
-	err = prx.Resolve(&d)
-	require.NoError(t, err)
+		err = prx.Resolve(&d)
+		require.NoError(t, err)
 
-	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 2}))
-	assert.True(t, u.ecsReqIP.Equal(net.IP{2, 2, 3, 0}))
+		assert.Equal(t, ip4322, getIPFromResponse(d.Res))
+		assert.Equal(t, ip2230, u.ecsReqIP)
+	})
 
-	// request from a local IP - store in general (not subnet-aware) cache
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{IP: net.IP{127, 0, 0, 1}}
-	u.ans = []dns.RR{&dns.A{
-		Hdr: dns.RR_Header{
-			Rrtype: dns.TypeA,
-			Name:   "host.",
-			Ttl:    60,
-		},
-		A: net.IP{4, 3, 2, 3},
-	}}
-	u.ecsIP = nil
-	u.ecsReqIP = nil
+	t.Run("cache_general", func(t *testing.T) {
+		d := DNSContext{
+			Req:  createHostTestMessage("host"),
+			Addr: &net.TCPAddr{IP: net.IP{127, 0, 0, 1}},
+		}
+		u.ans = []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
+			A:   ip4323,
+		}}
+		u.ecsIP, u.ecsReqIP = nil, nil
 
-	err = prx.Resolve(&d)
-	require.NoError(t, err)
+		err = prx.Resolve(&d)
+		require.NoError(t, err)
 
-	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 3}))
-	assert.True(t, u.ecsReqIP == nil)
+		assert.Equal(t, ip4323, getIPFromResponse(d.Res))
+		assert.Nil(t, u.ecsReqIP)
+	})
 
-	// request from another local IP - get from general cache
-	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{IP: net.IP{127, 0, 0, 2}}
-	u.ans = nil
-	u.ecsIP = nil
-	u.ecsReqIP = nil
+	t.Run("serve_general_cache", func(t *testing.T) {
+		d := DNSContext{
+			Req:  createHostTestMessage("host"),
+			Addr: &net.TCPAddr{IP: net.IP{127, 0, 0, 2}},
+		}
+		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
 
-	err = prx.Resolve(&d)
-	require.NoError(t, err)
+		err = prx.Resolve(&d)
+		require.NoError(t, err)
 
-	assert.True(t, getIPFromResponse(d.Res).Equal(net.IP{4, 3, 2, 3}))
-	assert.True(t, u.ecsReqIP == nil)
+		assert.Equal(t, ip4323, getIPFromResponse(d.Res))
+		assert.Nil(t, u.ecsReqIP)
+	})
 }
 
 func TestECSProxyCacheMinMaxTTL(t *testing.T) {
@@ -996,8 +1027,12 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	require.NoError(t, err)
 
 	// get from cache - check min TTL
-	ci, expired, key := prx.cache.getWithSubnet(d.Req, clientIP, 24)
+	ci, expired, key := prx.cache.getWithSubnet(d.Req, &net.IPNet{
+		IP:   clientIP,
+		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+	})
 	assert.False(t, expired)
+
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
 	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMinTTL)
 
@@ -1020,7 +1055,10 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	require.NoError(t, err)
 
 	// get from cache - check max TTL
-	ci, expired, key = prx.cache.getWithSubnet(d.Req, clientIP, 24)
+	ci, expired, key = prx.cache.getWithSubnet(d.Req, &net.IPNet{
+		IP:   clientIP,
+		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+	})
 	assert.False(t, expired)
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
 	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMaxTTL)
@@ -1257,7 +1295,7 @@ type testUpstream struct {
 
 	ecsIP      net.IP
 	ecsReqIP   net.IP
-	ecsReqMask uint8
+	ecsReqMask int
 }
 
 func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
@@ -1268,9 +1306,13 @@ func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 		resp.Answer = append(resp.Answer, u.ans...)
 	}
 
-	u.ecsReqIP, u.ecsReqMask, _ = parseECS(m)
+	ecs, _ := ecsFromMsg(m)
+	if ecs != nil {
+		u.ecsReqIP = ecs.IP
+		u.ecsReqMask, _ = ecs.Mask.Size()
+	}
 	if u.ecsIP != nil {
-		_, _ = setECS(resp, u.ecsIP, 24)
+		setECS(resp, u.ecsIP, 24)
 	}
 
 	return resp, nil

@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"net"
+
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 )
@@ -9,14 +11,15 @@ import (
 // Returns true on success.
 func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	var ci *cacheItem
-	hitMsg := "serving cached response"
-
+	var hitMsg string
 	var expired bool
 	var key []byte
+
 	if !p.Config.EnableEDNSClientSubnet {
 		ci, expired, key = p.cache.get(d.Req)
-	} else if d.ecsReqMask != 0 {
-		ci, expired, key = p.cache.getWithSubnet(d.Req, d.ecsReqIP, d.ecsReqMask)
+		hitMsg = "serving cached response"
+	} else if d.ReqECS != nil {
+		ci, expired, key = p.cache.getWithSubnet(d.Req, d.ReqECS)
 		hitMsg = "serving response from subnet cache"
 	} else {
 		ci, expired, key = p.cache.get(d.Req)
@@ -37,15 +40,11 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 		minCtxClone := &DNSContext{
 			// It is only read inside the optimistic resolver.
 			CustomUpstreamConfig: d.CustomUpstreamConfig,
-			ecsReqMask:           d.ecsReqMask,
-		}
-		if ecsReqIP := d.ecsReqIP; ecsReqIP != nil {
-			minCtxClone.ecsReqIP = netutil.CloneIP(ecsReqIP)
+			ReqECS:               netutil.CloneIPNet(d.ReqECS),
 		}
 		if d.Req != nil {
-			req := d.Req.Copy()
-			addDO(req)
-			minCtxClone.Req = req
+			minCtxClone.Req = d.Req.Copy()
+			addDO(minCtxClone.Req)
 		}
 
 		go p.shortFlighter.ResolveOnce(minCtxClone, key)
@@ -54,7 +53,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	return hit
 }
 
-// cacheResp stores the response of d if any in general or subnet cache.
+// cacheResp stores the response from d in general or subnet cache.
 func (p *Proxy) cacheResp(d *DNSContext) {
 	upsAddr := ""
 	if u := d.Upstream; u != nil {
@@ -65,25 +64,49 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 		m: res,
 		u: upsAddr,
 	}
-	if !p.Config.EnableEDNSClientSubnet {
+
+	if !p.EnableEDNSClientSubnet {
 		p.cache.set(item)
 
 		return
 	}
 
-	ip, mask, scope := parseECS(res)
-	if ip != nil {
-		if ip.Equal(d.ecsReqIP) && mask == d.ecsReqMask {
-			log.Debug("ECS option in response: %s/%d", ip, scope)
-			p.cache.setWithSubnet(item, ip, scope)
-		} else {
-			log.Debug("Invalid response from server: ECS data mismatch: %s/%d -- %s/%d",
-				d.ecsReqIP, d.ecsReqMask, ip, mask)
+	switch ecs, scope := ecsFromMsg(res); {
+	case ecs != nil && d.ReqECS != nil:
+		ones, bits := ecs.Mask.Size()
+		reqOnes, _ := d.ReqECS.Mask.Size()
+
+		// If FAMILY, SOURCE PREFIX-LENGTH, and SOURCE PREFIX-LENGTH bits of
+		// ADDRESS in the response don't match the non-zero fields in the
+		// corresponding query, the full response MUST be dropped.
+		//
+		// See RFC 7871 Section 7.3.
+		//
+		// TODO(a.meshkov):  The whole response MUST be dropped if ECS in it
+		// doesn't correspond.
+		if !ecs.IP.Mask(ecs.Mask).Equal(d.ReqECS.IP.Mask(d.ReqECS.Mask)) || ones != reqOnes {
+			log.Debug("invalid response: ecs %s mismatches requested %s", ecs, d.ReqECS)
+
+			return
 		}
-	} else if d.ecsReqIP != nil {
-		// server doesn't support ECS - cache response for all subnets
-		p.cache.setWithSubnet(item, ip, scope)
-	} else {
-		p.cache.set(item) // use general cache
+
+		// If SCOPE PREFIX-LENGTH is not longer than SOURCE PREFIX-LENGTH, store
+		// SCOPE PREFIX-LENGTH bits of ADDRESS, and then mark the response as
+		// valid for all addresses that fall within that range.
+		//
+		// See RFC 7871 Section 7.3.1.
+		if scope < ones {
+			ecs.Mask = net.CIDRMask(scope, bits)
+			ecs.IP = ecs.IP.Mask(ecs.Mask)
+		}
+		log.Debug("ecs option in response: %s", ecs)
+
+		p.cache.setWithSubnet(item, ecs)
+	case d.ReqECS != nil:
+		// Cache the response for all subnets since the server doesn't support
+		// EDNS Client-Subnet option.
+		p.cache.setWithSubnet(item, &net.IPNet{IP: nil, Mask: nil})
+	default:
+		p.cache.set(item)
 	}
 }

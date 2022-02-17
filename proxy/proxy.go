@@ -464,14 +464,13 @@ const defaultUDPBufSize = 2048
 // Resolve is the default resolving method used by the DNS proxy to query
 // upstream servers.
 func (p *Proxy) Resolve(d *DNSContext) (err error) {
-	if p.Config.EnableEDNSClientSubnet {
-		p.processECS(d)
+	if p.EnableEDNSClientSubnet {
+		d.processECS(p.EDNSAddr)
 	}
 
 	d.calcFlagsAndSize()
 
-	// Use cache only if it's enabled and the query doesn't use custom
-	// upstreams.
+	// Use cache only if it's enabled and the query doesn't use custom upstream.
 	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
 	if cacheWorks {
 		if p.replyFromCache(d) {
@@ -506,31 +505,33 @@ func (p *Proxy) Resolve(d *DNSContext) (err error) {
 	return err
 }
 
-// Set EDNS Client-Subnet data in DNS request
-func (p *Proxy) processECS(d *DNSContext) {
-	d.ecsReqIP = nil
-	d.ecsReqMask = uint8(0)
+// processECS adds EDNS Client-Subnet data into the request from d.
+func (dctx *DNSContext) processECS(cliIP net.IP) {
+	if ecs, _ := ecsFromMsg(dctx.Req); ecs != nil {
+		if ones, _ := ecs.Mask.Size(); ones != 0 {
+			dctx.ReqECS = ecs
 
-	ip, mask, _ := parseECS(d.Req)
-	if mask == 0 {
-		// Set EDNS Client-Subnet data
-		var clientIP net.IP
-		if p.Config.EDNSAddr != nil {
-			clientIP = p.Config.EDNSAddr
-		} else {
-			clientIP, _ = netutil.IPAndPortFromAddr(d.Addr)
-		}
+			log.Debug("passing through ecs: %s", dctx.ReqECS)
 
-		if clientIP != nil && isPublicIP(clientIP) {
-			ip, mask = setECS(d.Req, clientIP, 0)
-			log.Debug("Set ECS data: %s/%d", ip, mask)
+			return
 		}
-	} else {
-		log.Debug("Passing through ECS data: %s/%d", ip, mask)
 	}
 
-	d.ecsReqIP = ip
-	d.ecsReqMask = mask
+	// Set ECS.
+	if cliIP == nil {
+		cliIP, _ = netutil.IPAndPortFromAddr(dctx.Addr)
+		if cliIP == nil {
+			return
+		}
+	}
+
+	if isPublicIP(cliIP) {
+		// A Stub Resolver MUST set SCOPE PREFIX-LENGTH to 0.  See RFC 7871
+		// Section 6.
+		dctx.ReqECS = setECS(dctx.Req, cliIP, 0)
+
+		log.Debug("setting ecs: %s", dctx.ReqECS)
+	}
 }
 
 // newDNSContext returns a new properly initialized *DNSContext.

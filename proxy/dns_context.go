@@ -62,10 +62,8 @@ type DNSContext struct {
 	// instance.
 	RequestID uint64
 
-	// ecsReqIP is the ECS IP used in the request.
-	ecsReqIP net.IP
-	// ecsReqMask is the length of ECS mask used in the request.
-	ecsReqMask uint8
+	// ReqECS is the EDNS Client Subnet used in the request.
+	ReqECS *net.IPNet
 
 	// adBit is the authenticated data flag from the request.
 	adBit bool
@@ -79,39 +77,39 @@ type DNSContext struct {
 }
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.
-func (ctx *DNSContext) calcFlagsAndSize() {
-	if ctx.udpSize != 0 || ctx.Req == nil {
+func (dctx *DNSContext) calcFlagsAndSize() {
+	if dctx.udpSize != 0 || dctx.Req == nil {
 		return
 	}
 
-	ctx.adBit = ctx.Req.AuthenticatedData
-	ctx.udpSize = defaultUDPBufSize
-	if o := ctx.Req.IsEdns0(); o != nil {
-		ctx.hasEDNS0 = true
-		ctx.doBit = o.Do()
-		ctx.udpSize = o.UDPSize()
+	dctx.adBit = dctx.Req.AuthenticatedData
+	dctx.udpSize = defaultUDPBufSize
+	if o := dctx.Req.IsEdns0(); o != nil {
+		dctx.hasEDNS0 = true
+		dctx.doBit = o.Do()
+		dctx.udpSize = o.UDPSize()
 	}
 }
 
 // scrub prepares the d.Res to be written.  Truncation is applied as well if
 // necessary.
-func (ctx *DNSContext) scrub() {
-	if ctx.Res == nil || ctx.Req == nil {
+func (dctx *DNSContext) scrub() {
+	if dctx.Res == nil || dctx.Req == nil {
 		return
 	}
 
 	// We should guarantee that all the values we need are calculated.
-	ctx.calcFlagsAndSize()
+	dctx.calcFlagsAndSize()
 
 	// RFC-6891 (https://tools.ietf.org/html/rfc6891) states that response
 	// mustn't contain an EDNS0 RR if the request doesn't include it.
 	//
 	// See https://github.com/AdguardTeam/dnsproxy/issues/132.
-	if ctx.hasEDNS0 && ctx.Res.IsEdns0() == nil {
-		ctx.Res.SetEdns0(ctx.udpSize, ctx.doBit)
+	if dctx.hasEDNS0 && dctx.Res.IsEdns0() == nil {
+		dctx.Res.SetEdns0(dctx.udpSize, dctx.doBit)
 	}
 
-	ctx.Res.Truncate(proxyutil.DNSSize(ctx.Proto == ProtoUDP, ctx.Req))
+	dctx.Res.Truncate(proxyutil.DNSSize(dctx.Proto == ProtoUDP, dctx.Req))
 	// Some devices require DNS message compression.
-	ctx.Res.Compress = true
+	dctx.Res.Compress = true
 }

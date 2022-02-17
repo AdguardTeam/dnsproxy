@@ -10,6 +10,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -634,7 +635,10 @@ func TestSubnet(t *testing.T) {
 	req := (&dns.Msg{}).SetQuestion("example.com.", dns.TypeA)
 
 	t.Run("empty", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, ip1234, 24)
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+			IP:   ip1234,
+			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+		})
 		assert.False(t, expired)
 		assert.Nil(t, key)
 		assert.Nil(t, ci)
@@ -652,10 +656,13 @@ func TestSubnet(t *testing.T) {
 		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 1.1.1.1")},
 	}).SetQuestion("example.com.", dns.TypeA)
 	item.m = resp
-	c.setWithSubnet(item, ip1234, 16)
+	c.setWithSubnet(item, &net.IPNet{IP: ip1234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)})
 
 	t.Run("different_ip", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, ip2234, 24)
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+			IP:   ip2234,
+			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+		})
 		assert.False(t, expired)
 		assert.Equal(t, msgToKeyWithSubnet(req, ip2234, 0), key)
 
@@ -670,7 +677,7 @@ func TestSubnet(t *testing.T) {
 		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 2.2.2.2")},
 	}).SetQuestion("example.com.", dns.TypeA)
 	item.m = resp
-	c.setWithSubnet(item, ip2234, 16)
+	c.setWithSubnet(item, &net.IPNet{IP: ip2234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)})
 
 	// Add a response entry without subnet.
 	resp = (&dns.Msg{
@@ -680,10 +687,13 @@ func TestSubnet(t *testing.T) {
 		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 3.3.3.3")},
 	}).SetQuestion("example.com.", dns.TypeA)
 	item.m = resp
-	c.setWithSubnet(item, net.IP{}, 0)
+	c.setWithSubnet(item, &net.IPNet{IP: nil, Mask: nil})
 
 	t.Run("with_subnet_1", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, ip1234, 24)
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+			IP:   ip1234,
+			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+		})
 		assert.False(t, expired)
 		assert.Equal(t, msgToKeyWithSubnet(req, ip1234, 16), key)
 
@@ -698,7 +708,10 @@ func TestSubnet(t *testing.T) {
 	})
 
 	t.Run("with_subnet_2", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, ip2234, 24)
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+			IP:   ip2234,
+			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+		})
 		assert.False(t, expired)
 		assert.Equal(t, msgToKeyWithSubnet(req, ip2234, 16), key)
 
@@ -713,9 +726,12 @@ func TestSubnet(t *testing.T) {
 	})
 
 	t.Run("with_subnet_3", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, ip3234, 24)
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+			IP:   ip3234,
+			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+		})
 		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, ip3234, 0), key)
+		assert.Equal(t, msgToKeyWithSubnet(req, ip1234, 0), key)
 
 		require.NotNil(t, ci)
 		require.NotNil(t, ci.m)

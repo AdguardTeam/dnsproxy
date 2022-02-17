@@ -65,12 +65,13 @@ func SplitHostPort(hostport string) (host string, port int, err error) {
 		return "", 0, err
 	}
 
-	port, err = strconv.Atoi(portStr)
+	var portUint uint64
+	portUint, err = strconv.ParseUint(portStr, 10, 16)
 	if err != nil {
 		return "", 0, fmt.Errorf("parsing port: %w", err)
 	}
 
-	return host, port, nil
+	return host, int(portUint), nil
 }
 
 // SplitHost is a wrapper for net.SplitHostPort for cases when the hostport may
@@ -156,10 +157,12 @@ const MaxDomainNameLen = 253
 func ValidateDomainNameLabel(label string) (err error) {
 	defer makeAddrError(&err, label, AddrKindLabel)
 
-	l := len(label)
-	if l == 0 {
+	if label == "" {
 		return ErrLabelIsEmpty
-	} else if l > MaxDomainLabelLen {
+	}
+
+	l := len(label)
+	if l > MaxDomainLabelLen {
 		return &LengthError{
 			Kind:   AddrKindLabel,
 			Max:    MaxDomainLabelLen,
@@ -195,9 +198,9 @@ func ValidateDomainNameLabel(label string) (err error) {
 	return nil
 }
 
-// ValidateDomainName validates the domain name in accordance to RFC 952, RFC
-// 1035, and with RFC-1123's inclusion of digits at the start of the host.  It
-// doesn't validate against two or more hyphens to allow punycode and
+// ValidateDomainName validates the domain name in accordance to RFC 952,
+// RFC 1035, and with RFC 1123's inclusion of digits at the start of the host.
+// It doesn't validate against two or more hyphens to allow punycode and
 // internationalized domains.
 //
 // Any error returned will have the underlying type of *AddrError.
@@ -209,10 +212,9 @@ func ValidateDomainName(name string) (err error) {
 		return err
 	}
 
-	l := len(name)
-	if l == 0 {
+	if name == "" {
 		return ErrAddrIsEmpty
-	} else if l > MaxDomainNameLen {
+	} else if l := len(name); l > MaxDomainNameLen {
 		return &LengthError{
 			Kind:   AddrKindName,
 			Max:    MaxDomainNameLen,
@@ -223,6 +225,88 @@ func ValidateDomainName(name string) (err error) {
 	labels := strings.Split(name, ".")
 	for _, l := range labels {
 		err = ValidateDomainNameLabel(l)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// MaxServiceLabelLen is the maximum allowed length of a service name label
+// according to RFC 6335.
+const MaxServiceLabelLen = 16
+
+// ValidateServiceNameLabel returns an error if label is not a valid label of
+// a service domain name.  An empty label is considered invalid.
+//
+// Any error returned will have the underlying type of *AddrError.
+func ValidateServiceNameLabel(label string) (err error) {
+	defer makeAddrError(&err, label, AddrKindSRVLabel)
+
+	if label == "" {
+		return ErrLabelIsEmpty
+	} else if r := rune(label[0]); r != '_' {
+		return &RuneError{
+			Kind: AddrKindSRVLabel,
+			Rune: r,
+		}
+	}
+
+	l := len(label)
+	if l > MaxServiceLabelLen {
+		return &LengthError{
+			Kind:   AddrKindSRVLabel,
+			Max:    MaxServiceLabelLen,
+			Length: l,
+		}
+	}
+
+	// TODO(e.burkov):  Validate adjacent hyphens since service labels can't be
+	// internationalized.  See RFC 6336 Section 5.1.
+	if err := ValidateDomainNameLabel(label[1:]); err != nil {
+		err = errors.Unwrap(err)
+		if rerr, ok := err.(*RuneError); ok {
+			rerr.Kind = AddrKindSRVLabel
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+// ValidateSRVDomainName validates of domain name assuming it belongs to the
+// superset of service domain names in accordance to RFC 2782 and RFC 6763.  It
+// doesn't validate against two or more hyphens to allow punycode and
+// internationalized domains.
+//
+// Any error returned will have the underlying type of *AddrError.
+func ValidateSRVDomainName(name string) (err error) {
+	defer makeAddrError(&err, name, AddrKindSRVName)
+
+	name, err = idna.ToASCII(name)
+	if err != nil {
+		return err
+	}
+
+	if name == "" {
+		return ErrAddrIsEmpty
+	} else if l := len(name); l > MaxDomainNameLen {
+		return &LengthError{
+			Kind:   AddrKindSRVName,
+			Max:    MaxDomainNameLen,
+			Length: l,
+		}
+	}
+
+	labels := strings.Split(name, ".")
+	for _, l := range labels {
+		if l != "" && l[0] == '_' {
+			err = ValidateServiceNameLabel(l)
+		} else {
+			err = ValidateDomainNameLabel(l)
+		}
 		if err != nil {
 			return err
 		}

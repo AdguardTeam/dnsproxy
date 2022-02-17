@@ -113,6 +113,19 @@ func ParseIPv4(s string) (ip net.IP, err error) {
 	return ip, nil
 }
 
+// CloneIPNet returns a deep clone of n.
+func CloneIPNet(n *net.IPNet) (clone *net.IPNet) {
+	if n == nil {
+		return nil
+	}
+
+	return &net.IPNet{
+		IP: CloneIP(n.IP),
+		// TODO(e.burkov):  Consider adding CloneIPMask.
+		Mask: net.IPMask(CloneIP(net.IP(n.Mask))),
+	}
+}
+
 // ParseSubnet parses a subnet which can be either a CIDR or a single IP.  In
 // the latter case, n is a single-IP subnet.
 //

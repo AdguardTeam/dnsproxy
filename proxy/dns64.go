@@ -19,12 +19,12 @@ func (p *Proxy) isEmptyAAAAResponse(resp, req *dns.Msg) bool {
 		req.Question[0].Qtype == dns.TypeAAAA
 }
 
-// isNAT64PrefixAvailable returns true if NAT64 prefix was calculated
+// isNAT64PrefixAvailable returns true if NAT64 prefix was calculated.
 func (p *Proxy) isNAT64PrefixAvailable() bool {
 	p.nat64PrefixLock.Lock()
-	prefixSize := len(p.nat64Prefix)
-	p.nat64PrefixLock.Unlock()
-	return prefixSize == NAT64PrefixLength
+	defer p.nat64PrefixLock.Unlock()
+
+	return len(p.nat64Prefix) == NAT64PrefixLength
 }
 
 // SetNAT64Prefix sets NAT64 prefix

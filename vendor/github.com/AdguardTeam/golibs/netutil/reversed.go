@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/stringutil"
 )
 
@@ -57,25 +58,23 @@ func reverseIP(ip net.IP) {
 	}
 }
 
-// ipv6FromReversedAddr parses an IPv6 reverse address.  It assumes that arpa is
-// a valid domain name.
-func ipv6FromReversedAddr(arpa string) (ip net.IP, err error) {
-	const kind = "arpa domain name"
+// ipv6FromReversed parses an IPv6 reverse address.  It assumes that arpa is a
+// valid domain name.
+func ipv6FromReversed(arpa string) (ip net.IP, err error) {
+	const addrStep = len("0.0.")
 
 	ip = make(net.IP, net.IPv6len)
-
-	const addrStep = len("0.0.")
 	for i := range ip {
-		// Get the two half-byte and merge them together.  Validate the
-		// dots between them since while arpa is assumed to be a valid
-		// domain name, those labels can still be invalid on their own.
+		// Get the two half-byte and merge them together.  Validate the dots
+		// between them since while arpa is assumed to be a valid domain name,
+		// those labels can still be invalid on their own.
 		sIdx := i * addrStep
 
 		c := arpa[sIdx]
 		lo := fromHexByte(c)
 		if lo == 0xff {
 			return nil, &RuneError{
-				Kind: kind,
+				Kind: AddrKindARPA,
 				Rune: rune(c),
 			}
 		}
@@ -84,7 +83,7 @@ func ipv6FromReversedAddr(arpa string) (ip net.IP, err error) {
 		hi := fromHexByte(c)
 		if hi == 0xff {
 			return nil, &RuneError{
-				Kind: kind,
+				Kind: AddrKindARPA,
 				Rune: rune(c),
 			}
 		}
@@ -139,7 +138,7 @@ func IPFromReversedAddr(arpa string) (ip net.IP, err error) {
 			}
 		}
 
-		ip, err = ipv6FromReversedAddr(arpa)
+		ip, err = ipv6FromReversed(arpa)
 		if err != nil {
 			return nil, err
 		}
@@ -195,4 +194,164 @@ func IPToReversedAddr(ip net.IP) (arpa string, err error) {
 	stringutil.WriteToBuilder(b, suffix)
 
 	return b.String(), nil
+}
+
+// ipv4NetFromReversed parses an IPv4 reverse network.  It assumes that arpa is
+// a valid domain name and is not a doman name with a full IPv4 address.
+func ipv4NetFromReversed(arpa string) (subnet *net.IPNet, err error) {
+	var octet64 uint64
+	var octetIdx int
+
+	ip := make(net.IP, net.IPv4len)
+	l := 0
+	for addr := arpa; addr != ""; addr = addr[:octetIdx-1] {
+		octetIdx = strings.LastIndexByte(addr, '.') + 1
+
+		// Don't check for out of range since the domain is validated to have no
+		// empty labels.
+		octet64, err = strconv.ParseUint(addr[octetIdx:], 10, 8)
+		if err != nil {
+			return nil, err
+		} else if octet64 != 0 && addr[octetIdx] == '0' {
+			// Octets of an ARPA domain name shouldn't contain leading zero
+			// except an octet itself equals zero.
+			//
+			// See RFC 1035 Section 3.5.
+			return nil, &AddrError{
+				Err:  errors.Error("leading zero is forbidden at this position"),
+				Kind: AddrKindLabel,
+				Addr: addr[octetIdx:],
+			}
+		}
+
+		ip[l] = byte(octet64)
+		l++
+
+		if octetIdx == 0 {
+			// Prevent slicing with negative indices.
+			break
+		}
+	}
+
+	return &net.IPNet{
+		IP:   ip,
+		Mask: net.CIDRMask(l*8, IPv4BitLen),
+	}, nil
+}
+
+// ipv6NetFromReversed parses an IPv6 reverse network.  It assumes that arpa is
+// a valid domain name and is not a doman name with a full IPv6 address.
+func ipv6NetFromReversed(arpa string) (subnet *net.IPNet, err error) {
+	const nibbleLen = len("0.")
+
+	nibbleIdx := len(arpa) - len(arpaV6Suffix) + len(".") - nibbleLen
+	if nibbleIdx%2 != 0 {
+		return nil, ErrNotAReversedSubnet
+	}
+
+	var b byte
+	ip := make(net.IP, net.IPv6len)
+	l := 0
+	for ; nibbleIdx >= 0; nibbleIdx -= nibbleLen {
+		if arpa[nibbleIdx+1] != '.' {
+			return nil, ErrNotAReversedSubnet
+		}
+
+		c := arpa[nibbleIdx]
+		b = fromHexByte(c)
+		if b == 0xff {
+			return nil, &RuneError{
+				Kind: AddrKindARPA,
+				Rune: rune(c),
+			}
+		}
+
+		if l%2 == 0 {
+			// An even digit stands for higher nibble of a byte.
+			ip[l/2] |= b << 4
+		} else {
+			// An odd digit stands for lower nibble of a byte.
+			ip[l/2] |= b
+		}
+		l++
+	}
+
+	return &net.IPNet{
+		IP:   ip,
+		Mask: net.CIDRMask(l*4, IPv6BitLen),
+	}, nil
+}
+
+// subnetFromReversedV4 tries to convert arpa into IPv4 network.  It expects
+// arpa being a valid domain name in a lower case.
+func subnetFromReversedV4(arpa string) (subnet *net.IPNet, err error) {
+	arpa = arpa[:len(arpa)-len(arpaV4Suffix)]
+
+	if dots := strings.Count(arpa, "."); dots > 3 {
+		return nil, ErrNotAReversedSubnet
+	} else if dots == 3 {
+		var ip net.IP
+		ip, err = ParseIPv4(arpa)
+		if err != nil {
+			return nil, err
+		}
+
+		reverseIP(ip)
+
+		return SingleIPSubnet(ip), nil
+	}
+
+	return ipv4NetFromReversed(arpa)
+}
+
+// subnetFromReversedV6 tries to convert arpa into IPv6 network.  It expects
+// arpa being a valid domain name in a lower case.
+func subnetFromReversedV6(arpa string) (subnet *net.IPNet, err error) {
+	if l := len(arpa); l == arpaV6MaxLen {
+		var ip net.IP
+		ip, err = ipv6FromReversed(arpa)
+		if err != nil {
+			return nil, err
+		}
+
+		return SingleIPSubnet(ip), nil
+	} else if l > arpaV6MaxLen {
+		return nil, &LengthError{
+			Kind:   AddrKindARPA,
+			Max:    arpaV6MaxLen,
+			Length: l,
+		}
+	}
+
+	return ipv6NetFromReversed(arpa)
+}
+
+// SubnetFromReversedAddr tries to convert a reversed ARPA address to an IP
+// network.  arpa can be domain name or an FQDN.
+//
+// Any error returned will have the underlying type of *AddrError.
+func SubnetFromReversedAddr(arpa string) (subnet *net.IPNet, err error) {
+	arpa = strings.TrimSuffix(arpa, ".")
+	err = ValidateDomainName(arpa)
+	if err != nil {
+		bdErr := err.(*AddrError)
+		bdErr.Kind = AddrKindARPA
+
+		return nil, bdErr
+	}
+
+	defer makeAddrError(&err, arpa, AddrKindARPA)
+
+	// TODO(a.garipov): Add stringutil.HasSuffixFold and remove this.
+	arpa = strings.ToLower(arpa)
+
+	if strings.HasSuffix(arpa, arpaV4Suffix) {
+		return subnetFromReversedV4(arpa)
+	}
+
+	if strings.HasSuffix(arpa, arpaV6Suffix) {
+		return subnetFromReversedV6(arpa)
+	}
+
+	return nil, ErrNotAReversedSubnet
 }

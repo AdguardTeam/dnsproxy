@@ -67,7 +67,7 @@ func genSOA(request *dns.Msg, retry uint32) []dns.RR {
 	return []dns.RR{&soa}
 }
 
-// ecsFromMsg returns the subnet from EDNS Client-Subnet option of m if any.
+// ecsFromMsg returns the subnet from EDNS Client Subnet option of m if any.
 func ecsFromMsg(m *dns.Msg) (subnet *net.IPNet, scope int) {
 	opt := m.IsEdns0()
 	if opt == nil {
@@ -104,13 +104,13 @@ func ecsFromMsg(m *dns.Msg) (subnet *net.IPNet, scope int) {
 func setECS(m *dns.Msg, ip net.IP, scope uint8) (subnet *net.IPNet) {
 	const (
 		// defaultECSv4 is the default length of network mask for IPv4 address
-		// in EDNS client subnet option.
+		// in ECS option.
 		defaultECSv4 = 24
 
 		// defaultECSv6 is the default length of network mask for IPv6 address
-		// in EDNS client subnet option.  The size of 7 octets is chosen as a
-		// reasonable minimum since at least Google's public DNS refuses
-		// requests containing the options with longer network masks.
+		// in ECS.  The size of 7 octets is chosen as a reasonable minimum since
+		// at least Google's public DNS refuses requests containing the options
+		// with longer network masks.
 		defaultECSv6 = 56
 	)
 

@@ -929,7 +929,7 @@ func TestECSProxy(t *testing.T) {
 		assert.Equal(t, ip1230, u.ecsReqIP)
 	})
 
-	t.Run("server_subnet_cache", func(t *testing.T) {
+	t.Run("serve_subnet_cache", func(t *testing.T) {
 		d := DNSContext{
 			Req:  createHostTestMessage("host"),
 			Addr: &net.TCPAddr{IP: net.IP{1, 2, 3, 1}},

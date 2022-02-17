@@ -505,7 +505,7 @@ func (p *Proxy) Resolve(d *DNSContext) (err error) {
 	return err
 }
 
-// processECS adds EDNS Client-Subnet data into the request from d.
+// processECS adds EDNS Client Subnet data into the request from d.
 func (dctx *DNSContext) processECS(cliIP net.IP) {
 	if ecs, _ := ecsFromMsg(dctx.Req); ecs != nil {
 		if ones, _ := ecs.Mask.Size(); ones != 0 {

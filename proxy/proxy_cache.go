@@ -104,7 +104,7 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 		p.cache.setWithSubnet(item, ecs)
 	case d.ReqECS != nil:
 		// Cache the response for all subnets since the server doesn't support
-		// EDNS Client-Subnet option.
+		// EDNS Client Subnet option.
 		p.cache.setWithSubnet(item, &net.IPNet{IP: nil, Mask: nil})
 	default:
 		p.cache.set(item)

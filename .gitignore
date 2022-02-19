@@ -8,3 +8,7 @@ example.crt
 example.key
 coverage.txt
 config.yaml
+client.crt
+client.key
+tlsclient.crt
+tlsclient.key

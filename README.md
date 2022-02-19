@@ -84,7 +84,7 @@ Application Options:
       --version          Prints the program version
 
 Help Options:
-  -h, --help             Show this help message
+  -h, --help              Show this help message
 ```
 
 ## Examples

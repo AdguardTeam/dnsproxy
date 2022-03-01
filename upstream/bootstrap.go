@@ -80,15 +80,17 @@ func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, 
 // newBootstrapper initializes a new bootstrapper instance
 // address -- original resolver address string (i.e. tls://one.one.one.one:853)
 // options -- Upstream customization options
-func newBootstrapper(address *url.URL, options *Options) (*bootstrapper, error) {
+func newBootstrapper(u *url.URL, options *Options) (b *bootstrapper, err error) {
 	resolvers := []*Resolver{}
 	if len(options.Bootstrap) != 0 {
 		// Create a list of resolvers for parallel lookup
 		for _, boot := range options.Bootstrap {
-			r, err := NewResolver(boot, options)
+			var r *Resolver
+			r, err = NewResolver(boot, options)
 			if err != nil {
 				return nil, err
 			}
+
 			resolvers = append(resolvers, r)
 		}
 	} else {
@@ -98,7 +100,7 @@ func newBootstrapper(address *url.URL, options *Options) (*bootstrapper, error) 
 	}
 
 	return &bootstrapper{
-		URL:       address,
+		URL:       u,
 		resolvers: resolvers,
 		options:   options,
 	}, nil

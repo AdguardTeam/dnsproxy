@@ -111,6 +111,24 @@ Listen on multiple interfaces and ports:
 ./dnsproxy -l 127.0.0.1 -l 192.168.1.10 -p 5353 -p 5354 -u 1.1.1.1
 ```
 
+The plain DNS upstream server may be specified in several ways:
+
+ -  With a plain IP address:
+    ```shell
+    ./dnsproxy -l 127.0.0.1 -u 8.8.8.8:53
+    ```
+
+ -  With a hostname or plain IP address and the `udp://` scheme:
+    ```shell
+    ./dnsproxy -l 127.0.0.1 -u udp://dns.google -u udp://1.1.1.1
+    ```
+
+ -  With a hostname or plain IP address and the `tcp://` scheme to force using
+    TCP:
+    ```shell
+    ./dnsproxy -l 127.0.0.1 -u tcp://dns.google -u tcp://1.1.1.1
+    ```
+
 ### Encrypted upstreams
 
 DNS-over-TLS upstream:

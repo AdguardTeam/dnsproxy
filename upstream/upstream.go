@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
@@ -24,142 +25,126 @@ type Upstream interface {
 
 // Options for AddressToUpstream func
 type Options struct {
-	// Bootstrap is a list of DNS servers to be used to resolve DOH/DOT hostnames (if any)
-	// You can use plain DNS, DNSCrypt, or DOT/DOH with IP addresses (not hostnames)
+	// Bootstrap is a list of DNS servers to be used to resolve
+	// DNS-over-HTTPS/DNS-over-TLS hostnames.  Plain DNS, DNSCrypt, or
+	// DNS-over-HTTPS/DNS-over-TLS with IP addresses (not hostnames) could be
+	// used.
 	Bootstrap []string
 
-	// Timeout is the default upstream timeout. Also, it is used as a timeout for bootstrap DNS requests.
-	// timeout=0 means infinite timeout.
+	// Timeout is the default upstream timeout.  It's also used as a timeout for
+	// bootstrap DNS requests.  Zero value disables the timeout.
 	Timeout time.Duration
 
-	// List of IP addresses of upstream DNS server
-	// Bootstrap DNS servers won't be used at all
+	// List of IP addresses of the upstream DNS server.  If not empty, bootstrap
+	// DNS servers won't be used at all.
 	ServerIPAddrs []net.IP
 
-	// InsecureSkipVerify - if true, do not verify the server certificate
+	// InsecureSkipVerify disables verifying the server's certificate.
 	InsecureSkipVerify bool
 
-	// VerifyServerCertificate will be set to crypto/tls Config.VerifyPeerCertificate for DoH, DoQ, DoT
+	// VerifyServerCertificate used to be set to crypto/tls
+	// Config.VerifyPeerCertificate for DNS-over-HTTPS, DNS-over-QUIC,
+	// DNS-over-TLS.
 	VerifyServerCertificate func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 
-	// VerifyDNSCryptCertificate is callback to which the DNSCrypt server certificate will be passed.
-	// is called in dnsCrypt.exchangeDNSCrypt; if error != nil then Upstream.Exchange() will return it
+	// VerifyDNSCryptCertificate is the callback the DNSCrypt server certificate
+	// will be passed to.  It's called in dnsCrypt.exchangeDNSCrypt.
+	// Upstream.Exchange method returns any error caused by it.
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 }
 
-// Parse "host:port" string and validate port number
-func parseHostAndPort(addr string) (string, string, error) {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	} else {
-		// validate port
-		portN, err := strconv.Atoi(port)
-		if err != nil || portN <= 0 || portN > 0xffff {
-			return "", "", fmt.Errorf("invalid address: %s", addr)
-		}
-		port = strconv.Itoa(portN)
-	}
-	return host, port, nil
-}
+const (
+	// defaultPortPlain is the default port for plain DNS.
+	defaultPortPlain = 53
 
-// AddressToUpstream converts the specified address to an Upstream instance
-// * 8.8.8.8:53 -- plain DNS
-// * tcp://8.8.8.8:53 -- plain DNS over TCP
-// * tls://1.1.1.1 -- DNS-over-TLS
-// * https://dns.adguard.com/dns-query -- DNS-over-HTTPS
-// * sdns://... -- DNS stamp (see https://dnscrypt.info/stamps-specifications)
-// options -- Upstream customization options, nil means default options.
-func AddressToUpstream(address string, options *Options) (Upstream, error) {
-	if options == nil {
-		options = &Options{}
+	// defaultPortDoH is the default port for DNS-over-HTTPS.
+	defaultPortDoH = 443
+
+	// defaultPortDoT is the default port for DNS-over-TLS.
+	defaultPortDoT = 853
+
+	// defaultPortDoQ is the default port for DNS-over-QUIC.
+	//
+	// Early experiments MAY use port 8853. This port is marked in the IANA
+	// registry as unassigned.  Note that prior to version -02 of this draft,
+	// experiments were directed to use port 784.
+	//
+	// See https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-10.2.1.
+	defaultPortDoQ = 8853
+)
+
+// AddressToUpstream converts addr to an Upstream instance:
+//
+//  8.8.8.8:53 or udp://dns.adguard.com for plain DNS;
+//  tcp://8.8.8.8:53 for plain DNS-over-TCP;
+//  tls://1.1.1.1 for DNS-over-TLS;
+//  https://dns.adguard.com/dns-query for DNS-over-HTTPS;
+//  sdns://... for DNS stamp, see https://dnscrypt.info/stamps-specifications.
+//
+// opts are applied to the u.  nil is a valid value for opts.
+func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
+	if opts == nil {
+		opts = &Options{}
 	}
 
-	if strings.Contains(address, "://") {
-		upstreamURL, err := url.Parse(address)
+	if strings.Contains(addr, "://") {
+		var uu *url.URL
+		uu, err = url.Parse(addr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse %s: %w", address, err)
+			return nil, fmt.Errorf("failed to parse %s: %w", addr, err)
 		}
 
-		return urlToUpstream(upstreamURL, options)
+		return urlToUpstream(uu, opts)
 	}
 
-	// we don't have scheme in the url, so it's just a plain DNS host:port
-	host, port, err := parseHostAndPort(address)
+	var host, port string
+	host, port, err = net.SplitHostPort(addr)
 	if err != nil {
-		return nil, err
-	}
-	if port == "" {
-		port = "53"
+		return &plainDNS{address: net.JoinHostPort(addr, "53"), timeout: opts.Timeout}, nil
 	}
 
-	return &plainDNS{address: net.JoinHostPort(host, port), timeout: options.Timeout}, nil
+	// Validate port.
+	portN, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %s", addr)
+	}
+
+	return &plainDNS{address: netutil.JoinHostPort(host, int(portN)), timeout: opts.Timeout}, nil
 }
 
-// urlToBoot creates an instance of the bootstrapper with the specified options
-// options -- Upstream customization options
-func urlToBoot(resolverURL *url.URL, opts *Options) (*bootstrapper, error) {
+// urlToBoot creates a bootstrapper with the specified options.
+func urlToBoot(u *url.URL, opts *Options) (b *bootstrapper, err error) {
 	if len(opts.ServerIPAddrs) == 0 {
-		return newBootstrapper(resolverURL, opts)
+		return newBootstrapper(u, opts)
 	}
 
-	return newBootstrapperResolved(resolverURL, opts)
+	return newBootstrapperResolved(u, opts)
 }
 
-// urlToUpstream converts a URL to an Upstream
-// options -- Upstream customization options
-func urlToUpstream(upstreamURL *url.URL, opts *Options) (Upstream, error) {
-	switch upstreamURL.Scheme {
+// urlToUpstream converts uu to an Upstream using opts.
+func urlToUpstream(uu *url.URL, opts *Options) (u Upstream, err error) {
+	switch sch := uu.Scheme; sch {
 	case "sdns":
-		return stampToUpstream(upstreamURL, opts)
-
+		return stampToUpstream(uu, opts)
+	// TODO(e.burkov): Remove in the next major-minor release.
 	case "dns":
-		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout}, nil
+		log.Info(
+			"warning: using %q scheme is deprecated and will be removed in future versions; "+
+				"use \"udp\" instead",
+			sch,
+		)
 
-	case "tcp":
-		return &plainDNS{address: getHostWithPort(upstreamURL, "53"), timeout: opts.Timeout, preferTCP: true}, nil
-
+		return newPlain(uu, opts.Timeout, false), nil
+	case "udp", "tcp":
+		return newPlain(uu, opts.Timeout, sch == "tcp"), nil
 	case "quic":
-		if upstreamURL.Port() == "" {
-			// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-10.2.1
-			// Early experiments MAY use port 8853. This port is marked in the IANA registry as unassigned.
-			// (Note that prior to version -02 of this draft, experiments were directed to use port 784.)
-			upstreamURL.Host += ":8853"
-		}
-
-		b, err := urlToBoot(upstreamURL, opts)
-		if err != nil {
-			return nil, fmt.Errorf("creating quic bootstrapper: %w", err)
-		}
-
-		return &dnsOverQUIC{boot: b}, nil
-
+		return newDoQ(uu, opts)
 	case "tls":
-		if upstreamURL.Port() == "" {
-			upstreamURL.Host += ":853"
-		}
-
-		b, err := urlToBoot(upstreamURL, opts)
-		if err != nil {
-			return nil, fmt.Errorf("creating tls bootstrapper: %w", err)
-		}
-
-		return &dnsOverTLS{boot: b}, nil
-
+		return newDoT(uu, opts)
 	case "https":
-		if upstreamURL.Port() == "" {
-			upstreamURL.Host += ":443"
-		}
-
-		b, err := urlToBoot(upstreamURL, opts)
-		if err != nil {
-			return nil, fmt.Errorf("creating https bootstrapper: %w", err)
-		}
-
-		return &dnsOverHTTPS{boot: b}, nil
-
+		return newDoH(uu, opts)
 	default:
-		return nil, fmt.Errorf("unsupported URL scheme: %s", upstreamURL.Scheme)
+		return nil, fmt.Errorf("unsupported url scheme: %s", sch)
 	}
 }
 
@@ -205,12 +190,11 @@ func stampToUpstream(upsURL *url.URL, opts *Options) (Upstream, error) {
 	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, upsURL)
 }
 
-// getHostWithPort is a helper function that appends port if needed
-func getHostWithPort(upstreamURL *url.URL, defaultPort string) string {
-	if upstreamURL.Port() == "" {
-		return upstreamURL.Host + ":" + defaultPort
+// addPort appends port to u if needed.
+func addPort(u *url.URL, port int) {
+	if u != nil && u.Port() == "" {
+		u.Host = netutil.JoinHostPort(u.Host, port)
 	}
-	return upstreamURL.Host
 }
 
 // Write to log DNS request information that we are going to send

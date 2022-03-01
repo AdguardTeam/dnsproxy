@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"net/url"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
@@ -19,20 +20,34 @@ type plainDNS struct {
 // type check
 var _ Upstream = &plainDNS{}
 
+// newPlain returns the plain DNS Upstream.
+func newPlain(uu *url.URL, timeout time.Duration, preferTCP bool) (u *plainDNS) {
+	addPort(uu, defaultPortPlain)
+
+	return &plainDNS{
+		address:   uu.Host,
+		timeout:   timeout,
+		preferTCP: preferTCP,
+	}
+}
+
 // Address returns the original address that we've put in initially, not resolved one
 func (p *plainDNS) Address() string {
 	if p.preferTCP {
 		return "tcp://" + p.address
 	}
+
 	return p.address
 }
 
 func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	if p.preferTCP {
 		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
+
 		logBegin(p.Address(), m)
 		reply, _, tcpErr := tcpClient.Exchange(m, p.address)
 		logFinish(p.Address(), tcpErr)
+
 		return reply, tcpErr
 	}
 
@@ -45,6 +60,7 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	if reply != nil && reply.Truncated {
 		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
 		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
+
 		logBegin(p.Address(), m)
 		reply, _, err = tcpClient.Exchange(m, p.address)
 		logFinish(p.Address(), err)

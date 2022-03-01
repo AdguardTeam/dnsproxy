@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -46,6 +47,19 @@ type dnsOverHTTPS struct {
 
 // type check
 var _ Upstream = &dnsOverHTTPS{}
+
+// newDoH returns the DNS-over-HTTPS Upstream.
+func newDoH(uu *url.URL, opts *Options) (u Upstream, err error) {
+	addPort(uu, defaultPortDoH)
+
+	var b *bootstrapper
+	b, err = urlToBoot(uu, opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating https bootstrapper: %w", err)
+	}
+
+	return &dnsOverHTTPS{boot: b}, nil
+}
 
 func (p *dnsOverHTTPS) Address() string { return p.boot.URL.String() }
 

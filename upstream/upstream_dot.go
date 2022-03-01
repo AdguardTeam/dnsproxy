@@ -3,6 +3,7 @@ package upstream
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 
 	"github.com/AdguardTeam/golibs/log"
@@ -21,6 +22,19 @@ type dnsOverTLS struct {
 
 // type check
 var _ Upstream = &dnsOverTLS{}
+
+// newDoT returns the DNS-over-TLS Upstream.
+func newDoT(uu *url.URL, opts *Options) (u Upstream, err error) {
+	addPort(uu, defaultPortDoT)
+
+	var b *bootstrapper
+	b, err = urlToBoot(uu, opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating tls bootstrapper: %w", err)
+	}
+
+	return &dnsOverTLS{boot: b}, nil
+}
 
 func (p *dnsOverTLS) Address() string { return p.boot.URL.String() }
 

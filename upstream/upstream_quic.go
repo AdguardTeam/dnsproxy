@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 	"time"
 
@@ -27,6 +28,19 @@ type dnsOverQUIC struct {
 
 // type check
 var _ Upstream = &dnsOverQUIC{}
+
+// newDoQ returns the DNS-over-QUIC Upstream.
+func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
+	addPort(uu, defaultPortDoQ)
+
+	var b *bootstrapper
+	b, err = urlToBoot(uu, opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating quic bootstrapper: %w", err)
+	}
+
+	return &dnsOverQUIC{boot: b}, nil
+}
 
 func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 

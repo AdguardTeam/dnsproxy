@@ -93,6 +93,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	}
 
 	req.Header.Set("Accept", "application/dns-message")
+	req.Header.Set("User-Agent", "")
 
 	resp, err := client.Do(req)
 	if resp != nil && resp.Body != nil {

@@ -143,6 +143,8 @@ func urlToUpstream(uu *url.URL, opts *Options) (u Upstream, err error) {
 		return newDoT(uu, opts)
 	case "https":
 		return newDoH(uu, opts)
+	case "h3":
+		return newDoH3(uu, opts)
 	default:
 		return nil, fmt.Errorf("unsupported url scheme: %s", sch)
 	}

@@ -80,7 +80,7 @@ func (ci *cacheItem) pack() (packed []byte) {
 }
 
 // optimisticTTL is the default TTL for expired cached responses in seconds.
-const optimisticTTL = 60
+const optimisticTTL = 10
 
 // unpackItem converts the data into cacheItem using req as a request message.
 // expired is true if the item exists but expired.  The expired cached items are

@@ -263,7 +263,7 @@ Sends queries for `*.local` domains to `192.168.0.1:53`. Other queries are sent 
 
 Sends queries for `*.host.com` to `1.1.1.1:53` except for `*.maps.host.com` which are sent to `8.8.8.8:53` (as long as other queries).
 ```
-./dnsproxy -u 8.8.8.8:53 -u [/host.com/]1.1.1.1:53 -u [/maps.host.com/]#`
+./dnsproxy -u 8.8.8.8:53 -u [/host.com/]1.1.1.1:53 -u [/maps.host.com/]#
 ```
 
 ### EDNS Client Subnet

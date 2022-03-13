@@ -193,7 +193,7 @@ func stampToUpstream(upsURL *url.URL, opts *Options) (Upstream, error) {
 // addPort appends port to u if needed.
 func addPort(u *url.URL, port int) {
 	if u != nil && u.Port() == "" {
-		u.Host = netutil.JoinHostPort(u.Host, port)
+		u.Host = netutil.JoinHostPort(strings.Trim(u.Host, "[]"), port)
 	}
 }
 

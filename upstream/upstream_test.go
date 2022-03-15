@@ -465,6 +465,21 @@ func TestAddPort(t *testing.T) {
 		want: "[::1]:1",
 		host: "[::1]",
 		port: 1,
+	}, {
+		name: "hostname_with_port",
+		want: "example.org:54",
+		host: "example.org:54",
+		port: 53,
+	}, {
+		name: "ipv4_with_port",
+		want: "1.2.3.4:2",
+		host: "1.2.3.4:2",
+		port: 1,
+	}, {
+		name: "ipv6_with_port",
+		want: "[::1]:2",
+		host: "[::1]:2",
+		port: 1,
 	}}
 
 	for _, tc := range testCases {

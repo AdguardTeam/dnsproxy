@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -436,4 +437,59 @@ func assertResponse(t *testing.T, reply *dns.Msg) {
 	require.Truef(t, ok, "wrong answer type: %v", reply.Answer[0])
 
 	assert.Equalf(t, net.IPv4(8, 8, 8, 8), a.A.To16(), "wrong answer: %v", a.A)
+}
+
+func TestAddPort(t *testing.T) {
+	testCases := []struct {
+		name string
+		want string
+		host string
+		port int
+	}{{
+		name: "empty",
+		want: ":0",
+		host: "",
+		port: 0,
+	}, {
+		name: "hostname",
+		want: "example.org:53",
+		host: "example.org",
+		port: 53,
+	}, {
+		name: "ipv4",
+		want: "1.2.3.4:1",
+		host: "1.2.3.4",
+		port: 1,
+	}, {
+		name: "ipv6",
+		want: "[::1]:1",
+		host: "[::1]",
+		port: 1,
+	}, {
+		name: "hostname_with_port",
+		want: "example.org:54",
+		host: "example.org:54",
+		port: 53,
+	}, {
+		name: "ipv4_with_port",
+		want: "1.2.3.4:2",
+		host: "1.2.3.4:2",
+		port: 1,
+	}, {
+		name: "ipv6_with_port",
+		want: "[::1]:2",
+		host: "[::1]:2",
+		port: 1,
+	}}
+
+	for _, tc := range testCases {
+		u := &url.URL{
+			Host: tc.host,
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			addPort(u, tc.port)
+			assert.Equal(t, tc.want, u.Host)
+		})
+	}
 }

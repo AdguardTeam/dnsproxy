@@ -190,10 +190,10 @@ func stampToUpstream(upsURL *url.URL, opts *Options) (Upstream, error) {
 	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, upsURL)
 }
 
-// addPort appends port to u if needed.
+// addPort appends port to u if it's absent.
 func addPort(u *url.URL, port int) {
 	if u != nil && u.Port() == "" {
-		u.Host = netutil.JoinHostPort(u.Host, port)
+		u.Host = netutil.JoinHostPort(strings.Trim(u.Host, "[]"), port)
 	}
 }
 

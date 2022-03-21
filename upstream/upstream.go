@@ -63,14 +63,11 @@ const (
 	// defaultPortDoT is the default port for DNS-over-TLS.
 	defaultPortDoT = 853
 
-	// defaultPortDoQ is the default port for DNS-over-QUIC.
+	// defaultPortDoQ is the default port for DNS-over-QUIC.  Prior to version
+	// -10 of the draft experiments were directed to use ports 8853, 784.
 	//
-	// Early experiments MAY use port 8853. This port is marked in the IANA
-	// registry as unassigned.  Note that prior to version -02 of this draft,
-	// experiments were directed to use port 784.
-	//
-	// See https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-10.2.1.
-	defaultPortDoQ = 8853
+	// See https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-10#section-10.2.
+	defaultPortDoQ = 853
 )
 
 // AddressToUpstream converts addr to an Upstream instance:
@@ -126,15 +123,6 @@ func urlToUpstream(uu *url.URL, opts *Options) (u Upstream, err error) {
 	switch sch := uu.Scheme; sch {
 	case "sdns":
 		return stampToUpstream(uu, opts)
-	// TODO(e.burkov): Remove in the next major-minor release.
-	case "dns":
-		log.Info(
-			"warning: using %q scheme is deprecated and will be removed in future versions; "+
-				"use \"udp\" instead",
-			sch,
-		)
-
-		return newPlain(uu, opts.Timeout, false), nil
 	case "udp", "tcp":
 		return newPlain(uu, opts.Timeout, sch == "tcp"), nil
 	case "quic":

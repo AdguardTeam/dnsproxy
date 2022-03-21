@@ -1,4 +1,4 @@
-module github.com/AdguardTeam/dnsproxy
+module github.com/potterli20/dnsproxy
 
 go 1.18
 

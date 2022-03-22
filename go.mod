@@ -11,7 +11,7 @@ require (
 	github.com/lucas-clemente/quic-go v0.25.0
 	github.com/miekg/dns v1.1.44
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )

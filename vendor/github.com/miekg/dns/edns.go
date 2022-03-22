@@ -98,6 +98,8 @@ func (rr *OPT) String() string {
 			s += "\n; SUBNET: " + o.String()
 		case *EDNS0_COOKIE:
 			s += "\n; COOKIE: " + o.String()
+		case *EDNS0_TCP_KEEPALIVE:
+			s += "\n; KEEPALIVE: " + o.String()
 		case *EDNS0_UL:
 			s += "\n; UPDATE LEASE: " + o.String()
 		case *EDNS0_LLQ:
@@ -582,14 +584,17 @@ func (e *EDNS0_N3U) copy() EDNS0 { return &EDNS0_N3U{e.Code, e.AlgCode} }
 type EDNS0_EXPIRE struct {
 	Code   uint16 // Always EDNS0EXPIRE
 	Expire uint32
+	Empty  bool // Empty is used to signal an empty Expire option in a backwards compatible way, it's not used on the wire.
 }
 
 // Option implements the EDNS0 interface.
 func (e *EDNS0_EXPIRE) Option() uint16 { return EDNS0EXPIRE }
-func (e *EDNS0_EXPIRE) String() string { return strconv.FormatUint(uint64(e.Expire), 10) }
-func (e *EDNS0_EXPIRE) copy() EDNS0    { return &EDNS0_EXPIRE{e.Code, e.Expire} }
+func (e *EDNS0_EXPIRE) copy() EDNS0    { return &EDNS0_EXPIRE{e.Code, e.Expire, e.Empty} }
 
 func (e *EDNS0_EXPIRE) pack() ([]byte, error) {
+	if e.Empty {
+		return []byte{}, nil
+	}
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, e.Expire)
 	return b, nil
@@ -598,13 +603,22 @@ func (e *EDNS0_EXPIRE) pack() ([]byte, error) {
 func (e *EDNS0_EXPIRE) unpack(b []byte) error {
 	if len(b) == 0 {
 		// zero-length EXPIRE query, see RFC 7314 Section 2
+		e.Empty = true
 		return nil
 	}
 	if len(b) < 4 {
 		return ErrBuf
 	}
 	e.Expire = binary.BigEndian.Uint32(b)
+	e.Empty = false
 	return nil
+}
+
+func (e *EDNS0_EXPIRE) String() (s string) {
+	if e.Empty {
+		return ""
+	}
+	return strconv.FormatUint(uint64(e.Expire), 10)
 }
 
 // The EDNS0_LOCAL option is used for local/experimental purposes. The option
@@ -657,57 +671,52 @@ func (e *EDNS0_LOCAL) unpack(b []byte) error {
 // EDNS0_TCP_KEEPALIVE is an EDNS0 option that instructs the server to keep
 // the TCP connection alive. See RFC 7828.
 type EDNS0_TCP_KEEPALIVE struct {
-	Code    uint16 // Always EDNSTCPKEEPALIVE
-	Length  uint16 // the value 0 if the TIMEOUT is omitted, the value 2 if it is present;
-	Timeout uint16 // an idle timeout value for the TCP connection, specified in units of 100 milliseconds, encoded in network byte order.
+	Code uint16 // Always EDNSTCPKEEPALIVE
+
+	// Timeout is an idle timeout value for the TCP connection, specified in
+	// units of 100 milliseconds, encoded in network byte order. If set to 0,
+	// pack will return a nil slice.
+	Timeout uint16
+
+	// Length is the option's length.
+	// Deprecated: this field is deprecated and is always equal to 0.
+	Length uint16
 }
 
 // Option implements the EDNS0 interface.
 func (e *EDNS0_TCP_KEEPALIVE) Option() uint16 { return EDNS0TCPKEEPALIVE }
 
 func (e *EDNS0_TCP_KEEPALIVE) pack() ([]byte, error) {
-	if e.Timeout != 0 && e.Length != 2 {
-		return nil, errors.New("dns: timeout specified but length is not 2")
+	if e.Timeout > 0 {
+		b := make([]byte, 2)
+		binary.BigEndian.PutUint16(b, e.Timeout)
+		return b, nil
 	}
-	if e.Timeout == 0 && e.Length != 0 {
-		return nil, errors.New("dns: timeout not specified but length is not 0")
-	}
-	b := make([]byte, 4+e.Length)
-	binary.BigEndian.PutUint16(b[0:], e.Code)
-	binary.BigEndian.PutUint16(b[2:], e.Length)
-	if e.Length == 2 {
-		binary.BigEndian.PutUint16(b[4:], e.Timeout)
-	}
-	return b, nil
+	return nil, nil
 }
 
 func (e *EDNS0_TCP_KEEPALIVE) unpack(b []byte) error {
-	if len(b) < 4 {
-		return ErrBuf
-	}
-	e.Length = binary.BigEndian.Uint16(b[2:4])
-	if e.Length != 0 && e.Length != 2 {
-		return errors.New("dns: length mismatch, want 0/2 but got " + strconv.FormatUint(uint64(e.Length), 10))
-	}
-	if e.Length == 2 {
-		if len(b) < 6 {
-			return ErrBuf
-		}
-		e.Timeout = binary.BigEndian.Uint16(b[4:6])
+	switch len(b) {
+	case 0:
+	case 2:
+		e.Timeout = binary.BigEndian.Uint16(b)
+	default:
+		return fmt.Errorf("dns: length mismatch, want 0/2 but got %d", len(b))
 	}
 	return nil
 }
 
-func (e *EDNS0_TCP_KEEPALIVE) String() (s string) {
-	s = "use tcp keep-alive"
-	if e.Length == 0 {
+func (e *EDNS0_TCP_KEEPALIVE) String() string {
+	s := "use tcp keep-alive"
+	if e.Timeout == 0 {
 		s += ", timeout omitted"
 	} else {
 		s += fmt.Sprintf(", timeout %dms", e.Timeout*100)
 	}
-	return
+	return s
 }
-func (e *EDNS0_TCP_KEEPALIVE) copy() EDNS0 { return &EDNS0_TCP_KEEPALIVE{e.Code, e.Length, e.Timeout} }
+
+func (e *EDNS0_TCP_KEEPALIVE) copy() EDNS0 { return &EDNS0_TCP_KEEPALIVE{e.Code, e.Timeout, e.Length} }
 
 // EDNS0_PADDING option is used to add padding to a request/response. The default
 // value of padding SHOULD be 0x0 but other values MAY be used, for instance if

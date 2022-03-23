@@ -525,7 +525,7 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 		}
 	}
 
-	if isPublicIP(cliIP) {
+	if !netutil.IsSpecialPurpose(cliIP) {
 		// A Stub Resolver MUST set SCOPE PREFIX-LENGTH to 0.  See RFC 7871
 		// Section 6.
 		dctx.ReqECS = setECS(dctx.Req, cliIP, 0)

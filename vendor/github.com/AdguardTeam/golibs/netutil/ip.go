@@ -1,6 +1,7 @@
 package netutil
 
 import (
+	"fmt"
 	"net"
 	"strings"
 )
@@ -181,10 +182,29 @@ func SingleIPSubnet(ip net.IP) (n *net.IPNet) {
 	return nil
 }
 
+// ParseSubnets returns the slice of *net.IPNet parsed from ss.
+func ParseSubnets(ss ...string) (ns []*net.IPNet, err error) {
+	l := len(ss)
+	if l == 0 {
+		return nil, nil
+	}
+
+	ns = make([]*net.IPNet, l)
+	for i, s := range ss {
+		ns[i], err = ParseSubnet(s)
+		if err != nil {
+			return nil, fmt.Errorf("parsing network at index %d: %w", i, err)
+		}
+	}
+
+	return ns, nil
+}
+
 // ValidateIP returns an error if ip is not a valid IPv4 or IPv6 address.
 //
 // Any error returned will have the underlying type of *AddrError.
 func ValidateIP(ip net.IP) (err error) {
+	// TODO(a.garipov):  Get rid of unnecessary allocations in case of valid IP.
 	defer makeAddrError(&err, ip.String(), AddrKindIP)
 
 	switch l := len(ip); l {

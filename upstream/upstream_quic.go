@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
@@ -87,7 +88,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		return nil, err
 	}
 
-	_, err = stream.Write(buf)
+	_, err = proxyutil.WritePrefixedQUIC(buf, stream)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	defer pool.Put(bufPtr)
 
 	respBuf := *bufPtr
-	n, err := stream.Read(respBuf)
+	n, err := proxyutil.ReadPrefixedQUIC(stream, respBuf)
 	if err != nil && n == 0 {
 		return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
 	}

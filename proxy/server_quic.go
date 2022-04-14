@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/stringutil"
 	"github.com/lucas-clemente/quic-go"
@@ -118,7 +119,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 	// err is not checked here because STREAM FIN sent by the client is indicated as error here.
 	// instead, we should check the number of bytes received.
 	buf := *bufPtr
-	n, err := stream.Read(buf)
+	n, err := proxyutil.ReadPrefixedQUIC(stream, buf)
 
 	// The server MUST send the response on the same stream, and MUST indicate through
 	// the STREAM FIN mechanism that no further data will be sent on that stream.
@@ -197,7 +198,7 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 		return fmt.Errorf("couldn't convert message into wire format: %w", err)
 	}
 
-	n, err := d.QUICStream.Write(bytes)
+	n, err := proxyutil.WritePrefixedQUIC(bytes, d.QUICStream)
 	if err != nil {
 		return fmt.Errorf("conn.Write(): %w", err)
 	}

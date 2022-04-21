@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
@@ -38,7 +39,7 @@ func newDoT(uu *url.URL, opts *Options) (u Upstream, err error) {
 
 func (p *dnsOverTLS) Address() string { return p.boot.URL.String() }
 
-func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
+func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 	var pool *TLSPool
 	p.RLock()
 	pool = p.pool
@@ -58,7 +59,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	}
 
 	logBegin(p.Address(), m)
-	reply, err := p.exchangeConn(poolConn, m)
+	reply, err = p.exchangeConn(poolConn, m)
 	logFinish(p.Address(), err)
 	if err != nil {
 		log.Tracef("The TLS connection is expired due to %s", err)
@@ -88,19 +89,27 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	return reply, err
 }
 
-func (p *dnsOverTLS) exchangeConn(poolConn net.Conn, m *dns.Msg) (*dns.Msg, error) {
-	c := dns.Conn{Conn: poolConn}
-	err := c.WriteMsg(m)
+func (p *dnsOverTLS) exchangeConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg, err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+
+		if cerr := conn.Close(); cerr != nil {
+			err = &errors.Pair{Returned: err, Deferred: cerr}
+		}
+	}()
+
+	dnsConn := dns.Conn{Conn: conn}
+
+	err = dnsConn.WriteMsg(m)
 	if err != nil {
-		poolConn.Close()
 		return nil, fmt.Errorf("sending request to %s: %w", p.Address(), err)
 	}
 
-	reply, err := c.ReadMsg()
+	reply, err = dnsConn.ReadMsg()
 	if err != nil {
-		poolConn.Close()
-
-		return nil, fmt.Errorf("reading request from %s: %w", p.Address(), err)
+		return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
 	} else if reply.Id != m.Id {
 		err = dns.ErrId
 	}

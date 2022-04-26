@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,14 +106,16 @@ func TestHttpsProxy(t *testing.T) {
 		reply := doRequest(t, proxyIP.String())
 
 		assertResponse(t, reply)
-		assert.True(t, ipFromAddr(gotAddr).Equal(clientIP))
+		ip, _ := netutil.IPAndPortFromAddr(gotAddr)
+		assert.True(t, ip.Equal(clientIP))
 	})
 
 	t.Run("not_in_trusted", func(t *testing.T) {
 		reply := doRequest(t, "127.0.0.2")
 
 		assertResponse(t, reply)
-		assert.True(t, ipFromAddr(gotAddr).Equal(proxyIP))
+		ip, _ := netutil.IPAndPortFromAddr(gotAddr)
+		assert.True(t, ip.Equal(proxyIP))
 	})
 }
 
@@ -309,8 +312,11 @@ func TestRemoteAddr(t *testing.T) {
 
 			require.NoError(t, err)
 
-			assert.True(t, ipFromAddr(addr).Equal(tc.wantIP))
-			assert.True(t, tc.wantProxy.Equal(ipFromAddr(prx)))
+			ip, _ := netutil.IPAndPortFromAddr(addr)
+			assert.True(t, ip.Equal(tc.wantIP))
+
+			prxIP, _ := netutil.IPAndPortFromAddr(prx)
+			assert.True(t, tc.wantProxy.Equal(prxIP))
 		})
 	}
 }

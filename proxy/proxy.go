@@ -94,7 +94,7 @@ type Proxy struct {
 	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
 
 	// proxyVerifier checks if the proxy is in the trusted list.
-	proxyVerifier *subnetDetector
+	proxyVerifier netutil.SubnetSet
 
 	// DNS cache
 	// --
@@ -176,10 +176,13 @@ func (p *Proxy) Init() (err error) {
 		}
 	}
 
-	p.proxyVerifier, err = newSubnetDetector(p.TrustedProxies)
+	var trusted []*net.IPNet
+	trusted, err = netutil.ParseSubnets(p.TrustedProxies...)
 	if err != nil {
 		return fmt.Errorf("initializing subnet detector for proxies verifying: %w", err)
 	}
+
+	p.proxyVerifier = netutil.SliceSubnetSet(trusted)
 
 	return nil
 }

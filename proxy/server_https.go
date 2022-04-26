@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"golang.org/x/net/http2"
 )
@@ -111,9 +112,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.HTTPResponseWriter = w
 
 	if prx != nil {
-		ip := ipFromAddr(prx)
+		ip, _ := netutil.IPAndPortFromAddr(prx)
 		log.Debug("request came from proxy server %s", prx)
-		if !p.proxyVerifier.detect(ip) {
+		if !p.proxyVerifier.Contains(ip) {
 			log.Debug("proxy %s is not trusted, using original remote addr", ip)
 			d.Addr = prx
 		}
@@ -123,22 +124,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
 	}
-}
-
-// ipFromAddr returns an IP address from addr.  If addr is neither
-// a *net.TCPAddr nor a *net.UDPAddr, it returns nil.
-//
-// TODO(a.garipov): Create package netutil in the golibs module and move it
-// there.
-func ipFromAddr(addr net.Addr) (ip net.IP) {
-	switch addr := addr.(type) {
-	case *net.TCPAddr:
-		return addr.IP
-	case *net.UDPAddr:
-		return addr.IP
-	}
-
-	return nil
 }
 
 // Writes a response to the DOH client

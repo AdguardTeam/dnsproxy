@@ -252,7 +252,8 @@ If one or more domains are specified, that upstream (`upstreamString`) is used o
 
 1. An empty domain specification, // has the special meaning of "unqualified names only" ie names without any dots in them.
 2. More specific domains take precedence over less specific domains, so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send queries for *.host.com to 1.2.3.4, except *.www.host.com, which will go to 2.3.4.5
-3. The special server address '#' means, "use the standard servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for *.host.com to 1.2.3.4, except *.www.host.com which will be forwarded as usual.
+3. The special server address `#` means, "use the standard servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for \*.host.com to 1.2.3.4, except \*.www.host.com which will be forwarded as usual.
+4. The wildcard `*` has special meaning of "any sub-domain", so: `--upstream=[/*.host.com/]1.2.3.4` will send queries for \*.host.com to 1.2.3.4, but host.com will be forwarded to default upstreams.
 
 **Examples**
 
@@ -261,9 +262,14 @@ Sends queries for `*.local` domains to `192.168.0.1:53`. Other queries are sent 
 ./dnsproxy -u 8.8.8.8:53 -u [/local/]192.168.0.1:53
 ```
 
-Sends queries for `*.host.com` to `1.1.1.1:53` except for `*.maps.host.com` which are sent to `8.8.8.8:53` (as long as other queries).
+Sends queries for `*.host.com` to `1.1.1.1:53` except for `*.maps.host.com` which are sent to `8.8.8.8:53` (along with other queries).
 ```
 ./dnsproxy -u 8.8.8.8:53 -u [/host.com/]1.1.1.1:53 -u [/maps.host.com/]#
+```
+
+Sends queries for `*.host.com` to `1.1.1.1:53` except for `host.com` which is sent to `8.8.8.8:53` (along with other queries).
+```
+./dnsproxy -u 8.8.8.8:53 -u [/*.host.com/]1.1.1.1:53
 ```
 
 ### EDNS Client Subnet

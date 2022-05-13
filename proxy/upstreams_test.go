@@ -27,11 +27,11 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	assertUpstreamsForDomain(t, config, 2, "www.google.com.", []string{"1.2.3.4:53", "tls://1.1.1.1:853"})
-	assertUpstreamsForDomain(t, config, 1, "www2.google.com.", []string{"4.3.2.1:53"})
-	assertUpstreamsForDomain(t, config, 1, "internal.local.", []string{"4.3.2.1:53"})
-	assertUpstreamsForDomain(t, config, 1, "google.", []string{"1.2.3.4:53"})
-	assertUpstreamsForDomain(t, config, 0, "maps.google.com.", []string{})
+	assertUpstreamsForDomain(t, config, "www.google.com.", []string{"1.2.3.4:53", "tls://1.1.1.1:853"})
+	assertUpstreamsForDomain(t, config, "www2.google.com.", []string{"4.3.2.1:53"})
+	assertUpstreamsForDomain(t, config, "internal.local.", []string{"4.3.2.1:53"})
+	assertUpstreamsForDomain(t, config, "google.", []string{"1.2.3.4:53"})
+	assertUpstreamsForDomain(t, config, "maps.google.com.", []string{})
 }
 
 func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
@@ -55,14 +55,141 @@ func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 	assert.Same(t, u1, u2)
 }
 
+func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
+	conf := []string{
+		"0.0.0.1",
+		"[/a.x/]0.0.0.2",
+		"[/*.a.x/]0.0.0.3",
+		"[/b.a.x/]0.0.0.4",
+		"[/*.b.a.x/]0.0.0.5",
+		"[/*.x.z/]0.0.0.6",
+		"[/c.b.a.x/]#",
+	}
+
+	uconf, err := ParseUpstreamsConfig(conf, nil)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name string
+		in   string
+		want []string
+	}{{
+		name: "default",
+		in:   "d.x.",
+		want: []string{"0.0.0.1:53"},
+	}, {
+		name: "specified_one",
+		in:   "a.x.",
+		want: []string{"0.0.0.2:53"},
+	}, {
+		name: "wildcard",
+		in:   "c.a.x.",
+		want: []string{"0.0.0.3:53"},
+	}, {
+		name: "specified_two",
+		in:   "b.a.x.",
+		want: []string{"0.0.0.4:53"},
+	}, {
+		name: "wildcard_two",
+		in:   "d.b.a.x.",
+		want: []string{"0.0.0.5:53"},
+	}, {
+		name: "specified_three",
+		in:   "c.b.a.x.",
+		want: []string{"0.0.0.1:53"},
+	}, {
+		name: "specified_four",
+		in:   "d.c.b.a.x.",
+		want: []string{"0.0.0.1:53"},
+	}, {
+		name: "unspecified_wildcard",
+		in:   "x.z.",
+		want: []string{"0.0.0.1:53"},
+	}, {
+		name: "unspecified_wildcard_sub",
+		in:   "a.x.z.",
+		want: []string{"0.0.0.6:53"},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertUpstreamsForDomain(t, uconf, tc.in, tc.want)
+		})
+	}
+}
+
+func TestGetUpstreamsForDomain_sub_wildcards(t *testing.T) {
+	conf := []string{
+		"0.0.0.1",
+		"[/a.x/]0.0.0.2",
+		"[/*.a.x/]0.0.0.3",
+		"[/*.b.a.x/]0.0.0.5",
+	}
+
+	uconf, err := ParseUpstreamsConfig(conf, nil)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name string
+		in   string
+		want []string
+	}{{
+		name: "specified",
+		in:   "a.x.",
+		want: []string{"0.0.0.2:53"},
+	}, {
+		name: "wildcard",
+		in:   "c.a.x.",
+		want: []string{"0.0.0.3:53"},
+	}, {
+		name: "sub_spec_ignore",
+		in:   "b.a.x.",
+		want: []string{"0.0.0.3:53"},
+	}, {
+		name: "sub_spec_wildcard",
+		in:   "d.b.a.x.",
+		want: []string{"0.0.0.5:53"},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertUpstreamsForDomain(t, uconf, tc.in, tc.want)
+		})
+	}
+}
+
+func BenchmarkGetUpstreamsForDomain(b *testing.B) {
+	upstreams := []string{
+		"[/google.com/local/]4.3.2.1",
+		"[/www.google.com//]1.2.3.4",
+		"[/maps.google.com/]#",
+		"[/www.google.com/]tls://1.1.1.1",
+	}
+
+	config, _ := ParseUpstreamsConfig(
+		upstreams,
+		&upstream.Options{
+			InsecureSkipVerify: false,
+			Bootstrap:          []string{},
+			Timeout:            1 * time.Second,
+		},
+	)
+
+	for i := 0; i < b.N; i++ {
+		assertUpstreamsForDomain(b, config, "www.google.com.", []string{"1.2.3.4:53", "tls://1.1.1.1:853"})
+		assertUpstreamsForDomain(b, config, "www2.google.com.", []string{"4.3.2.1:53"})
+		assertUpstreamsForDomain(b, config, "internal.local.", []string{"4.3.2.1:53"})
+		assertUpstreamsForDomain(b, config, "google.", []string{"1.2.3.4:53"})
+		assertUpstreamsForDomain(b, config, "maps.google.com.", []string{})
+	}
+}
+
 // assertUpstreamsForDomain checks the addresses of the specified domain
 // upstreams and their number.
-func assertUpstreamsForDomain(t *testing.T, config *UpstreamConfig, count int, domain string, address []string) {
+func assertUpstreamsForDomain(t testing.TB, config *UpstreamConfig, domain string, address []string) {
 	t.Helper()
 
 	u := config.getUpstreamsForDomain(domain)
-	assert.Len(t, u, count)
-
 	require.Len(t, u, len(address))
 
 	for i, up := range u {

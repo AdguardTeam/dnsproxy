@@ -158,6 +158,47 @@ func TestGetUpstreamsForDomain_sub_wildcards(t *testing.T) {
 	}
 }
 
+func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
+	conf := []string{
+		"127.0.0.1:5301",
+		"[/example.org/]127.0.0.1:5302",
+		"[/*.example.org/]127.0.0.1:5303",
+		"[/www.example.org/]127.0.0.1:5304",
+		"[/*.www.example.org/]#",
+	}
+
+	uconf, err := ParseUpstreamsConfig(conf, nil)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name string
+		in   string
+		want []string
+	}{{
+		name: "domain",
+		in:   "example.org.",
+		want: []string{"127.0.0.1:5302"},
+	}, {
+		name: "sub_wildcard",
+		in:   "sub.example.org.",
+		want: []string{"127.0.0.1:5303"},
+	}, {
+		name: "spec_sub",
+		in:   "www.example.org.",
+		want: []string{"127.0.0.1:5304"},
+	}, {
+		name: "def_wildcard",
+		in:   "abc.www.example.org.",
+		want: []string{"127.0.0.1:5301"},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertUpstreamsForDomain(t, uconf, tc.in, tc.want)
+		})
+	}
+}
+
 func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 	upstreams := []string{
 		"[/google.com/local/]4.3.2.1",

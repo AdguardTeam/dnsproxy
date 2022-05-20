@@ -58,8 +58,15 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 		// # excludes more specific domain from reserved upstreams querying
 		if u == "#" && len(hosts) > 0 {
 			for _, host := range hosts {
-				domainReservedUpstreams[host] = nil
-				specifiedDomainUpstreams[host] = nil
+				if strings.HasPrefix(host, "*.") {
+					host = host[len("*."):]
+
+					subdomainsOnlyExclusions.Add(host)
+					subdomainsOnlyUpstreams[host] = nil
+				} else {
+					domainReservedUpstreams[host] = nil
+					specifiedDomainUpstreams[host] = nil
+				}
 			}
 		} else {
 			dnsUpstream, ok := upstreamsIndex[u]

@@ -53,9 +53,14 @@ type DNSContext struct {
 	// ProtoQUIC only.
 	QUICStream quic.Stream
 
-	// QUICSession is the QUIC session from which we got the query.  For
+	// QUICConnection is the QUIC session from which we got the query.  For
 	// ProtoQUIC only.
-	QUICSession quic.Session
+	QUICConnection quic.Connection
+
+	// DOQVersion is the DoQ protocol version. It can (and should) be read from
+	// ALPN, but in the current version we also use the way DNS messages are
+	// encoded as a signal.
+	DOQVersion DOQVersion
 
 	// RequestID is an opaque numerical identifier of this request that is
 	// guaranteed to be unique across requests processed by a single Proxy
@@ -113,3 +118,16 @@ func (dctx *DNSContext) scrub() {
 	// Some devices require DNS message compression.
 	dctx.Res.Compress = true
 }
+
+// DOQVersion is an enumeration with supported DOQ versions.
+type DOQVersion int
+
+const (
+	// DOQv1Draft represents old DoQ draft versions that do not send a 2-octet
+	// prefix with the DNS message length.
+	// TODO: remove in the end of 2024.
+	DOQv1Draft DOQVersion = 0x00
+
+	// DOQv1 represents DoQ v1.0: https://www.rfc-editor.org/rfc/rfc9250.html.
+	DOQv1 DOQVersion = 0x01
+)

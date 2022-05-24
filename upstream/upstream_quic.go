@@ -8,22 +8,41 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 )
 
-const handshakeTimeout = time.Second
+const (
+	// DOQCodeNoError is used when the connection or stream needs to be closed,
+	// but there is no error to signal.
+	DOQCodeNoError = quic.ApplicationErrorCode(0)
+	// DOQCodeInternalError signals that the DoQ implementation encountered
+	// an internal error and is incapable of pursuing the transaction or the
+	// connection.
+	DOQCodeInternalError = quic.ApplicationErrorCode(1)
+	// DOQCodeProtocolError signals that the DoQ implementation encountered
+	// a protocol error and is forcibly aborting the connection.
+	DOQCodeProtocolError = quic.ApplicationErrorCode(2)
+)
 
 //
-// DNS-over-QUIC
+// dnsOverQUIC is a DNS-over-QUIC implementation according to the spec:
+// https://www.rfc-editor.org/rfc/rfc9250.html
 //
 type dnsOverQUIC struct {
-	boot    *bootstrapper
-	session quic.Session
-
-	bytesPool    *sync.Pool // byte packets pool
-	sync.RWMutex            // protects session and bytesPool
+	// boot is a bootstrap DNS abstraction that is used to resolve the upstream
+	// server's address and open a network connection to it.
+	boot *bootstrapper
+	// conn is the current active QUIC connection.  It can be closed and
+	// re-opened when needed.
+	conn quic.Connection
+	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
+	// buffers are used to read responses from the upstream.
+	bytesPool *sync.Pool
+	// sync.RWMutex protects conn and bytesPool.
+	sync.RWMutex
 }
 
 // type check
@@ -44,28 +63,15 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 
 func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 
-func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	session, err := p.getSession(true)
+func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
+	var conn quic.Connection
+	conn, err = p.getConnection(true)
 	if err != nil {
 		return nil, err
 	}
 
-	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
-	// this is a fatal error and the recipient of the defective message MUST forcibly abort
-	// the connection immediately.
-	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2
-	if opt := m.IsEdns0(); opt != nil {
-		for _, option := range opt.Option {
-			// Check for EDNS TCP keepalive option
-			if option.Option() == dns.EDNS0TCPKEEPALIVE {
-				_ = session.CloseWithError(0, "") // Already closing the connection so we don't care about the error
-				return nil, errors.Error("EDNS0 TCP keepalive option is set")
-			}
-		}
-	}
-
-	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.4
-	// When sending queries over a QUIC connection, the DNS Message ID MUST be set to zero.
+	// When sending queries over a QUIC connection, the DNS Message ID MUST be
+	// set to zero.
 	id := m.Id
 	var reply *dns.Msg
 	m.Id = 0
@@ -77,19 +83,23 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 		}
 	}()
 
-	stream, err := p.openStream(session)
+	var buf []byte
+	buf, err = m.Pack()
 	if err != nil {
+		return nil, fmt.Errorf("failed to pack DNS message for DoQ: %w", err)
+	}
+
+	var stream quic.Stream
+	stream, err = p.openStream(conn)
+	if err != nil {
+		p.closeConnWithError(DOQCodeInternalError)
 		return nil, fmt.Errorf("open new stream to %s: %w", p.Address(), err)
 	}
 
-	buf, err := m.Pack()
+	_, err = stream.Write(proxyutil.AddPrefix(buf))
 	if err != nil {
-		return nil, err
-	}
-
-	_, err = stream.Write(buf)
-	if err != nil {
-		return nil, err
+		p.closeConnWithError(DOQCodeInternalError)
+		return nil, fmt.Errorf("failed to write to a QUIC stream: %w", err)
 	}
 
 	// The client MUST send the DNS query over the selected stream, and MUST
@@ -98,27 +108,19 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	// stream.Close() -- closes the write-direction of the stream.
 	_ = stream.Close()
 
-	pool := p.getBytesPool()
-	bufPtr := pool.Get().(*[]byte)
-
-	defer pool.Put(bufPtr)
-
-	respBuf := *bufPtr
-	n, err := stream.Read(respBuf)
-	if err != nil && n == 0 {
-		return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
-	}
-
-	reply = new(dns.Msg)
-	err = reply.Unpack(respBuf)
+	res, err = p.readMsg(stream)
 	if err != nil {
-		return nil, fmt.Errorf("unpacking response from %s: %w", p.Address(), err)
+		// If a peer encounters such an error condition, it is considered a
+		// fatal error.  It SHOULD forcibly abort the connection using QUIC's
+		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
+		// DOQ_PROTOCOL_ERROR.
+		p.closeConnWithError(DOQCodeProtocolError)
 	}
-
-	return reply, nil
+	return res, err
 }
 
-func (p *dnsOverQUIC) getBytesPool() *sync.Pool {
+// getBytesPool returns (creates if needed) a pool we store byte buffers in.
+func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 	p.Lock()
 	if p.bytesPool == nil {
 		p.bytesPool = &sync.Pool{
@@ -133,20 +135,21 @@ func (p *dnsOverQUIC) getBytesPool() *sync.Pool {
 	return p.bytesPool
 }
 
-// getSession - opens or returns an existing quic.Session
-// useCached - if true and cached session exists, return it right away
-// otherwise - forcibly creates a new session
-func (p *dnsOverQUIC) getSession(useCached bool) (quic.Session, error) {
-	var session quic.Session
+// getConnection opens or returns an existing quic.Connection. useCached
+// argument controls whether we should try to use the existing cached
+// connection.  If it is false, we will forcibly create a new connection and
+// close the existing one if needed.
+func (p *dnsOverQUIC) getConnection(useCached bool) (quic.Connection, error) {
+	var conn quic.Connection
 	p.RLock()
-	session = p.session
-	if session != nil && useCached {
+	conn = p.conn
+	if conn != nil && useCached {
 		p.RUnlock()
-		return session, nil
+		return conn, nil
 	}
-	if session != nil {
-		// we're recreating the session, let's create a new one
-		_ = session.CloseWithError(0, "")
+	if conn != nil {
+		// we're recreating the connection, let's create a new one.
+		_ = conn.CloseWithError(DOQCodeNoError, "")
 	}
 	p.RUnlock()
 
@@ -154,23 +157,24 @@ func (p *dnsOverQUIC) getSession(useCached bool) (quic.Session, error) {
 	defer p.Unlock()
 
 	var err error
-	session, err = p.openSession()
+	conn, err = p.openConnection()
 	if err != nil {
 		// This does not look too nice, but QUIC (or maybe quic-go)
 		// doesn't seem stable enough.
 		// Maybe retransmissions aren't fully implemented in quic-go?
 		// Anyways, the simple solution is to make a second try when
-		// it fails to open the QUIC session.
-		session, err = p.openSession()
+		// it fails to open the QUIC conn.
+		conn, err = p.openConnection()
 		if err != nil {
 			return nil, err
 		}
 	}
-	p.session = session
-	return session, nil
+	p.conn = conn
+	return conn, nil
 }
 
-func (p *dnsOverQUIC) openStream(session quic.Session) (quic.Stream, error) {
+// openStream opens a new QUIC stream for the specified connection.
+func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
 	ctx := context.Background()
 
 	if p.boot.options.Timeout > 0 {
@@ -180,32 +184,33 @@ func (p *dnsOverQUIC) openStream(session quic.Session) (quic.Stream, error) {
 		defer cancel() // avoid resource leak
 	}
 
-	stream, err := session.OpenStreamSync(ctx)
+	stream, err := conn.OpenStreamSync(ctx)
 	if err == nil {
 		return stream, nil
 	}
 
-	// try to recreate the session
-	newSession, err := p.getSession(false)
+	// try to recreate the connection.
+	newConn, err := p.getConnection(false)
 	if err != nil {
 		return nil, err
 	}
-	// open a new stream
-	return newSession.OpenStreamSync(ctx)
+	// open a new stream.
+	return newConn.OpenStreamSync(ctx)
 }
 
-func (p *dnsOverQUIC) openSession() (quic.Session, error) {
+// openConnection opens a new QUIC connection.
+func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 	tlsConfig, dialContext, err := p.boot.get()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to bootstrap QUIC connection: %w", err)
 	}
 
 	// we're using bootstrapped address instead of what's passed to the function
 	// it does not create an actual connection, but it helps us determine
-	// what IP is actually reachable (when there're v4/v6 addresses)
+	// what IP is actually reachable (when there're v4/v6 addresses).
 	rawConn, err := dialContext(context.Background(), "udp", "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open a QUIC connection: %w", err)
 	}
 	// It's never actually used
 	_ = rawConn.Close()
@@ -216,13 +221,57 @@ func (p *dnsOverQUIC) openSession() (quic.Session, error) {
 	}
 
 	addr := udpConn.RemoteAddr().String()
-	quicConfig := &quic.Config{
-		HandshakeIdleTimeout: handshakeTimeout,
-	}
-	session, err := quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
+	quicConfig := &quic.Config{}
+	conn, err = quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {
-		return nil, fmt.Errorf("opening quic session to %s: %w", p.Address(), err)
+		return nil, fmt.Errorf("opening quic connection to %s: %w", p.Address(), err)
 	}
 
-	return session, nil
+	return conn, nil
+}
+
+// closeConnWithError closes the active connection with error to make sure that
+// new queries were processed in another connection. We can do that in the case
+// of a fatal error.
+func (p *dnsOverQUIC) closeConnWithError(code quic.ApplicationErrorCode) {
+	p.Lock()
+	defer p.Unlock()
+
+	if p.conn == nil {
+		// Do nothing, there's no active conn anyways.
+		return
+	}
+
+	err := p.conn.CloseWithError(code, "")
+	if err != nil {
+		log.Error("failed to close the conn: %v", err)
+	}
+	p.conn = nil
+}
+
+// readMsg reads the incoming DNS message from the QUIC stream.
+func (p *dnsOverQUIC) readMsg(stream quic.Stream) (m *dns.Msg, err error) {
+	pool := p.getBytesPool()
+	bufPtr := pool.Get().(*[]byte)
+
+	defer pool.Put(bufPtr)
+
+	respBuf := *bufPtr
+	n, err := stream.Read(respBuf)
+	if err != nil && n == 0 {
+		return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
+	}
+
+	// All DNS messages (queries and responses) sent over DoQ connections MUST
+	// be encoded as a 2-octet length field followed by the message content as
+	// specified in [RFC1035].
+	// IMPORTANT: Note, that we ignore this prefix here as this implementation
+	// does not support receiving multiple messages over a single connection.
+	m = new(dns.Msg)
+	err = m.Unpack(respBuf[2:])
+	if err != nil {
+		return nil, fmt.Errorf("unpacking response from %s: %w", p.Address(), err)
+	}
+
+	return m, nil
 }

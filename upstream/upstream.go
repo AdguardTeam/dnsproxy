@@ -66,7 +66,7 @@ const (
 	// defaultPortDoQ is the default port for DNS-over-QUIC.  Prior to version
 	// -10 of the draft experiments were directed to use ports 8853, 784.
 	//
-	// See https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-10#section-10.2.
+	// See https://www.rfc-editor.org/rfc/rfc9250.html#name-port-selection.
 	defaultPortDoQ = 853
 )
 

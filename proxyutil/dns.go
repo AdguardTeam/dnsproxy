@@ -56,11 +56,21 @@ func ReadPrefixed(conn net.Conn) ([]byte, error) {
 	return buf, nil
 }
 
-// WritePrefixed -- write a DNS message to a TCP connection
-// it first writes a 2-byte prefix followed by the message itself
+// WritePrefixed writes a DNS message to a TCP connection it first writes
+// a 2-byte prefix followed by the message itself.
 func WritePrefixed(b []byte, conn net.Conn) error {
 	l := make([]byte, 2)
 	binary.BigEndian.PutUint16(l, uint16(len(b)))
 	_, err := (&net.Buffers{l, b}).WriteTo(conn)
+
 	return err
+}
+
+// AddPrefix adds a 2-byte prefix with the DNS message length.
+func AddPrefix(b []byte) (m []byte) {
+	m = make([]byte, 2+len(b))
+	binary.BigEndian.PutUint16(m, uint16(len(b)))
+	copy(m[2:], b)
+
+	return m
 }

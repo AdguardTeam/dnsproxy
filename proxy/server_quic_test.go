@@ -4,22 +4,23 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"io"
 	"testing"
 
-	"github.com/miekg/dns"
-
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/lucas-clemente/quic-go"
-	"github.com/stretchr/testify/assert"
+	"github.com/miekg/dns"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQuicProxy(t *testing.T) {
-	// Prepare the proxy server
+	// Prepare the proxy server.
 	serverConfig, caPem := createServerTLSConfig(t)
 	dnsProxy := createTestProxy(t, serverConfig)
 
-	// Start listening
+	// Start listening.
 	err := dnsProxy.Start()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPem)
@@ -29,55 +30,70 @@ func TestQuicProxy(t *testing.T) {
 		NextProtos: append([]string{NextProtoDQ}, compatProtoDQ...),
 	}
 
-	// Create a DNS-over-QUIC client connection
+	// Create a DNS-over-QUIC client connection.
 	addr := dnsProxy.Addr(ProtoQUIC)
 
-	// Open QUIC session
-	sess, err := quic.DialAddr(addr.String(), tlsConfig, nil)
-	assert.Nil(t, err)
-	defer sess.CloseWithError(0, "")
+	// Open QUIC connection.
+	conn, err := quic.DialAddr(addr.String(), tlsConfig, nil)
+	require.NoError(t, err)
+	defer conn.CloseWithError(DOQCodeNoError, "")
 
-	// Send several test messages
+	// Send several test messages.
 	for i := 0; i < 10; i++ {
-		sendTestQUICMessage(t, sess)
+		sendTestQUICMessage(t, conn, DOQv1)
+
+		// Send a message encoded for a draft version as well.
+		sendTestQUICMessage(t, conn, DOQv1Draft)
 	}
 
-	// Stop the proxy
+	// Stop the proxy.
 	err = dnsProxy.Stop()
 	if err != nil {
 		t.Fatalf("cannot stop the DNS proxy: %s", err)
 	}
 }
 
-func sendTestQUICMessage(t *testing.T, sess quic.Session) {
-	// Open stream
-	stream, err := sess.OpenStreamSync(context.Background())
-	assert.Nil(t, err)
+// sendTestQUICMessage send a test message to the specified QUIC connection.
+func sendTestQUICMessage(t *testing.T, conn quic.Connection, doqVersion DOQVersion) {
+	// Open a new stream.
+	stream, err := conn.OpenStreamSync(context.Background())
+	require.NoError(t, err)
 	defer stream.Close()
 
-	// Write
+	// Prepare a test message.
 	msg := createTestMessage()
-	buf, err := msg.Pack()
-	assert.Nil(t, err)
+	packedMsg, err := msg.Pack()
+	require.NoError(t, err)
 
-	// Send the DNS query
+	buf := packedMsg
+	if doqVersion == DOQv1 {
+		buf = proxyutil.AddPrefix(packedMsg)
+	}
+
+	// Send the DNS query to the stream.
 	_, err = stream.Write(buf)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
-	// Close closes the write-direction of the stream
-	// and sends a STREAM FIN packet.
-	stream.Close()
+	// Close closes the write-direction of the stream and sends
+	// a STREAM FIN packet.
+	_ = stream.Close()
 
-	// Now read the response
+	// Now read the response from the stream.
 	respBytes := make([]byte, 64*1024)
 	n, err := stream.Read(respBytes)
-	assert.True(t, err == nil || err.Error() == "EOF")
-	assert.True(t, n > minDNSPacketSize)
+	if err != nil {
+		require.ErrorIs(t, err, io.EOF)
+	}
+	require.Greater(t, n, minDNSPacketSize)
 
-	// Unpack the response
+	// Unpack the DNS response.
 	reply := new(dns.Msg)
-	err = reply.Unpack(respBytes)
-	assert.Nil(t, err)
+	if doqVersion == DOQv1 {
+		err = reply.Unpack(respBytes[2:])
+	} else {
+		err = reply.Unpack(respBytes)
+	}
+	require.NoError(t, err)
 
 	// Check the response
 	assertResponse(t, reply)

@@ -2,10 +2,13 @@ package proxy
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/stringutil"
 	"github.com/lucas-clemente/quic-go"
@@ -15,19 +18,31 @@ import (
 // NextProtoDQ is the ALPN token for DoQ. During connection establishment,
 // DNS/QUIC support is indicated by selecting the ALPN token "dq" in the
 // crypto handshake.
-// Current draft version:
-// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02
-const NextProtoDQ = "doq-i02"
+// DoQ RFC: https://www.rfc-editor.org/rfc/rfc9250.html
+const NextProtoDQ = "doq"
 
 // compatProtoDQ is a list of ALPN tokens used by a QUIC connection.
 // NextProtoDQ is the latest draft version supported by dnsproxy, but it also
 // includes previous drafts.
-var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq"}
+var compatProtoDQ = []string{NextProtoDQ, "doq-i02", "doq-i00", "dq"}
 
 // maxQUICIdleTimeout is maximum QUIC idle timeout.  The default value in
 // quic-go is 30 seconds, but our internal tests show that a higher value works
 // better for clients written with ngtcp2.
 const maxQUICIdleTimeout = 5 * time.Minute
+
+const (
+	// DOQCodeNoError is used when the connection or stream needs to be closed,
+	// but there is no error to signal.
+	DOQCodeNoError quic.ApplicationErrorCode = 0
+	// DOQCodeInternalError signals that the DoQ implementation encountered
+	// an internal error and is incapable of pursuing the transaction or the
+	// connection.
+	DOQCodeInternalError quic.ApplicationErrorCode = 1
+	// DOQCodeProtocolError signals that the DoQ implementation encountered
+	// a protocol error and is forcibly aborting the connection.
+	DOQCodeProtocolError quic.ApplicationErrorCode = 2
+)
 
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
@@ -51,7 +66,7 @@ func (p *Proxy) createQUICListeners() error {
 func (p *Proxy) quicPacketLoop(l quic.Listener, requestGoroutinesSema semaphore) {
 	log.Info("Entering the DNS-over-QUIC listener loop on %s", l.Addr())
 	for {
-		session, err := l.Accept(context.Background())
+		conn, err := l.Accept(context.Background())
 		if err != nil {
 			if isQUICNonCrit(err) {
 				log.Tracef("quic connection closed or timeout: %s", err)
@@ -64,24 +79,25 @@ func (p *Proxy) quicPacketLoop(l quic.Listener, requestGoroutinesSema semaphore)
 
 		requestGoroutinesSema.acquire()
 		go func() {
-			p.handleQUICSession(session, requestGoroutinesSema)
+			p.handleQUICConnection(conn, requestGoroutinesSema)
 			requestGoroutinesSema.release()
 		}()
 	}
 }
 
-// handleQUICSession handles a new QUIC session.  It waits for new streams and
-// passes them to handleQUICStream.
+// handleQUICConnection handles a new QUIC connection.  It waits for new streams
+// and passes them to handleQUICStream.
 //
 // See also the comment on Proxy.requestGoroutinesSema.
-func (p *Proxy) handleQUICSession(session quic.Session, requestGoroutinesSema semaphore) {
+func (p *Proxy) handleQUICConnection(conn quic.Connection, requestGoroutinesSema semaphore) {
 	for {
 		// The stub to resolver DNS traffic follows a simple pattern in which
 		// the client sends a query, and the server provides a response.  This
 		// design specifies that for each subsequent query on a QUIC connection
 		// the client MUST select the next available client-initiated
-		// bidirectional stream
-		stream, err := session.AcceptStream(context.Background())
+		// bidirectional stream.
+		stream, err := conn.AcceptStream(context.Background())
+
 		if err != nil {
 			if isQUICNonCrit(err) {
 				log.Tracef("quic connection closed or timeout: %s", err)
@@ -89,40 +105,41 @@ func (p *Proxy) handleQUICSession(session quic.Session, requestGoroutinesSema se
 				log.Info("got error when accepting a new QUIC stream: %s", err)
 			}
 
-			// Close the session to make sure resources are freed
-			_ = session.CloseWithError(0, "")
+			// Close the connection to make sure resources are freed.
+			closeQUICConn(conn, DOQCodeNoError)
 
 			return
 		}
 
 		requestGoroutinesSema.acquire()
 		go func() {
-			p.handleQUICStream(stream, session)
+			p.handleQUICStream(stream, conn)
+
+			// The server MUST send the response(s) on the same stream and MUST
+			// indicate, after the last response, through the STREAM FIN
+			// mechanism that no further data will be sent on that stream.
 			_ = stream.Close()
+
 			requestGoroutinesSema.release()
 		}()
 	}
 }
 
 // handleQUICStream reads DNS queries from the stream, processes them,
-// and writes back the responses
-func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
+// and writes back the response.
+func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 	bufPtr := p.bytesPool.Get().(*[]byte)
 	defer p.bytesPool.Put(bufPtr)
 
-	// One query -- one stream
-	// The client MUST send the DNS query over the selected stream, and MUST
-	// indicate through the STREAM FIN mechanism that no further data will
-	// be sent on that stream.
+	// One query - one stream.
+	// The client MUST select the next available client-initiated bidirectional
+	// stream for each subsequent query on a QUIC connection.
 
-	// err is not checked here because STREAM FIN sent by the client is indicated as error here.
-	// instead, we should check the number of bytes received.
+	// err is not checked here because STREAM FIN sent by the client is
+	// indicated as error here.  Instead, we should check the number of bytes
+	// received.
 	buf := *bufPtr
 	n, err := stream.Read(buf)
-
-	// The server MUST send the response on the same stream, and MUST indicate through
-	// the STREAM FIN mechanism that no further data will be sent on that stream.
-	defer stream.Close()
 
 	if n < minDNSPacketSize {
 		logShortQUICRead(err)
@@ -130,41 +147,137 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, session quic.Session) {
 		return
 	}
 
+	// In theory, we should use ALPN to get the DOQ version properly. However,
+	// since there are not too many versions now, we only check how the DNS
+	// query is encoded. If it's sent with a 2-byte prefix, we consider this a
+	// DoQ v1. Otherwise, a draft version.
+	doqVersion := DOQv1
 	req := &dns.Msg{}
-	err = req.Unpack(buf)
+
+	// Note that we support both the old drafts and the new RFC. In the old
+	// draft DNS messages were not prefixed with the message length.
+	packetLen := binary.BigEndian.Uint16(buf[:2])
+	if packetLen == uint16(n-2) {
+		err = req.Unpack(buf[2:])
+	} else {
+		err = req.Unpack(buf)
+		doqVersion = DOQv1Draft
+	}
+
 	if err != nil {
 		log.Error("unpacking quic packet: %s", err)
+		closeQUICConn(conn, DOQCodeProtocolError)
 
 		return
 	}
 
-	// If any message sent on a DoQ connection contains an edns-tcp-keepalive EDNS(0) Option,
-	// this is a fatal error and the recipient of the defective message MUST forcibly abort
-	// the connection immediately.
-	// https://datatracker.ietf.org/doc/html/draft-ietf-dprive-dnsoquic-02#section-6.6.2
-	if opt := req.IsEdns0(); opt != nil {
-		for _, option := range opt.Option {
-			// Check for EDNS TCP keepalive option
-			if option.Option() == dns.EDNS0TCPKEEPALIVE {
-				log.Debug("client sent EDNS0 TCP keepalive option")
-				errorCode := quic.ApplicationErrorCode(quic.ConnectionRefused)
+	if !validQUICMsg(req) {
+		// If a peer encounters such an error condition, it is considered a
+		// fatal error. It SHOULD forcibly abort the connection using QUIC's
+		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
+		// DOQ_PROTOCOL_ERROR.
+		closeQUICConn(conn, DOQCodeProtocolError)
 
-				// Already closing the connection so we don't care about the error.
-				_ = session.CloseWithError(errorCode, "")
-				return
-			}
-		}
+		return
 	}
 
 	d := p.newDNSContext(ProtoQUIC, req)
-	d.Addr = session.RemoteAddr()
+	d.Addr = conn.RemoteAddr()
 	d.QUICStream = stream
-	d.QUICSession = session
+	d.QUICConnection = conn
+	d.DOQVersion = doqVersion
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
 		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
 	}
+}
+
+// respondQUIC writes a response to the QUIC stream.
+func (p *Proxy) respondQUIC(d *DNSContext) error {
+	resp := d.Res
+
+	if resp == nil {
+		// If no response has been written, close the QUIC connection now.
+		closeQUICConn(d.QUICConnection, DOQCodeInternalError)
+
+		return errors.New("no response to write")
+	}
+
+	bytes, err := resp.Pack()
+	if err != nil {
+		return fmt.Errorf("couldn't convert message into wire format: %w", err)
+	}
+
+	// Depending on the DoQ version with either write a 2-bytes prefixed message
+	// or just write the message (for old draft versions).
+	var buf []byte
+	switch d.DOQVersion {
+	case DOQv1:
+		buf = proxyutil.AddPrefix(bytes)
+	case DOQv1Draft:
+		buf = bytes
+	default:
+		return fmt.Errorf("invalid protocol version: %d", d.DOQVersion)
+	}
+
+	n, err := d.QUICStream.Write(buf)
+	if err != nil {
+		return fmt.Errorf("conn.Write(): %w", err)
+	}
+	if n != len(buf) {
+		return fmt.Errorf("conn.Write() returned with %d != %d", n, len(buf))
+	}
+
+	return nil
+}
+
+// validQUICMsg validates the incoming DNS message and returns false if
+// something is wrong with the message.
+func validQUICMsg(req *dns.Msg) (ok bool) {
+	// See https://www.rfc-editor.org/rfc/rfc9250.html#name-protocol-errors
+
+	// 1. a client or server receives a message with a non-zero Message ID.
+	//
+	// We do consciously not validate this case since there are stub proxies
+	// that are sending a non-zero Message IDs.
+
+	// 2. a client or server receives a STREAM FIN before receiving all the
+	// bytes for a message indicated in the 2-octet length field.
+	// 3. a server receives more than one query on a stream
+	//
+	// These cases are covered earlier when unpacking the DNS message.
+
+	// 4. the client or server does not indicate the expected STREAM FIN after
+	// sending requests or responses (see Section 4.2).
+	//
+	// This is quite problematic to validate this case since this would imply
+	// we have to wait until STREAM FIN is arrived before we start processing
+	// the message. So we're consciously ignoring this case in this
+	// implementation.
+
+	// 5. an implementation receives a message containing the edns-tcp-keepalive
+	// EDNS(0) Option [RFC7828] (see Section 5.5.2).
+	if opt := req.IsEdns0(); opt != nil {
+		for _, option := range opt.Option {
+			// Check for EDNS TCP keepalive option
+			if option.Option() == dns.EDNS0TCPKEEPALIVE {
+				log.Debug("client sent EDNS0 TCP keepalive option")
+
+				return false
+			}
+		}
+	}
+
+	// 6. a client or a server attempts to open a unidirectional QUIC stream.
+	//
+	// This case can only be handled when writing a response.
+
+	// 7. a server receives a "replayable" transaction in 0-RTT data
+	//
+	// The information necessary to validate this is not exposed by quic-go.
+
+	return true
 }
 
 // logShortQUICRead is a logging helper for short reads from a QUIC stream.
@@ -182,32 +295,6 @@ func logShortQUICRead(err error) {
 	}
 }
 
-// Writes a response to the QUIC stream
-func (p *Proxy) respondQUIC(d *DNSContext) error {
-	resp := d.Res
-
-	if resp == nil {
-		// If no response has been written, close the QUIC session right away.
-		errorCode := quic.ApplicationErrorCode(quic.InternalError)
-		return d.QUICSession.CloseWithError(errorCode, "")
-	}
-
-	bytes, err := resp.Pack()
-	if err != nil {
-		return fmt.Errorf("couldn't convert message into wire format: %w", err)
-	}
-
-	n, err := d.QUICStream.Write(bytes)
-	if err != nil {
-		return fmt.Errorf("conn.Write(): %w", err)
-	}
-	if n != len(bytes) {
-		return fmt.Errorf("conn.Write() returned with %d != %d", n, len(bytes))
-	}
-
-	return nil
-}
-
 // isQUICNonCrit returns true if err is a non-critical error, most probably
 // a timeout or a closed connection.
 //
@@ -223,4 +310,13 @@ func isQUICNonCrit(err error) (ok bool) {
 		stringutil.ContainsFold(errStr, "no recent network activity") ||
 		strings.HasSuffix(errStr, "Application error 0x0") ||
 		errStr == "EOF"
+}
+
+// closeQUICConn quietly closes the QUIC connection.
+func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode) {
+	err := conn.CloseWithError(code, "")
+
+	if err != nil {
+		log.Debug("failed to close QUIC connection: %v", err)
+	}
 }

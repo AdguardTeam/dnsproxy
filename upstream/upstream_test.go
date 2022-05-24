@@ -275,7 +275,7 @@ func TestAddressToUpstream_bads(t *testing.T) {
 	}
 }
 
-func TestUpstreamDOTBootstrap(t *testing.T) {
+func TestUpstreamDoTBootstrap(t *testing.T) {
 	upstreams := []struct {
 		address   string
 		bootstrap []string
@@ -377,12 +377,12 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 		serverIP:  net.IP{94, 140, 14, 14},
 		bootstrap: invalidBootstrap,
 	}, {
-		// AdGuard DNS DOH with the IP address specified
+		// AdGuard DNS DoH with the IP address specified.
 		address:   "sdns://AgcAAAAAAAAADzE3Ni4xMDMuMTMwLjEzMAAPZG5zLmFkZ3VhcmQuY29tCi9kbnMtcXVlcnk",
 		serverIP:  nil,
 		bootstrap: invalidBootstrap,
 	}, {
-		// AdGuard DNS DOT with the IP address specified
+		// AdGuard DNS DoT with the IP address specified.
 		address:   "sdns://AwAAAAAAAAAAEzE3Ni4xMDMuMTMwLjEzMDo4NTMAD2Rucy5hZGd1YXJkLmNvbQ",
 		serverIP:  nil,
 		bootstrap: invalidBootstrap,

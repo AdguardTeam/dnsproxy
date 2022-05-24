@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpstreamDOQ(t *testing.T) {
+func TestUpstreamDoQ(t *testing.T) {
 	// Create a DNS-over-QUIC upstream
 	address := "quic://dns.adguard.com"
 	u, err := AddressToUpstream(address, &Options{InsecureSkipVerify: true})

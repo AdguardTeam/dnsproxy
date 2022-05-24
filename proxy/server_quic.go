@@ -32,16 +32,16 @@ var compatProtoDQ = []string{NextProtoDQ, "doq-i02", "doq-i00", "dq"}
 const maxQUICIdleTimeout = 5 * time.Minute
 
 const (
-	// DOQCodeNoError is used when the connection or stream needs to be closed,
+	// DoQCodeNoError is used when the connection or stream needs to be closed,
 	// but there is no error to signal.
-	DOQCodeNoError quic.ApplicationErrorCode = 0
-	// DOQCodeInternalError signals that the DoQ implementation encountered
+	DoQCodeNoError quic.ApplicationErrorCode = 0
+	// DoQCodeInternalError signals that the DoQ implementation encountered
 	// an internal error and is incapable of pursuing the transaction or the
 	// connection.
-	DOQCodeInternalError quic.ApplicationErrorCode = 1
-	// DOQCodeProtocolError signals that the DoQ implementation encountered
+	DoQCodeInternalError quic.ApplicationErrorCode = 1
+	// DoQCodeProtocolError signals that the DoQ implementation encountered
 	// a protocol error and is forcibly aborting the connection.
-	DOQCodeProtocolError quic.ApplicationErrorCode = 2
+	DoQCodeProtocolError quic.ApplicationErrorCode = 2
 )
 
 func (p *Proxy) createQUICListeners() error {
@@ -97,7 +97,6 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, requestGoroutinesSema
 		// the client MUST select the next available client-initiated
 		// bidirectional stream.
 		stream, err := conn.AcceptStream(context.Background())
-
 		if err != nil {
 			if isQUICNonCrit(err) {
 				log.Tracef("quic connection closed or timeout: %s", err)
@@ -106,7 +105,7 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, requestGoroutinesSema
 			}
 
 			// Close the connection to make sure resources are freed.
-			closeQUICConn(conn, DOQCodeNoError)
+			closeQUICConn(conn, DoQCodeNoError)
 
 			return
 		}
@@ -147,11 +146,11 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 		return
 	}
 
-	// In theory, we should use ALPN to get the DOQ version properly. However,
+	// In theory, we should use ALPN to get the DoQ version properly. However,
 	// since there are not too many versions now, we only check how the DNS
 	// query is encoded. If it's sent with a 2-byte prefix, we consider this a
 	// DoQ v1. Otherwise, a draft version.
-	doqVersion := DOQv1
+	doqVersion := DoQv1
 	req := &dns.Msg{}
 
 	// Note that we support both the old drafts and the new RFC. In the old
@@ -161,12 +160,12 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 		err = req.Unpack(buf[2:])
 	} else {
 		err = req.Unpack(buf)
-		doqVersion = DOQv1Draft
+		doqVersion = DoQv1Draft
 	}
 
 	if err != nil {
 		log.Error("unpacking quic packet: %s", err)
-		closeQUICConn(conn, DOQCodeProtocolError)
+		closeQUICConn(conn, DoQCodeProtocolError)
 
 		return
 	}
@@ -176,7 +175,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 		// fatal error. It SHOULD forcibly abort the connection using QUIC's
 		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
 		// DOQ_PROTOCOL_ERROR.
-		closeQUICConn(conn, DOQCodeProtocolError)
+		closeQUICConn(conn, DoQCodeProtocolError)
 
 		return
 	}
@@ -185,7 +184,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 	d.Addr = conn.RemoteAddr()
 	d.QUICStream = stream
 	d.QUICConnection = conn
-	d.DOQVersion = doqVersion
+	d.DoQVersion = doqVersion
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
@@ -199,7 +198,7 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 
 	if resp == nil {
 		// If no response has been written, close the QUIC connection now.
-		closeQUICConn(d.QUICConnection, DOQCodeInternalError)
+		closeQUICConn(d.QUICConnection, DoQCodeInternalError)
 
 		return errors.New("no response to write")
 	}
@@ -212,13 +211,13 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 	// Depending on the DoQ version with either write a 2-bytes prefixed message
 	// or just write the message (for old draft versions).
 	var buf []byte
-	switch d.DOQVersion {
-	case DOQv1:
+	switch d.DoQVersion {
+	case DoQv1:
 		buf = proxyutil.AddPrefix(bytes)
-	case DOQv1Draft:
+	case DoQv1Draft:
 		buf = bytes
 	default:
-		return fmt.Errorf("invalid protocol version: %d", d.DOQVersion)
+		return fmt.Errorf("invalid protocol version: %d", d.DoQVersion)
 	}
 
 	n, err := d.QUICStream.Write(buf)
@@ -315,7 +314,6 @@ func isQUICNonCrit(err error) (ok bool) {
 // closeQUICConn quietly closes the QUIC connection.
 func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode) {
 	err := conn.CloseWithError(code, "")
-
 	if err != nil {
 		log.Debug("failed to close QUIC connection: %v", err)
 	}

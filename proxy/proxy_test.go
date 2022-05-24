@@ -590,7 +590,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
 	}
 
-	// using a DOT server with invalid bootstrap
+	// Using a DoT server with invalid bootstrap.
 	u, _ := upstream.AddressToUpstream(
 		"tls://dns.adguard.com",
 		&upstream.Options{

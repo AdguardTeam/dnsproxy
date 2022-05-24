@@ -76,7 +76,7 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	return r, err
 }
 
-// exchangeHTTPSClient sends the DNS query to a DOH resolver using the specified
+// exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
 // http.Client instance.
 func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dns.Msg, error) {
 	buf, err := m.Pack()
@@ -136,7 +136,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 }
 
 // getClient gets or lazily initializes an HTTP client (and transport) that will
-// be used for this DOH resolver.
+// be used for this DoH resolver.
 func (p *dnsOverHTTPS) getClient() (c *http.Client, err error) {
 	startTime := time.Now()
 
@@ -175,7 +175,7 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
 }
 
 // createTransport initializes an HTTP transport that will be used specifically
-// for this DOH resolver. This HTTP transport ensures that the HTTP requests
+// for this DoH resolver. This HTTP transport ensures that the HTTP requests
 // will be sent exactly to the IP address got from the bootstrap resolver.
 func (p *dnsOverHTTPS) createTransport() (*http.Transport, error) {
 	tlsConfig, dialContext, err := p.boot.get()

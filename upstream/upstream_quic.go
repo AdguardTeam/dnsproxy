@@ -15,16 +15,16 @@ import (
 )
 
 const (
-	// DOQCodeNoError is used when the connection or stream needs to be closed,
+	// DoQCodeNoError is used when the connection or stream needs to be closed,
 	// but there is no error to signal.
-	DOQCodeNoError = quic.ApplicationErrorCode(0)
-	// DOQCodeInternalError signals that the DoQ implementation encountered
+	DoQCodeNoError = quic.ApplicationErrorCode(0)
+	// DoQCodeInternalError signals that the DoQ implementation encountered
 	// an internal error and is incapable of pursuing the transaction or the
 	// connection.
-	DOQCodeInternalError = quic.ApplicationErrorCode(1)
-	// DOQCodeProtocolError signals that the DoQ implementation encountered
+	DoQCodeInternalError = quic.ApplicationErrorCode(1)
+	// DoQCodeProtocolError signals that the DoQ implementation encountered
 	// a protocol error and is forcibly aborting the connection.
-	DOQCodeProtocolError = quic.ApplicationErrorCode(2)
+	DoQCodeProtocolError = quic.ApplicationErrorCode(2)
 )
 
 //
@@ -92,13 +92,13 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
 	var stream quic.Stream
 	stream, err = p.openStream(conn)
 	if err != nil {
-		p.closeConnWithError(DOQCodeInternalError)
+		p.closeConnWithError(DoQCodeInternalError)
 		return nil, fmt.Errorf("open new stream to %s: %w", p.Address(), err)
 	}
 
 	_, err = stream.Write(proxyutil.AddPrefix(buf))
 	if err != nil {
-		p.closeConnWithError(DOQCodeInternalError)
+		p.closeConnWithError(DoQCodeInternalError)
 		return nil, fmt.Errorf("failed to write to a QUIC stream: %w", err)
 	}
 
@@ -114,7 +114,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
 		// fatal error.  It SHOULD forcibly abort the connection using QUIC's
 		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
 		// DOQ_PROTOCOL_ERROR.
-		p.closeConnWithError(DOQCodeProtocolError)
+		p.closeConnWithError(DoQCodeProtocolError)
 	}
 	return res, err
 }
@@ -149,7 +149,7 @@ func (p *dnsOverQUIC) getConnection(useCached bool) (quic.Connection, error) {
 	}
 	if conn != nil {
 		// we're recreating the connection, let's create a new one.
-		_ = conn.CloseWithError(DOQCodeNoError, "")
+		_ = conn.CloseWithError(DoQCodeNoError, "")
 	}
 	p.RUnlock()
 

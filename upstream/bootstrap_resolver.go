@@ -50,7 +50,7 @@ func NewResolver(resolverAddress string, options *Options) (*Resolver, error) {
 	}
 
 	// Validate the bootstrap resolver. It must be either a plain DNS resolver.
-	// Or a DOT/DOH resolver with an IP address (not a hostname).
+	// Or a DoT/DoH resolver with an IP address (not a hostname).
 	if !isResolverValidBootstrap(r.upstream) {
 		r.upstream = nil
 		log.Error("Resolver %s is not eligible to be a bootstrap DNS server", resolverAddress)
@@ -60,9 +60,9 @@ func NewResolver(resolverAddress string, options *Options) (*Resolver, error) {
 	return r, nil
 }
 
-// isResolverValidBootstrap checks if the upstream is eligible to be a bootstrap DNS server
-// DNSCrypt and plain DNS resolvers are okay
-// DOH and DOT are okay only in the case if an IP address is used in the IP address
+// isResolverValidBootstrap checks if the upstream is eligible to be a bootstrap
+// DNS server DNSCrypt and plain DNS resolvers are okay DoH and DoT are okay
+// only in the case if an IP address is used in the IP address.
 func isResolverValidBootstrap(upstream Upstream) bool {
 	if u, ok := upstream.(*dnsOverTLS); ok {
 		urlAddr, err := url.Parse(u.Address())

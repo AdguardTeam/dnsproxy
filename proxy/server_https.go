@@ -53,11 +53,14 @@ func (p *Proxy) listenHTTPS(srv *http.Server, l net.Listener) {
 	}
 }
 
-// ServeHTTP is the http.RequestHandler implementation that handles DOH queries
+// ServeHTTP is the http.RequestHandler implementation that handles DoH queries
 // Here is what it returns:
-// http.StatusBadRequest - if there is no DNS request data
-// http.StatusUnsupportedMediaType - if request content type is not application/dns-message
-// http.StatusMethodNotAllowed - if request method is not GET or POST
+//
+//  - http.StatusBadRequest if there is no DNS request data;
+//  - http.StatusUnsupportedMediaType if request content type is not
+//    "application/dns-message";
+//  - http.StatusMethodNotAllowed if request method is not GET or POST.
+//
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Tracef("Incoming HTTPS request on %s", r.URL)
 
@@ -126,7 +129,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Writes a response to the DOH client
+// Writes a response to the DoH client.
 func (p *Proxy) respondHTTPS(d *DNSContext) error {
 	resp := d.Res
 	w := d.HTTPResponseWriter

@@ -36,14 +36,14 @@ func TestQuicProxy(t *testing.T) {
 	// Open QUIC connection.
 	conn, err := quic.DialAddr(addr.String(), tlsConfig, nil)
 	require.NoError(t, err)
-	defer conn.CloseWithError(DOQCodeNoError, "")
+	defer conn.CloseWithError(DoQCodeNoError, "")
 
 	// Send several test messages.
 	for i := 0; i < 10; i++ {
-		sendTestQUICMessage(t, conn, DOQv1)
+		sendTestQUICMessage(t, conn, DoQv1)
 
 		// Send a message encoded for a draft version as well.
-		sendTestQUICMessage(t, conn, DOQv1Draft)
+		sendTestQUICMessage(t, conn, DoQv1Draft)
 	}
 
 	// Stop the proxy.
@@ -54,7 +54,7 @@ func TestQuicProxy(t *testing.T) {
 }
 
 // sendTestQUICMessage send a test message to the specified QUIC connection.
-func sendTestQUICMessage(t *testing.T, conn quic.Connection, doqVersion DOQVersion) {
+func sendTestQUICMessage(t *testing.T, conn quic.Connection, doqVersion DoQVersion) {
 	// Open a new stream.
 	stream, err := conn.OpenStreamSync(context.Background())
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func sendTestQUICMessage(t *testing.T, conn quic.Connection, doqVersion DOQVersi
 	require.NoError(t, err)
 
 	buf := packedMsg
-	if doqVersion == DOQv1 {
+	if doqVersion == DoQv1 {
 		buf = proxyutil.AddPrefix(packedMsg)
 	}
 
@@ -88,7 +88,7 @@ func sendTestQUICMessage(t *testing.T, conn quic.Connection, doqVersion DOQVersi
 
 	// Unpack the DNS response.
 	reply := new(dns.Msg)
-	if doqVersion == DOQv1 {
+	if doqVersion == DoQv1 {
 		err = reply.Unpack(respBytes[2:])
 	} else {
 		err = reply.Unpack(respBytes)

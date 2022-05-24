@@ -41,9 +41,9 @@ type DNSContext struct {
 	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
 	localIP net.IP
 
-	// HTTPRequest - HTTP request (for DOH only)
+	// HTTPRequest - HTTP request (for DoH only)
 	HTTPRequest *http.Request
-	// HTTPResponseWriter - HTTP response writer (for DOH only)
+	// HTTPResponseWriter - HTTP response writer (for DoH only)
 	HTTPResponseWriter http.ResponseWriter
 
 	// DNSCryptResponseWriter - necessary to respond to a DNSCrypt query
@@ -57,10 +57,10 @@ type DNSContext struct {
 	// ProtoQUIC only.
 	QUICConnection quic.Connection
 
-	// DOQVersion is the DoQ protocol version. It can (and should) be read from
+	// DoQVersion is the DoQ protocol version. It can (and should) be read from
 	// ALPN, but in the current version we also use the way DNS messages are
 	// encoded as a signal.
-	DOQVersion DOQVersion
+	DoQVersion DoQVersion
 
 	// RequestID is an opaque numerical identifier of this request that is
 	// guaranteed to be unique across requests processed by a single Proxy
@@ -119,15 +119,16 @@ func (dctx *DNSContext) scrub() {
 	dctx.Res.Compress = true
 }
 
-// DOQVersion is an enumeration with supported DOQ versions.
-type DOQVersion int
+// DoQVersion is an enumeration with supported DoQ versions.
+type DoQVersion int
 
 const (
-	// DOQv1Draft represents old DoQ draft versions that do not send a 2-octet
+	// DoQv1Draft represents old DoQ draft versions that do not send a 2-octet
 	// prefix with the DNS message length.
-	// TODO: remove in the end of 2024.
-	DOQv1Draft DOQVersion = 0x00
+	//
+	// TODO(ameshkov): remove in the end of 2024.
+	DoQv1Draft DoQVersion = 0x00
 
-	// DOQv1 represents DoQ v1.0: https://www.rfc-editor.org/rfc/rfc9250.html.
-	DOQv1 DOQVersion = 0x01
+	// DoQv1 represents DoQ v1.0: https://www.rfc-editor.org/rfc/rfc9250.html.
+	DoQv1 DoQVersion = 0x01
 )

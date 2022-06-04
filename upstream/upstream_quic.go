@@ -73,13 +73,12 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be
 	// set to zero.
 	id := m.Id
-	var reply *dns.Msg
 	m.Id = 0
 	defer func() {
 		// Restore the original ID to not break compatibility with proxies
 		m.Id = id
-		if reply != nil {
-			reply.Id = id
+		if res != nil {
+			res.Id = id
 		}
 	}()
 

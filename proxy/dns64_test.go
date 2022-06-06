@@ -5,9 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/require"
 )
 
 const ipv4OnlyHost = "ipv4only.arpa"

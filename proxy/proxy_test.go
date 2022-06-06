@@ -385,7 +385,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertResponse(t, res)
+	requireResponse(t, req, res)
 
 	// create adguard.com test message
 	req = createHostTestMessage("adguard.com")
@@ -494,7 +494,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertResponse(t, res)
+	requireResponse(t, req, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeOut {
@@ -559,7 +559,7 @@ func TestFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertResponse(t, res)
+	requireResponse(t, req, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeout {
@@ -626,7 +626,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read response to message: %s", err)
 	}
-	assertResponse(t, res)
+	requireResponse(t, req, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeout {
@@ -1144,20 +1144,19 @@ func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {
 
 	req := createTestMessage()
 	err := conn.WriteMsg(req)
-	if err != nil {
-		t.Errorf("cannot write message: %s", err)
-
-		return
-	}
+	require.NoError(t, err)
 
 	res, err := conn.ReadMsg()
-	if err != nil {
-		t.Errorf("cannot read response to message: %s", err)
+	require.NoError(t, err)
 
-		return
-	}
+	// We do not check if msg IDs match because the order of responses may
+	// be different.
 
-	assertResponse(t, res)
+	require.NotNil(t, res)
+	require.Lenf(t, res.Answer, 1, "wrong number of answers: %d", len(res.Answer))
+	a, ok := res.Answer[0].(*dns.A)
+	require.Truef(t, ok, "wrong answer type: %v", res.Answer[0])
+	require.Equalf(t, net.IPv4(8, 8, 8, 8), a.A.To16(), "wrong answer: %v", a.A)
 }
 
 // sendTestMessagesAsync sends messages in parallel
@@ -1185,7 +1184,7 @@ func sendTestMessages(t *testing.T, conn *dns.Conn) {
 		if err != nil {
 			t.Fatalf("cannot read response to message #%d: %s", i, err)
 		}
-		assertResponse(t, res)
+		requireResponse(t, req, res)
 	}
 }
 
@@ -1204,19 +1203,15 @@ func createHostTestMessage(host string) *dns.Msg {
 	return &req
 }
 
-func assertResponse(t *testing.T, reply *dns.Msg) {
-	t.Helper()
+func requireResponse(t *testing.T, req, reply *dns.Msg) {
+	require.NotNil(t, reply)
+	require.Lenf(t, reply.Answer, 1, "wrong number of answers: %d", len(reply.Answer))
+	require.Equal(t, req.Id, reply.Id)
 
-	if len(reply.Answer) != 1 {
-		t.Fatalf("DNS upstream returned reply with wrong number of answers - %d", len(reply.Answer))
-	}
-	if a, ok := reply.Answer[0].(*dns.A); ok {
-		if !net.IPv4(8, 8, 8, 8).Equal(a.A) {
-			t.Fatalf("DNS upstream returned wrong answer instead of 8.8.8.8: %v", a.A)
-		}
-	} else {
-		t.Fatalf("DNS upstream returned wrong answer type instead of A: %v", reply.Answer[0])
-	}
+	a, ok := reply.Answer[0].(*dns.A)
+	require.Truef(t, ok, "wrong answer type: %v", reply.Answer[0])
+
+	require.Equalf(t, net.IPv4(8, 8, 8, 8), a.A.To16(), "wrong answer: %v", a.A)
 }
 
 func createServerTLSConfig(t *testing.T) (*tls.Config, []byte) {

@@ -97,7 +97,7 @@ func TestUpstreamRace(t *testing.T) {
 				abort <- fmt.Sprintf("%s failed to resolve: %v", u.Address(), err)
 				return
 			}
-			assertResponse(t, req, res)
+			requireResponse(t, req, res)
 			t.Logf("Finished %d", idx)
 			ch <- idx
 		}(i)
@@ -412,7 +412,7 @@ func checkUpstream(t *testing.T, u Upstream, addr string) {
 	reply, err := u.Exchange(req)
 	require.NoErrorf(t, err, "couldn't talk to upstream %s", addr)
 
-	assertResponse(t, req, reply)
+	requireResponse(t, req, reply)
 }
 
 func createTestMessage() *dns.Msg {
@@ -433,13 +433,13 @@ func createHostTestMessage(host string) (req *dns.Msg) {
 	}
 }
 
-func assertResponse(t *testing.T, req *dns.Msg, reply *dns.Msg) {
+func requireResponse(t *testing.T, req, reply *dns.Msg) {
 	require.NotNil(t, reply)
 	require.Lenf(t, reply.Answer, 1, "wrong number of answers: %d", len(reply.Answer))
+	require.Equal(t, req.Id, reply.Id)
 
 	a, ok := reply.Answer[0].(*dns.A)
 	require.Truef(t, ok, "wrong answer type: %v", reply.Answer[0])
-	require.Equal(t, req.Id, reply.Id)
 
 	require.Equalf(t, net.IPv4(8, 8, 8, 8), a.A.To16(), "wrong answer: %v", a.A)
 }

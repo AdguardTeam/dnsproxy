@@ -50,7 +50,7 @@ func TestFilteringHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error in the first request: %s", err)
 	}
-	assertResponse(t, r)
+	requireResponse(t, req, r)
 
 	// Now send the second and make sure it is blocked
 	m.Lock()

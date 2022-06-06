@@ -57,7 +57,7 @@ func TestHttpsProxy(t *testing.T) {
 	clientIP, proxyIP := net.IP{1, 2, 3, 4}, net.IP{127, 0, 0, 1}
 	msg := createTestMessage()
 
-	doRequest := func(t *testing.T, proxyAddr string) (reply *dns.Msg) {
+	doRequest := func(t *testing.T, proxyAddr string) {
 		dnsProxy.TrustedProxies = []string{proxyAddr}
 
 		// Start listening.
@@ -95,25 +95,22 @@ func TestHttpsProxy(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		reply = &dns.Msg{}
+		reply := &dns.Msg{}
 		err = reply.Unpack(body)
 		require.NoError(t, err)
-
-		return reply
+		requireResponse(t, msg, reply)
 	}
 
 	t.Run("success", func(t *testing.T) {
-		reply := doRequest(t, proxyIP.String())
+		doRequest(t, proxyIP.String())
 
-		assertResponse(t, reply)
 		ip, _ := netutil.IPAndPortFromAddr(gotAddr)
 		assert.True(t, ip.Equal(clientIP))
 	})
 
 	t.Run("not_in_trusted", func(t *testing.T) {
-		reply := doRequest(t, "127.0.0.2")
+		doRequest(t, "127.0.0.2")
 
-		assertResponse(t, reply)
 		ip, _ := netutil.IPAndPortFromAddr(gotAddr)
 		assert.True(t, ip.Equal(proxyIP))
 	})

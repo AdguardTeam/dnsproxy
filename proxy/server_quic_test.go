@@ -96,5 +96,5 @@ func sendTestQUICMessage(t *testing.T, conn quic.Connection, doqVersion DoQVersi
 	require.NoError(t, err)
 
 	// Check the response
-	assertResponse(t, reply)
+	requireResponse(t, msg, reply)
 }

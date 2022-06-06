@@ -39,7 +39,7 @@ func TestExchangeParallel(t *testing.T) {
 		t.Fatalf("shouldn't happen. This upstream can't resolve DNS request: %s", u.Address())
 	}
 
-	assertResponse(t, resp)
+	requireResponse(t, req, resp)
 	elapsed := time.Since(start)
 	if elapsed > timeout {
 		t.Fatalf("exchange took more time than the configured timeout: %v", elapsed)

@@ -46,5 +46,5 @@ func checkDNSCryptProxy(t *testing.T, proto string, stamp dnsstamps.ServerStamp)
 	msg := createTestMessage()
 	reply, err := c.Exchange(msg, ri)
 	assert.Nil(t, err)
-	assertResponse(t, reply)
+	requireResponse(t, msg, reply)
 }

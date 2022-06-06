@@ -23,7 +23,7 @@ func TestTLSPoolReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
-	assertResponse(t, reply)
+	requireResponse(t, req, reply)
 
 	// Now let's close the pooled connection and return it back to the pool
 	p := u.(*dnsOverTLS)
@@ -37,7 +37,7 @@ func TestTLSPoolReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second DNS message failed: %s", err)
 	}
-	assertResponse(t, reply)
+	requireResponse(t, req, reply)
 
 	// Now assert that the number of connections in the pool is not changed
 	if len(p.pool.conns) != 1 {
@@ -64,7 +64,7 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
-	assertResponse(t, response)
+	requireResponse(t, req, response)
 
 	p := u.(*dnsOverTLS)
 
@@ -77,7 +77,7 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
-	assertResponse(t, response)
+	requireResponse(t, req, response)
 
 	// Update connection's deadLine and put it back to the pool
 	err = conn.SetDeadline(time.Now().Add(10 * time.Hour))
@@ -95,7 +95,7 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
-	assertResponse(t, response)
+	requireResponse(t, req, response)
 
 	// Set connection's deadLine to the past and try to reuse it
 	err = conn.SetDeadline(time.Now().Add(-10 * time.Hour))

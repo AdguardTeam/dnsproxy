@@ -30,7 +30,7 @@ func TestRatelimitingProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error in the first request: %s", err)
 	}
-	assertResponse(t, r)
+	requireResponse(t, req, r)
 
 	// Send the second message (blocked)
 	req = createTestMessage()

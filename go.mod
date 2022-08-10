@@ -12,7 +12,7 @@ require (
 	github.com/miekg/dns v1.1.50
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/stretchr/testify v1.7.1
-	golang.org/x/net v0.0.0-20220809012201-f428fae20770
+	golang.org/x/net v0.0.0-20220809184613-07c6da5e1ced
 	gopkg.in/yaml.v3 v3.0.1
 )
 

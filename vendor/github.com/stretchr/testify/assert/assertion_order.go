@@ -6,7 +6,7 @@ import (
 )
 
 // isOrdered checks that collection contains orderable elements.
-func isOrdered(t TestingT, object interface{}, allowedComparesResults []CompareType, failMessage string, msgAndArgs ...interface{}) bool {
+func isOrdered(t TestingT, object any, allowedComparesResults []CompareType, failMessage string, msgAndArgs ...any) bool {
 	objKind := reflect.TypeOf(object).Kind()
 	if objKind != reflect.Slice && objKind != reflect.Array {
 		return false
@@ -46,36 +46,36 @@ func isOrdered(t TestingT, object interface{}, allowedComparesResults []CompareT
 
 // IsIncreasing asserts that the collection is increasing
 //
-//    assert.IsIncreasing(t, []int{1, 2, 3})
-//    assert.IsIncreasing(t, []float{1, 2})
-//    assert.IsIncreasing(t, []string{"a", "b"})
-func IsIncreasing(t TestingT, object interface{}, msgAndArgs ...interface{}) bool {
+//	assert.IsIncreasing(t, []int{1, 2, 3})
+//	assert.IsIncreasing(t, []float{1, 2})
+//	assert.IsIncreasing(t, []string{"a", "b"})
+func IsIncreasing(t TestingT, object any, msgAndArgs ...any) bool {
 	return isOrdered(t, object, []CompareType{compareLess}, "\"%v\" is not less than \"%v\"", msgAndArgs)
 }
 
 // IsNonIncreasing asserts that the collection is not increasing
 //
-//    assert.IsNonIncreasing(t, []int{2, 1, 1})
-//    assert.IsNonIncreasing(t, []float{2, 1})
-//    assert.IsNonIncreasing(t, []string{"b", "a"})
-func IsNonIncreasing(t TestingT, object interface{}, msgAndArgs ...interface{}) bool {
+//	assert.IsNonIncreasing(t, []int{2, 1, 1})
+//	assert.IsNonIncreasing(t, []float{2, 1})
+//	assert.IsNonIncreasing(t, []string{"b", "a"})
+func IsNonIncreasing(t TestingT, object any, msgAndArgs ...any) bool {
 	return isOrdered(t, object, []CompareType{compareEqual, compareGreater}, "\"%v\" is not greater than or equal to \"%v\"", msgAndArgs)
 }
 
 // IsDecreasing asserts that the collection is decreasing
 //
-//    assert.IsDecreasing(t, []int{2, 1, 0})
-//    assert.IsDecreasing(t, []float{2, 1})
-//    assert.IsDecreasing(t, []string{"b", "a"})
-func IsDecreasing(t TestingT, object interface{}, msgAndArgs ...interface{}) bool {
+//	assert.IsDecreasing(t, []int{2, 1, 0})
+//	assert.IsDecreasing(t, []float{2, 1})
+//	assert.IsDecreasing(t, []string{"b", "a"})
+func IsDecreasing(t TestingT, object any, msgAndArgs ...any) bool {
 	return isOrdered(t, object, []CompareType{compareGreater}, "\"%v\" is not greater than \"%v\"", msgAndArgs)
 }
 
 // IsNonDecreasing asserts that the collection is not decreasing
 //
-//    assert.IsNonDecreasing(t, []int{1, 1, 2})
-//    assert.IsNonDecreasing(t, []float{1, 2})
-//    assert.IsNonDecreasing(t, []string{"a", "b"})
-func IsNonDecreasing(t TestingT, object interface{}, msgAndArgs ...interface{}) bool {
+//	assert.IsNonDecreasing(t, []int{1, 1, 2})
+//	assert.IsNonDecreasing(t, []float{1, 2})
+//	assert.IsNonDecreasing(t, []string{"a", "b"})
+func IsNonDecreasing(t TestingT, object any, msgAndArgs ...any) bool {
 	return isOrdered(t, object, []CompareType{compareLess, compareEqual}, "\"%v\" is not less than or equal to \"%v\"", msgAndArgs)
 }

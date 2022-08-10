@@ -29,11 +29,11 @@ var (
 		16 << 10,
 	}
 	dataChunkPools = [...]sync.Pool{
-		{New: func() interface{} { return make([]byte, 1<<10) }},
-		{New: func() interface{} { return make([]byte, 2<<10) }},
-		{New: func() interface{} { return make([]byte, 4<<10) }},
-		{New: func() interface{} { return make([]byte, 8<<10) }},
-		{New: func() interface{} { return make([]byte, 16<<10) }},
+		{New: func() any { return make([]byte, 1<<10) }},
+		{New: func() any { return make([]byte, 2<<10) }},
+		{New: func() any { return make([]byte, 4<<10) }},
+		{New: func() any { return make([]byte, 8<<10) }},
+		{New: func() any { return make([]byte, 16<<10) }},
 	}
 )
 

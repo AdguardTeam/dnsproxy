@@ -9,7 +9,7 @@ func newConn(c net.PacketConn) (rawConn, error) {
 	return &basicConn{PacketConn: c}, nil
 }
 
-func inspectReadBuffer(interface{}) (int, error) {
+func inspectReadBuffer(any) (int, error) {
 	return 0, nil
 }
 

@@ -56,11 +56,10 @@ func (p *Proxy) listenHTTPS(srv *http.Server, l net.Listener) {
 // ServeHTTP is the http.RequestHandler implementation that handles DoH queries
 // Here is what it returns:
 //
-//  - http.StatusBadRequest if there is no DNS request data;
-//  - http.StatusUnsupportedMediaType if request content type is not
-//    "application/dns-message";
-//  - http.StatusMethodNotAllowed if request method is not GET or POST.
-//
+//   - http.StatusBadRequest if there is no DNS request data;
+//   - http.StatusUnsupportedMediaType if request content type is not
+//     "application/dns-message";
+//   - http.StatusMethodNotAllowed if request method is not GET or POST.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Tracef("Incoming HTTPS request on %s", r.URL)
 
@@ -159,11 +158,10 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 // suitable r's header.  It returns nil if r doesn't contain any information
 // about real client's IP address.  Current headers priority is:
 //
-//   1. CF-Connecting-IP
-//   2. True-Client-IP
-//   3. X-Real-IP
-//   4. X-Forwarded-For
-//
+//  1. CF-Connecting-IP
+//  2. True-Client-IP
+//  3. X-Real-IP
+//  4. X-Forwarded-For
 func realIPFromHdrs(r *http.Request) (realIP net.IP) {
 	for _, h := range []string{
 		// Headers set by CloudFlare proxy servers.

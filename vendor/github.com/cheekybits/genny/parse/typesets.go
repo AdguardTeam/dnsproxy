@@ -15,11 +15,11 @@ const (
 //
 // Acceptable args are:
 //
-//     Person=man
-//     Person=man Animal=dog
-//     Person=man Animal=dog Animal2=cat
-//     Person=man,woman Animal=dog,cat
-//     Person=man,woman,child Animal=dog,cat Place=london,paris
+//	Person=man
+//	Person=man Animal=dog
+//	Person=man Animal=dog Animal2=cat
+//	Person=man,woman Animal=dog,cat
+//	Person=man,woman,child Animal=dog,cat Place=london,paris
 func TypeSet(arg string) ([]map[string]string, error) {
 
 	types := make(map[string][]string)

@@ -164,16 +164,16 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 type halfConn struct {
 	sync.Mutex
 
-	err     error       // first permanent error
-	version uint16      // protocol version
-	cipher  interface{} // cipher algorithm
+	err     error  // first permanent error
+	version uint16 // protocol version
+	cipher  any    // cipher algorithm
 	mac     hash.Hash
 	seq     [8]byte // 64-bit sequence number
 
 	scratchBuf [13]byte // to avoid allocs; interface method args escape
 
-	nextCipher interface{} // next encryption state
-	nextMac    hash.Hash   // next MAC algorithm
+	nextCipher any       // next encryption state
+	nextMac    hash.Hash // next MAC algorithm
 
 	trafficSecret []byte // current TLS 1.3 traffic secret
 
@@ -200,7 +200,7 @@ func (hc *halfConn) setErrorLocked(err error) error {
 
 // prepareCipherSpec sets the encryption and MAC states
 // that a subsequent changeCipherSpec will use.
-func (hc *halfConn) prepareCipherSpec(version uint16, cipher interface{}, mac hash.Hash) {
+func (hc *halfConn) prepareCipherSpec(version uint16, cipher any, mac hash.Hash) {
 	hc.version = version
 	hc.nextCipher = cipher
 	hc.nextMac = mac
@@ -609,12 +609,14 @@ func (c *Conn) readChangeCipherSpec() error {
 
 // readRecordOrCCS reads one or more TLS records from the connection and
 // updates the record layer state. Some invariants:
-//   * c.in must be locked
-//   * c.input must be empty
+//   - c.in must be locked
+//   - c.input must be empty
+//
 // During the handshake one and only one of the following will happen:
 //   - c.hand grows
 //   - c.in.changeCipherSpec is called
 //   - an error is returned
+//
 // After the handshake one and only one of the following will happen:
 //   - c.hand grows
 //   - c.input is set
@@ -962,7 +964,7 @@ func (c *Conn) flush() (int, error) {
 
 // outBufPool pools the record-sized scratch buffers used by writeRecordLocked.
 var outBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new([]byte)
 	},
 }
@@ -1045,7 +1047,7 @@ func (c *Conn) writeRecord(typ recordType, data []byte) (int, error) {
 
 // readHandshake reads the next handshake message from
 // the record layer.
-func (c *Conn) readHandshake() (interface{}, error) {
+func (c *Conn) readHandshake() (any, error) {
 	var data []byte
 	if c.extraConfig != nil && c.extraConfig.AlternativeRecordLayer != nil {
 		var err error

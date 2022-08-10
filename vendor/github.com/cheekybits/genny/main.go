@@ -133,7 +133,7 @@ func newWriter(fileName string) io.Writer {
 	return lf
 }
 
-func fatal(code int, a ...interface{}) {
+func fatal(code int, a ...any) {
 	fmt.Println(a...)
 	os.Exit(code)
 }

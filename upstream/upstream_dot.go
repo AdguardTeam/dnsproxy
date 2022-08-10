@@ -11,9 +11,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-//
 // DNS-over-TLS
-//
 type dnsOverTLS struct {
 	boot *bootstrapper
 	pool *TLSPool

@@ -12,7 +12,7 @@ import (
 )
 
 var bufPool = sync.Pool{
-	New: func() interface{} { return new(bytes.Buffer) },
+	New: func() any { return new(bytes.Buffer) },
 }
 
 // HuffmanDecode decodes the string in v and writes the expanded

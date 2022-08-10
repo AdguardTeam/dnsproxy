@@ -27,10 +27,8 @@ const (
 	DoQCodeProtocolError = quic.ApplicationErrorCode(2)
 )
 
-//
 // dnsOverQUIC is a DNS-over-QUIC implementation according to the spec:
 // https://www.rfc-editor.org/rfc/rfc9250.html
-//
 type dnsOverQUIC struct {
 	// boot is a bootstrap DNS abstraction that is used to resolve the upstream
 	// server's address and open a network connection to it.
@@ -123,7 +121,7 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 	p.Lock()
 	if p.bytesPool == nil {
 		p.bytesPool = &sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				b := make([]byte, dns.MaxMsgSize)
 
 				return &b

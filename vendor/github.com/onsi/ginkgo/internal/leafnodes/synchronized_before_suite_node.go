@@ -23,7 +23,7 @@ type synchronizedBeforeSuiteNode struct {
 	runTime time.Duration
 }
 
-func NewSynchronizedBeforeSuiteNode(bodyA interface{}, bodyB interface{}, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
+func NewSynchronizedBeforeSuiteNode(bodyA any, bodyB any, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
 	node := &synchronizedBeforeSuiteNode{}
 
 	node.runnerA = newRunner(node.wrapA(bodyA), codeLocation, timeout, failer, types.SpecComponentTypeBeforeSuite, 0)
@@ -126,7 +126,7 @@ func (node *synchronizedBeforeSuiteNode) Summary() *types.SetupSummary {
 	}
 }
 
-func (node *synchronizedBeforeSuiteNode) wrapA(bodyA interface{}) interface{} {
+func (node *synchronizedBeforeSuiteNode) wrapA(bodyA any) any {
 	typeA := reflect.TypeOf(bodyA)
 	if typeA.Kind() != reflect.Func {
 		panic("SynchronizedBeforeSuite expects a function as its first argument")
@@ -141,7 +141,7 @@ func (node *synchronizedBeforeSuiteNode) wrapA(bodyA interface{}) interface{} {
 	}
 
 	if takesADoneChannel {
-		return func(done chan<- interface{}) {
+		return func(done chan<- any) {
 			out := reflect.ValueOf(bodyA).Call([]reflect.Value{reflect.ValueOf(done)})
 			node.data = out[0].Interface().([]byte)
 		}
@@ -153,7 +153,7 @@ func (node *synchronizedBeforeSuiteNode) wrapA(bodyA interface{}) interface{} {
 	}
 }
 
-func (node *synchronizedBeforeSuiteNode) wrapB(bodyB interface{}) interface{} {
+func (node *synchronizedBeforeSuiteNode) wrapB(bodyB any) any {
 	typeB := reflect.TypeOf(bodyB)
 	if typeB.Kind() != reflect.Func {
 		panic("SynchronizedBeforeSuite expects a function as its second argument")
@@ -170,7 +170,7 @@ func (node *synchronizedBeforeSuiteNode) wrapB(bodyB interface{}) interface{} {
 	}
 
 	if takesBytesAndDone {
-		return func(done chan<- interface{}) {
+		return func(done chan<- any) {
 			reflect.ValueOf(bodyB).Call([]reflect.Value{reflect.ValueOf(node.data), reflect.ValueOf(done)})
 		}
 	}

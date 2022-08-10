@@ -730,14 +730,14 @@ func Munmap(b []byte) (err error) {
 
 type fileObjCookie struct {
 	fobj   *fileObj
-	cookie interface{}
+	cookie any
 }
 
 // EventPort provides a safe abstraction on top of Solaris/illumos Event Ports.
 type EventPort struct {
 	port  int
 	mu    sync.Mutex
-	fds   map[uintptr]interface{}
+	fds   map[uintptr]any
 	paths map[string]*fileObjCookie
 }
 
@@ -746,7 +746,7 @@ type EventPort struct {
 // to see if Path or Fd was the event source. The other will be
 // uninitialized.
 type PortEvent struct {
-	Cookie interface{}
+	Cookie any
 	Events int32
 	Fd     uintptr
 	Path   string
@@ -763,7 +763,7 @@ func NewEventPort() (*EventPort, error) {
 	}
 	e := &EventPort{
 		port:  port,
-		fds:   make(map[uintptr]interface{}),
+		fds:   make(map[uintptr]any),
 		paths: make(map[string]*fileObjCookie),
 	}
 	return e, nil
@@ -802,7 +802,7 @@ func (e *EventPort) FdIsWatched(fd uintptr) bool {
 
 // AssociatePath wraps port_associate(3c) for a filesystem path including
 // creating the necessary file_obj from the provided stat information.
-func (e *EventPort) AssociatePath(path string, stat os.FileInfo, events int, cookie interface{}) error {
+func (e *EventPort) AssociatePath(path string, stat os.FileInfo, events int, cookie any) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if _, found := e.paths[path]; found {
@@ -838,7 +838,7 @@ func (e *EventPort) DissociatePath(path string) error {
 }
 
 // AssociateFd wraps calls to port_associate(3c) on file descriptors.
-func (e *EventPort) AssociateFd(fd uintptr, events int, cookie interface{}) error {
+func (e *EventPort) AssociateFd(fd uintptr, events int, cookie any) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if _, found := e.fds[fd]; found {
@@ -901,13 +901,13 @@ func (e *EventPort) GetOne(t *Timespec) (*PortEvent, error) {
 	switch pe.Source {
 	case PORT_SOURCE_FD:
 		p.Fd = uintptr(pe.Object)
-		cookie := (*interface{})(unsafe.Pointer(pe.User))
+		cookie := (*any)(unsafe.Pointer(pe.User))
 		p.Cookie = *cookie
 		delete(e.fds, p.Fd)
 	case PORT_SOURCE_FILE:
 		p.fobj = (*fileObj)(unsafe.Pointer(uintptr(pe.Object)))
 		p.Path = BytePtrToString((*byte)(unsafe.Pointer(p.fobj.Name)))
-		cookie := (*interface{})(unsafe.Pointer(pe.User))
+		cookie := (*any)(unsafe.Pointer(pe.User))
 		p.Cookie = *cookie
 		delete(e.paths, p.Path)
 	}
@@ -949,13 +949,13 @@ func (e *EventPort) Get(s []PortEvent, min int, timeout *Timespec) (int, error) 
 		switch ps[i].Source {
 		case PORT_SOURCE_FD:
 			s[i].Fd = uintptr(ps[i].Object)
-			cookie := (*interface{})(unsafe.Pointer(ps[i].User))
+			cookie := (*any)(unsafe.Pointer(ps[i].User))
 			s[i].Cookie = *cookie
 			delete(e.fds, s[i].Fd)
 		case PORT_SOURCE_FILE:
 			s[i].fobj = (*fileObj)(unsafe.Pointer(uintptr(ps[i].Object)))
 			s[i].Path = BytePtrToString((*byte)(unsafe.Pointer(s[i].fobj.Name)))
-			cookie := (*interface{})(unsafe.Pointer(ps[i].User))
+			cookie := (*any)(unsafe.Pointer(ps[i].User))
 			s[i].Cookie = *cookie
 			delete(e.paths, s[i].Path)
 		}

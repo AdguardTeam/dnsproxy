@@ -41,7 +41,7 @@ type Group struct {
 	Hidden bool
 
 	// The parent of the group or nil if it has no parent
-	parent interface{}
+	parent any
 
 	// All the options in the group
 	options []*Option
@@ -52,7 +52,7 @@ type Group struct {
 	// Whether the group represents the built-in help group
 	isBuiltinHelp bool
 
-	data interface{}
+	data any
 }
 
 type scanHandler func(reflect.Value, *reflect.StructField) (bool, error)
@@ -60,7 +60,7 @@ type scanHandler func(reflect.Value, *reflect.StructField) (bool, error)
 // AddGroup adds a new group to the command with the given name and data. The
 // data needs to be a pointer to a struct from which the fields indicate which
 // options are in the group.
-func (g *Group) AddGroup(shortDescription string, longDescription string, data interface{}) (*Group, error) {
+func (g *Group) AddGroup(shortDescription string, longDescription string, data any) (*Group, error) {
 	group := newGroup(shortDescription, longDescription, data)
 
 	group.parent = g
@@ -74,7 +74,7 @@ func (g *Group) AddGroup(shortDescription string, longDescription string, data i
 }
 
 // AddOption adds a new option to this group.
-func (g *Group) AddOption(option *Option, data interface{}) {
+func (g *Group) AddOption(option *Option, data any) {
 	option.value = reflect.ValueOf(data)
 	option.group = g
 	g.options = append(g.options, option)
@@ -135,7 +135,7 @@ func (g *Group) FindOptionByShortName(shortName rune) *Option {
 	})
 }
 
-func newGroup(shortDescription string, longDescription string, data interface{}) *Group {
+func newGroup(shortDescription string, longDescription string, data any) *Group {
 	return &Group{
 		ShortDescription: shortDescription,
 		LongDescription:  longDescription,

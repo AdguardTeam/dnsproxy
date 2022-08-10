@@ -18,8 +18,7 @@ import (
 //
 // Use this to pass the functions into the template engine:
 //
-// 	tpl := template.New("foo").Funcs(sprig.FuncMap()))
-//
+//	tpl := template.New("foo").Funcs(sprig.FuncMap()))
 func FuncMap() template.FuncMap {
 	return HtmlFuncMap()
 }
@@ -53,8 +52,8 @@ func HtmlFuncMap() template.FuncMap {
 }
 
 // GenericFuncMap returns a copy of the basic function map as a map[string]interface{}.
-func GenericFuncMap() map[string]interface{} {
-	gfm := make(map[string]interface{}, len(genericMap))
+func GenericFuncMap() map[string]any {
+	gfm := make(map[string]any, len(genericMap))
 	for k, v := range genericMap {
 		gfm[k] = v
 	}
@@ -90,7 +89,7 @@ var nonhermeticFunctions = []string{
 	"getHostByName",
 }
 
-var genericMap = map[string]interface{}{
+var genericMap = map[string]any{
 	"hello": func() string { return "Hello!" },
 
 	// Date functions
@@ -166,18 +165,18 @@ var genericMap = map[string]interface{}{
 	"untilStep": untilStep,
 
 	// VERY basic arithmetic.
-	"add1": func(i interface{}) int64 { return toInt64(i) + 1 },
-	"add": func(i ...interface{}) int64 {
+	"add1": func(i any) int64 { return toInt64(i) + 1 },
+	"add": func(i ...any) int64 {
 		var a int64 = 0
 		for _, b := range i {
 			a += toInt64(b)
 		}
 		return a
 	},
-	"sub": func(a, b interface{}) int64 { return toInt64(a) - toInt64(b) },
-	"div": func(a, b interface{}) int64 { return toInt64(a) / toInt64(b) },
-	"mod": func(a, b interface{}) int64 { return toInt64(a) % toInt64(b) },
-	"mul": func(a interface{}, v ...interface{}) int64 {
+	"sub": func(a, b any) int64 { return toInt64(a) - toInt64(b) },
+	"div": func(a, b any) int64 { return toInt64(a) / toInt64(b) },
+	"mod": func(a, b any) int64 { return toInt64(a) % toInt64(b) },
+	"mul": func(a any, v ...any) int64 {
 		val := toInt64(a)
 		for _, b := range v {
 			val = val * toInt64(b)

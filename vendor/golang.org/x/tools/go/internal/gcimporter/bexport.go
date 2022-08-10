@@ -36,8 +36,10 @@ const debugFormat = false // default: false
 
 // Current export format version. Increase with each format change.
 // Note: The latest binary (non-indexed) export format is at version 6.
-//       This exporter is still at level 4, but it doesn't matter since
-//       the binary importer can handle older versions just fine.
+//
+//	This exporter is still at level 4, but it doesn't matter since
+//	the binary importer can handle older versions just fine.
+//
 // 6: package height (CL 105038) -- NOT IMPLEMENTED HERE
 // 5: improved position encoding efficiency (issue 20080, CL 41619) -- NOT IMPLEMEMTED HERE
 // 4: type name objects support type aliases, uses aliasTag
@@ -82,7 +84,7 @@ type internalError string
 
 func (e internalError) Error() string { return "gcimporter: " + string(e) }
 
-func internalErrorf(format string, args ...interface{}) error {
+func internalErrorf(format string, args ...any) error {
 	return internalError(fmt.Sprintf(format, args...))
 }
 
@@ -792,7 +794,7 @@ func (p *exporter) rawByte(b byte) {
 
 // tracef is like fmt.Printf but it rewrites the format string
 // to take care of indentation.
-func (p *exporter) tracef(format string, args ...interface{}) {
+func (p *exporter) tracef(format string, args ...any) {
 	if strings.ContainsAny(format, "<>\n") {
 		var buf bytes.Buffer
 		for i := 0; i < len(format); i++ {

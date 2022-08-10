@@ -217,7 +217,7 @@ func (option *Option) String() string {
 }
 
 // Value returns the option value as an interface{}.
-func (option *Option) Value() interface{} {
+func (option *Option) Value() any {
 	return option.value.Interface()
 }
 

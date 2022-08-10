@@ -160,7 +160,7 @@ func (p *Proxy) Init() (err error) {
 
 	p.udpOOBSize = proxyutil.UDPGetOOBSize()
 	p.bytesPool = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			// 2 bytes may be used to store packet length (see TCP/TLS)
 			b := make([]byte, 2+dns.MaxMsgSize)
 

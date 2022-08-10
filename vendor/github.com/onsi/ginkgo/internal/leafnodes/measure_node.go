@@ -16,7 +16,7 @@ type MeasureNode struct {
 	benchmarker *benchmarker
 }
 
-func NewMeasureNode(text string, body interface{}, flag types.FlagType, codeLocation types.CodeLocation, samples int, failer *failer.Failer, componentIndex int) *MeasureNode {
+func NewMeasureNode(text string, body any, flag types.FlagType, codeLocation types.CodeLocation, samples int, failer *failer.Failer, componentIndex int) *MeasureNode {
 	benchmarker := newBenchmarker()
 
 	wrappedBody := func() {

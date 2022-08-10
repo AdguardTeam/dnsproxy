@@ -816,7 +816,7 @@ type ProcessEnv struct {
 	WorkingDir string
 
 	// If Logf is non-nil, debug logging is enabled through this function.
-	Logf func(format string, args ...interface{})
+	Logf func(format string, args ...any)
 
 	initialized bool
 

@@ -77,7 +77,7 @@ func Is(err, target error) bool {
 //
 // The As method should set the target to its value and return true if err
 // matches the type to which target points.
-func As(err error, target interface{}) bool {
+func As(err error, target any) bool {
 	if target == nil {
 		panic("errors: target cannot be nil")
 	}
@@ -95,7 +95,7 @@ func As(err error, target interface{}) bool {
 			val.Elem().Set(reflect.ValueOf(err))
 			return true
 		}
-		if x, ok := err.(interface{ As(interface{}) bool }); ok && x.As(target) {
+		if x, ok := err.(interface{ As(any) bool }); ok && x.As(target) {
 			return true
 		}
 		err = Unwrap(err)

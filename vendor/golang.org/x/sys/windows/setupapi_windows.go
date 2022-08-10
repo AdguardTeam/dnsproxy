@@ -1079,7 +1079,7 @@ func (deviceInfoSet DevInfo) OpenDevRegKey(DeviceInfoData *DevInfoData, Scope DI
 //sys	setupDiGetDeviceProperty(deviceInfoSet DevInfo, deviceInfoData *DevInfoData, propertyKey *DEVPROPKEY, propertyType *DEVPROPTYPE, propertyBuffer *byte, propertyBufferSize uint32, requiredSize *uint32, flags uint32) (err error) = setupapi.SetupDiGetDevicePropertyW
 
 // SetupDiGetDeviceProperty function retrieves a specified device instance property.
-func SetupDiGetDeviceProperty(deviceInfoSet DevInfo, deviceInfoData *DevInfoData, propertyKey *DEVPROPKEY) (value interface{}, err error) {
+func SetupDiGetDeviceProperty(deviceInfoSet DevInfo, deviceInfoData *DevInfoData, propertyKey *DEVPROPKEY) (value any, err error) {
 	reqSize := uint32(256)
 	for {
 		var dataType DEVPROPTYPE
@@ -1104,7 +1104,7 @@ func SetupDiGetDeviceProperty(deviceInfoSet DevInfo, deviceInfoData *DevInfoData
 //sys	setupDiGetDeviceRegistryProperty(deviceInfoSet DevInfo, deviceInfoData *DevInfoData, property SPDRP, propertyRegDataType *uint32, propertyBuffer *byte, propertyBufferSize uint32, requiredSize *uint32) (err error) = setupapi.SetupDiGetDeviceRegistryPropertyW
 
 // SetupDiGetDeviceRegistryProperty function retrieves a specified Plug and Play device property.
-func SetupDiGetDeviceRegistryProperty(deviceInfoSet DevInfo, deviceInfoData *DevInfoData, property SPDRP) (value interface{}, err error) {
+func SetupDiGetDeviceRegistryProperty(deviceInfoSet DevInfo, deviceInfoData *DevInfoData, property SPDRP) (value any, err error) {
 	reqSize := uint32(256)
 	for {
 		var dataType uint32
@@ -1120,7 +1120,7 @@ func SetupDiGetDeviceRegistryProperty(deviceInfoSet DevInfo, deviceInfoData *Dev
 	}
 }
 
-func getRegistryValue(buf []byte, dataType uint32) (interface{}, error) {
+func getRegistryValue(buf []byte, dataType uint32) (any, error) {
 	switch dataType {
 	case REG_SZ:
 		ret := UTF16ToString(bufToUTF16(buf))
@@ -1201,7 +1201,7 @@ func wcslen(str []uint16) int {
 }
 
 // DeviceRegistryProperty method retrieves a specified Plug and Play device property.
-func (deviceInfoSet DevInfo) DeviceRegistryProperty(deviceInfoData *DevInfoData, property SPDRP) (interface{}, error) {
+func (deviceInfoSet DevInfo) DeviceRegistryProperty(deviceInfoData *DevInfoData, property SPDRP) (any, error) {
 	return SetupDiGetDeviceRegistryProperty(deviceInfoSet, deviceInfoData, property)
 }
 

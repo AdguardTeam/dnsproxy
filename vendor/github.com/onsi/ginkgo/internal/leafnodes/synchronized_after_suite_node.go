@@ -19,7 +19,7 @@ type synchronizedAfterSuiteNode struct {
 	runTime time.Duration
 }
 
-func NewSynchronizedAfterSuiteNode(bodyA interface{}, bodyB interface{}, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
+func NewSynchronizedAfterSuiteNode(bodyA any, bodyB any, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
 	return &synchronizedAfterSuiteNode{
 		runnerA: newRunner(bodyA, codeLocation, timeout, failer, types.SpecComponentTypeAfterSuite, 0),
 		runnerB: newRunner(bodyB, codeLocation, timeout, failer, types.SpecComponentTypeAfterSuite, 0),

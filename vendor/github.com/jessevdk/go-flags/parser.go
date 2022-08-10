@@ -133,7 +133,7 @@ type parseState struct {
 // settings. The provided data is a pointer to a struct representing the
 // default option group (named "Application Options"). For more control, use
 // flags.NewParser.
-func Parse(data interface{}) ([]string, error) {
+func Parse(data any) ([]string, error) {
 	return NewParser(data, Default).Parse()
 }
 
@@ -143,7 +143,7 @@ func Parse(data interface{}) ([]string, error) {
 // the list of command line arguments to parse. If you just want to parse the
 // default program command line arguments (i.e. os.Args), then use flags.Parse
 // instead. For more control, use flags.NewParser.
-func ParseArgs(data interface{}, args []string) ([]string, error) {
+func ParseArgs(data any, args []string) ([]string, error) {
 	return NewParser(data, Default).ParseArgs(args)
 }
 
@@ -153,7 +153,7 @@ func ParseArgs(data interface{}, args []string) ([]string, error) {
 // default option group (named "Application Options"), or nil if the default
 // group should not be added. The options parameter specifies a set of options
 // for the parser.
-func NewParser(data interface{}, options Options) *Parser {
+func NewParser(data any, options Options) *Parser {
 	p := NewNamedParser(path.Base(os.Args[0]), options)
 
 	if data != nil {

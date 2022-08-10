@@ -67,7 +67,7 @@ var (
 )
 
 var responseWriterStatePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		rws := &responseWriterState{}
 		rws.bw = bufio.NewWriterSize(chunkWriter{rws}, handlerChunkWriteSize)
 		return rws
@@ -79,7 +79,7 @@ var (
 	testHookOnConn        func()
 	testHookGetServerConn func(*serverConn)
 	testHookOnPanicMu     *sync.Mutex // nil except in tests
-	testHookOnPanic       func(sc *serverConn, panicVal interface{}) (rePanic bool)
+	testHookOnPanic       func(sc *serverConn, panicVal any) (rePanic bool)
 )
 
 // Server is an HTTP/2 server.
@@ -372,7 +372,7 @@ func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
 		streams:                     make(map[uint32]*stream),
 		readFrameCh:                 make(chan readFrameResult),
 		wantWriteFrameCh:            make(chan FrameWriteRequest, 8),
-		serveMsgCh:                  make(chan interface{}, 8),
+		serveMsgCh:                  make(chan any, 8),
 		wroteFrameCh:                make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
 		bodyReadCh:                  make(chan bodyReadMsg),         // buffering doesn't matter either way
 		doneServing:                 make(chan struct{}),
@@ -502,7 +502,7 @@ type serverConn struct {
 	wantWriteFrameCh chan FrameWriteRequest // from handlers -> serve
 	wroteFrameCh     chan frameWriteResult  // from writeFrameAsync -> serve, tickles more frame writes
 	bodyReadCh       chan bodyReadMsg       // from handlers -> serve
-	serveMsgCh       chan interface{}       // misc messages & code to send to / run on the serve loop
+	serveMsgCh       chan any               // misc messages & code to send to / run on the serve loop
 	flow             flow                   // conn-wide (not stream-specific) outbound flow control
 	inflow           flow                   // conn-wide inbound flow control
 	tlsState         *tls.ConnectionState   // shared by all handlers, like net/http
@@ -634,13 +634,13 @@ func (sc *serverConn) setConnState(state http.ConnState) {
 	}
 }
 
-func (sc *serverConn) vlogf(format string, args ...interface{}) {
+func (sc *serverConn) vlogf(format string, args ...any) {
 	if VerboseLogs {
 		sc.logf(format, args...)
 	}
 }
 
-func (sc *serverConn) logf(format string, args ...interface{}) {
+func (sc *serverConn) logf(format string, args ...any) {
 	if lg := sc.hs.ErrorLog; lg != nil {
 		lg.Printf(format, args...)
 	} else {
@@ -692,7 +692,7 @@ func isClosedConnError(err error) bool {
 	return false
 }
 
-func (sc *serverConn) condlogf(err error, format string, args ...interface{}) {
+func (sc *serverConn) condlogf(err error, format string, args ...any) {
 	if err == nil {
 		return
 	}
@@ -960,7 +960,7 @@ func (sc *serverConn) onSettingsTimer() { sc.sendServeMsg(settingsTimerMsg) }
 func (sc *serverConn) onIdleTimer()     { sc.sendServeMsg(idleTimerMsg) }
 func (sc *serverConn) onShutdownTimer() { sc.sendServeMsg(shutdownTimerMsg) }
 
-func (sc *serverConn) sendServeMsg(msg interface{}) {
+func (sc *serverConn) sendServeMsg(msg any) {
 	sc.serveG.checkNotOn() // NOT
 	select {
 	case sc.serveMsgCh <- msg:
@@ -1002,11 +1002,11 @@ func (sc *serverConn) readPreface() error {
 }
 
 var errChanPool = sync.Pool{
-	New: func() interface{} { return make(chan error, 1) },
+	New: func() any { return make(chan error, 1) },
 }
 
 var writeDataPool = sync.Pool{
-	New: func() interface{} { return new(writeData) },
+	New: func() any { return new(writeData) },
 }
 
 // writeDataFromHandler writes DATA response frames from a handler on
@@ -2546,8 +2546,9 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 // prior to the headers being written. If the set of trailers is fixed
 // or known before the header is written, the normal Go trailers mechanism
 // is preferred:
-//    https://golang.org/pkg/net/http/#ResponseWriter
-//    https://golang.org/pkg/net/http/#example_ResponseWriter_trailers
+//
+//	https://golang.org/pkg/net/http/#ResponseWriter
+//	https://golang.org/pkg/net/http/#example_ResponseWriter_trailers
 const TrailerPrefix = "Trailer:"
 
 // promoteUndeclaredTrailers permits http.Handlers to set trailers
@@ -2993,7 +2994,7 @@ func new400Handler(err error) http.HandlerFunc {
 // disabled. See comments on h1ServerShutdownChan above for why
 // the code is written this way.
 func h1ServerKeepAlivesDisabled(hs *http.Server) bool {
-	var x interface{} = hs
+	var x any = hs
 	type I interface {
 		doKeepAlives() bool
 	}

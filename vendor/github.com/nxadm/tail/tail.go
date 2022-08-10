@@ -2,11 +2,11 @@
 // Copyright (c) 2015 HPE Software Inc. All rights reserved.
 // Copyright (c) 2013 ActiveState Software Inc. All rights reserved.
 
-//nxadm/tail provides a Go library that emulates the features of the BSD `tail`
-//program. The library comes with full support for truncation/move detection as
-//it is designed to work with log rotation tools. The library works on all
-//operating systems supported by Go, including POSIX systems like Linux and
-//*BSD, and MS Windows. Go 1.9 is the oldest compiler release supported.
+// nxadm/tail provides a Go library that emulates the features of the BSD `tail`
+// program. The library comes with full support for truncation/move detection as
+// it is designed to work with log rotation tools. The library works on all
+// operating systems supported by Go, including POSIX systems like Linux and
+// *BSD, and MS Windows. Go 1.9 is the oldest compiler release supported.
 package tail
 
 import (
@@ -56,15 +56,15 @@ type SeekInfo struct {
 }
 
 type logger interface {
-	Fatal(v ...interface{})
-	Fatalf(format string, v ...interface{})
-	Fatalln(v ...interface{})
-	Panic(v ...interface{})
-	Panicf(format string, v ...interface{})
-	Panicln(v ...interface{})
-	Print(v ...interface{})
-	Printf(format string, v ...interface{})
-	Println(v ...interface{})
+	Fatal(v ...any)
+	Fatalf(format string, v ...any)
+	Fatalln(v ...any)
+	Panic(v ...any)
+	Panicf(format string, v ...any)
+	Panicln(v ...any)
+	Print(v ...any)
+	Printf(format string, v ...any)
+	Println(v ...any)
 }
 
 // Config is used to specify how a file must be tailed.

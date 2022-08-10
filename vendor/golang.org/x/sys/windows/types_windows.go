@@ -3040,7 +3040,7 @@ type ResourceID uint16
 
 // ResourceIDOrString must be either a ResourceID, to specify a resource or resource type by ID,
 // or a string, to specify a resource or resource type by name.
-type ResourceIDOrString interface{}
+type ResourceIDOrString any
 
 // Predefined resource names and types.
 var (

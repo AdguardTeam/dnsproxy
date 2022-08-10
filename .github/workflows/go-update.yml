@@ -17,6 +17,7 @@ jobs:
       - name: go
         run: |
           go mod tidy -compat=1.19
+          gofmt -w -r 'interface{} -> any' .
           go get -u
           go mod download
 

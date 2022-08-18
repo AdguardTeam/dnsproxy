@@ -19,7 +19,7 @@ import (
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
-	gocache "github.com/patrickmn/go-cache"
+	gocache "zgo.at/zcache"
 )
 
 const (

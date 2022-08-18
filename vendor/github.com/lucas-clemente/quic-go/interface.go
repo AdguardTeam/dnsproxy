@@ -23,6 +23,7 @@ const (
 	VersionDraft29 = protocol.VersionDraft29
 	// Version1 is RFC 9000
 	Version1 = protocol.Version1
+	Version2 = protocol.Version2
 )
 
 // A Token can be used to verify the ownership of the client address.
@@ -127,7 +128,6 @@ type SendStream interface {
 	// The Context is canceled as soon as the write-side of the stream is closed.
 	// This happens when Close() or CancelWrite() is called, or when the peer
 	// cancels the read-side of their stream.
-	// Warning: This API should not be considered stable and might change soon.
 	Context() context.Context
 	// SetWriteDeadline sets the deadline for future Write calls
 	// and any currently-blocked Write call.
@@ -184,18 +184,15 @@ type Connection interface {
 	// The error string will be sent to the peer.
 	CloseWithError(ApplicationErrorCode, string) error
 	// The context is cancelled when the connection is closed.
-	// Warning: This API should not be considered stable and might change soon.
 	Context() context.Context
 	// ConnectionState returns basic details about the QUIC connection.
 	// It blocks until the handshake completes.
 	// Warning: This API should not be considered stable and might change soon.
 	ConnectionState() ConnectionState
 
-	// SendMessage sends a message as a datagram.
-	// See https://datatracker.ietf.org/doc/draft-pauly-quic-datagram/.
+	// SendMessage sends a message as a datagram, as specified in RFC 9221.
 	SendMessage([]byte) error
-	// ReceiveMessage gets a message received in a datagram.
-	// See https://datatracker.ietf.org/doc/draft-pauly-quic-datagram/.
+	// ReceiveMessage gets a message received in a datagram, as specified in RFC 9221.
 	ReceiveMessage() ([]byte, error)
 }
 
@@ -218,7 +215,6 @@ type EarlyConnection interface {
 type Config struct {
 	// The QUIC versions that can be negotiated.
 	// If not set, it uses all versions available.
-	// Warning: This API should not be considered stable and will change soon.
 	Versions []VersionNumber
 	// The length of the connection ID in bytes.
 	// It can be 0, or any value between 4 and 18.
@@ -286,8 +282,10 @@ type Config struct {
 	// The StatelessResetKey is used to generate stateless reset tokens.
 	// If no key is configured, sending of stateless resets is disabled.
 	StatelessResetKey []byte
-	// KeepAlive defines whether this peer will periodically send a packet to keep the connection alive.
-	KeepAlive bool
+	// KeepAlivePeriod defines whether this peer will periodically send a packet to keep the connection alive.
+	// If set to 0, then no keep alive is sent. Otherwise, the keep alive is sent on that period (or at most
+	// every half of MaxIdleTimeout, whichever is smaller).
+	KeepAlivePeriod time.Duration
 	// DisablePathMTUDiscovery disables Path MTU Discovery (RFC 8899).
 	// Packets will then be at most 1252 (IPv4) / 1232 (IPv6) bytes in size.
 	// Note that if Path MTU discovery is causing issues on your system, please open a new issue

@@ -190,6 +190,7 @@ type connection struct {
 	clientHelloWritten    <-chan *wire.TransportParameters
 	earlyConnReadyChan    chan struct{}
 	handshakeCompleteChan chan struct{} // is closed when the handshake completes
+	sentFirstPacket       bool
 	handshakeComplete     bool
 	handshakeConfirmed    bool
 
@@ -731,7 +732,7 @@ func (s *connection) ConnectionState() ConnectionState {
 // Time when the next keep-alive packet should be sent.
 // It returns a zero time if no keep-alive should be sent.
 func (s *connection) nextKeepAliveTime() time.Time {
-	if !s.config.KeepAlive || s.keepAlivePingSent || !s.firstAckElicitingPacketAfterIdleSentTime.IsZero() {
+	if s.config.KeepAlivePeriod == 0 || s.keepAlivePingSent || !s.firstAckElicitingPacketAfterIdleSentTime.IsZero() {
 		return time.Time{}
 	}
 	return s.lastPacketReceivedTime.Add(s.keepAliveInterval)
@@ -1519,6 +1520,12 @@ func (s *connection) handleCloseError(closeErr *closeError) {
 		s.connIDGenerator.RemoveAll()
 		return
 	}
+	// Don't send out any CONNECTION_CLOSE if this is an error that occurred
+	// before we even sent out the first packet.
+	if s.perspective == protocol.PerspectiveClient && !s.sentFirstPacket {
+		s.connIDGenerator.RemoveAll()
+		return
+	}
 	connClosePacket, err := s.sendConnectionClose(e)
 	if err != nil {
 		s.logger.Debugf("Error sending CONNECTION_CLOSE: %s", err)
@@ -1611,7 +1618,7 @@ func (s *connection) applyTransportParameters() {
 	params := s.peerParams
 	// Our local idle timeout will always be > 0.
 	s.idleTimeout = utils.MinNonZeroDuration(s.config.MaxIdleTimeout, params.MaxIdleTimeout)
-	s.keepAliveInterval = utils.MinDuration(s.idleTimeout/2, protocol.MaxKeepAliveInterval)
+	s.keepAliveInterval = utils.MinDuration(s.config.KeepAlivePeriod, utils.MinDuration(s.idleTimeout/2, protocol.MaxKeepAliveInterval))
 	s.streamsMap.UpdateLimits(params)
 	s.packer.HandleTransportParameters(params)
 	s.frameParser.SetAckDelayExponent(params.AckDelayExponent)
@@ -1760,6 +1767,7 @@ func (s *connection) sendPacket() (bool, error) {
 		if err != nil || packet == nil {
 			return false, err
 		}
+		s.sentFirstPacket = true
 		s.logCoalescedPacket(packet)
 		for _, p := range packet.packets {
 			if s.firstAckElicitingPacketAfterIdleSentTime.IsZero() && p.IsAckEliciting() {

@@ -10,10 +10,10 @@ require (
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/lucas-clemente/quic-go v0.28.1
 	github.com/miekg/dns v1.1.50
-	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/net v0.0.0-20220812174116-3211cb980234
 	gopkg.in/yaml.v3 v3.0.1
+	zgo.at/zcache v1.2.0
 )
 
 require (

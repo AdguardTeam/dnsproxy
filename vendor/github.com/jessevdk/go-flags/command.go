@@ -65,7 +65,7 @@ type lookup struct {
 // data needs to be a pointer to a struct from which the fields indicate which
 // options are in the command. The provided data can implement the Command and
 // Usage interfaces.
-func (c *Command) AddCommand(command string, shortDescription string, longDescription string, data interface{}) (*Command, error) {
+func (c *Command) AddCommand(command string, shortDescription string, longDescription string, data any) (*Command, error) {
 	cmd := newCommand(command, shortDescription, longDescription, data)
 
 	cmd.parent = c
@@ -81,7 +81,7 @@ func (c *Command) AddCommand(command string, shortDescription string, longDescri
 // AddGroup adds a new group to the command with the given name and data. The
 // data needs to be a pointer to a struct from which the fields indicate which
 // options are in the group.
-func (c *Command) AddGroup(shortDescription string, longDescription string, data interface{}) (*Group, error) {
+func (c *Command) AddGroup(shortDescription string, longDescription string, data any) (*Group, error) {
 	group := newGroup(shortDescription, longDescription, data)
 
 	group.parent = c
@@ -145,7 +145,7 @@ func (c *Command) Args() []*Arg {
 	return ret
 }
 
-func newCommand(name string, shortDescription string, longDescription string, data interface{}) *Command {
+func newCommand(name string, shortDescription string, longDescription string, data any) *Command {
 	return &Command{
 		Group: newGroup(shortDescription, longDescription, data),
 		Name:  name,

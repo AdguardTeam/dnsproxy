@@ -20,7 +20,7 @@ func New() *Failer {
 	}
 }
 
-func (f *Failer) Panic(location types.CodeLocation, forwardedPanic interface{}) {
+func (f *Failer) Panic(location types.CodeLocation, forwardedPanic any) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 

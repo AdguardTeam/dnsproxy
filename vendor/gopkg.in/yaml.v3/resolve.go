@@ -25,7 +25,7 @@ import (
 )
 
 type resolveMapItem struct {
-	value interface{}
+	value any
 	tag   string
 }
 
@@ -45,7 +45,7 @@ func init() {
 	t[int('.')] = '.' // Float (potentially in map)
 
 	var resolveMapList = []struct {
-		v   interface{}
+		v   any
 		tag string
 		l   []string
 	}{
@@ -123,7 +123,7 @@ func resolvableTag(tag string) bool {
 
 var yamlStyleFloat = regexp.MustCompile(`^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$`)
 
-func resolve(tag string, in string) (rtag string, out interface{}) {
+func resolve(tag string, in string) (rtag string, out any) {
 	tag = shortTag(tag)
 	if !resolvableTag(tag) {
 		return tag, in

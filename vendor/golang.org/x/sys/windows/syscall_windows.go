@@ -152,14 +152,14 @@ func Getpagesize() int { return 4096 }
 // NewCallback converts a Go function to a function pointer conforming to the stdcall calling convention.
 // This is useful when interoperating with Windows code requiring callbacks.
 // The argument is expected to be a function with with one uintptr-sized result. The function must not have arguments with size larger than the size of uintptr.
-func NewCallback(fn interface{}) uintptr {
+func NewCallback(fn any) uintptr {
 	return syscall.NewCallback(fn)
 }
 
 // NewCallbackCDecl converts a Go function to a function pointer conforming to the cdecl calling convention.
 // This is useful when interoperating with Windows code requiring callbacks.
 // The argument is expected to be a function with with one uintptr-sized result. The function must not have arguments with size larger than the size of uintptr.
-func NewCallbackCDecl(fn interface{}) uintptr {
+func NewCallbackCDecl(fn any) uintptr {
 	return syscall.NewCallbackCDecl(fn)
 }
 
@@ -1653,7 +1653,7 @@ func FindResource(module Handle, name, resType ResourceIDOrString) (Handle, erro
 	var namePtr, resTypePtr uintptr
 	var name16, resType16 *uint16
 	var err error
-	resolvePtr := func(i interface{}, keep **uint16) (uintptr, error) {
+	resolvePtr := func(i any, keep **uint16) (uintptr, error) {
 		switch v := i.(type) {
 		case string:
 			*keep, err = UTF16PtrFromString(v)

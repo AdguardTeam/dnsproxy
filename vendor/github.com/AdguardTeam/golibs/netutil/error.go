@@ -76,8 +76,7 @@ func (err *AddrError) Unwrap() (unwrapped error) {
 // makeAddrError is a deferrable helper for functions that return *AddrError.
 // errPtr must be non-nil.  Usage example:
 //
-//   defer makeAddrError(&err, addr, AddrKindARPA)
-//
+//	defer makeAddrError(&err, addr, AddrKindARPA)
 func makeAddrError(errPtr *error, addr string, k AddrKind) {
 	err := *errPtr
 	if err == nil {

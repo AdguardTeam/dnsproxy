@@ -13,9 +13,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-//
 // DNSCrypt
-//
 type dnsCrypt struct {
 	boot       *bootstrapper
 	client     *dnscrypt.Client       // DNSCrypt client properties

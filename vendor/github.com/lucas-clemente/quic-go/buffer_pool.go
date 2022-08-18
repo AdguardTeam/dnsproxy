@@ -72,7 +72,7 @@ func getPacketBuffer() *packetBuffer {
 }
 
 func init() {
-	bufferPool.New = func() interface{} {
+	bufferPool.New = func() any {
 		return &packetBuffer{
 			Data: make([]byte, 0, protocol.MaxPacketBufferSize),
 		}

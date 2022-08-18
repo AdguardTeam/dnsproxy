@@ -18,7 +18,7 @@ type Logger struct {
 var LOGGER = &Logger{log.New(os.Stderr, "", log.LstdFlags)}
 
 // fatal is like panic except it displays only the current goroutine's stack.
-func Fatal(format string, v ...interface{}) {
+func Fatal(format string, v ...any) {
 	// https://github.com/nxadm/log/blob/master/log.go#L45
 	LOGGER.Output(2, fmt.Sprintf("FATAL -- "+format, v...)+"\n"+string(debug.Stack()))
 	os.Exit(1)

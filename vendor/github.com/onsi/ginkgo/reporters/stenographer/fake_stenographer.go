@@ -6,7 +6,7 @@ import (
 	"github.com/onsi/ginkgo/types"
 )
 
-func NewFakeStenographerCall(method string, args ...interface{}) FakeStenographerCall {
+func NewFakeStenographerCall(method string, args ...any) FakeStenographerCall {
 	return FakeStenographerCall{
 		Method: method,
 		Args:   args,
@@ -20,7 +20,7 @@ type FakeStenographer struct {
 
 type FakeStenographerCall struct {
 	Method string
-	Args   []interface{}
+	Args   []any
 }
 
 func NewFakeStenographer() *FakeStenographer {
@@ -59,7 +59,7 @@ func (stenographer *FakeStenographer) CallsTo(method string) []FakeStenographerC
 	return results
 }
 
-func (stenographer *FakeStenographer) registerCall(method string, args ...interface{}) {
+func (stenographer *FakeStenographer) registerCall(method string, args ...any) {
 	stenographer.lock.Lock()
 	defer stenographer.lock.Unlock()
 

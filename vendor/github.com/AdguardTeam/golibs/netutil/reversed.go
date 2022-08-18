@@ -36,12 +36,11 @@ const (
 //
 // An example of IPv4 with a maximum length:
 //
-//   49.91.20.104.in-addr.arpa
+//	49.91.20.104.in-addr.arpa
 //
 // An example of IPv6 with a maximum length:
 //
-//   1.3.b.5.4.1.8.6.0.0.0.0.0.0.0.0.0.0.0.0.0.1.0.0.0.0.7.4.6.0.6.2.ip6.arpa
-//
+//	1.3.b.5.4.1.8.6.0.0.0.0.0.0.0.0.0.0.0.0.0.1.0.0.0.0.7.4.6.0.6.2.ip6.arpa
 const (
 	arpaV4MaxIPLen = len("000.000.000.000")
 	arpaV6MaxIPLen = len("0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0")

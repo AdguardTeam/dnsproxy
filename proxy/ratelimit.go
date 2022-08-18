@@ -8,10 +8,10 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	rate "github.com/beefsack/go-rate"
-	gocache "github.com/patrickmn/go-cache"
+	gocache "zgo.at/zcache"
 )
 
-func (p *Proxy) limiterForIP(ip string) interface{} {
+func (p *Proxy) limiterForIP(ip string) any {
 	p.ratelimitLock.Lock()
 	defer p.ratelimitLock.Unlock()
 	if p.ratelimitBuckets == nil {

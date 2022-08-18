@@ -15,7 +15,7 @@
 // but additional checking functions, most notably Check, verify that
 // a particular path, version pair is valid.
 //
-// Escaped Paths
+// # Escaped Paths
 //
 // Module paths appear as substrings of file system paths
 // (in the download cache) and of web server URLs in the proxy protocol.
@@ -55,7 +55,7 @@
 // Import paths have never allowed exclamation marks, so there is no
 // need to define how to escape a literal !.
 //
-// Unicode Restrictions
+// # Unicode Restrictions
 //
 // Today, paths are disallowed from using Unicode.
 //

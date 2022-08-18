@@ -12,7 +12,7 @@ import (
 type RunWatchAndBuildCommandFlags struct {
 	Recurse     bool
 	SkipPackage string
-	GoOpts      map[string]interface{}
+	GoOpts      map[string]any
 
 	//for run and watch commands
 	NumCPU         int
@@ -107,7 +107,7 @@ func (c *RunWatchAndBuildCommandFlags) intSlot(slot string) *int {
 }
 
 func (c *RunWatchAndBuildCommandFlags) flags(mode int) {
-	c.GoOpts = make(map[string]interface{})
+	c.GoOpts = make(map[string]any)
 
 	onWindows := (runtime.GOOS == "windows")
 

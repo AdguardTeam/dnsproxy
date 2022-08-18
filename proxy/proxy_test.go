@@ -1262,7 +1262,7 @@ func createServerTLSConfig(t *testing.T) (*tls.Config, []byte) {
 	return &tls.Config{Certificates: []tls.Certificate{cert}, ServerName: tlsServerName}, certPem
 }
 
-func publicKey(priv interface{}) interface{} {
+func publicKey(priv any) any {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &k.PublicKey

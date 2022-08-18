@@ -14,7 +14,7 @@ type ItNode struct {
 	text string
 }
 
-func NewItNode(text string, body interface{}, flag types.FlagType, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer, componentIndex int) *ItNode {
+func NewItNode(text string, body any, flag types.FlagType, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer, componentIndex int) *ItNode {
 	return &ItNode{
 		runner: newRunner(body, codeLocation, timeout, failer, types.SpecComponentTypeIt, componentIndex),
 		flag:   flag,

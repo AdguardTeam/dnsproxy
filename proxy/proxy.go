@@ -19,7 +19,7 @@ import (
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
-	gocache "github.com/patrickmn/go-cache"
+	gocache "zgo.at/zcache"
 )
 
 const (
@@ -160,7 +160,7 @@ func (p *Proxy) Init() (err error) {
 
 	p.udpOOBSize = proxyutil.UDPGetOOBSize()
 	p.bytesPool = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			// 2 bytes may be used to store packet length (see TCP/TLS)
 			b := make([]byte, 2+dns.MaxMsgSize)
 

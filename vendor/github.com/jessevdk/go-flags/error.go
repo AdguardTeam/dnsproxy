@@ -123,7 +123,7 @@ func newError(tp ErrorType, message string) *Error {
 	}
 }
 
-func newErrorf(tp ErrorType, format string, args ...interface{}) *Error {
+func newErrorf(tp ErrorType, format string, args ...any) *Error {
 	return newError(tp, fmt.Sprintf(format, args...))
 }
 

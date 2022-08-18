@@ -30,14 +30,14 @@ type TestRunner struct {
 	numCPU         int
 	parallelStream bool
 	timeout        time.Duration
-	goOpts         map[string]interface{}
+	goOpts         map[string]any
 	additionalArgs []string
 	stderr         *bytes.Buffer
 
 	CoverageFile string
 }
 
-func New(suite testsuite.TestSuite, numCPU int, parallelStream bool, timeout time.Duration, goOpts map[string]interface{}, additionalArgs []string) *TestRunner {
+func New(suite testsuite.TestSuite, numCPU int, parallelStream bool, timeout time.Duration, goOpts map[string]any, additionalArgs []string) *TestRunner {
 	runner := &TestRunner{
 		Suite:          suite,
 		numCPU:         numCPU,

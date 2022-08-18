@@ -27,7 +27,7 @@ func convertStreamError(err error, stype protocol.StreamType, pers protocol.Pers
 	if !ok {
 		return err
 	}
-	ids := make([]interface{}, len(strError.nums))
+	ids := make([]any, len(strError.nums))
 	for i, num := range strError.nums {
 		ids[i] = num.StreamID(stype, pers)
 	}

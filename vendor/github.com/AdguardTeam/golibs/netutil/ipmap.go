@@ -26,7 +26,7 @@ func ipToArr(ip net.IP) (a ipArr) {
 
 // IPMap is a map of IP addresses.
 type IPMap struct {
-	m map[ipArr]interface{}
+	m map[ipArr]any
 }
 
 // NewIPMap returns a new empty IP map using hint as a size hint for the
@@ -35,7 +35,7 @@ type IPMap struct {
 // It is not safe for concurrent use, just like the usual Go maps aren't.
 func NewIPMap(hint int) (m *IPMap) {
 	return &IPMap{
-		m: make(map[ipArr]interface{}, hint),
+		m: make(map[ipArr]any, hint),
 	}
 }
 
@@ -63,7 +63,7 @@ func (m *IPMap) Del(ip net.IP) {
 
 // Get returns the value from the map.  Calling Get on a nil *IPMap returns nil
 // and false, just like indexing on an empty map does.
-func (m *IPMap) Get(ip net.IP) (v interface{}, ok bool) {
+func (m *IPMap) Get(ip net.IP) (v any, ok bool) {
 	if m != nil {
 		v, ok = m.m[ipToArr(ip)]
 
@@ -87,7 +87,7 @@ func (m *IPMap) Len() (n int) {
 // present in the map in an undefined order.  If cont is false, range stops the
 // iteration.  Calling Range on a nil *IPMap has no effect, just like ranging
 // over a nil map.
-func (m *IPMap) Range(f func(ip net.IP, v interface{}) (cont bool)) {
+func (m *IPMap) Range(f func(ip net.IP, v any) (cont bool)) {
 	if m == nil {
 		return
 	}
@@ -106,7 +106,7 @@ func (m *IPMap) Range(f func(ip net.IP, v interface{}) (cont bool)) {
 
 // Set sets the value.  Set panics if the m is a nil *IPMap, just like a nil map
 // does.
-func (m *IPMap) Set(ip net.IP, v interface{}) {
+func (m *IPMap) Set(ip net.IP, v any) {
 	if m == nil {
 		panic(errors.Error("assignment to entry in nil *netutil.IPMap"))
 	}
@@ -121,7 +121,7 @@ func (m *IPMap) ShallowClone() (sclone *IPMap) {
 	}
 
 	sclone = NewIPMap(m.Len())
-	m.Range(func(ip net.IP, v interface{}) (cont bool) {
+	m.Range(func(ip net.IP, v any) (cont bool) {
 		sclone.Set(ip, v)
 
 		return true

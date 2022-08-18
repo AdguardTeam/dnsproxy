@@ -159,7 +159,7 @@ type mmsgTmps struct {
 
 var defaultMmsgTmpsPool = mmsgTmpsPool{
 	p: sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			tmps := new(mmsgTmps)
 			tmps.syscaller.init()
 			return tmps

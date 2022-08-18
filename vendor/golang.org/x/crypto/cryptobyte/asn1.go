@@ -208,7 +208,7 @@ func (b *Builder) AddASN1NULL() {
 
 // MarshalASN1 calls encoding_asn1.Marshal on its input and appends the result if
 // successful or records an error if one occurred.
-func (b *Builder) MarshalASN1(v interface{}) {
+func (b *Builder) MarshalASN1(v any) {
 	// NOTE(martinkr): This is somewhat of a hack to allow propagation of
 	// encoding_asn1.Marshal errors into Builder.err. N.B. if you call MarshalASN1 with a
 	// value embedded into a struct, its tag information is lost.
@@ -269,7 +269,7 @@ var bigIntType = reflect.TypeOf((*big.Int)(nil)).Elem()
 // ReadASN1Integer decodes an ASN.1 INTEGER into out and advances. If out does
 // not point to an integer or to a big.Int, it panics. It reports whether the
 // read was successful.
-func (s *String) ReadASN1Integer(out interface{}) bool {
+func (s *String) ReadASN1Integer(out any) bool {
 	if reflect.TypeOf(out).Kind() != reflect.Ptr {
 		panic("out is not a pointer")
 	}
@@ -659,7 +659,7 @@ func (s *String) SkipOptionalASN1(tag asn1.Tag) bool {
 // matching tag is present, it writes defaultValue into out instead. If out
 // does not point to an integer or to a big.Int, it panics. It reports
 // whether the read was successful.
-func (s *String) ReadOptionalASN1Integer(out interface{}, tag asn1.Tag, defaultValue interface{}) bool {
+func (s *String) ReadOptionalASN1Integer(out any, tag asn1.Tag, defaultValue any) bool {
 	if reflect.TypeOf(out).Kind() != reflect.Ptr {
 		panic("out is not a pointer")
 	}

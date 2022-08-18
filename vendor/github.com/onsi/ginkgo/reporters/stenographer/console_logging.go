@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func (s *consoleStenographer) colorize(colorCode string, format string, args ...interface{}) string {
+func (s *consoleStenographer) colorize(colorCode string, format string, args ...any) string {
 	var out string
 
 	if len(args) > 0 {
@@ -34,15 +34,15 @@ func (s *consoleStenographer) printDelimiter() {
 	fmt.Fprintln(s.w, s.colorize(grayColor, "%s", strings.Repeat("-", 30)))
 }
 
-func (s *consoleStenographer) print(indentation int, format string, args ...interface{}) {
+func (s *consoleStenographer) print(indentation int, format string, args ...any) {
 	fmt.Fprint(s.w, s.indent(indentation, format, args...))
 }
 
-func (s *consoleStenographer) println(indentation int, format string, args ...interface{}) {
+func (s *consoleStenographer) println(indentation int, format string, args ...any) {
 	fmt.Fprintln(s.w, s.indent(indentation, format, args...))
 }
 
-func (s *consoleStenographer) indent(indentation int, format string, args ...interface{}) string {
+func (s *consoleStenographer) indent(indentation int, format string, args ...any) string {
 	var text string
 
 	if len(args) > 0 {

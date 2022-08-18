@@ -21,7 +21,7 @@ func newBenchmarker() *benchmarker {
 	}
 }
 
-func (b *benchmarker) Time(name string, body func(), info ...interface{}) (elapsedTime time.Duration) {
+func (b *benchmarker) Time(name string, body func(), info ...any) (elapsedTime time.Duration) {
 	t := time.Now()
 	body()
 	elapsedTime = time.Since(t)
@@ -34,24 +34,24 @@ func (b *benchmarker) Time(name string, body func(), info ...interface{}) (elaps
 	return
 }
 
-func (b *benchmarker) RecordValue(name string, value float64, info ...interface{}) {
+func (b *benchmarker) RecordValue(name string, value float64, info ...any) {
 	b.mu.Lock()
 	measurement := b.getMeasurement(name, "Smallest", " Largest", " Average", "", 3, info...)
 	defer b.mu.Unlock()
 	measurement.Results = append(measurement.Results, value)
 }
 
-func (b *benchmarker) RecordValueWithPrecision(name string, value float64, units string, precision int, info ...interface{}) {
+func (b *benchmarker) RecordValueWithPrecision(name string, value float64, units string, precision int, info ...any) {
 	b.mu.Lock()
 	measurement := b.getMeasurement(name, "Smallest", " Largest", " Average", units, precision, info...)
 	defer b.mu.Unlock()
 	measurement.Results = append(measurement.Results, value)
 }
 
-func (b *benchmarker) getMeasurement(name string, smallestLabel string, largestLabel string, averageLabel string, units string, precision int, info ...interface{}) *types.SpecMeasurement {
+func (b *benchmarker) getMeasurement(name string, smallestLabel string, largestLabel string, averageLabel string, units string, precision int, info ...any) *types.SpecMeasurement {
 	measurement, ok := b.measurements[name]
 	if !ok {
-		var computedInfo interface{}
+		var computedInfo any
 		computedInfo = nil
 		if len(info) > 0 {
 			computedInfo = info[0]

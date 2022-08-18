@@ -77,7 +77,9 @@ const (
 // typeOf returns a distinct single-bit value that represents the type of n.
 //
 // Various implementations were benchmarked with BenchmarkNewInspector:
-//								GOGC=off
+//
+//	GOGC=off
+//
 // - type switch				4.9-5.5ms	2.1ms
 // - binary search over a sorted list of types  5.5-5.9ms	2.5ms
 // - linear scan, frequency-ordered list 	5.9-6.1ms	2.7ms
@@ -90,7 +92,6 @@ const (
 // with constant conditions and good branch prediction.
 // (Sadly it is the most verbose in source code.)
 // Binary search suffered from poor branch prediction.
-//
 func typeOf(n ast.Node) uint64 {
 	// Fast path: nearly half of all nodes are identifiers.
 	if _, ok := n.(*ast.Ident); ok {

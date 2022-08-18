@@ -17,14 +17,14 @@ jobs:
           - ubuntu-latest
           - macos-latest
     steps:
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@main
         with:
-          go-version: 1.17.x
+          go-version: 1.19.x
 
       - uses: actions/checkout@v3
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@master
         with:
           # This field is required.  Dont set the patch version to always use
           # the latest patch version.
@@ -47,9 +47,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Conclusion
-        uses: technote-space/workflow-conclusion-action@v1
+        uses: technote-space/workflow-conclusion-action@main
       - name: Send Slack notif
-        uses: 8398a7/action-slack@v3
+        uses: 8398a7/action-slack@master
         with:
           status: ${{ env.WORKFLOW_CONCLUSION }}
           fields: workflow, repo, message, commit, author, eventName, ref

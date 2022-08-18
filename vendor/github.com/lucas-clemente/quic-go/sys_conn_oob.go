@@ -33,7 +33,7 @@ type batchConn interface {
 	ReadBatch(ms []ipv4.Message, flags int) (int, error)
 }
 
-func inspectReadBuffer(c interface{}) (int, error) {
+func inspectReadBuffer(c any) (int, error) {
 	conn, ok := c.(interface {
 		SyscallConn() (syscall.RawConn, error)
 	})

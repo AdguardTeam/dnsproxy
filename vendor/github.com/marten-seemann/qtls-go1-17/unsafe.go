@@ -52,7 +52,7 @@ func toClientHelloInfo(chi *clientHelloInfo) *ClientHelloInfo {
 	return (*ClientHelloInfo)(unsafe.Pointer(chi))
 }
 
-func structsEqual(a, b interface{}) bool {
+func structsEqual(a, b any) bool {
 	return compare(reflect.ValueOf(a), reflect.ValueOf(b))
 }
 

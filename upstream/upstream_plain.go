@@ -8,9 +8,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-//
 // plain DNS
-//
 type plainDNS struct {
 	address   string
 	timeout   time.Duration

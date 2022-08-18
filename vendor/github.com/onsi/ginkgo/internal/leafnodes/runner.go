@@ -12,7 +12,7 @@ import (
 
 type runner struct {
 	isAsync          bool
-	asyncFunc        func(chan<- interface{})
+	asyncFunc        func(chan<- any)
 	syncFunc         func()
 	codeLocation     types.CodeLocation
 	timeoutThreshold time.Duration
@@ -21,7 +21,7 @@ type runner struct {
 	failer           *failer.Failer
 }
 
-func newRunner(body interface{}, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer, nodeType types.SpecComponentType, componentIndex int) *runner {
+func newRunner(body any, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer, nodeType types.SpecComponentType, componentIndex int) *runner {
 	bodyType := reflect.TypeOf(body)
 	if bodyType.Kind() != reflect.Func {
 		panic(fmt.Sprintf("Expected a function but got something else at %v", codeLocation))
@@ -44,7 +44,7 @@ func newRunner(body interface{}, codeLocation types.CodeLocation, timeout time.D
 			panic(fmt.Sprintf("Must pass a Done channel to function at %v", codeLocation))
 		}
 
-		wrappedBody := func(done chan<- interface{}) {
+		wrappedBody := func(done chan<- any) {
 			bodyValue := reflect.ValueOf(body)
 			bodyValue.Call([]reflect.Value{reflect.ValueOf(done)})
 		}
@@ -66,7 +66,7 @@ func (r *runner) run() (outcome types.SpecState, failure types.SpecFailure) {
 }
 
 func (r *runner) runAsync() (outcome types.SpecState, failure types.SpecFailure) {
-	done := make(chan interface{}, 1)
+	done := make(chan any, 1)
 
 	go func() {
 		finished := false

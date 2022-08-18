@@ -42,13 +42,13 @@ func (node *simpleSuiteNode) Summary() *types.SetupSummary {
 	}
 }
 
-func NewBeforeSuiteNode(body interface{}, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
+func NewBeforeSuiteNode(body any, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
 	return &simpleSuiteNode{
 		runner: newRunner(body, codeLocation, timeout, failer, types.SpecComponentTypeBeforeSuite, 0),
 	}
 }
 
-func NewAfterSuiteNode(body interface{}, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
+func NewAfterSuiteNode(body any, codeLocation types.CodeLocation, timeout time.Duration, failer *failer.Failer) SuiteNode {
 	return &simpleSuiteNode{
 		runner: newRunner(body, codeLocation, timeout, failer, types.SpecComponentTypeAfterSuite, 0),
 	}

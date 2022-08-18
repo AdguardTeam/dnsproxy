@@ -80,7 +80,7 @@ func Pipe(p []int) (err error) {
 	return Pipe2(p, 0)
 }
 
-//sysnb	pipe2(p *[2]_C_int, flags int) (err error)
+// sysnb	pipe2(p *[2]_C_int, flags int) (err error)
 func Pipe2(p []int, flags int) error {
 	if len(p) != 2 {
 		return EINVAL
@@ -94,7 +94,7 @@ func Pipe2(p []int, flags int) error {
 	return err
 }
 
-//sys	Getdents(fd int, buf []byte) (n int, err error)
+// sys	Getdents(fd int, buf []byte) (n int, err error)
 func Getdirentries(fd int, buf []byte, basep *uintptr) (n int, err error) {
 	n, err = Getdents(fd, buf)
 	if err != nil || basep == nil {

@@ -13,6 +13,9 @@ import (
 
 // fromHexByte converts a single hexadecimal ASCII digit character into an
 // integer from 0 to 15.  For all other characters it returns 0xff.
+//
+// TODO(e.burkov):  This should be covered with tests after adding HasSuffixFold
+// into stringutil.
 func fromHexByte(c byte) (n byte) {
 	switch {
 	case c >= '0' && c <= '9':
@@ -197,7 +200,7 @@ func IPToReversedAddr(ip net.IP) (arpa string, err error) {
 }
 
 // ipv4NetFromReversed parses an IPv4 reverse network.  It assumes that arpa is
-// a valid domain name and is not a doman name with a full IPv4 address.
+// a valid domain name and is not a domain name with a full IPv4 address.
 func ipv4NetFromReversed(arpa string) (subnet *net.IPNet, err error) {
 	var octet64 uint64
 	var octetIdx int
@@ -240,7 +243,7 @@ func ipv4NetFromReversed(arpa string) (subnet *net.IPNet, err error) {
 }
 
 // ipv6NetFromReversed parses an IPv6 reverse network.  It assumes that arpa is
-// a valid domain name and is not a doman name with a full IPv6 address.
+// a valid domain name and is not a domain name with a full IPv6 address.
 func ipv6NetFromReversed(arpa string) (subnet *net.IPNet, err error) {
 	const nibbleLen = len("0.")
 

@@ -51,9 +51,11 @@ func IsValidHostOuterRune(r rune) (ok bool) {
 }
 
 // JoinHostPort is a convenient wrapper for net.JoinHostPort with port of type
-// int.
+// int.  As opposed to net.JoinHostPort it also trims the host from square
+// brackets if any.  This may be useful when passing url.URL.Host field
+// containing an IPv6 address.
 func JoinHostPort(host string, port int) (hostport string) {
-	return net.JoinHostPort(host, strconv.Itoa(port))
+	return net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port))
 }
 
 // SplitHostPort is a convenient wrapper for net.SplitHostPort with port of type

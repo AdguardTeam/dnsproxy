@@ -1,5 +1,5 @@
-# github.com/AdguardTeam/golibs v0.10.8
-## explicit; go 1.16
+# github.com/AdguardTeam/golibs v0.10.9
+## explicit; go 1.17
 github.com/AdguardTeam/golibs/cache
 github.com/AdguardTeam/golibs/errors
 github.com/AdguardTeam/golibs/log
@@ -12,38 +12,36 @@ github.com/aead/chacha20/chacha
 # github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635
 ## explicit
 github.com/aead/poly1305
-# github.com/ameshkov/dnscrypt/v2 v2.2.3
-## explicit; go 1.16
+# github.com/ameshkov/dnscrypt/v2 v2.2.5
+## explicit; go 1.18
 github.com/ameshkov/dnscrypt/v2
 github.com/ameshkov/dnscrypt/v2/xsecretbox
 # github.com/ameshkov/dnsstamps v1.0.3
 ## explicit
 github.com/ameshkov/dnsstamps
-# github.com/beefsack/go-rate v0.0.0-20200827232406-6cde80facd47
+# github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 ## explicit
 github.com/beefsack/go-rate
-# github.com/cheekybits/genny v1.0.0
-## explicit
-github.com/cheekybits/genny
-github.com/cheekybits/genny/generic
-github.com/cheekybits/genny/out
-github.com/cheekybits/genny/parse
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
-# github.com/fsnotify/fsnotify v1.5.1
-## explicit; go 1.13
+# github.com/fsnotify/fsnotify v1.5.4
+## explicit; go 1.16
 github.com/fsnotify/fsnotify
 # github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0
 ## explicit; go 1.13
 github.com/go-task/slim-sprig
+# github.com/golang/mock v1.6.0
+## explicit; go 1.11
+github.com/golang/mock/mockgen
+github.com/golang/mock/mockgen/model
 # github.com/jessevdk/go-flags v1.5.0
 ## explicit; go 1.15
 github.com/jessevdk/go-flags
 # github.com/kr/text v0.2.0
 ## explicit
-# github.com/lucas-clemente/quic-go v0.28.1
-## explicit; go 1.16
+# github.com/lucas-clemente/quic-go v0.29.0
+## explicit; go 1.18
 github.com/lucas-clemente/quic-go
 github.com/lucas-clemente/quic-go/internal/ackhandler
 github.com/lucas-clemente/quic-go/internal/congestion
@@ -54,22 +52,17 @@ github.com/lucas-clemente/quic-go/internal/protocol
 github.com/lucas-clemente/quic-go/internal/qerr
 github.com/lucas-clemente/quic-go/internal/qtls
 github.com/lucas-clemente/quic-go/internal/utils
+github.com/lucas-clemente/quic-go/internal/utils/linkedlist
 github.com/lucas-clemente/quic-go/internal/wire
 github.com/lucas-clemente/quic-go/logging
 github.com/lucas-clemente/quic-go/quicvarint
-# github.com/marten-seemann/qtls-go1-16 v0.1.5
-## explicit; go 1.16
-github.com/marten-seemann/qtls-go1-16
-# github.com/marten-seemann/qtls-go1-17 v0.1.2
-## explicit; go 1.17
-github.com/marten-seemann/qtls-go1-17
 # github.com/marten-seemann/qtls-go1-18 v0.1.2
 ## explicit; go 1.18
 github.com/marten-seemann/qtls-go1-18
-# github.com/marten-seemann/qtls-go1-19 v0.1.0-beta.1
+# github.com/marten-seemann/qtls-go1-19 v0.1.0
 ## explicit; go 1.19
 github.com/marten-seemann/qtls-go1-19
-# github.com/miekg/dns v1.1.44
+# github.com/miekg/dns v1.1.50
 ## explicit; go 1.14
 github.com/miekg/dns
 # github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e
@@ -112,11 +105,11 @@ github.com/patrickmn/go-cache
 # github.com/pmezard/go-difflib v1.0.0
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/stretchr/testify v1.7.0
+# github.com/stretchr/testify v1.8.0
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
-# golang.org/x/crypto v0.0.0-20220315160706-3147a52a75dd
+# golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90
 ## explicit; go 1.17
 golang.org/x/crypto/blake2b
 golang.org/x/crypto/chacha20
@@ -126,17 +119,21 @@ golang.org/x/crypto/cryptobyte/asn1
 golang.org/x/crypto/curve25519
 golang.org/x/crypto/curve25519/internal/field
 golang.org/x/crypto/hkdf
+golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305
-golang.org/x/crypto/internal/subtle
 golang.org/x/crypto/nacl/box
 golang.org/x/crypto/nacl/secretbox
 golang.org/x/crypto/salsa20/salsa
-# golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
+# golang.org/x/exp v0.0.0-20220827204233-334a2380cb91
+## explicit; go 1.18
+golang.org/x/exp/constraints
+# golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 ## explicit; go 1.17
 golang.org/x/mod/internal/lazyregexp
+golang.org/x/mod/modfile
 golang.org/x/mod/module
 golang.org/x/mod/semver
-# golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e
+# golang.org/x/net v0.0.0-20220826154423-83b083e8dc8b
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/http/httpguts
@@ -147,7 +144,7 @@ golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
-# golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
+# golang.org/x/sys v0.0.0-20220829200755-d48e67d00261
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/execabs
@@ -160,13 +157,14 @@ golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
-# golang.org/x/tools v0.1.10
-## explicit; go 1.17
+# golang.org/x/tools v0.1.12
+## explicit; go 1.18
 golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/ast/inspector
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/gcimporter
 golang.org/x/tools/go/internal/packagesdriver
+golang.org/x/tools/go/internal/pkgbits
 golang.org/x/tools/go/packages
 golang.org/x/tools/imports
 golang.org/x/tools/internal/event
@@ -180,15 +178,11 @@ golang.org/x/tools/internal/imports
 golang.org/x/tools/internal/packagesinternal
 golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
-# golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
-## explicit; go 1.11
-golang.org/x/xerrors
-golang.org/x/xerrors/internal
 # gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
 ## explicit
 # gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
 ## explicit
 gopkg.in/tomb.v1
-# gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+# gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3

@@ -128,7 +128,11 @@ func CloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 }
 
 // ParseSubnet parses a subnet which can be either a CIDR or a single IP.  In
-// the latter case, n is a single-IP subnet.
+// the latter case, n is a single-IP subnet.  It also keeps the original parsed
+// IP address inside n.
+//
+// If s contains a CIDR with an IP address that is an IPv4-mapped IPv6 address,
+// the behavior is undefined.
 //
 // Any error returned will have the underlying type of either *AddrError.
 func ParseSubnet(s string) (n *net.IPNet, err error) {
@@ -136,32 +140,46 @@ func ParseSubnet(s string) (n *net.IPNet, err error) {
 
 	// Detect if this is a CIDR or an IP early, so that the path to returning an
 	// error is shorter.
-	if strings.Contains(s, "/") {
-		ip, n, err = net.ParseCIDR(s)
+	if !strings.Contains(s, "/") {
+		ip, err = ParseIP(s)
 		if err != nil {
-			// Don't include the original error here, because it is basically
-			// the same as ours but worse and has no additional information.
 			return nil, &AddrError{
+				Err:  err,
 				Kind: AddrKindCIDR,
 				Addr: s,
 			}
 		}
 
-		n.IP = ip
-
-		return n, nil
+		return SingleIPSubnet(ip), nil
 	}
 
-	ip, err = ParseIP(s)
+	ip, n, err = net.ParseCIDR(s)
 	if err != nil {
+		// Don't include the original error here, because it is basically
+		// the same as ours but worse and has no additional information.
 		return nil, &AddrError{
-			Err:  err,
 			Kind: AddrKindCIDR,
 			Addr: s,
 		}
 	}
 
-	return SingleIPSubnet(ip), nil
+	if ip4 := ip.To4(); ip4 != nil {
+		// Reduce the length of IP and mask if possible so that
+		// IPNet.Contains doesn't waste time converting between 16- and
+		// 4-byte versions.
+		ip = ip4
+
+		if ones, bits := n.Mask.Size(); ones >= 96 && bits == IPv6BitLen {
+			// Copy the IPv4-length tail of the underlying slice to it's
+			// beginning to avoid allocations in case of subsequent appending.
+			copy(n.Mask, n.Mask[net.IPv6len-net.IPv4len:])
+			n.Mask = n.Mask[:net.IPv4len]
+		}
+	}
+
+	n.IP = ip
+
+	return n, nil
 }
 
 // SingleIPSubnet returns an IP network that only contains ip.  If ip is not

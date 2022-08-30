@@ -85,7 +85,7 @@ func (s *Server) ServeUDP(l *net.UDPConn) error {
 				return nil
 			}
 			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Temporary() {
+			if errors.As(err, &netErr) && netErr.Timeout() {
 				// Note that timeout errors will be here (i.e. hitting ReadDeadline)
 				continue
 			}

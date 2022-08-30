@@ -21,7 +21,9 @@ func AssertErrorMsg(t testing.TB, msg string, err error) (ok bool) {
 		return assert.NoError(t, err)
 	}
 
-	require.Error(t, err)
+	if !assert.Error(t, err) {
+		return false
+	}
 
 	return assert.Equal(t, msg, err.Error())
 }

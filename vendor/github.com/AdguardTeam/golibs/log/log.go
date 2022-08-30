@@ -129,6 +129,22 @@ func Error(format string, args ...interface{}) {
 	writeLog("error", "", format, args...)
 }
 
+// Panic is equivalent to Print() followed by a call to panic().
+func Panic(args ...interface{}) {
+	s := fmt.Sprint(args...)
+	writeLog("panic", "", "%s", s)
+
+	panic(s)
+}
+
+// Panicf is equivalent to Printf() followed by a call to panic().
+func Panicf(format string, args ...interface{}) {
+	s := fmt.Sprintf(format, args...)
+	writeLog("panic", "", "%s", s)
+
+	panic(s)
+}
+
 // Print writes to info log
 func Print(args ...interface{}) {
 	Info("%s", fmt.Sprint(args...))

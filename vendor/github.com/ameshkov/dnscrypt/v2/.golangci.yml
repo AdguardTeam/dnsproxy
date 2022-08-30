@@ -42,7 +42,7 @@ linters:
     - dupl
     - gocyclo
     - goimports
-    - golint
+    - revive
     - gosec
     - misspell
     - stylecheck
@@ -72,5 +72,5 @@ issues:
     - G404
     # errcheck defer Close
     - error return value not checked \(defer .*\.Close()\)
-    # gosec: False positive is triggered by 'src, err := ioutil.ReadFile(filename)'
+    # gosec: False positive is triggered by 'src, err := os.ReadFile(filename)'
     - Potential file inclusion via variable

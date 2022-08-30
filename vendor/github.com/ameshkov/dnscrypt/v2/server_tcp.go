@@ -80,7 +80,7 @@ func (s *Server) ServeTCP(l net.Listener) error {
 				break
 			}
 			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Temporary() {
+			if errors.As(err, &netErr) && netErr.Timeout() {
 				// Note that timeout errors will be here (i.e. hitting ReadDeadline)
 				continue
 			}

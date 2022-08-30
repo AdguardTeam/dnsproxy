@@ -19,6 +19,9 @@ type SubnetSet interface {
 // *net.IPNet.
 type SliceSubnetSet []*net.IPNet
 
+// type check
+var _ SubnetSet = (SliceSubnetSet)(nil)
+
 // Contains implements the SubnetSet interface for SliceSubnetSet.
 func (s SliceSubnetSet) Contains(ip net.IP) (ok bool) {
 	for _, n := range s {

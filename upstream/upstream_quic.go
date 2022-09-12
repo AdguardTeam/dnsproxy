@@ -35,6 +35,10 @@ type dnsOverQUIC struct {
 	// boot is a bootstrap DNS abstraction that is used to resolve the upstream
 	// server's address and open a network connection to it.
 	boot *bootstrapper
+	// tokenStore is a QUIC token store that is used across QUIC connections.
+	// Since the QUIC config is re-created when a connection is (re-)opened
+	// the tokenStore is instead saved as part of the dnsOverQUIC struct.
+	tokenStore quic.TokenStore
 	// conn is the current active QUIC connection.  It can be closed and
 	// re-opened when needed.
 	conn quic.Connection
@@ -57,8 +61,9 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating quic bootstrapper: %w", err)
 	}
+	tokenStore := quic.NewLRUTokenStore(5, 50)
 
-	return &dnsOverQUIC{boot: b}, nil
+	return &dnsOverQUIC{boot: b, tokenStore: tokenStore}, nil
 }
 
 func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
@@ -228,6 +233,7 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 		//
 		// TODO(ameshkov):  Consider making it configurable.
 		KeepAlivePeriod: 20 * time.Second,
+		TokenStore:	p.tokenStore,
 	}
 	conn, err = quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {

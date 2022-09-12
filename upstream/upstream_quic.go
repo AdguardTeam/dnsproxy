@@ -235,7 +235,7 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 		KeepAlivePeriod: 20 * time.Second,
 		TokenStore:	p.tokenStore,
 	}
-	conn, err = quic.DialAddrContext(context.Background(), addr, tlsConfig, quicConfig)
+	conn, err = quic.DialAddrEarlyContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {
 		return nil, fmt.Errorf("opening quic connection to %s: %w", p.Address(), err)
 	}

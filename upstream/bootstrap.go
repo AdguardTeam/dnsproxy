@@ -199,6 +199,7 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		MinVersion:            tls.VersionTLS12,
 		InsecureSkipVerify:    n.options.InsecureSkipVerify,
 		VerifyPeerCertificate: n.options.VerifyServerCertificate,
+		ClientSessionCache:    tls.NewLRUClientSessionCache(1),
 	}
 
 	// Depending on the URL scheme, we choose what ALPN will be advertised by

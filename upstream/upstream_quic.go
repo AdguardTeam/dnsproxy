@@ -61,9 +61,8 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating quic bootstrapper: %w", err)
 	}
-	tokenStore := quic.NewLRUTokenStore(5, 50)
 
-	return &dnsOverQUIC{boot: b, tokenStore: tokenStore}, nil
+	return &dnsOverQUIC{boot: b, tokenStore: quic.NewLRUTokenStore(1, 10)}, nil
 }
 
 func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }

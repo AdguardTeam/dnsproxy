@@ -212,8 +212,7 @@ func (n *bootstrapper) createTLSConfig(host string) *tls.Config {
 		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 	case "quic":
 		tlsConfig.NextProtos = compatProtoDQ
-		clientSessionCache := tls.NewLRUClientSessionCache(100)
-		tlsConfig.ClientSessionCache = clientSessionCache
+		tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(10)
 	}
 
 	return tlsConfig

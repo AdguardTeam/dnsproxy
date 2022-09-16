@@ -232,7 +232,7 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 		//
 		// TODO(ameshkov):  Consider making it configurable.
 		KeepAlivePeriod: 20 * time.Second,
-		TokenStore:	p.tokenStore,
+		TokenStore:      p.tokenStore,
 	}
 	conn, err = quic.DialAddrEarlyContext(context.Background(), addr, tlsConfig, quicConfig)
 	if err != nil {

@@ -1,8 +1,16 @@
 package upstream
 
 import (
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/url"
 	"os"
@@ -192,6 +200,10 @@ func TestUpstreams(t *testing.T) {
 		// Cloudflare DNS
 		address:   "quic://dns-unfiltered.adguard.com:784",
 		bootstrap: []string{},
+	}, {
+		// Google DNS (HTTP3)
+		address:   "h3://dns.google/dns-query",
+		bootstrap: []string{},
 	}}
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
@@ -235,6 +247,10 @@ func TestAddressToUpstream(t *testing.T) {
 		want: "tls://one.one.one.one:853",
 	}, {
 		addr: "https://one.one.one.one",
+		opt:  opt,
+		want: "https://one.one.one.one:443",
+	}, {
+		addr: "h3://one.one.one.one",
 		opt:  opt,
 		want: "https://one.one.one.one:443",
 	}}
@@ -405,45 +421,6 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 	}
 }
 
-func checkUpstream(t *testing.T, u Upstream, addr string) {
-	t.Helper()
-
-	req := createTestMessage()
-	reply, err := u.Exchange(req)
-	require.NoErrorf(t, err, "couldn't talk to upstream %s", addr)
-
-	requireResponse(t, req, reply)
-}
-
-func createTestMessage() *dns.Msg {
-	return createHostTestMessage("google-public-dns-a.google.com")
-}
-
-func createHostTestMessage(host string) (req *dns.Msg) {
-	return &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
-		Question: []dns.Question{{
-			Name:   dns.Fqdn(host),
-			Qtype:  dns.TypeA,
-			Qclass: dns.ClassINET,
-		}},
-	}
-}
-
-func requireResponse(t *testing.T, req, reply *dns.Msg) {
-	require.NotNil(t, reply)
-	require.Lenf(t, reply.Answer, 1, "wrong number of answers: %d", len(reply.Answer))
-	require.Equal(t, req.Id, reply.Id)
-
-	a, ok := reply.Answer[0].(*dns.A)
-	require.Truef(t, ok, "wrong answer type: %v", reply.Answer[0])
-
-	require.Equalf(t, net.IPv4(8, 8, 8, 8), a.A.To16(), "wrong answer: %v", a.A)
-}
-
 func TestAddPort(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -496,5 +473,133 @@ func TestAddPort(t *testing.T) {
 			addPort(u, tc.port)
 			assert.Equal(t, tc.want, u.Host)
 		})
+	}
+}
+
+func checkUpstream(t *testing.T, u Upstream, addr string) {
+	t.Helper()
+
+	req := createTestMessage()
+	reply, err := u.Exchange(req)
+	require.NoErrorf(t, err, "couldn't talk to upstream %s", addr)
+
+	requireResponse(t, req, reply)
+}
+
+func createTestMessage() (m *dns.Msg) {
+	return createHostTestMessage("google-public-dns-a.google.com")
+}
+
+func respondToTestMessage(m *dns.Msg) (resp *dns.Msg) {
+	resp = &dns.Msg{}
+	resp.SetReply(m)
+	resp.Answer = append(resp.Answer, &dns.A{
+		A: net.IPv4(8, 8, 8, 8),
+		Hdr: dns.RR_Header{
+			Name:   "google-public-dns-a.google.com.",
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    100,
+		},
+	})
+
+	return resp
+}
+
+func createHostTestMessage(host string) (req *dns.Msg) {
+	return &dns.Msg{
+		MsgHdr: dns.MsgHdr{
+			Id:               dns.Id(),
+			RecursionDesired: true,
+		},
+		Question: []dns.Question{{
+			Name:   dns.Fqdn(host),
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}},
+	}
+}
+
+func requireResponse(t *testing.T, req, reply *dns.Msg) {
+	require.NotNil(t, reply)
+	require.Lenf(t, reply.Answer, 1, "wrong number of answers: %d", len(reply.Answer))
+	require.Equal(t, req.Id, reply.Id)
+
+	a, ok := reply.Answer[0].(*dns.A)
+	require.Truef(t, ok, "wrong answer type: %v", reply.Answer[0])
+
+	require.Equalf(t, net.IPv4(8, 8, 8, 8), a.A.To16(), "wrong answer: %v", a.A)
+}
+
+// createServerTLSConfig creates a test server TLS configuration. It returns
+// a *tls.Config that can be used for both the server and the client.
+func createServerTLSConfig(t *testing.T, tlsServerName string) (tlsConfig *tls.Config) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	require.NoError(t, err)
+
+	notBefore := time.Now()
+	notAfter := notBefore.Add(5 * 365 * time.Hour * 24)
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"AdGuard Tests"},
+		},
+		NotBefore: notBefore,
+		NotAfter:  notAfter,
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	template.DNSNames = append(template.DNSNames, tlsServerName)
+
+	derBytes, err := x509.CreateCertificate(
+		rand.Reader,
+		&template,
+		&template,
+		publicKey(privateKey),
+		privateKey,
+	)
+	require.NoError(t, err)
+
+	certPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyPem := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+		},
+	)
+
+	cert, err := tls.X509KeyPair(certPem, keyPem)
+	require.NoError(t, err)
+
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(certPem)
+
+	tlsConfig = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ServerName:   tlsServerName,
+		RootCAs:      roots,
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	return tlsConfig
+}
+
+// publicKey extracts the public key from the specified private key.
+func publicKey(priv any) (pub any) {
+	switch k := priv.(type) {
+	case *rsa.PrivateKey:
+		return &k.PublicKey
+	case *ecdsa.PrivateKey:
+		return &k.PublicKey
+	default:
+		return nil
 	}
 }

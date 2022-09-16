@@ -8,9 +8,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-//
-// plain DNS
-//
+// plainDNS is a struct that implements the Upstream interface for the regular
+// DNS protocol.
 type plainDNS struct {
 	address   string
 	timeout   time.Duration
@@ -31,7 +30,7 @@ func newPlain(uu *url.URL, timeout time.Duration, preferTCP bool) (u *plainDNS) 
 	}
 }
 
-// Address returns the original address that we've put in initially, not resolved one
+// Address implements the Upstream interface for *plainDNS.
 func (p *plainDNS) Address() string {
 	if p.preferTCP {
 		return "tcp://" + p.address
@@ -40,6 +39,7 @@ func (p *plainDNS) Address() string {
 	return p.address
 }
 
+// Exchange implements the Upstream interface for *plainDNS.
 func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	if p.preferTCP {
 		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}

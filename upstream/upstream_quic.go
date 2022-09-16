@@ -15,30 +15,37 @@ import (
 )
 
 const (
-	// DoQCodeNoError is used when the connection or stream needs to be closed,
+	// QUICCodeNoError is used when the connection or stream needs to be closed,
 	// but there is no error to signal.
-	DoQCodeNoError = quic.ApplicationErrorCode(0)
-	// DoQCodeInternalError signals that the DoQ implementation encountered
+	QUICCodeNoError = quic.ApplicationErrorCode(0)
+	// QUICCodeInternalError signals that the DoQ implementation encountered
 	// an internal error and is incapable of pursuing the transaction or the
 	// connection.
-	DoQCodeInternalError = quic.ApplicationErrorCode(1)
-	// DoQCodeProtocolError signals that the DoQ implementation encountered
+	QUICCodeInternalError = quic.ApplicationErrorCode(1)
+	// QUICCodeProtocolError signals that the DoQ implementation encountered
 	// a protocol error and is forcibly aborting the connection.
-	DoQCodeProtocolError = quic.ApplicationErrorCode(2)
+	QUICCodeProtocolError = quic.ApplicationErrorCode(2)
+	// QUICKeepAlivePeriod is the value that we pass to *quic.Config and that
+	// controls the period with with keep-alive frames are being sent to the
+	// connection. We set it to 20s as it would be in the quic-go@v0.27.1 with
+	// KeepAlive field set to true This value is specified in
+	// https://pkg.go.dev/github.com/lucas-clemente/quic-go/internal/protocol#MaxKeepAliveInterval.
+	//
+	// TODO(ameshkov):  Consider making it configurable.
+	QUICKeepAlivePeriod = time.Second * 20
 )
 
-//
-// dnsOverQUIC is a DNS-over-QUIC implementation according to the spec:
-// https://www.rfc-editor.org/rfc/rfc9250.html
-//
+// dnsOverQUIC is a struct that implements the Upstream interface for the
+// DNS-over-QUIC protocol (spec: https://www.rfc-editor.org/rfc/rfc9250.html).
 type dnsOverQUIC struct {
 	// boot is a bootstrap DNS abstraction that is used to resolve the upstream
 	// server's address and open a network connection to it.
 	boot *bootstrapper
-	// tokenStore is a QUIC token store that is used across QUIC connections.
-	// Since the QUIC config is re-created when a connection is (re-)opened
-	// the tokenStore is instead saved as part of the dnsOverQUIC struct.
-	tokenStore quic.TokenStore
+	// quicConfig is the QUIC configuration that is used for establishing
+	// connections to the upstream.  This configuration includes the TokenStore
+	// that needs to be stored for the lifetime of dnsOverQUIC since we can
+	// re-create the connection.
+	quicConfig *quic.Config
 	// conn is the current active QUIC connection.  It can be closed and
 	// re-opened when needed.
 	conn quic.Connection
@@ -62,11 +69,24 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 		return nil, fmt.Errorf("creating quic bootstrapper: %w", err)
 	}
 
-	return &dnsOverQUIC{boot: b, tokenStore: quic.NewLRUTokenStore(1, 10)}, nil
+	return &dnsOverQUIC{
+		boot: b,
+		quicConfig: &quic.Config{
+			KeepAlivePeriod: QUICKeepAlivePeriod,
+			// You can read more on address validation here:
+			// https://datatracker.ietf.org/doc/html/rfc9000#section-8.1
+			// Setting maxOrigins to 1 and tokensPerOrigin to 10 assuming that
+			// this is more than enough for the way we use it (one connection
+			// per upstream).
+			TokenStore: quic.NewLRUTokenStore(1, 10),
+		},
+	}, nil
 }
 
+// Address implements the Upstream interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 
+// Exchange implements the Upstream interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
 	var conn quic.Connection
 	conn, err = p.getConnection(true)
@@ -95,13 +115,13 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
 	var stream quic.Stream
 	stream, err = p.openStream(conn)
 	if err != nil {
-		p.closeConnWithError(DoQCodeInternalError)
+		p.closeConnWithError(QUICCodeInternalError)
 		return nil, fmt.Errorf("open new stream to %s: %w", p.Address(), err)
 	}
 
 	_, err = stream.Write(proxyutil.AddPrefix(buf))
 	if err != nil {
-		p.closeConnWithError(DoQCodeInternalError)
+		p.closeConnWithError(QUICCodeInternalError)
 		return nil, fmt.Errorf("failed to write to a QUIC stream: %w", err)
 	}
 
@@ -117,7 +137,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
 		// fatal error.  It SHOULD forcibly abort the connection using QUIC's
 		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
 		// DOQ_PROTOCOL_ERROR.
-		p.closeConnWithError(DoQCodeProtocolError)
+		p.closeConnWithError(QUICCodeProtocolError)
 	}
 	return res, err
 }
@@ -152,7 +172,7 @@ func (p *dnsOverQUIC) getConnection(useCached bool) (quic.Connection, error) {
 	}
 	if conn != nil {
 		// we're recreating the connection, let's create a new one.
-		_ = conn.CloseWithError(DoQCodeNoError, "")
+		_ = conn.CloseWithError(QUICCodeNoError, "")
 	}
 	p.RUnlock()
 
@@ -162,11 +182,10 @@ func (p *dnsOverQUIC) getConnection(useCached bool) (quic.Connection, error) {
 	var err error
 	conn, err = p.openConnection()
 	if err != nil {
-		// This does not look too nice, but QUIC (or maybe quic-go)
-		// doesn't seem stable enough.
-		// Maybe retransmissions aren't fully implemented in quic-go?
-		// Anyways, the simple solution is to make a second try when
-		// it fails to open the QUIC conn.
+		// This does not look too nice, but QUIC (or maybe quic-go) doesn't
+		// seem stable enough. Maybe retransmissions aren't fully implemented
+		// in quic-go? Anyways, the simple solution is to make a second try when
+		// it fails to open the QUIC connection.
 		conn, err = p.openConnection()
 		if err != nil {
 			return nil, err
@@ -224,17 +243,8 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 	}
 
 	addr := udpConn.RemoteAddr().String()
-	quicConfig := &quic.Config{
-		// Set the keep alive interval to 20s as it would be in the
-		// quic-go@v0.27.1 with KeepAlive field set to true.  This value is
-		// specified in
-		// https://pkg.go.dev/github.com/lucas-clemente/quic-go/internal/protocol#MaxKeepAliveInterval.
-		//
-		// TODO(ameshkov):  Consider making it configurable.
-		KeepAlivePeriod: 20 * time.Second,
-		TokenStore:	p.tokenStore,
-	}
-	conn, err = quic.DialAddrEarlyContext(context.Background(), addr, tlsConfig, quicConfig)
+
+	conn, err = quic.DialAddrEarlyContext(context.Background(), addr, tlsConfig, p.quicConfig)
 	if err != nil {
 		return nil, fmt.Errorf("opening quic connection to %s: %w", p.Address(), err)
 	}

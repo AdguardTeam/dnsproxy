@@ -43,6 +43,7 @@ github.com/jessevdk/go-flags
 # github.com/lucas-clemente/quic-go v0.29.0
 ## explicit; go 1.18
 github.com/lucas-clemente/quic-go
+github.com/lucas-clemente/quic-go/http3
 github.com/lucas-clemente/quic-go/internal/ackhandler
 github.com/lucas-clemente/quic-go/internal/congestion
 github.com/lucas-clemente/quic-go/internal/flowcontrol
@@ -56,6 +57,9 @@ github.com/lucas-clemente/quic-go/internal/utils/linkedlist
 github.com/lucas-clemente/quic-go/internal/wire
 github.com/lucas-clemente/quic-go/logging
 github.com/lucas-clemente/quic-go/quicvarint
+# github.com/marten-seemann/qpack v0.2.1
+## explicit; go 1.14
+github.com/marten-seemann/qpack
 # github.com/marten-seemann/qtls-go1-18 v0.1.2
 ## explicit; go 1.18
 github.com/marten-seemann/qtls-go1-18

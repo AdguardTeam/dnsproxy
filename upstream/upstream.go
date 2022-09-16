@@ -1,7 +1,9 @@
-// Package upstream implements DNS clients for all known DNS encryption protocols
+// Package upstream implements DNS clients for all known DNS encryption
+// protocols.
 package upstream
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net"
@@ -17,13 +19,17 @@ import (
 	"github.com/miekg/dns"
 )
 
-// Upstream is an interface for a DNS resolver
+// Upstream is an interface for a DNS resolver.
 type Upstream interface {
+	// Exchange sends the DNS query m to this upstream and returns the response
+	// that has been received or an error if something went wrong.
 	Exchange(m *dns.Msg) (*dns.Msg, error)
+	// Address returns the address of the upstream DNS resolver.
 	Address() string
 }
 
-// Options for AddressToUpstream func
+// Options for AddressToUpstream func.  With these options we can configure the
+// upstream properties.
 type Options struct {
 	// Bootstrap is a list of DNS servers to be used to resolve
 	// DNS-over-HTTPS/DNS-over-TLS hostnames.  Plain DNS, DNSCrypt, or
@@ -42,16 +48,54 @@ type Options struct {
 	// InsecureSkipVerify disables verifying the server's certificate.
 	InsecureSkipVerify bool
 
-	// VerifyServerCertificate used to be set to crypto/tls
-	// Config.VerifyPeerCertificate for DNS-over-HTTPS, DNS-over-QUIC,
-	// DNS-over-TLS.
+	// HTTPVersions is a list of HTTP versions that should be supported by the
+	// DNS-over-HTTPS client.  If not set, HTTP/1.1 and HTTP/2 will be used.
+	HTTPVersions []HTTPVersion
+
+	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
+	// of the *tls.Config for DNS-over-HTTPS, DNS-over-QUIC, and DNS-over-TLS.
 	VerifyServerCertificate func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
+
+	// VerifyConnection is used to set the VerifyConnection property
+	// of the *tls.Config for DNS-over-HTTPS, DNS-over-QUIC, and DNS-over-TLS.
+	VerifyConnection func(state tls.ConnectionState) error
 
 	// VerifyDNSCryptCertificate is the callback the DNSCrypt server certificate
 	// will be passed to.  It's called in dnsCrypt.exchangeDNSCrypt.
 	// Upstream.Exchange method returns any error caused by it.
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 }
+
+// Clone copies o to a new struct.  Note, that this is not a deep clone.
+func (o *Options) Clone() (clone *Options) {
+	return &Options{
+		Bootstrap:                 o.Bootstrap,
+		Timeout:                   o.Timeout,
+		ServerIPAddrs:             o.ServerIPAddrs,
+		InsecureSkipVerify:        o.InsecureSkipVerify,
+		HTTPVersions:              o.HTTPVersions,
+		VerifyServerCertificate:   o.VerifyServerCertificate,
+		VerifyConnection:          o.VerifyConnection,
+		VerifyDNSCryptCertificate: o.VerifyDNSCryptCertificate,
+	}
+}
+
+// HTTPVersion is an enumeration of the HTTP versions that we support.  Values
+// that we use in this enumeration are also used as ALPN values.
+type HTTPVersion string
+
+const (
+	// HTTPVersion11 is HTTP/1.1.
+	HTTPVersion11 HTTPVersion = "http/1.1"
+	// HTTPVersion2 is HTTP/2.
+	HTTPVersion2 HTTPVersion = "h2"
+	// HTTPVersion3 is HTTP/3.
+	HTTPVersion3 HTTPVersion = "h3"
+)
+
+// DefaultHTTPVersions is the list of HTTPVersion that we use by default in
+// the DNS-over-HTTPS client.
+var DefaultHTTPVersions = []HTTPVersion{HTTPVersion11, HTTPVersion2}
 
 const (
 	// defaultPortPlain is the default port for plain DNS.
@@ -72,11 +116,12 @@ const (
 
 // AddressToUpstream converts addr to an Upstream instance:
 //
-//  8.8.8.8:53 or udp://dns.adguard.com for plain DNS;
-//  tcp://8.8.8.8:53 for plain DNS-over-TCP;
-//  tls://1.1.1.1 for DNS-over-TLS;
-//  https://dns.adguard.com/dns-query for DNS-over-HTTPS;
-//  sdns://... for DNS stamp, see https://dnscrypt.info/stamps-specifications.
+//   - 8.8.8.8:53 or udp://dns.adguard.com for plain DNS;
+//   - tcp://8.8.8.8:53 for plain DNS-over-TCP;
+//   - tls://1.1.1.1 for DNS-over-TLS;
+//   - https://dns.adguard.com/dns-query for DNS-over-HTTPS;
+//   - h3://dns.google for DNS-over-HTTPS that only works with HTTP/3;
+//   - sdns://... for DNS stamp, see https://dnscrypt.info/stamps-specifications.
 //
 // opts are applied to the u.  nil is a valid value for opts.
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
@@ -129,6 +174,10 @@ func urlToUpstream(uu *url.URL, opts *Options) (u Upstream, err error) {
 		return newDoQ(uu, opts)
 	case "tls":
 		return newDoT(uu, opts)
+	case "h3":
+		opts.HTTPVersions = []HTTPVersion{HTTPVersion3}
+		uu.Scheme = "https"
+		return newDoH(uu, opts)
 	case "https":
 		return newDoH(uu, opts)
 	default:
@@ -190,11 +239,10 @@ func logBegin(upstreamAddress string, req *dns.Msg) {
 	qtype := ""
 	target := ""
 	if len(req.Question) != 0 {
-		qtype = dns.TypeToString[req.Question[0].Qtype]
+		qtype = dns.Type(req.Question[0].Qtype).String()
 		target = req.Question[0].Name
 	}
-	log.Debug("%s: sending request %s %s",
-		upstreamAddress, qtype, target)
+	log.Debug("%s: sending request %s %s", upstreamAddress, qtype, target)
 }
 
 // Write to log about the result of DNS request
@@ -203,6 +251,5 @@ func logFinish(upstreamAddress string, err error) {
 	if err != nil {
 		status = err.Error()
 	}
-	log.Debug("%s: response: %s",
-		upstreamAddress, status)
+	log.Debug("%s: response: %s", upstreamAddress, status)
 }

@@ -72,13 +72,7 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 			dnsUpstream, ok := upstreamsIndex[u]
 			if !ok {
 				// create an upstream
-				dnsUpstream, err = upstream.AddressToUpstream(
-					u,
-					&upstream.Options{
-						Bootstrap:          options.Bootstrap,
-						Timeout:            options.Timeout,
-						InsecureSkipVerify: options.InsecureSkipVerify,
-					})
+				dnsUpstream, err = upstream.AddressToUpstream(u, options.Clone())
 
 				if err != nil {
 					err = fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, options.Bootstrap, err)

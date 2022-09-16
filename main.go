@@ -80,6 +80,11 @@ type Options struct {
 	// Path to the DNSCrypt configuration file
 	DNSCryptConfigPath string `yaml:"dnscrypt-config" short:"g" long:"dnscrypt-config" description:"Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt"`
 
+	// HTTP3 controls whether HTTP/3 is enabled for this instance of dnsproxy.
+	// At this point it only enables it for upstreams, but in the future it will
+	// also enable it for the server.
+	HTTP3 bool `yaml:"http3" long:"http3" description:"Enable HTTP/3 support" optional:"yes" optional-value:"false"`
+
 	// Upstream DNS servers settings
 	// --
 
@@ -292,7 +297,18 @@ func createProxyConfig(options *Options) proxy.Config {
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
 	upstreams := loadServersList(options.Upstreams)
+
+	httpVersions := upstream.DefaultHTTPVersions
+	if options.HTTP3 {
+		httpVersions = []upstream.HTTPVersion{
+			upstream.HTTPVersion3,
+			upstream.HTTPVersion2,
+			upstream.HTTPVersion11,
+		}
+	}
+
 	upsOpts := &upstream.Options{
+		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: options.Insecure,
 		Bootstrap:          options.BootstrapDNS,
 		Timeout:            defaultTimeout,

@@ -13,9 +13,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-//
-// DNSCrypt
-//
+// dnsCrypt is a struct that implements the Upstream interface for the DNSCrypt
+// protocol.
 type dnsCrypt struct {
 	boot       *bootstrapper
 	client     *dnscrypt.Client       // DNSCrypt client properties
@@ -27,8 +26,10 @@ type dnsCrypt struct {
 // type check
 var _ Upstream = (*dnsCrypt)(nil)
 
+// Address implements the Upstream interface for *dnsCrypt.
 func (p *dnsCrypt) Address() string { return p.boot.URL.String() }
 
+// Exchange implements the Upstream interface for *dnsCrypt.
 func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	reply, err := p.exchangeDNSCrypt(m)
 

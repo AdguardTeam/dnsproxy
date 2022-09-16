@@ -1,48 +1,51 @@
 package upstream
 
 import (
+	"crypto/tls"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestTLSPoolReconnect(t *testing.T) {
+	var lastState tls.ConnectionState
 	u, err := AddressToUpstream(
 		"tls://one.one.one.one",
 		&Options{
 			Bootstrap: []string{"8.8.8.8:53"},
 			Timeout:   timeout,
+			VerifyConnection: func(state tls.ConnectionState) error {
+				lastState = state
+				return nil
+			},
 		},
 	)
-	if err != nil {
-		t.Fatalf("cannot create upstream: %s", err)
-	}
+	require.NoError(t, err)
 
-	// Send the first test message
+	// Send the first test message.
 	req := createTestMessage()
 	reply, err := u.Exchange(req)
-	if err != nil {
-		t.Fatalf("first DNS message failed: %s", err)
-	}
+	require.NoError(t, err)
 	requireResponse(t, req, reply)
 
-	// Now let's close the pooled connection and return it back to the pool
+	// Now let's close the pooled connection and return it back to the pool.
 	p := u.(*dnsOverTLS)
 	conn, _ := p.pool.Get()
 	conn.Close()
 	p.pool.Put(conn)
 
-	// Send the second test message
+	// Send the second test message.
 	req = createTestMessage()
 	reply, err = u.Exchange(req)
-	if err != nil {
-		t.Fatalf("second DNS message failed: %s", err)
-	}
+	require.NoError(t, err)
 	requireResponse(t, req, reply)
 
 	// Now assert that the number of connections in the pool is not changed
-	if len(p.pool.conns) != 1 {
-		t.Fatal("wrong number of pooled connections")
-	}
+	require.Len(t, p.pool.conns, 1)
+
+	// Check that the session was resumed on the last attempt.
+	require.True(t, lastState.DidResume)
 }
 
 func TestTLSPoolDeadLine(t *testing.T) {

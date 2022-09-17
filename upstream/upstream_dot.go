@@ -54,6 +54,8 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 
 	p.RLock()
 	poolConn, err := p.pool.Get()
+	// Put the connection right back in to allow the connection to be reused while requests are in flight
+	p.pool.Put(poolConn)
 	p.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("getting connection to %s: %w", p.Address(), err)
@@ -82,11 +84,6 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 		logFinish(p.Address(), err)
 	}
 
-	if err == nil {
-		p.RLock()
-		p.pool.Put(poolConn)
-		p.RUnlock()
-	}
 	return reply, err
 }
 

@@ -4,12 +4,33 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 )
 
-func (p *Proxy) createDNSCryptListeners() error {
+func (p *Proxy) createDNSCryptListeners() (err error) {
+	if len(p.DNSCryptUDPListenAddr) == 0 && len(p.DNSCryptTCPListenAddr) == 0 {
+		// Do nothing if DNSCrypt listen addresses are not specified.
+		return nil
+	}
+
+	if p.DNSCryptResolverCert == nil || p.DNSCryptProviderName == "" {
+		return errors.Error("invalid DNSCrypt configuration: no certificate or provider name")
+	}
+
+	log.Info("Initializing DNSCrypt: %s", p.DNSCryptProviderName)
+	p.dnsCryptServer = &dnscrypt.Server{
+		ProviderName: p.DNSCryptProviderName,
+		ResolverCert: p.DNSCryptResolverCert,
+		Handler: &dnsCryptHandler{
+			proxy: p,
+
+			requestGoroutinesSema: p.requestGoroutinesSema,
+		},
+	}
+
 	for _, a := range p.DNSCryptUDPListenAddr {
 		log.Info("Creating a DNSCrypt UDP listener")
 		udpListen, err := net.ListenUDP("udp", a)

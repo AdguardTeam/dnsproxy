@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,7 +100,7 @@ func TestFastestAddr_PingAll_cache(t *testing.T) {
 	t.Run("not_cached", func(t *testing.T) {
 		listener, err := net.Listen("tcp", ":0")
 		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, listener.Close()) })
+		testutil.CleanupAndRequireSuccess(t, listener.Close)
 
 		ip := net.IP{127, 0, 0, 1}
 		f := NewFastestAddr()
@@ -138,8 +139,7 @@ func listen(t *testing.T, ip net.IP) (port uint) {
 
 	l, err := net.Listen("tcp", netutil.IPPort{IP: ip, Port: 0}.String())
 	require.NoError(t, err)
-
-	t.Cleanup(func() { require.NoError(t, l.Close()) })
+	testutil.CleanupAndRequireSuccess(t, l.Close)
 
 	return uint(l.Addr().(*net.TCPAddr).Port)
 }

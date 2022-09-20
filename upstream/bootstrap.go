@@ -306,3 +306,16 @@ func (n *bootstrapper) createDialContext(addresses []string) (dialContext dialHa
 		return nil, errors.List("all dialers failed", errs...)
 	}
 }
+
+// newContext creates a new context with deadline if needed.  If no timeout is
+// set cancel would be a simple noop.
+func (n *bootstrapper) newContext() (ctx context.Context, cancel context.CancelFunc) {
+	ctx = context.Background()
+	cancel = func() {}
+
+	if n.options.Timeout > 0 {
+		ctx, cancel = context.WithDeadline(ctx, time.Now().Add(n.options.Timeout))
+	}
+
+	return ctx, cancel
+}

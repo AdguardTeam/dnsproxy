@@ -34,7 +34,7 @@ func TestQuicProxy(t *testing.T) {
 	addr := dnsProxy.Addr(ProtoQUIC)
 
 	// Open QUIC connection.
-	conn, err := quic.DialAddr(addr.String(), tlsConfig, nil)
+	conn, err := quic.DialAddrEarly(addr.String(), tlsConfig, nil)
 	require.NoError(t, err)
 	defer conn.CloseWithError(DoQCodeNoError, "")
 

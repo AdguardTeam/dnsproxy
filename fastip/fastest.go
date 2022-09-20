@@ -6,11 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AdguardTeam/golibs/log"
-
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
 

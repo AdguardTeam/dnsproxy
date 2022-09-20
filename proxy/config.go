@@ -54,6 +54,7 @@ type Config struct {
 	// --
 
 	TLSConfig            *tls.Config    // necessary for TLS, HTTPS, QUIC
+	HTTP3                bool           // if true, HTTPS server will also support HTTP/3
 	DNSCryptProviderName string         // DNSCrypt provider name
 	DNSCryptResolverCert *dnscrypt.Cert // DNSCrypt resolver certificate
 

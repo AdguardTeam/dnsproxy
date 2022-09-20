@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
@@ -74,12 +73,7 @@ func newDoH(uu *url.URL, opts *Options) (u Upstream, err error) {
 
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
-			// You can read more on address validation here:
-			// https://datatracker.ietf.org/doc/html/rfc9000#section-8.1
-			// Setting maxOrigins to 1 and tokensPerOrigin to 10 assuming that
-			// this is more than enough for the way we use it (one connection
-			// per upstream).
-			TokenStore: quic.NewLRUTokenStore(1, 10),
+			TokenStore:      newQUICTokenStore(),
 		},
 	}, nil
 }
@@ -88,17 +82,69 @@ func newDoH(uu *url.URL, opts *Options) (u Upstream, err error) {
 func (p *dnsOverHTTPS) Address() string { return p.boot.URL.String() }
 
 // Exchange implements the Upstream interface for *dnsOverHTTPS.
-func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (*dns.Msg, error) {
+func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+	// Quote from https://www.rfc-editor.org/rfc/rfc8484.html:
+	// In order to maximize HTTP cache friendliness, DoH clients using media
+	// formats that include the ID field from the DNS message header, such
+	// as "application/dns-message", SHOULD use a DNS ID of 0 in every DNS
+	// request.
+	id := m.Id
+	m.Id = 0
+	defer func() {
+		// Restore the original ID to not break compatibility with proxies.
+		m.Id = id
+		if resp != nil {
+			resp.Id = id
+		}
+	}()
+
+	// Check if there was already an active client before sending the request.
+	// We'll only attempt to re-connect if there was one.
+	hasClient := p.hasClient()
+
+	// Make the first attempt to send the DNS query.
+	resp, err = p.exchangeHTTPS(m)
+
+	// Make up to 2 attempts to re-create the HTTP client and send the request
+	// again.  There are several cases (mostly, with QUIC) where this workaround
+	// is necessary to make HTTP client usable.  We need to make 2 attempts in
+	// the case when the connection was closed (due to inactivity for example)
+	// AND the server refuses to open a 0-RTT connection.
+	for i := 0; hasClient && p.shouldRetry(err) && i < 2; i++ {
+		log.Debug("re-creating the HTTP client and retrying due to %v", err)
+
+		p.clientGuard.Lock()
+		p.client = nil
+		// Re-create the token store to make sure we're not trying to use invalid
+		// tokens for 0-RTT.
+		p.quicConfig.TokenStore = newQUICTokenStore()
+		p.clientGuard.Unlock()
+
+		resp, err = p.exchangeHTTPS(m)
+	}
+
+	if err != nil {
+		// If the request failed anyway, make sure we don't use this client.
+		p.clientGuard.Lock()
+		p.client = nil
+		p.clientGuard.Unlock()
+	}
+
+	return resp, err
+}
+
+// exchangeHTTPS creates an HTTP client and sends the DNS query using it.
+func (p *dnsOverHTTPS) exchangeHTTPS(m *dns.Msg) (resp *dns.Msg, err error) {
 	client, err := p.getClient()
 	if err != nil {
 		return nil, fmt.Errorf("initializing http client: %w", err)
 	}
 
 	logBegin(p.Address(), m)
-	r, err := p.exchangeHTTPSClient(m, client)
+	resp, err = p.exchangeHTTPSClient(m, client)
 	logFinish(p.Address(), err)
 
-	return r, err
+	return resp, err
 }
 
 // exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
@@ -125,16 +171,6 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		if errors.Is(err, os.ErrDeadlineExceeded) {
-			// If this is a timeout error, trying to forcibly re-create the HTTP
-			// client instance.
-			//
-			// See https://github.com/AdguardTeam/AdGuardHome/issues/3217.
-			p.clientGuard.Lock()
-			p.client = nil
-			p.clientGuard.Unlock()
-		}
-
 		return nil, fmt.Errorf("requesting %s: %w", p.boot.URL, err)
 	}
 
@@ -158,6 +194,38 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	}
 
 	return &response, err
+}
+
+// hasClient returns true if this connection already has an active HTTP client.
+func (p *dnsOverHTTPS) hasClient() (ok bool) {
+	p.clientGuard.Lock()
+	defer p.clientGuard.Unlock()
+
+	return p.client != nil
+}
+
+// shouldRetry checks what error we have received and returns true if we should
+// re-create the HTTP client and retry the request.
+func (p *dnsOverHTTPS) shouldRetry(err error) (ok bool) {
+	if err == nil {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		// If this is a timeout error, trying to forcibly re-create the HTTP
+		// client instance.  This is an attempt to fix an issue with DoH client
+		// stalling after a network change.
+		//
+		// See https://github.com/AdguardTeam/AdGuardHome/issues/3217.
+		return true
+	}
+
+	if isQUICRetryError(err) {
+		return true
+	}
+
+	return false
 }
 
 // getClient gets or lazily initializes an HTTP client (and transport) that will
@@ -266,7 +334,7 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 func (p *dnsOverHTTPS) createTransportH3(
 	tlsConfig *tls.Config,
 	dialContext dialHandler,
-) (roundTripper *http3.RoundTripper, err error) {
+) (roundTripper http.RoundTripper, err error) {
 	if !p.supportsH3() {
 		return nil, errors.Error("HTTP3 support is not enabled")
 	}
@@ -276,21 +344,25 @@ func (p *dnsOverHTTPS) createTransportH3(
 		return nil, err
 	}
 
-	return &http3.RoundTripper{
+	rt := &http3.RoundTripper{
 		Dial: func(
 			ctx context.Context,
+
 			// Ignore the address and always connect to the one that we got
 			// from the bootstrapper.
 			_ string,
 			tlsCfg *tls.Config,
 			cfg *quic.Config,
 		) (c quic.EarlyConnection, err error) {
-			return quic.DialAddrEarlyContext(ctx, addr, tlsCfg, cfg)
+			c, err = quic.DialAddrEarlyContext(ctx, addr, tlsCfg, cfg)
+			return c, err
 		},
 		DisableCompression: true,
 		TLSClientConfig:    tlsConfig,
 		QuicConfig:         p.quicConfig,
-	}, nil
+	}
+
+	return rt, nil
 }
 
 // probeH3 runs a test to check whether QUIC is faster than TLS for this

@@ -81,8 +81,7 @@ type Options struct {
 	DNSCryptConfigPath string `yaml:"dnscrypt-config" short:"g" long:"dnscrypt-config" description:"Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt"`
 
 	// HTTP3 controls whether HTTP/3 is enabled for this instance of dnsproxy.
-	// At this point it only enables it for upstreams, but in the future it will
-	// also enable it for the server.
+	// It enables HTTP/3 support for both the DoH upstreams and the DoH server.
 	HTTP3 bool `yaml:"http3" long:"http3" description:"Enable HTTP/3 support" optional:"yes" optional-value:"false"`
 
 	// Upstream DNS servers settings
@@ -274,6 +273,7 @@ func createProxyConfig(options *Options) proxy.Config {
 		CacheMaxTTL:     options.CacheMaxTTL,
 		CacheOptimistic: options.CacheOptimistic,
 		RefuseAny:       options.RefuseAny,
+		HTTP3:           options.HTTP3,
 		// TODO(e.burkov):  The following CIDRs are aimed to match any
 		// address.  This is not quite proper approach to be used by
 		// default so think about configuring it.

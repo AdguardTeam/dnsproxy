@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 )
 
@@ -53,8 +54,12 @@ func (p *Proxy) startListeners() error {
 		go p.tcpPacketLoop(l, ProtoTLS, p.requestGoroutinesSema)
 	}
 
-	for i := range p.httpsServer {
-		go p.listenHTTPS(p.httpsServer[i], p.httpsListen[i])
+	for _, l := range p.httpsListen {
+		go func(l net.Listener) { _ = p.httpsServer.Serve(l) }(l)
+	}
+
+	for _, l := range p.h3Listen {
+		go func(l quic.EarlyListener) { _ = p.h3Server.ServeListener(l) }(l)
 	}
 
 	for _, l := range p.quicListen {

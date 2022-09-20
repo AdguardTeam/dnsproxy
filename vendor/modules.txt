@@ -22,6 +22,9 @@ github.com/ameshkov/dnsstamps
 # github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 ## explicit
 github.com/beefsack/go-rate
+# github.com/bluele/gcache v0.0.2
+## explicit; go 1.15
+github.com/bluele/gcache
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -11,56 +12,107 @@ import (
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/lucas-clemente/quic-go"
+	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/miekg/dns"
 	"golang.org/x/net/http2"
 )
 
-func (p *Proxy) createHTTPSListeners() error {
-	for _, a := range p.HTTPSListenAddr {
+// listenHTTP creates instances of TLS listeners that will be used to run an
+// H1/H2 server.  Returns the address the listener actually listens to (useful
+// in the case if port 0 is specified).
+func (p *Proxy) listenHTTP(addr *net.TCPAddr) (laddr *net.TCPAddr, err error) {
+	tcpListen, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("tcp listener: %w", err)
+	}
+	log.Info("Listening to https://%s", tcpListen.Addr())
+
+	tlsConfig := p.TLSConfig.Clone()
+	tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
+
+	tlsListen := tls.NewListener(tcpListen, tlsConfig)
+	p.httpsListen = append(p.httpsListen, tlsListen)
+
+	return tcpListen.Addr().(*net.TCPAddr), nil
+}
+
+// listenH3 creates instances of QUIC listeners that will be used for running
+// an HTTP/3 server.
+func (p *Proxy) listenH3(addr *net.UDPAddr) (err error) {
+	tlsConfig := p.TLSConfig.Clone()
+	tlsConfig.NextProtos = []string{"h3"}
+	quicListen, err := quic.ListenAddrEarly(addr.String(), tlsConfig, newServerQUICConfig())
+	if err != nil {
+		return fmt.Errorf("quic listener: %w", err)
+	}
+	log.Info("Listening to h3://%s", quicListen.Addr())
+
+	p.h3Listen = append(p.h3Listen, quicListen)
+
+	return nil
+}
+
+// createHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
+func (p *Proxy) createHTTPSListeners() (err error) {
+	p.httpsServer = &http.Server{
+		Handler: &proxyHTTPHandler{
+			proxy: p,
+			h3:    false,
+		},
+		ReadHeaderTimeout: defaultTimeout,
+		WriteTimeout:      defaultTimeout,
+	}
+
+	if p.HTTP3 {
+		p.h3Server = &http3.Server{
+			Handler: &proxyHTTPHandler{
+				proxy: p,
+				h3:    true,
+			},
+		}
+	}
+
+	for _, addr := range p.HTTPSListenAddr {
 		log.Info("Creating an HTTPS server")
-		tcpListen, err := net.ListenTCP("tcp", a)
+
+		tcpAddr, err := p.listenHTTP(addr)
 		if err != nil {
-			return fmt.Errorf("starting https listener: %w", err)
-		}
-		p.httpsListen = append(p.httpsListen, tcpListen)
-		log.Info("Listening to https://%s", tcpListen.Addr())
-
-		tlsConfig := p.TLSConfig.Clone()
-		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
-
-		srv := &http.Server{
-			TLSConfig:         tlsConfig,
-			Handler:           p,
-			ReadHeaderTimeout: defaultTimeout,
-			WriteTimeout:      defaultTimeout,
+			return fmt.Errorf("failed to start HTTPS server on %s: %w", addr, err)
 		}
 
-		p.httpsServer = append(p.httpsServer, srv)
+		if p.HTTP3 {
+			// HTTP/3 server listens to the same pair IP:port as the one HTTP/2
+			// server listens to.
+			udpAddr := &net.UDPAddr{IP: tcpAddr.IP, Port: tcpAddr.Port}
+			err = p.listenH3(udpAddr)
+			if err != nil {
+				return fmt.Errorf("failed to start HTTP/3 server on %s: %w", udpAddr, err)
+			}
+		}
 	}
 
 	return nil
 }
 
-// serveHttps starts the HTTPS server
-func (p *Proxy) listenHTTPS(srv *http.Server, l net.Listener) {
-	log.Info("Listening to DNS-over-HTTPS on %s", l.Addr())
-	err := srv.ServeTLS(l, "", "")
-
-	if err != http.ErrServerClosed {
-		log.Info("HTTPS server was closed unexpectedly: %s", err)
-	} else {
-		log.Info("HTTPS server was closed")
-	}
+// proxyHTTPHandler implements http.Handler and processes DoH queries.
+type proxyHTTPHandler struct {
+	// h3 is true if this is an HTTP/3 requests handler.
+	h3    bool
+	proxy *Proxy
 }
 
-// ServeHTTP is the http.RequestHandler implementation that handles DoH queries
+// type check
+var _ http.Handler = &proxyHTTPHandler{}
+
+// ServeHTTP is the http.Handler implementation that handles DoH queries.
 // Here is what it returns:
 //
 //   - http.StatusBadRequest if there is no DNS request data;
 //   - http.StatusUnsupportedMediaType if request content type is not
 //     "application/dns-message";
 //   - http.StatusMethodNotAllowed if request method is not GET or POST.
-func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *proxyHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Tracef("Incoming HTTPS request on %s", r.URL)
 
 	var buf []byte
@@ -103,12 +155,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	addr, prx, err := remoteAddr(r)
+	addr, prx, err := remoteAddr(r, h.h3)
 	if err != nil {
 		log.Debug("warning: getting real ip: %s", err)
 	}
 
-	d := p.newDNSContext(ProtoHTTPS, req)
+	d := h.proxy.newDNSContext(ProtoHTTPS, req)
 	d.Addr = addr
 	d.HTTPRequest = r
 	d.HTTPResponseWriter = w
@@ -116,13 +168,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if prx != nil {
 		ip, _ := netutil.IPAndPortFromAddr(prx)
 		log.Debug("request came from proxy server %s", prx)
-		if !p.proxyVerifier.Contains(ip) {
+		if !h.proxy.proxyVerifier.Contains(ip) {
 			log.Debug("proxy %s is not trusted, using original remote addr", ip)
 			d.Addr = prx
 		}
 	}
 
-	err = p.handleDNSRequest(d)
+	err = h.proxy.handleDNSRequest(d)
 	if err != nil {
 		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
 	}
@@ -187,7 +239,7 @@ func realIPFromHdrs(r *http.Request) (realIP net.IP) {
 
 // remoteAddr returns the real client's address and the IP address of the latest
 // proxy server if any.
-func remoteAddr(r *http.Request) (addr, prx net.Addr, err error) {
+func remoteAddr(r *http.Request, h3 bool) (addr, prx net.Addr, err error) {
 	var hostStr, portStr string
 	if hostStr, portStr, err = net.SplitHostPort(r.RemoteAddr); err != nil {
 		return nil, nil, err
@@ -206,13 +258,15 @@ func remoteAddr(r *http.Request) (addr, prx net.Addr, err error) {
 	if realIP := realIPFromHdrs(r); realIP != nil {
 		log.Tracef("Using IP address from HTTP request: %s", realIP)
 
-		// TODO(a.garipov): Use net.UDPAddr here and below when
-		// necessary when we start supporting HTTP/3.
-		//
 		// TODO(a.garipov): Add port if we can get it from headers like
 		// X-Real-Port, X-Forwarded-Port, etc.
-		addr = &net.TCPAddr{IP: realIP, Port: 0}
-		prx = &net.TCPAddr{IP: host, Port: port}
+		if h3 {
+			addr = &net.UDPAddr{IP: realIP, Port: 0}
+			prx = &net.UDPAddr{IP: host, Port: port}
+		} else {
+			addr = &net.TCPAddr{IP: realIP, Port: 0}
+			prx = &net.TCPAddr{IP: host, Port: port}
+		}
 
 		return addr, prx, nil
 	}

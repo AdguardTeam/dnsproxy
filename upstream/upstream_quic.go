@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
@@ -22,9 +23,6 @@ const (
 	// an internal error and is incapable of pursuing the transaction or the
 	// connection.
 	QUICCodeInternalError = quic.ApplicationErrorCode(1)
-	// QUICCodeProtocolError signals that the DoQ implementation encountered
-	// a protocol error and is forcibly aborting the connection.
-	QUICCodeProtocolError = quic.ApplicationErrorCode(2)
 	// QUICKeepAlivePeriod is the value that we pass to *quic.Config and that
 	// controls the period with with keep-alive frames are being sent to the
 	// connection. We set it to 20s as it would be in the quic-go@v0.27.1 with
@@ -49,11 +47,12 @@ type dnsOverQUIC struct {
 	// conn is the current active QUIC connection.  It can be closed and
 	// re-opened when needed.
 	conn quic.Connection
+	// connGuard protects conn and quicConfig.
+	connGuard sync.RWMutex
 	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
 	// buffers are used to read responses from the upstream.
-	bytesPool *sync.Pool
-	// sync.RWMutex protects conn and bytesPool.
-	sync.RWMutex
+	bytesPool      *sync.Pool
+	bytesPoolGuard sync.Mutex
 }
 
 // type check
@@ -73,12 +72,7 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 		boot: b,
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
-			// You can read more on address validation here:
-			// https://datatracker.ietf.org/doc/html/rfc9000#section-8.1
-			// Setting maxOrigins to 1 and tokensPerOrigin to 10 assuming that
-			// this is more than enough for the way we use it (one connection
-			// per upstream).
-			TokenStore: quic.NewLRUTokenStore(1, 10),
+			TokenStore:      newQUICTokenStore(),
 		},
 	}, nil
 }
@@ -87,24 +81,58 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
 
 // Exchange implements the Upstream interface for *dnsOverQUIC.
-func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
-	var conn quic.Connection
-	conn, err = p.getConnection(true)
-	if err != nil {
-		return nil, err
-	}
-
+func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be
 	// set to zero.
 	id := m.Id
 	m.Id = 0
 	defer func() {
-		// Restore the original ID to not break compatibility with proxies
+		// Restore the original ID to not break compatibility with proxies.
 		m.Id = id
-		if res != nil {
-			res.Id = id
+		if resp != nil {
+			resp.Id = id
 		}
 	}()
+
+	// Check if there was already an active conn before sending the request.
+	// We'll only attempt to re-connect if there was one.
+	hasConnection := p.hasConnection()
+
+	// Make the first attempt to send the DNS query.
+	resp, err = p.exchangeQUIC(m)
+
+	// Make up to 2 attempts to re-open the QUIC connection and send the request
+	// again.  There are several cases where this workaround is necessary to
+	// make DoQ usable.  We need to make 2 attempts in the case when the
+	// connection was closed (due to inactivity for example) AND the server
+	// refuses to open a 0-RTT connection.
+	for i := 0; hasConnection && p.shouldRetry(err) && i < 2; i++ {
+		log.Debug("re-creating the QUIC connection and retrying due to %v", err)
+
+		// Close the active connection to make sure we'll try to re-connect.
+		p.closeConnWithError(QUICCodeNoError)
+
+		// Retry sending the request.
+		resp, err = p.exchangeQUIC(m)
+	}
+
+	if err != nil {
+		// If we're unable to exchange messages, make sure the connection is
+		// closed and signal about an internal error.
+		p.closeConnWithError(QUICCodeInternalError)
+	}
+
+	return resp, err
+}
+
+// exchangeQUIC attempts to open a QUIC connection, send the DNS message
+// through it and return the response it got from the server.
+func (p *dnsOverQUIC) exchangeQUIC(m *dns.Msg) (resp *dns.Msg, err error) {
+	var conn quic.Connection
+	conn, err = p.getConnection(true)
+	if err != nil {
+		return nil, err
+	}
 
 	var buf []byte
 	buf, err = m.Pack()
@@ -115,36 +143,34 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (res *dns.Msg, err error) {
 	var stream quic.Stream
 	stream, err = p.openStream(conn)
 	if err != nil {
-		p.closeConnWithError(QUICCodeInternalError)
-		return nil, fmt.Errorf("open new stream to %s: %w", p.Address(), err)
+		return nil, err
 	}
 
 	_, err = stream.Write(proxyutil.AddPrefix(buf))
 	if err != nil {
-		p.closeConnWithError(QUICCodeInternalError)
 		return nil, fmt.Errorf("failed to write to a QUIC stream: %w", err)
 	}
 
 	// The client MUST send the DNS query over the selected stream, and MUST
 	// indicate through the STREAM FIN mechanism that no further data will
-	// be sent on that stream.
-	// stream.Close() -- closes the write-direction of the stream.
+	// be sent on that stream. Note, that stream.Close() closes the
+	// write-direction of the stream, but does not prevent reading from it.
 	_ = stream.Close()
 
-	res, err = p.readMsg(stream)
-	if err != nil {
-		// If a peer encounters such an error condition, it is considered a
-		// fatal error.  It SHOULD forcibly abort the connection using QUIC's
-		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
-		// DOQ_PROTOCOL_ERROR.
-		p.closeConnWithError(QUICCodeProtocolError)
-	}
-	return res, err
+	return p.readMsg(stream)
+}
+
+// shouldRetry checks what error we received and decides whether it is required
+// to re-open the connection and retry sending the request.
+func (p *dnsOverQUIC) shouldRetry(err error) (ok bool) {
+	return isQUICRetryError(err)
 }
 
 // getBytesPool returns (creates if needed) a pool we store byte buffers in.
 func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
-	p.Lock()
+	p.bytesPoolGuard.Lock()
+	defer p.bytesPoolGuard.Unlock()
+
 	if p.bytesPool == nil {
 		p.bytesPool = &sync.Pool{
 			New: func() interface{} {
@@ -154,7 +180,7 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 			},
 		}
 	}
-	p.Unlock()
+
 	return p.bytesPool
 }
 
@@ -164,59 +190,57 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 // close the existing one if needed.
 func (p *dnsOverQUIC) getConnection(useCached bool) (quic.Connection, error) {
 	var conn quic.Connection
-	p.RLock()
+	p.connGuard.RLock()
 	conn = p.conn
 	if conn != nil && useCached {
-		p.RUnlock()
+		p.connGuard.RUnlock()
+
 		return conn, nil
 	}
 	if conn != nil {
 		// we're recreating the connection, let's create a new one.
 		_ = conn.CloseWithError(QUICCodeNoError, "")
 	}
-	p.RUnlock()
+	p.connGuard.RUnlock()
 
-	p.Lock()
-	defer p.Unlock()
+	p.connGuard.Lock()
+	defer p.connGuard.Unlock()
 
 	var err error
 	conn, err = p.openConnection()
 	if err != nil {
-		// This does not look too nice, but QUIC (or maybe quic-go) doesn't
-		// seem stable enough. Maybe retransmissions aren't fully implemented
-		// in quic-go? Anyways, the simple solution is to make a second try when
-		// it fails to open the QUIC connection.
-		conn, err = p.openConnection()
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	p.conn = conn
+
 	return conn, nil
+}
+
+// hasConnection returns true if there's an active QUIC connection.
+func (p *dnsOverQUIC) hasConnection() (ok bool) {
+	p.connGuard.Lock()
+	defer p.connGuard.Unlock()
+
+	return p.conn != nil
 }
 
 // openStream opens a new QUIC stream for the specified connection.
 func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
-	ctx := context.Background()
-
-	if p.boot.options.Timeout > 0 {
-		deadline := time.Now().Add(p.boot.options.Timeout)
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(context.Background(), deadline)
-		defer cancel() // avoid resource leak
-	}
+	ctx, cancel := p.boot.newContext()
+	defer cancel()
 
 	stream, err := conn.OpenStreamSync(ctx)
 	if err == nil {
 		return stream, nil
 	}
 
-	// try to recreate the connection.
+	// We can get here if the old QUIC connection is not valid anymore.  We
+	// should try to re-create the connection again in this case.
 	newConn, err := p.getConnection(false)
 	if err != nil {
 		return nil, err
 	}
-	// open a new stream.
+	// Open a new stream.
 	return newConn.OpenStreamSync(ctx)
 }
 
@@ -244,7 +268,10 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 
 	addr := udpConn.RemoteAddr().String()
 
-	conn, err = quic.DialAddrEarlyContext(context.Background(), addr, tlsConfig, p.quicConfig)
+	ctx, cancel := p.boot.newContext()
+	defer cancel()
+
+	conn, err = quic.DialAddrEarlyContext(ctx, addr, tlsConfig, p.quicConfig)
 	if err != nil {
 		return nil, fmt.Errorf("opening quic connection to %s: %w", p.Address(), err)
 	}
@@ -256,8 +283,8 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 // new queries were processed in another connection. We can do that in the case
 // of a fatal error.
 func (p *dnsOverQUIC) closeConnWithError(code quic.ApplicationErrorCode) {
-	p.Lock()
-	defer p.Unlock()
+	p.connGuard.Lock()
+	defer p.connGuard.Unlock()
 
 	if p.conn == nil {
 		// Do nothing, there's no active conn anyways.
@@ -269,6 +296,10 @@ func (p *dnsOverQUIC) closeConnWithError(code quic.ApplicationErrorCode) {
 		log.Error("failed to close the conn: %v", err)
 	}
 	p.conn = nil
+
+	// Re-create the token store to make sure we're not trying to use invalid
+	// tokens for 0-RTT.
+	p.quicConfig.TokenStore = newQUICTokenStore()
 }
 
 // readMsg reads the incoming DNS message from the QUIC stream.
@@ -296,4 +327,52 @@ func (p *dnsOverQUIC) readMsg(stream quic.Stream) (m *dns.Msg, err error) {
 	}
 
 	return m, nil
+}
+
+// newQUICTokenStore creates a new quic.TokenStore that is necessary to have
+// in order to benefit from 0-RTT.
+func newQUICTokenStore() (s quic.TokenStore) {
+	// You can read more on address validation here:
+	// https://datatracker.ietf.org/doc/html/rfc9000#section-8.1
+	// Setting maxOrigins to 1 and tokensPerOrigin to 10 assuming that this is
+	// more than enough for the way we use it (one connection per upstream).
+	return quic.NewLRUTokenStore(1, 10)
+}
+
+// isQUICRetryError checks the error and determines whether it may signal that
+// we should re-create the QUIC connection.  This requirement is caused by
+// quic-go issues, see the comments inside this function.
+// TODO(ameshkov): re-test when updating quic-go.
+func isQUICRetryError(err error) (ok bool) {
+	var qAppErr *quic.ApplicationError
+	if errors.As(err, &qAppErr) && qAppErr.ErrorCode == 0 {
+		// This error is often returned when the server has been restarted,
+		// and we try to use the same connection on the client-side. It seems,
+		// that the old connections aren't closed immediately on the server-side
+		// and that's why one can run into this.
+		// In addition to that, quic-go HTTP3 client implementation does not
+		// clean up dead connections (this one is specific to DoH3 upstream):
+		// https://github.com/lucas-clemente/quic-go/issues/765
+		return true
+	}
+
+	var qIdleErr *quic.IdleTimeoutError
+	if errors.As(err, &qIdleErr) {
+		// This error means that the connection was closed due to being idle.
+		// In this case we should forcibly re-create the QUIC connection.
+		// Reproducing is rather simple, stop the server and wait for 30 seconds
+		// then try to send another request via the same upstream.
+		return true
+	}
+
+	if errors.Is(err, quic.Err0RTTRejected) {
+		// This error happens when we try to establish a 0-RTT connection with
+		// a token the server is no more aware of.  This can be reproduced by
+		// restarting the QUIC server (it will clear its tokens cache).  The
+		// next connection attempt will return this error until the client's
+		// tokens cache is purged.
+		return true
+	}
+
+	return false
 }

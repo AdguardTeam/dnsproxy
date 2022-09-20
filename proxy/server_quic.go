@@ -5,12 +5,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strings"
+	"io"
+	"math"
+	"net"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/stringutil"
+	"github.com/bluele/gcache"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
 )
@@ -31,6 +33,18 @@ var compatProtoDQ = []string{NextProtoDQ, "doq-i02", "doq-i00", "dq"}
 // better for clients written with ngtcp2.
 const maxQUICIdleTimeout = 5 * time.Minute
 
+// quicAddrValidatorCacheSize is the size of the cache that we use in the QUIC
+// address validator.  The value is chosen arbitrarily and we should consider
+// making it configurable.
+// TODO(ameshkov): make it configurable.
+const quicAddrValidatorCacheSize = 1000
+
+// quicAddrValidatorCacheTTL is time-to-live for cache items in the QUIC address
+// validator.  The value is chosen arbitrarily and we should consider making it
+// configurable.
+// TODO(ameshkov): make it configurable.
+const quicAddrValidatorCacheTTL = 30 * time.Minute
+
 const (
 	// DoQCodeNoError is used when the connection or stream needs to be closed,
 	// but there is no error to signal.
@@ -44,14 +58,19 @@ const (
 	DoQCodeProtocolError quic.ApplicationErrorCode = 2
 )
 
+// createQUICListeners creates QUIC listeners for the DoQ server.
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
 		log.Info("Creating a QUIC listener")
 		tlsConfig := p.TLSConfig.Clone()
 		tlsConfig.NextProtos = compatProtoDQ
-		quicListen, err := quic.ListenAddr(a.String(), tlsConfig, &quic.Config{MaxIdleTimeout: maxQUICIdleTimeout})
+		quicListen, err := quic.ListenAddrEarly(
+			a.String(),
+			tlsConfig,
+			newServerQUICConfig(),
+		)
 		if err != nil {
-			return fmt.Errorf("starting quic listener: %w", err)
+			return fmt.Errorf("quic listener: %w", err)
 		}
 
 		p.quicListen = append(p.quicListen, quicListen)
@@ -63,13 +82,14 @@ func (p *Proxy) createQUICListeners() error {
 // quicPacketLoop listens for incoming QUIC packets.
 //
 // See also the comment on Proxy.requestGoroutinesSema.
-func (p *Proxy) quicPacketLoop(l quic.Listener, requestGoroutinesSema semaphore) {
+func (p *Proxy) quicPacketLoop(l quic.EarlyListener, requestGoroutinesSema semaphore) {
 	log.Info("Entering the DNS-over-QUIC listener loop on %s", l.Addr())
 	for {
 		conn, err := l.Accept(context.Background())
+
 		if err != nil {
 			if isQUICNonCrit(err) {
-				log.Tracef("quic connection closed or timeout: %s", err)
+				log.Tracef("quic connection closed or timed out: %s", err)
 			} else {
 				log.Error("reading from quic listen: %s", err)
 			}
@@ -140,7 +160,10 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 	buf := *bufPtr
 	n, err := stream.Read(buf)
 
-	if n < minDNSPacketSize {
+	// Note that io.EOF does not really mean that there's any error, this is
+	// just a signal that there will be no data to read anymore from this
+	// stream.
+	if (err != nil && err != io.EOF) || n < minDNSPacketSize {
 		logShortQUICRead(err)
 
 		return
@@ -295,20 +318,42 @@ func logShortQUICRead(err error) {
 }
 
 // isQUICNonCrit returns true if err is a non-critical error, most probably
-// a timeout or a closed connection.
-//
-// TODO(a.garipov): Inspect and rewrite with modern error handling.
+// related to the current QUIC implementation.
+// TODO(ameshkov): re-test when updating quic-go.
 func isQUICNonCrit(err error) (ok bool) {
 	if err == nil {
 		return false
 	}
 
-	errStr := err.Error()
+	if errors.Is(err, quic.ErrServerClosed) {
+		// This error is returned when the QUIC listener was closed by us. This
+		// is an expected error, we don't need the detailed logs here.
+		return true
+	}
 
-	return strings.Contains(errStr, "server closed") ||
-		stringutil.ContainsFold(errStr, "no recent network activity") ||
-		strings.HasSuffix(errStr, "Application error 0x0") ||
-		errStr == "EOF"
+	var qAppErr *quic.ApplicationError
+	if errors.As(err, &qAppErr) && qAppErr.ErrorCode == 0 {
+		// This error is returned when a QUIC connection was gracefully closed.
+		// No need to have detailed logs for it either.
+		return true
+	}
+
+	if errors.Is(err, quic.Err0RTTRejected) {
+		// This error is returned on AcceptStream calls when the server rejects
+		// 0-RTT for some reason.  This is a common scenario, no need for extra
+		// logs.
+		return true
+	}
+
+	var qIdleErr *quic.IdleTimeoutError
+	if errors.As(err, &qIdleErr) {
+		// This error is returned when we're trying to accept a new stream from
+		// a connection that had no activity for over than the keep-alive
+		// timeout.  This is a common scenario, no need for extra logs.
+		return true
+	}
+
+	return false
 }
 
 // closeQUICConn quietly closes the QUIC connection.
@@ -317,4 +362,52 @@ func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode) {
 	if err != nil {
 		log.Debug("failed to close QUIC connection: %v", err)
 	}
+}
+
+// newServerQUICConfig creates *quic.Config populated with the default settings.
+// This function is supposed to be used for both DoQ and DoH3 server.
+func newServerQUICConfig() (conf *quic.Config) {
+	v := newQUICAddrValidator(quicAddrValidatorCacheSize, quicAddrValidatorCacheTTL)
+
+	return &quic.Config{
+		MaxIdleTimeout:           maxQUICIdleTimeout,
+		RequireAddressValidation: v.requiresValidation,
+		MaxIncomingStreams:       math.MaxUint16,
+		MaxIncomingUniStreams:    math.MaxUint16,
+	}
+}
+
+// quicAddrValidator is a helper struct that holds a small LRU cache of
+// addresses for which we do not require address validation.
+type quicAddrValidator struct {
+	cache gcache.Cache
+	ttl   time.Duration
+}
+
+// newQUICAddrValidator initializes a new instance of *quicAddrValidator.
+func newQUICAddrValidator(cacheSize int, ttl time.Duration) (v *quicAddrValidator) {
+	return &quicAddrValidator{
+		cache: gcache.New(cacheSize).LRU().Build(),
+		ttl:   ttl,
+	}
+}
+
+// requiresValidation determines if a QUIC Retry packet should be sent by the
+// client. This allows the server to verify the client's address but increases
+// the latency.
+func (v *quicAddrValidator) requiresValidation(addr net.Addr) (ok bool) {
+	key := addr.String()
+	if v.cache.Has(key) {
+		return false
+	}
+
+	err := v.cache.SetWithExpire(key, true, v.ttl)
+	if err != nil {
+		// Shouldn't happen, since we don't set a serialization function.
+		panic(fmt.Errorf("quic validator: setting cache item: %w", err))
+	}
+
+	// Address not found in the cache so return true to make sure the server
+	// will require address validation.
+	return true
 }

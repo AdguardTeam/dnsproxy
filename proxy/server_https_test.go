@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -12,12 +13,53 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/lucas-clemente/quic-go"
+	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHttpsProxy(t *testing.T) {
+	testCases := []struct {
+		name  string
+		http3 bool
+	}{{
+		name:  "https_proxy",
+		http3: false,
+	}, {
+		name:  "h3_proxy",
+		http3: true,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Prepare dnsProxy with its configuration.
+			tlsConf, caPem := createServerTLSConfig(t)
+			dnsProxy := createTestProxy(t, tlsConf)
+			dnsProxy.HTTP3 = tc.http3
+
+			// Run the proxy.
+			err := dnsProxy.Start()
+			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
+
+			// Create the HTTP client that we'll be using for this test.
+			client := createTestHTTPClient(dnsProxy, caPem, tc.http3)
+
+			// Prepare a test message to be sent to the server.
+			msg := createTestMessage()
+
+			// Send the test message and check if the response is what we
+			// expected.
+			resp := sendTestDoHMessage(t, client, msg, nil)
+			requireResponse(t, msg, resp)
+		})
+	}
+}
+
+func TestHttpsProxyTrustedProxies(t *testing.T) {
 	// Prepare the proxy server.
 	tlsConf, caPem := createServerTLSConfig(t)
 	dnsProxy := createTestProxy(t, tlsConf)
@@ -29,30 +71,7 @@ func TestHttpsProxy(t *testing.T) {
 		return dnsProxy.Resolve(d)
 	}
 
-	roots := x509.NewCertPool()
-	ok := roots.AppendCertsFromPEM(caPem)
-	require.True(t, ok)
-
-	dialer := &net.Dialer{
-		Timeout: defaultTimeout,
-	}
-	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		// Route request to the DNS-over-HTTPS server address.
-		return dialer.DialContext(ctx, network, dnsProxy.Addr(ProtoHTTPS).String())
-	}
-
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			ServerName: tlsServerName,
-			RootCAs:    roots,
-		},
-		DisableCompression: true,
-		DialContext:        dialContext,
-	}
-	client := http.Client{
-		Transport: transport,
-		Timeout:   defaultTimeout,
-	}
+	client := createTestHTTPClient(dnsProxy, caPem, false)
 
 	clientIP, proxyIP := net.IP{1, 2, 3, 4}, net.IP{127, 0, 0, 1}
 	msg := createTestMessage()
@@ -63,42 +82,14 @@ func TestHttpsProxy(t *testing.T) {
 		// Start listening.
 		serr := dnsProxy.Start()
 		require.NoError(t, serr)
-		t.Cleanup(func() {
-			derr := dnsProxy.Stop()
-			require.NoError(t, derr)
-		})
+		testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
-		packed, err := msg.Pack()
-		require.NoError(t, err)
-
-		b := bytes.NewBuffer(packed)
-		req, err := http.NewRequest("POST", "https://test.com", b)
-		require.NoError(t, err)
-
-		req.Header.Set("Content-Type", "application/dns-message")
-		req.Header.Set("Accept", "application/dns-message")
-		// IP "1.2.3.4" will be used as a client address in DNSContext.
-		req.Header.Set("X-Forwarded-For", strings.Join(
-			[]string{clientIP.String(), proxyIP.String()},
-			",",
-		))
-
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-
-		if resp != nil && resp.Body != nil {
-			t.Cleanup(func() {
-				resp.Body.Close()
-			})
+		hdrs := map[string]string{
+			"X-Forwarded-For": strings.Join([]string{clientIP.String(), proxyIP.String()}, ","),
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		reply := &dns.Msg{}
-		err = reply.Unpack(body)
-		require.NoError(t, err)
-		requireResponse(t, msg, reply)
+		resp := sendTestDoHMessage(t, client, msg, hdrs)
+		requireResponse(t, msg, resp)
 	}
 
 	t.Run("success", func(t *testing.T) {
@@ -300,7 +291,7 @@ func TestRemoteAddr(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
-			addr, prx, err := remoteAddr(r)
+			addr, prx, err := remoteAddr(r, false)
 			if tc.wantErr != "" {
 				assert.Equal(t, tc.wantErr, err.Error())
 
@@ -315,5 +306,92 @@ func TestRemoteAddr(t *testing.T) {
 			prxIP, _ := netutil.IPAndPortFromAddr(prx)
 			assert.True(t, tc.wantProxy.Equal(prxIP))
 		})
+	}
+}
+
+// sendTestDoHMessage sends the specified DNS message using client and returns
+// the DNS response.
+func sendTestDoHMessage(
+	t *testing.T,
+	client *http.Client,
+	m *dns.Msg,
+	hdrs map[string]string,
+) (resp *dns.Msg) {
+	packed, err := m.Pack()
+	require.NoError(t, err)
+
+	b := bytes.NewBuffer(packed)
+	u := fmt.Sprintf("https://%s/dns-query", tlsServerName)
+	req, err := http.NewRequest(http.MethodPost, u, b)
+	require.NoError(t, err)
+
+	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+
+	for k, v := range hdrs {
+		req.Header.Set(k, v)
+	}
+
+	httpResp, err := client.Do(req)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, httpResp.Body.Close)
+
+	body, err := io.ReadAll(httpResp.Body)
+	require.NoError(t, err)
+
+	resp = &dns.Msg{}
+	err = resp.Unpack(body)
+	require.NoError(t, err)
+
+	return resp
+}
+
+// createTestHTTPClient creates an *http.Client that will be used to send
+// requests to the specified dnsProxy.
+func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (client *http.Client) {
+	// prepare roots list so that the server cert was successfully validated.
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPem)
+	tlsClientConfig := &tls.Config{
+		ServerName: tlsServerName,
+		RootCAs:    roots,
+	}
+
+	var transport http.RoundTripper
+
+	if http3Enabled {
+		transport = &http3.RoundTripper{
+			Dial: func(
+				ctx context.Context,
+				_ string,
+				tlsCfg *tls.Config,
+				cfg *quic.Config,
+			) (quic.EarlyConnection, error) {
+				addr := dnsProxy.Addr(ProtoHTTPS).String()
+				return quic.DialAddrEarlyContext(ctx, addr, tlsCfg, cfg)
+			},
+			TLSClientConfig:    tlsClientConfig,
+			QuicConfig:         &quic.Config{},
+			DisableCompression: true,
+		}
+	} else {
+		dialer := &net.Dialer{
+			Timeout: defaultTimeout,
+		}
+		dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// Route request to the DNS-over-HTTPS server address.
+			return dialer.DialContext(ctx, network, dnsProxy.Addr(ProtoHTTPS).String())
+		}
+
+		transport = &http.Transport{
+			TLSClientConfig:    tlsClientConfig,
+			DisableCompression: true,
+			DialContext:        dialContext,
+		}
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   defaultTimeout,
 	}
 }

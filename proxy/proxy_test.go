@@ -736,9 +736,7 @@ func TestResponseInRequest(t *testing.T) {
 func TestNoQuestion(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 	require.NoError(t, dnsProxy.Start())
-	t.Cleanup(func() {
-		require.NoError(t, dnsProxy.Stop())
-	})
+	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
 	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
@@ -780,9 +778,7 @@ func (wu *funcUpstream) Address() string {
 func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 	require.NoError(t, dnsProxy.Start())
-	t.Cleanup(func() {
-		require.NoError(t, dnsProxy.Stop())
-	})
+	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
 	exchangeFunc := func(m *dns.Msg) (resp *dns.Msg, err error) {
 		resp = &dns.Msg{}

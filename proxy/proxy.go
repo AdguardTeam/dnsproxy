@@ -4,6 +4,7 @@ package proxy
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/lucas-clemente/quic-go"
+	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -65,15 +67,17 @@ type Proxy struct {
 	// Listeners
 	// --
 
-	udpListen         []*net.UDPConn   // UDP listen connections
-	tcpListen         []net.Listener   // TCP listeners
-	tlsListen         []net.Listener   // TLS listeners
-	quicListen        []quic.Listener  // QUIC listeners
-	httpsListen       []net.Listener   // HTTPS listeners
-	httpsServer       []*http.Server   // HTTPS server instance
-	dnsCryptUDPListen []*net.UDPConn   // UDP listen connections for DNSCrypt
-	dnsCryptTCPListen []net.Listener   // TCP listeners for DNSCrypt
-	dnsCryptServer    *dnscrypt.Server // DNSCrypt server instance
+	udpListen         []*net.UDPConn       // UDP listen connections
+	tcpListen         []net.Listener       // TCP listeners
+	tlsListen         []net.Listener       // TLS listeners
+	quicListen        []quic.EarlyListener // QUIC listeners
+	httpsListen       []net.Listener       // HTTPS listeners
+	httpsServer       *http.Server         // HTTPS server instance
+	h3Listen          []quic.EarlyListener // HTTP/3 listeners
+	h3Server          *http3.Server        // HTTP/3 server instance
+	dnsCryptUDPListen []*net.UDPConn       // UDP listen connections for DNSCrypt
+	dnsCryptTCPListen []net.Listener       // TCP listeners for DNSCrypt
+	dnsCryptServer    *dnscrypt.Server     // DNSCrypt server instance
 
 	// Upstream
 	// --
@@ -145,19 +149,6 @@ func (p *Proxy) Init() (err error) {
 		p.requestGoroutinesSema = newNoopSemaphore()
 	}
 
-	if p.DNSCryptResolverCert != nil && p.DNSCryptProviderName != "" {
-		log.Info("Initializing DNSCrypt: %s", p.DNSCryptProviderName)
-		p.dnsCryptServer = &dnscrypt.Server{
-			ProviderName: p.DNSCryptProviderName,
-			ResolverCert: p.DNSCryptResolverCert,
-			Handler: &dnsCryptHandler{
-				proxy: p,
-
-				requestGoroutinesSema: p.requestGoroutinesSema,
-			},
-		}
-	}
-
 	p.udpOOBSize = proxyutil.UDPGetOOBSize()
 	p.bytesPool = &sync.Pool{
 		New: func() interface{} {
@@ -212,6 +203,17 @@ func (p *Proxy) Start() (err error) {
 	return nil
 }
 
+// closeAll closes all elements in the toClose slice and if there's any error
+// appends it to the errs slice.
+func closeAll[T io.Closer](toClose []T, errs *[]error) {
+	for _, c := range toClose {
+		err := c.Close()
+		if err != nil {
+			*errs = append(*errs, err)
+		}
+	}
+}
+
 // Stop stops the proxy server including all its listeners
 func (p *Proxy) Stop() error {
 	log.Info("Stopping the DNS proxy server")
@@ -225,61 +227,38 @@ func (p *Proxy) Stop() error {
 
 	errs := []error{}
 
-	for _, l := range p.tcpListen {
-		err := l.Close()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("closing tcp listening socket: %w", err))
-		}
-	}
+	closeAll(p.tcpListen, &errs)
 	p.tcpListen = nil
 
-	for _, l := range p.udpListen {
-		err := l.Close()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("closing udp listening socket: %w", err))
-		}
-	}
+	closeAll(p.udpListen, &errs)
 	p.udpListen = nil
 
-	for _, l := range p.tlsListen {
-		err := l.Close()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("closing tls listening socket: %w", err))
-		}
-	}
+	closeAll(p.tlsListen, &errs)
 	p.tlsListen = nil
 
-	for _, srv := range p.httpsServer {
-		err := srv.Close()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("closing https server: %w", err))
-		}
-	}
-	p.httpsListen = nil
-	p.httpsServer = nil
+	if p.httpsServer != nil {
+		closeAll([]io.Closer{p.httpsServer}, &errs)
+		p.httpsServer = nil
 
-	for _, l := range p.quicListen {
-		err := l.Close()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("closing quic listener: %w", err))
-		}
+		// No need to close these since they're closed by httpsServer.Close().
+		p.httpsListen = nil
 	}
+
+	if p.h3Server != nil {
+		closeAll([]io.Closer{p.h3Server}, &errs)
+		p.h3Server = nil
+	}
+
+	closeAll(p.h3Listen, &errs)
+	p.h3Listen = nil
+
+	closeAll(p.quicListen, &errs)
 	p.quicListen = nil
 
-	for _, l := range p.dnsCryptUDPListen {
-		err := l.Close()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("closing dnscrypt udp listening socket: %w", err))
-		}
-	}
+	closeAll(p.dnsCryptUDPListen, &errs)
 	p.dnsCryptUDPListen = nil
 
-	for _, l := range p.dnsCryptTCPListen {
-		err := l.Close()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("closing dnscrypt tcp listening socket: %w", err))
-		}
-	}
+	closeAll(p.dnsCryptTCPListen, &errs)
 	p.dnsCryptTCPListen = nil
 
 	p.started = false

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -105,15 +106,88 @@ func TestUpstreamDoH(t *testing.T) {
 	}
 }
 
+func TestUpstreamDoH_serverRestart(t *testing.T) {
+	testCases := []struct {
+		name         string
+		httpVersions []HTTPVersion
+	}{
+		{
+			name:         "http2",
+			httpVersions: []HTTPVersion{HTTPVersion11, HTTPVersion2},
+		},
+		{
+			name:         "http3",
+			httpVersions: []HTTPVersion{HTTPVersion3},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Run the first server instance.
+			srv := startDoHServer(t, testDoHServerOptions{
+				http3Enabled: true,
+			})
+
+			// Create a DNS-over-HTTPS upstream.
+			address := fmt.Sprintf("https://%s/dns-query", srv.addr)
+			u, err := AddressToUpstream(
+				address,
+				&Options{
+					InsecureSkipVerify: true,
+					HTTPVersions:       tc.httpVersions,
+					Timeout:            time.Second,
+				},
+			)
+			require.NoError(t, err)
+
+			// Test that the upstream works properly.
+			checkUpstream(t, u, address)
+
+			// Now let's restart the server on the same address.
+			_, portStr, err := net.SplitHostPort(srv.addr)
+			require.NoError(t, err)
+			port, err := strconv.Atoi(portStr)
+
+			// Shutdown the first server.
+			srv.Shutdown()
+
+			// Start the new one on the same port.
+			srv = startDoHServer(t, testDoHServerOptions{
+				http3Enabled: true,
+				port:         port,
+			})
+
+			// Check that everything works after restart.
+			checkUpstream(t, u, address)
+
+			// Stop the server again.
+			srv.Shutdown()
+
+			// Now try to send a message and make sure that it returns an error.
+			_, err = u.Exchange(createTestMessage())
+			require.Error(t, err)
+
+			// Start the server one more time.
+			srv = startDoHServer(t, testDoHServerOptions{
+				http3Enabled: true,
+				port:         port,
+			})
+
+			// Check that everything works after the second restart.
+			checkUpstream(t, u, address)
+		})
+	}
+}
+
 // testDoHServerOptions allows customizing testDoHServer behavior.
 type testDoHServerOptions struct {
 	http3Enabled     bool
 	delayHandshakeH2 time.Duration
 	delayHandshakeH3 time.Duration
+	port             int
 }
 
-// testDoHServer is an instance of a test DNS-over-HTTPS server that we use
-// for tests.
+// testDoHServer is an instance of a test DNS-over-HTTPS server.
 type testDoHServer struct {
 	// addr is the address that this server listens to.
 	addr string
@@ -126,9 +200,12 @@ type testDoHServer struct {
 
 	// serverH3 is an HTTP/3 server.
 	serverH3 *http3.Server
+
+	// listenerH3 that's used to serve HTTP/3.
+	listenerH3 quic.EarlyListener
 }
 
-// Shutdown stops the DOH server.
+// Shutdown stops the DoH server.
 func (s *testDoHServer) Shutdown() {
 	if s.server != nil {
 		_ = s.server.Shutdown(context.Background())
@@ -136,6 +213,7 @@ func (s *testDoHServer) Shutdown() {
 
 	if s.serverH3 != nil {
 		_ = s.serverH3.Close()
+		_ = s.listenerH3.Close()
 	}
 }
 
@@ -156,7 +234,8 @@ func startDoHServer(
 	}
 
 	// Listen TCP first.
-	tcpAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", opts.port)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", listenAddr)
 	require.NoError(t, err)
 
 	tcpListen, err := net.ListenTCP("tcp", tcpAddr)
@@ -179,6 +258,7 @@ func startDoHServer(
 	tcpAddr = tcpListen.Addr().(*net.TCPAddr)
 
 	var serverH3 *http3.Server
+	var listenerH3 quic.EarlyListener
 
 	if opts.http3Enabled {
 		tlsConfigH3 := tlsConfig.Clone()
@@ -191,9 +271,7 @@ func startDoHServer(
 		}
 
 		serverH3 = &http3.Server{
-			TLSConfig:  tlsConfig.Clone(),
-			QuicConfig: &quic.Config{},
-			Handler:    handler,
+			Handler: handler,
 		}
 
 		// Listen UDP for the H3 server. Reuse the same port as was used for the
@@ -201,17 +279,18 @@ func startDoHServer(
 		udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", tcpAddr.Port))
 		require.NoError(t, err)
 
-		udpListen, err := net.ListenUDP("udp", udpAddr)
+		listenerH3, err = quic.ListenAddrEarly(udpAddr.String(), tlsConfigH3, &quic.Config{})
 		require.NoError(t, err)
 
 		// Run the H3 server.
-		go serverH3.Serve(udpListen)
+		go serverH3.ServeListener(listenerH3)
 	}
 
 	return &testDoHServer{
-		tlsConfig: tlsConfig,
-		server:    server,
-		serverH3:  serverH3,
+		tlsConfig:  tlsConfig,
+		server:     server,
+		serverH3:   serverH3,
+		listenerH3: listenerH3,
 		// Save the address that the server listens to.
 		addr: tcpAddr.String(),
 	}

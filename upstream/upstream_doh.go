@@ -157,8 +157,20 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.
-	requestURL := p.Address() + "?dns=" + base64.RawURLEncoding.EncodeToString(buf)
-	req, err := http.NewRequest("GET", requestURL, nil)
+	method := http.MethodGet
+	if _, ok := p.client.Transport.(*http3.RoundTripper); ok {
+		// If we're using HTTP/3, use http3.MethodGet0RTT to force using 0-RTT.
+		method = http3.MethodGet0RTT
+	}
+
+	u := url.URL{
+		Scheme:   p.boot.URL.Scheme,
+		Host:     p.boot.URL.Host,
+		Path:     p.boot.URL.Path,
+		RawQuery: fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(buf)),
+	}
+
+	req, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating http request to %s: %w", p.boot.URL, err)
 	}
@@ -268,6 +280,7 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
 	}
 
 	p.client = client
+
 	return p.client, nil
 }
 

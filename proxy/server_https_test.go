@@ -1,14 +1,15 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -320,9 +321,20 @@ func sendTestDoHMessage(
 	packed, err := m.Pack()
 	require.NoError(t, err)
 
-	b := bytes.NewBuffer(packed)
-	u := fmt.Sprintf("https://%s/dns-query", tlsServerName)
-	req, err := http.NewRequest(http.MethodPost, u, b)
+	u := url.URL{
+		Scheme:   "https",
+		Host:     tlsServerName,
+		Path:     "/dns-query",
+		RawQuery: fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(packed)),
+	}
+
+	method := http.MethodGet
+	if _, ok := client.Transport.(*http3.RoundTripper); ok {
+		// If we're using HTTP/3, use http3.MethodGet0RTT to force using 0-RTT.
+		method = http3.MethodGet0RTT
+	}
+
+	req, err := http.NewRequest(method, u.String(), nil)
 	require.NoError(t, err)
 
 	req.Header.Set("Content-Type", "application/dns-message")

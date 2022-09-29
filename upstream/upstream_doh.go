@@ -52,7 +52,8 @@ type dnsOverHTTPS struct {
 
 	// quicConfig is the QUIC configuration that is used if HTTP/3 is enabled
 	// for this upstream.
-	quicConfig *quic.Config
+	quicConfig      *quic.Config
+	quicConfigGuard sync.Mutex
 }
 
 // type check
@@ -113,21 +114,15 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	for i := 0; hasClient && p.shouldRetry(err) && i < 2; i++ {
 		log.Debug("re-creating the HTTP client and retrying due to %v", err)
 
-		p.clientGuard.Lock()
-		p.client = nil
-		// Re-create the token store to make sure we're not trying to use invalid
-		// tokens for 0-RTT.
-		p.quicConfig.TokenStore = newQUICTokenStore()
-		p.clientGuard.Unlock()
+		// Make sure we reset the client here.
+		p.resetClient(err)
 
 		resp, err = p.exchangeHTTPS(m)
 	}
 
 	if err != nil {
 		// If the request failed anyway, make sure we don't use this client.
-		p.clientGuard.Lock()
-		p.client = nil
-		p.clientGuard.Unlock()
+		p.resetClient(err)
 	}
 
 	return resp, err
@@ -158,7 +153,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.
 	method := http.MethodGet
-	if _, ok := p.client.Transport.(*http3.RoundTripper); ok {
+	if _, ok := client.Transport.(*http3.RoundTripper); ok {
 		// If we're using HTTP/3, use http3.MethodGet0RTT to force using 0-RTT.
 		method = http3.MethodGet0RTT
 	}
@@ -238,6 +233,40 @@ func (p *dnsOverHTTPS) shouldRetry(err error) (ok bool) {
 	}
 
 	return false
+}
+
+// resetClient triggers re-creation of the *http.Client that is used by this
+// upstream.  This method accepts the error that caused resetting client as
+// depending on the error we may also reset the QUIC config.
+func (p *dnsOverHTTPS) resetClient(err error) {
+	p.clientGuard.Lock()
+	defer p.clientGuard.Unlock()
+
+	p.client = nil
+
+	if errors.Is(err, quic.Err0RTTRejected) {
+		// Reset the TokenStore only if 0-RTT was rejected.
+		p.resetQUICConfig()
+	}
+}
+
+// getQUICConfig returns the QUIC config in a thread-safe manner.  Note, that
+// this method returns a pointer, it is forbidden to change its properties.
+func (p *dnsOverHTTPS) getQUICConfig() (c *quic.Config) {
+	p.quicConfigGuard.Lock()
+	defer p.quicConfigGuard.Unlock()
+
+	return p.quicConfig
+}
+
+// resetQUICConfig Re-create the token store to make sure we're not trying to
+// use invalid for 0-RTT.
+func (p *dnsOverHTTPS) resetQUICConfig() {
+	p.quicConfigGuard.Lock()
+	defer p.quicConfigGuard.Unlock()
+
+	p.quicConfig = p.quicConfig.Clone()
+	p.quicConfig.TokenStore = newQUICTokenStore()
 }
 
 // getClient gets or lazily initializes an HTTP client (and transport) that will
@@ -372,7 +401,7 @@ func (p *dnsOverHTTPS) createTransportH3(
 		},
 		DisableCompression: true,
 		TLSClientConfig:    tlsConfig,
-		QuicConfig:         p.quicConfig,
+		QuicConfig:         p.getQUICConfig(),
 	}
 
 	return rt, nil
@@ -458,7 +487,7 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
 	defer cancel()
 
-	conn, err := quic.DialAddrEarlyContext(ctx, addr, tlsConfig, p.quicConfig)
+	conn, err := quic.DialAddrEarlyContext(ctx, addr, tlsConfig, p.getQUICConfig())
 	if err != nil {
 		ch <- fmt.Errorf("opening QUIC connection to %s: %w", p.Address(), err)
 		return

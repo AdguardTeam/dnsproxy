@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -476,6 +477,7 @@ func TestAddPort(t *testing.T) {
 	}
 }
 
+// checkUpstream sends a test message to the upstream and checks the result.
 func checkUpstream(t *testing.T, u Upstream, addr string) {
 	t.Helper()
 
@@ -484,6 +486,31 @@ func checkUpstream(t *testing.T, u Upstream, addr string) {
 	require.NoErrorf(t, err, "couldn't talk to upstream %s", addr)
 
 	requireResponse(t, req, reply)
+}
+
+// checkRaceCondition runs several goroutines in parallel and each of them calls
+// checkUpstream several times.
+func checkRaceCondition(t *testing.T, u Upstream, addr string) {
+	wg := sync.WaitGroup{}
+
+	// The number of requests to run in every goroutine.
+	reqCount := 10
+	// The overall number of goroutines to run.
+	goroutinesCount := 3
+
+	makeRequests := func() {
+		defer wg.Done()
+		for i := 0; i < reqCount; i++ {
+			checkUpstream(t, u, addr)
+		}
+	}
+
+	wg.Add(goroutinesCount)
+	for i := 0; i < goroutinesCount; i++ {
+		go makeRequests()
+	}
+
+	wg.Wait()
 }
 
 func createTestMessage() (m *dns.Msg) {

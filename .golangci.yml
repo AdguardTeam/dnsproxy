@@ -23,14 +23,11 @@ linters-settings:
 
 linters:
   enable:
-    - deadcode
     - errcheck
     - govet
     - ineffassign
     - staticcheck
-    - structcheck
     - unused
-    - varcheck
     - bodyclose
     - depguard
     - dupl

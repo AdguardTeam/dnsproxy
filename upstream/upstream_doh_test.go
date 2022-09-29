@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,24 +68,22 @@ func TestUpstreamDoH(t *testing.T) {
 			address := fmt.Sprintf("https://%s/dns-query", srv.addr)
 
 			var lastState tls.ConnectionState
-			u, err := AddressToUpstream(
-				address,
-				&Options{
-					InsecureSkipVerify: true,
-					HTTPVersions:       tc.httpVersions,
-					VerifyConnection: func(state tls.ConnectionState) (err error) {
-						if state.NegotiatedProtocol != string(tc.expectedProtocol) {
-							return fmt.Errorf(
-								"expected %s, got %s",
-								tc.expectedProtocol,
-								state.NegotiatedProtocol,
-							)
-						}
-						lastState = state
-						return nil
-					},
+			opts := &Options{
+				InsecureSkipVerify: true,
+				HTTPVersions:       tc.httpVersions,
+				VerifyConnection: func(state tls.ConnectionState) (err error) {
+					if state.NegotiatedProtocol != string(tc.expectedProtocol) {
+						return fmt.Errorf(
+							"expected %s, got %s",
+							tc.expectedProtocol,
+							state.NegotiatedProtocol,
+						)
+					}
+					lastState = state
+					return nil
 				},
-			)
+			}
+			u, err := AddressToUpstream(address, opts)
 			require.NoError(t, err)
 
 			// Test that it responds properly.
@@ -102,6 +101,48 @@ func TestUpstreamDoH(t *testing.T) {
 
 			// Check that TLS session was resumed properly.
 			require.True(t, lastState.DidResume)
+		})
+	}
+
+	// This is a different set of tests that are supposed to be run with -race.
+	// The difference is that the HTTP handler here adds additional time.Sleep
+	// call.  This call would trigger the HTTP client re-connection which is
+	// important to test for race conditions.
+	for _, tc := range testCases {
+		t.Run(tc.name+"_race", func(t *testing.T) {
+			const timeout = time.Millisecond * 100
+			var requestsCount int32
+
+			handlerFunc := createDoHHandlerFunc()
+			mux := http.NewServeMux()
+			mux.HandleFunc("/dns-query", func(w http.ResponseWriter, r *http.Request) {
+				newVal := atomic.AddInt32(&requestsCount, 1)
+				if newVal%10 == 0 {
+					time.Sleep(timeout * 2)
+				}
+				handlerFunc(w, r)
+			})
+
+			srv := startDoHServer(t, testDoHServerOptions{
+				http3Enabled:     tc.http3Enabled,
+				delayHandshakeH2: tc.delayHandshakeH2,
+				delayHandshakeH3: tc.delayHandshakeH3,
+				handler:          mux,
+			})
+			t.Cleanup(srv.Shutdown)
+
+			// Create a DNS-over-HTTPS upstream that will be used for the
+			// race test.
+			address := fmt.Sprintf("https://%s/dns-query", srv.addr)
+			opts := &Options{
+				InsecureSkipVerify: true,
+				HTTPVersions:       tc.httpVersions,
+				Timeout:            timeout,
+			}
+			u, err := AddressToUpstream(address, opts)
+			require.NoError(t, err)
+
+			checkRaceCondition(t, u, address)
 		})
 	}
 }
@@ -185,6 +226,7 @@ type testDoHServerOptions struct {
 	delayHandshakeH2 time.Duration
 	delayHandshakeH3 time.Duration
 	port             int
+	handler          http.Handler
 }
 
 // testDoHServer is an instance of a test DNS-over-HTTPS server.
@@ -225,7 +267,10 @@ func startDoHServer(
 	opts testDoHServerOptions,
 ) (s *testDoHServer) {
 	tlsConfig := createServerTLSConfig(t, "127.0.0.1")
-	handler := createDoHHandler()
+	handler := opts.handler
+	if handler == nil {
+		handler = createDoHHandler()
+	}
 
 	// Step one is to create a regular HTTP server, we'll always have it
 	// running.
@@ -296,11 +341,10 @@ func startDoHServer(
 	}
 }
 
-// createDoHHandler returns a very simple http.Handler that reads the incoming
-// request and returns with a test message.
-func createDoHHandler() (h http.Handler) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/dns-query", func(w http.ResponseWriter, r *http.Request) {
+// createDoHHandlerFunc creates a simple http.HandlerFunc that reads the
+// incoming DNS message and returns the test response.
+func createDoHHandlerFunc() (f http.HandlerFunc) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		dnsParam := r.URL.Query().Get("dns")
 		buf, err := base64.RawURLEncoding.DecodeString(dnsParam)
 		if err != nil {
@@ -337,7 +381,14 @@ func createDoHHandler() (h http.Handler) {
 
 		w.Header().Set("Content-Type", "application/dns-message")
 		_, err = w.Write(buf)
-	})
+	}
+}
+
+// createDoHHandler returns a very simple http.Handler that reads the incoming
+// request and returns with a test message.
+func createDoHHandler() (h http.Handler) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/dns-query", createDoHHandlerFunc())
 
 	return mux
 }

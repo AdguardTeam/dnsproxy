@@ -24,16 +24,14 @@ func TestUpstreamDoQ(t *testing.T) {
 
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	var lastState tls.ConnectionState
-	u, err := AddressToUpstream(
-		address,
-		&Options{
-			InsecureSkipVerify: true,
-			VerifyConnection: func(state tls.ConnectionState) error {
-				lastState = state
-				return nil
-			},
+	opts := &Options{
+		InsecureSkipVerify: true,
+		VerifyConnection: func(state tls.ConnectionState) error {
+			lastState = state
+			return nil
 		},
-	)
+	}
+	u, err := AddressToUpstream(address, opts)
 	require.NoError(t, err)
 
 	uq := u.(*dnsOverQUIC)
@@ -59,6 +57,13 @@ func TestUpstreamDoQ(t *testing.T) {
 
 	// Make sure that the session has been resumed.
 	require.True(t, lastState.DidResume)
+
+	// Re-create the upstream to make the test check initialization and
+	// check it for race conditions.
+	u, err = AddressToUpstream(address, opts)
+	require.NoError(t, err)
+
+	checkRaceCondition(t, u, address)
 }
 
 func TestUpstreamDoQ_serverRestart(t *testing.T) {

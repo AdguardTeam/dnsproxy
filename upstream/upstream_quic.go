@@ -39,16 +39,19 @@ type dnsOverQUIC struct {
 	// boot is a bootstrap DNS abstraction that is used to resolve the upstream
 	// server's address and open a network connection to it.
 	boot *bootstrapper
+
 	// quicConfig is the QUIC configuration that is used for establishing
 	// connections to the upstream.  This configuration includes the TokenStore
 	// that needs to be stored for the lifetime of dnsOverQUIC since we can
 	// re-create the connection.
-	quicConfig *quic.Config
+	quicConfig      *quic.Config
+	quicConfigGuard sync.Mutex
+
 	// conn is the current active QUIC connection.  It can be closed and
 	// re-opened when needed.
-	conn quic.Connection
-	// connGuard protects conn and quicConfig.
+	conn      quic.Connection
 	connGuard sync.RWMutex
+
 	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
 	// buffers are used to read responses from the upstream.
 	bytesPool      *sync.Pool
@@ -110,7 +113,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 		log.Debug("re-creating the QUIC connection and retrying due to %v", err)
 
 		// Close the active connection to make sure we'll try to re-connect.
-		p.closeConnWithError(QUICCodeNoError)
+		p.closeConnWithError(err)
 
 		// Retry sending the request.
 		resp, err = p.exchangeQUIC(m)
@@ -119,7 +122,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	if err != nil {
 		// If we're unable to exchange messages, make sure the connection is
 		// closed and signal about an internal error.
-		p.closeConnWithError(QUICCodeInternalError)
+		p.closeConnWithError(err)
 	}
 
 	return resp, err
@@ -224,6 +227,25 @@ func (p *dnsOverQUIC) hasConnection() (ok bool) {
 	return p.conn != nil
 }
 
+// getQUICConfig returns the QUIC config in a thread-safe manner.  Note, that
+// this method returns a pointer, it is forbidden to change its properties.
+func (p *dnsOverQUIC) getQUICConfig() (c *quic.Config) {
+	p.quicConfigGuard.Lock()
+	defer p.quicConfigGuard.Unlock()
+
+	return p.quicConfig
+}
+
+// resetQUICConfig re-creates the tokens store as we may need to use a new one
+// if we failed to connect.
+func (p *dnsOverQUIC) resetQUICConfig() {
+	p.quicConfigGuard.Lock()
+	defer p.quicConfigGuard.Unlock()
+
+	p.quicConfig = p.quicConfig.Clone()
+	p.quicConfig.TokenStore = newQUICTokenStore()
+}
+
 // openStream opens a new QUIC stream for the specified connection.
 func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
 	ctx, cancel := p.boot.newContext()
@@ -271,7 +293,7 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 	ctx, cancel := p.boot.newContext()
 	defer cancel()
 
-	conn, err = quic.DialAddrEarlyContext(ctx, addr, tlsConfig, p.quicConfig)
+	conn, err = quic.DialAddrEarlyContext(ctx, addr, tlsConfig, p.getQUICConfig())
 	if err != nil {
 		return nil, fmt.Errorf("opening quic connection to %s: %w", p.Address(), err)
 	}
@@ -280,9 +302,9 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 }
 
 // closeConnWithError closes the active connection with error to make sure that
-// new queries were processed in another connection. We can do that in the case
+// new queries were processed in another connection.  We can do that in the case
 // of a fatal error.
-func (p *dnsOverQUIC) closeConnWithError(code quic.ApplicationErrorCode) {
+func (p *dnsOverQUIC) closeConnWithError(err error) {
 	p.connGuard.Lock()
 	defer p.connGuard.Unlock()
 
@@ -291,15 +313,21 @@ func (p *dnsOverQUIC) closeConnWithError(code quic.ApplicationErrorCode) {
 		return
 	}
 
-	err := p.conn.CloseWithError(code, "")
+	code := QUICCodeNoError
+	if err != nil {
+		code = QUICCodeInternalError
+	}
+
+	if errors.Is(err, quic.Err0RTTRejected) {
+		// Reset the TokenStore only if 0-RTT was rejected.
+		p.resetQUICConfig()
+	}
+
+	err = p.conn.CloseWithError(code, "")
 	if err != nil {
 		log.Error("failed to close the conn: %v", err)
 	}
 	p.conn = nil
-
-	// Re-create the token store to make sure we're not trying to use invalid
-	// tokens for 0-RTT.
-	p.quicConfig.TokenStore = newQUICTokenStore()
 }
 
 // readMsg reads the incoming DNS message from the QUIC stream.

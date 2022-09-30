@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/miekg/dns"
 )
 
 // dialTimeout is the global timeout for establishing a TLS connection.
@@ -36,16 +37,24 @@ type TLSPool struct {
 	boot *bootstrapper
 
 	// conns is the list of connections available in the pool.
-	conns []net.Conn
+	conns []*connAndStore
 	// connsMutex protects conns.
 	connsMutex sync.Mutex
 }
 
+// connAndStore is a sturct that assigns a store for out-of-order responses to each connection.
+// We need this to process multiple queries through a single upstream (cf. PR #269).
+type connAndStore struct {
+	conn       net.Conn
+	store      map[uint16]*dns.Msg // needed to save out-of-order responses when reusing the connection
+	sync.Mutex                     // protects store
+}
+
 // Get gets a connection from the pool (if there's one available) or creates
 // a new TLS connection.
-func (n *TLSPool) Get() (net.Conn, error) {
+func (n *TLSPool) Get() (*connAndStore, error) {
 	// Get the connection from the slice inside the lock.
-	var c net.Conn
+	var c *connAndStore
 	n.connsMutex.Lock()
 	num := len(n.conns)
 	if num > 0 {
@@ -57,11 +66,11 @@ func (n *TLSPool) Get() (net.Conn, error) {
 
 	// If we got connection from the slice, update deadline and return it.
 	if c != nil {
-		err := c.SetDeadline(time.Now().Add(dialTimeout))
+		err := c.conn.SetDeadline(time.Now().Add(dialTimeout))
 
 		// If deadLine can't be updated it means that connection was already closed
 		if err == nil {
-			log.Tracef("Returning existing connection to %s with updated deadLine", c.RemoteAddr())
+			log.Tracef("Returning existing connection to %s with updated deadLine", c.conn.RemoteAddr())
 			return c, nil
 		}
 	}
@@ -70,7 +79,7 @@ func (n *TLSPool) Get() (net.Conn, error) {
 }
 
 // Create creates a new connection for the pool (but not puts it there).
-func (n *TLSPool) Create() (net.Conn, error) {
+func (n *TLSPool) Create() (*connAndStore, error) {
 	tlsConfig, dialContext, err := n.boot.get()
 	if err != nil {
 		return nil, err
@@ -82,11 +91,14 @@ func (n *TLSPool) Create() (net.Conn, error) {
 		return nil, fmt.Errorf("connecting to %s: %w", tlsConfig.ServerName, err)
 	}
 
-	return conn, nil
+	// initialize the store
+	store := make(map[uint16]*dns.Msg)
+
+	return &connAndStore{conn: conn, store: store}, nil
 }
 
 // Put returns the connection to the pool.
-func (n *TLSPool) Put(c net.Conn) {
+func (n *TLSPool) Put(c *connAndStore) {
 	if c == nil {
 		return
 	}

@@ -31,9 +31,9 @@ func TestTLSPoolReconnect(t *testing.T) {
 
 	// Now let's close the pooled connection and return it back to the pool.
 	p := u.(*dnsOverTLS)
-	conn, _ := p.pool.Get()
-	conn.Close()
-	p.pool.Put(conn)
+	connAndStore, _ := p.pool.Get()
+	connAndStore.conn.Close()
+	p.pool.Put(connAndStore)
 
 	// Send the second test message.
 	req = createTestMessage()
@@ -72,42 +72,42 @@ func TestTLSPoolDeadLine(t *testing.T) {
 	p := u.(*dnsOverTLS)
 
 	// Now let's get connection from the pool and use it
-	conn, err := p.pool.Get()
+	connAndStore, err := p.pool.Get()
 	if err != nil {
 		t.Fatalf("couldn't get connection from pool: %s", err)
 	}
-	response, err = p.exchangeConn(conn, req)
+	response, err = p.exchangeConn(connAndStore, req)
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
 	requireResponse(t, req, response)
 
 	// Update connection's deadLine and put it back to the pool
-	err = conn.SetDeadline(time.Now().Add(10 * time.Hour))
+	err = connAndStore.conn.SetDeadline(time.Now().Add(10 * time.Hour))
 	if err != nil {
 		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
 	}
-	p.pool.Put(conn)
+	p.pool.Put(connAndStore)
 
 	// Get connection from the pool and reuse it
-	conn, err = p.pool.Get()
+	connAndStore, err = p.pool.Get()
 	if err != nil {
 		t.Fatalf("couldn't get connection from pool: %s", err)
 	}
-	response, err = p.exchangeConn(conn, req)
+	response, err = p.exchangeConn(connAndStore, req)
 	if err != nil {
 		t.Fatalf("first DNS message failed: %s", err)
 	}
 	requireResponse(t, req, response)
 
 	// Set connection's deadLine to the past and try to reuse it
-	err = conn.SetDeadline(time.Now().Add(-10 * time.Hour))
+	err = connAndStore.conn.SetDeadline(time.Now().Add(-10 * time.Hour))
 	if err != nil {
 		t.Fatalf("can't set new deadLine for connection. Looks like it's already closed: %s", err)
 	}
 
 	// Connection with expired deadLine can't be used
-	response, err = p.exchangeConn(conn, req)
+	response, err = p.exchangeConn(connAndStore, req)
 	if err == nil {
 		t.Fatalf("this connection should be already closed, got response %s", response)
 	}

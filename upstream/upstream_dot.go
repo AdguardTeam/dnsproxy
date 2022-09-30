@@ -140,5 +140,22 @@ func (p *dnsOverTLS) exchangeConn(connAndStore *connAndStore, m *dns.Msg) (reply
 		}
 	}
 
+	// Match response QNAME, QCLASS, and QTYPE to query according to RFC 7766
+	// (https://www.rfc-editor.org/rfc/rfc7766#section-7)
+	if len(reply.Question) != 0 && len(m.Question) != 0 {
+		if reply.Question[0].Name != m.Question[0].Name {
+			err = fmt.Errorf("Query and response QNAME do not match; received %s, expected %s", reply.Question[0].Name, m.Question[0].Name)
+			return reply, err
+		}
+		if reply.Question[0].Qtype != m.Question[0].Qtype {
+			err = fmt.Errorf("Query and response QTYPE do not match; received %d, expected %d", reply.Question[0].Qtype, m.Question[0].Qtype)
+			return reply, err
+		}
+		if reply.Question[0].Qclass != m.Question[0].Qclass {
+			err = fmt.Errorf("Query and response QCLASS do not match; received %d, expected %d", reply.Question[0].Qclass, m.Question[0].Qclass)
+			return reply, err
+		}
+	}
+
 	return reply, err
 }

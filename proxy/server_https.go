@@ -56,20 +56,14 @@ func (p *Proxy) listenH3(addr *net.UDPAddr) (err error) {
 // createHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
 func (p *Proxy) createHTTPSListeners() (err error) {
 	p.httpsServer = &http.Server{
-		Handler: &proxyHTTPHandler{
-			proxy: p,
-			h3:    false,
-		},
+		Handler:           p,
 		ReadHeaderTimeout: defaultTimeout,
 		WriteTimeout:      defaultTimeout,
 	}
 
 	if p.HTTP3 {
 		p.h3Server = &http3.Server{
-			Handler: &proxyHTTPHandler{
-				proxy: p,
-				h3:    true,
-			},
+			Handler: p,
 		}
 	}
 
@@ -95,16 +89,6 @@ func (p *Proxy) createHTTPSListeners() (err error) {
 	return nil
 }
 
-// proxyHTTPHandler implements http.Handler and processes DoH queries.
-type proxyHTTPHandler struct {
-	// h3 is true if this is an HTTP/3 requests handler.
-	h3    bool
-	proxy *Proxy
-}
-
-// type check
-var _ http.Handler = &proxyHTTPHandler{}
-
 // ServeHTTP is the http.Handler implementation that handles DoH queries.
 // Here is what it returns:
 //
@@ -112,7 +96,7 @@ var _ http.Handler = &proxyHTTPHandler{}
 //   - http.StatusUnsupportedMediaType if request content type is not
 //     "application/dns-message";
 //   - http.StatusMethodNotAllowed if request method is not GET or POST.
-func (h *proxyHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Tracef("Incoming HTTPS request on %s", r.URL)
 
 	var buf []byte
@@ -155,12 +139,12 @@ func (h *proxyHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	addr, prx, err := remoteAddr(r, h.h3)
+	addr, prx, err := remoteAddr(r)
 	if err != nil {
 		log.Debug("warning: getting real ip: %s", err)
 	}
 
-	d := h.proxy.newDNSContext(ProtoHTTPS, req)
+	d := p.newDNSContext(ProtoHTTPS, req)
 	d.Addr = addr
 	d.HTTPRequest = r
 	d.HTTPResponseWriter = w
@@ -168,13 +152,13 @@ func (h *proxyHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if prx != nil {
 		ip, _ := netutil.IPAndPortFromAddr(prx)
 		log.Debug("request came from proxy server %s", prx)
-		if !h.proxy.proxyVerifier.Contains(ip) {
+		if !p.proxyVerifier.Contains(ip) {
 			log.Debug("proxy %s is not trusted, using original remote addr", ip)
 			d.Addr = prx
 		}
 	}
 
-	err = h.proxy.handleDNSRequest(d)
+	err = p.handleDNSRequest(d)
 	if err != nil {
 		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
 	}
@@ -239,7 +223,7 @@ func realIPFromHdrs(r *http.Request) (realIP net.IP) {
 
 // remoteAddr returns the real client's address and the IP address of the latest
 // proxy server if any.
-func remoteAddr(r *http.Request, h3 bool) (addr, prx net.Addr, err error) {
+func remoteAddr(r *http.Request) (addr, prx net.Addr, err error) {
 	var hostStr, portStr string
 	if hostStr, portStr, err = net.SplitHostPort(r.RemoteAddr); err != nil {
 		return nil, nil, err
@@ -255,6 +239,8 @@ func remoteAddr(r *http.Request, h3 bool) (addr, prx net.Addr, err error) {
 		return nil, nil, fmt.Errorf("invalid ip: %s", hostStr)
 	}
 
+	h3 := r.Context().Value(http3.ServerContextKey) != nil
+
 	if realIP := realIPFromHdrs(r); realIP != nil {
 		log.Tracef("Using IP address from HTTP request: %s", realIP)
 
@@ -269,6 +255,10 @@ func remoteAddr(r *http.Request, h3 bool) (addr, prx net.Addr, err error) {
 		}
 
 		return addr, prx, nil
+	}
+
+	if h3 {
+		return &net.UDPAddr{IP: host, Port: port}, nil, nil
 	}
 
 	return &net.TCPAddr{IP: host, Port: port}, nil, nil

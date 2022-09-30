@@ -63,7 +63,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	u, err = AddressToUpstream(address, opts)
 	require.NoError(t, err)
 
-	checkRaceCondition(t, u, address)
+	checkRaceCondition(u)
 }
 
 func TestUpstreamDoQ_serverRestart(t *testing.T) {

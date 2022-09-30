@@ -292,7 +292,7 @@ func TestRemoteAddr(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
-			addr, prx, err := remoteAddr(r, false)
+			addr, prx, err := remoteAddr(r)
 			if tc.wantErr != "" {
 				assert.Equal(t, tc.wantErr, err.Error())
 

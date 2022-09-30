@@ -103,13 +103,51 @@ func TestUpstreamDoH(t *testing.T) {
 			require.True(t, lastState.DidResume)
 		})
 	}
+}
+
+func TestUpstreamDoH_raceReconnect(t *testing.T) {
+	testCases := []struct {
+		name             string
+		http3Enabled     bool
+		httpVersions     []HTTPVersion
+		delayHandshakeH3 time.Duration
+		delayHandshakeH2 time.Duration
+		expectedProtocol HTTPVersion
+	}{{
+		name:             "http1.1_h2",
+		http3Enabled:     false,
+		httpVersions:     []HTTPVersion{HTTPVersion11, HTTPVersion2},
+		expectedProtocol: HTTPVersion2,
+	}, {
+		name:             "fallback_to_http2",
+		http3Enabled:     false,
+		httpVersions:     []HTTPVersion{HTTPVersion3, HTTPVersion2},
+		expectedProtocol: HTTPVersion2,
+	}, {
+		name:             "http3",
+		http3Enabled:     true,
+		httpVersions:     []HTTPVersion{HTTPVersion3},
+		expectedProtocol: HTTPVersion3,
+	}, {
+		name:             "race_http3_faster",
+		http3Enabled:     true,
+		httpVersions:     []HTTPVersion{HTTPVersion3, HTTPVersion2},
+		delayHandshakeH2: time.Second,
+		expectedProtocol: HTTPVersion3,
+	}, {
+		name:             "race_http2_faster",
+		http3Enabled:     true,
+		httpVersions:     []HTTPVersion{HTTPVersion3, HTTPVersion2},
+		delayHandshakeH3: time.Second,
+		expectedProtocol: HTTPVersion2,
+	}}
 
 	// This is a different set of tests that are supposed to be run with -race.
 	// The difference is that the HTTP handler here adds additional time.Sleep
 	// call.  This call would trigger the HTTP client re-connection which is
 	// important to test for race conditions.
 	for _, tc := range testCases {
-		t.Run(tc.name+"_race", func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			const timeout = time.Millisecond * 100
 			var requestsCount int32
 
@@ -142,7 +180,7 @@ func TestUpstreamDoH(t *testing.T) {
 			u, err := AddressToUpstream(address, opts)
 			require.NoError(t, err)
 
-			checkRaceCondition(t, u, address)
+			checkRaceCondition(u)
 		})
 	}
 }

@@ -490,7 +490,7 @@ func checkUpstream(t *testing.T, u Upstream, addr string) {
 
 // checkRaceCondition runs several goroutines in parallel and each of them calls
 // checkUpstream several times.
-func checkRaceCondition(t *testing.T, u Upstream, addr string) {
+func checkRaceCondition(u Upstream) {
 	wg := sync.WaitGroup{}
 
 	// The number of requests to run in every goroutine.
@@ -501,7 +501,9 @@ func checkRaceCondition(t *testing.T, u Upstream, addr string) {
 	makeRequests := func() {
 		defer wg.Done()
 		for i := 0; i < reqCount; i++ {
-			checkUpstream(t, u, addr)
+			req := createTestMessage()
+			// Ignore exchange errors here, the point is to check for races.
+			_, _ = u.Exchange(req)
 		}
 	}
 

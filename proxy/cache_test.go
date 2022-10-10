@@ -42,6 +42,11 @@ func TestCacheSanity(t *testing.T) {
 
 const testUpsAddr = "https://upstream.address"
 
+var upstreamWithAddr = &funcUpstream{
+	exchangeFunc: func(m *dns.Msg) (resp *dns.Msg, err error) { panic("not implemented") },
+	addressFunc:  func() (addr string) { return testUpsAddr },
+}
+
 func TestServeCached(t *testing.T) {
 	// Prepare the proxy server.
 	dnsProxy := createTestProxy(t, nil)
@@ -61,10 +66,7 @@ func TestServeCached(t *testing.T) {
 	}).SetQuestion("google.com.", dns.TypeA)
 	reply.SetEdns0(defaultUDPBufSize, false)
 
-	dnsProxy.cache.set(&cacheItem{
-		m: reply,
-		u: testUpsAddr,
-	})
+	dnsProxy.cache.set(reply, upstreamWithAddr)
 
 	// Create a DNS-over-UDP client connection.
 	addr := dnsProxy.Addr(ProtoUDP)
@@ -138,13 +140,14 @@ func TestCache_expired(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.optimistic {
 				testCache.optimistic = true
+				t.Cleanup(func() { testCache.optimistic = false })
 			}
-			t.Cleanup(func() { testCache.optimistic = false })
 
 			key := msgToKey(reply)
 			data := (&cacheItem{
-				m: reply,
-				u: testUpsAddr,
+				m:   reply,
+				ttl: tc.ttl,
+				u:   testUpsAddr,
 			}).pack()
 			testCache.items.Set(key, data)
 			t.Cleanup(testCache.items.Clear)
@@ -152,6 +155,7 @@ func TestCache_expired(t *testing.T) {
 			r, expired, key := testCache.get(req)
 			assert.Equal(t, msgToKey(req), key)
 			assert.Equal(t, tc.ttl == 0, expired)
+
 			if tc.wantTTL != 0 {
 				require.NotNil(t, r)
 
@@ -177,10 +181,7 @@ func TestCacheDO(t *testing.T) {
 	reply.SetEdns0(4096, true)
 
 	// Store in cache.
-	testCache.set(&cacheItem{
-		m: reply,
-		u: testUpsAddr,
-	})
+	testCache.set(reply, upstreamWithAddr)
 
 	// Make a request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -220,10 +221,7 @@ func TestCacheCNAME(t *testing.T) {
 		},
 		Answer: []dns.RR{newRR(t, "google.com. 3600 IN CNAME test.google.com.")},
 	}).SetQuestion("google.com.", dns.TypeA)
-	testCache.set(&cacheItem{
-		m: reply,
-		u: testUpsAddr,
-	})
+	testCache.set(reply, upstreamWithAddr)
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -237,10 +235,7 @@ func TestCacheCNAME(t *testing.T) {
 
 	// Now fill the cache with a cacheable CNAME response.
 	reply.Answer = append(reply.Answer, newRR(t, "google.com. 3600 IN A 8.8.8.8"))
-	testCache.set(&cacheItem{
-		m: reply,
-		u: testUpsAddr,
-	})
+	testCache.set(reply, upstreamWithAddr)
 
 	// We are testing that a proper CNAME response gets cached
 	t.Run("cnames_exist", func(t *testing.T) {
@@ -254,19 +249,16 @@ func TestCacheCNAME(t *testing.T) {
 	})
 }
 
-func TestCacheSERVFAIL(t *testing.T) {
+func TestCache_uncacheable(t *testing.T) {
 	testCache := &cache{}
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
 	// Fill the cache.
-	reply := (&dns.Msg{}).SetRcode(request, dns.RcodeServerFailure)
+	reply := (&dns.Msg{}).SetRcode(request, dns.RcodeBadAlg)
 
 	// We are testing that SERVFAIL responses aren't cached
-	testCache.set(&cacheItem{
-		m: reply,
-		u: testUpsAddr,
-	})
+	testCache.set(reply, upstreamWithAddr)
 
 	r, expired, key := testCache.get(request)
 	assert.False(t, expired)
@@ -318,10 +310,7 @@ func TestCacheExpiration(t *testing.T) {
 			},
 			Answer: []dns.RR{newRR(t, rr)},
 		}).SetQuestion(dns.Fqdn(strings.Fields(rr)[0]), dns.TypeA)
-		dnsProxy.cache.set(&cacheItem{
-			m: rep,
-			u: testUpsAddr,
-		})
+		dnsProxy.cache.set(rep, upstreamWithAddr)
 		replies[i] = rep
 	}
 
@@ -515,10 +504,7 @@ func (tests testCases) run(t *testing.T) {
 			},
 			Answer: res.a,
 		}).SetQuestion(res.q, res.t)
-		testCache.set(&cacheItem{
-			m: reply,
-			u: testUpsAddr,
-		})
+		testCache.set(reply, upstreamWithAddr)
 	}
 
 	for _, tc := range tests.cases {
@@ -541,10 +527,7 @@ func (tests testCases) run(t *testing.T) {
 			Answer: tc.a,
 		}).SetQuestion(tc.q, tc.t)
 
-		testCache.set(&cacheItem{
-			m: reply,
-			u: testUpsAddr,
-		})
+		testCache.set(reply, upstreamWithAddr)
 
 		requireEqualMsgs(t, ci.m, reply)
 	}
@@ -607,10 +590,7 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 		Answer: []dns.RR{newRR(t, fmt.Sprintf("%s 1 IN A %s", host, ip))},
 	}).SetQuestion(host, dns.TypeA)
 
-	c.set(&cacheItem{
-		m: dnsMsg,
-		u: testUpsAddr,
-	})
+	c.set(dnsMsg, upstreamWithAddr)
 
 	for i := 0; i < 2; i++ {
 		ci, expired, key := c.get(dnsMsg)
@@ -644,10 +624,6 @@ func TestSubnet(t *testing.T) {
 		assert.Nil(t, ci)
 	})
 
-	item := &cacheItem{
-		u: testUpsAddr,
-	}
-
 	// Add a response with subnet.
 	resp := (&dns.Msg{
 		MsgHdr: dns.MsgHdr{
@@ -655,8 +631,11 @@ func TestSubnet(t *testing.T) {
 		},
 		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 1.1.1.1")},
 	}).SetQuestion("example.com.", dns.TypeA)
-	item.m = resp
-	c.setWithSubnet(item, &net.IPNet{IP: ip1234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)})
+	c.setWithSubnet(
+		resp,
+		upstreamWithAddr,
+		&net.IPNet{IP: ip1234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)},
+	)
 
 	t.Run("different_ip", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
@@ -676,8 +655,11 @@ func TestSubnet(t *testing.T) {
 		},
 		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 2.2.2.2")},
 	}).SetQuestion("example.com.", dns.TypeA)
-	item.m = resp
-	c.setWithSubnet(item, &net.IPNet{IP: ip2234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)})
+	c.setWithSubnet(
+		resp,
+		upstreamWithAddr,
+		&net.IPNet{IP: ip2234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)},
+	)
 
 	// Add a response entry without subnet.
 	resp = (&dns.Msg{
@@ -686,8 +668,11 @@ func TestSubnet(t *testing.T) {
 		},
 		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 3.3.3.3")},
 	}).SetQuestion("example.com.", dns.TypeA)
-	item.m = resp
-	c.setWithSubnet(item, &net.IPNet{IP: nil, Mask: nil})
+	c.setWithSubnet(
+		resp,
+		upstreamWithAddr,
+		&net.IPNet{IP: nil, Mask: nil},
+	)
 
 	t.Run("with_subnet_1", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
@@ -745,6 +730,8 @@ func TestSubnet(t *testing.T) {
 }
 
 func TestCache_IsCacheable_negative(t *testing.T) {
+	const someTTL = 3600
+
 	msgHdr := func(rcode int) (hdr dns.MsgHdr) { return dns.MsgHdr{Id: dns.Id(), Rcode: rcode} }
 	aQuestions := func(name string) []dns.Question {
 		return []dns.Question{{
@@ -760,7 +747,7 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				Name:   name,
 				Rrtype: dns.TypeCNAME,
 				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Ttl:    someTTL,
 			},
 			Target: cname,
 		}
@@ -772,7 +759,7 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				Name:   name,
 				Rrtype: dns.TypeSOA,
 				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Ttl:    someTTL,
 			},
 			Ns:   ns,
 			Mbox: mbox,
@@ -785,7 +772,7 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				Name:   name,
 				Rrtype: dns.TypeNS,
 				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Ttl:    someTTL,
 			},
 			Ns: ns,
 		}
@@ -797,7 +784,7 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				Name:   name,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Ttl:    someTTL,
 			},
 			A: a,
 		}
@@ -814,9 +801,9 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 
 	// See https://datatracker.ietf.org/doc/html/rfc2308.
 	testCases := []struct {
-		req  *dns.Msg
-		want assert.BoolAssertionFunc
-		name string
+		req     *dns.Msg
+		name    string
+		wantTTL uint32
 	}{{
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeNameError),
@@ -832,8 +819,8 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				aAns(ns2, net.IP{127, 0, 0, 3}),
 			},
 		},
-		want: assert.False,
-		name: "rfc2308_nxdomain_response_type_1",
+		name:    "rfc2308_nxdomain_response_type_1",
+		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeNameError),
@@ -841,16 +828,16 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 			Answer:   []dns.RR{cnameAns(hostname, cname)},
 			Ns:       []dns.RR{soaAns("XX.", ns1, mbox)},
 		},
-		want: assert.True,
-		name: "rfc2308_nxdomain_response_type_2",
+		name:    "rfc2308_nxdomain_response_type_2",
+		wantTTL: someTTL,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeNameError),
 			Question: aQuestions(hostname),
 			Answer:   []dns.RR{cnameAns(hostname, cname)},
 		},
-		want: assert.False,
-		name: "rfc2308_nxdomain_response_type_3",
+		name:    "rfc2308_nxdomain_response_type_3",
+		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeNameError),
@@ -865,8 +852,8 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				aAns(ns2, net.IP{127, 0, 0, 3}),
 			},
 		},
-		want: assert.False,
-		name: "rfc2308_nxdomain_response_type_4",
+		name:    "rfc2308_nxdomain_response_type_4",
+		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeSuccess),
@@ -881,8 +868,8 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				aAns(ns2, net.IP{127, 0, 0, 3}),
 			},
 		},
-		want: assert.False,
-		name: "rfc2308_nxdomain_referral_response",
+		name:    "rfc2308_nxdomain_referral_response",
+		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeSuccess),
@@ -897,23 +884,23 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				aAns(ns2, net.IP{127, 0, 0, 3}),
 			},
 		},
-		name: "rfc2308_nodata_response_type_1",
-		want: assert.False,
+		name:    "rfc2308_nodata_response_type_1",
+		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeSuccess),
 			Question: aQuestions(anotherHostname),
 			Ns:       []dns.RR{soaAns(xx, ns1, mbox)},
 		},
-		name: "rfc2308_nodata_response_type_2",
-		want: assert.True,
+		name:    "rfc2308_nodata_response_type_2",
+		wantTTL: someTTL,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeSuccess),
 			Question: aQuestions(anotherHostname),
 		},
-		name: "rfc2308_nodata_response_type_3",
-		want: assert.False,
+		name:    "rfc2308_nodata_response_type_3",
+		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeSuccess),
@@ -927,13 +914,20 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 				aAns(ns2, net.IP{127, 0, 0, 3}),
 			},
 		},
-		name: "rfc2308_nodata_referral_response",
-		want: assert.False,
+		name:    "rfc2308_nodata_referral_response",
+		wantTTL: 0,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeServerFailure),
+			Question: aQuestions(anotherHostname),
+		},
+		name:    "servfail_response",
+		wantTTL: ServFailMaxCacheTTL,
 	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.want(t, isCacheable(tc.req))
+			assert.Equal(t, tc.wantTTL, cacheTTL(tc.req))
 		})
 	}
 }

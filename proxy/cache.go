@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
@@ -42,8 +43,32 @@ type cacheItem struct {
 	// m contains the cached response.
 	m *dns.Msg
 
+	// ttl is the time-to-live value for the item.  Should be set before calling
+	// [cacheItem.pack].
+	ttl uint32
+
 	// u contains an address of the upstream which resolved m.
 	u string
+}
+
+// respToItem converts the pair of the response and upstream resolved the one
+// into item for storing it in cache.
+func respToItem(m *dns.Msg, u upstream.Upstream) (item *cacheItem) {
+	ttl := cacheTTL(m)
+	if ttl == 0 {
+		return nil
+	}
+
+	upsAddr := ""
+	if u != nil {
+		upsAddr = u.Address()
+	}
+
+	return &cacheItem{
+		m:   m,
+		ttl: ttl,
+		u:   upsAddr,
+	}
 }
 
 const (
@@ -65,7 +90,7 @@ func (ci *cacheItem) pack() (packed []byte) {
 	packed = make([]byte, minPackedLen, minPackedLen+pmLen+len(ci.u))
 
 	// Put expiration time.
-	binary.BigEndian.PutUint32(packed, uint32(time.Now().Unix())+lowestTTL(ci.m))
+	binary.BigEndian.PutUint32(packed, uint32(time.Now().Unix())+ci.ttl)
 
 	// Put the length of the packed message.
 	binary.BigEndian.PutUint16(packed[expTimeSz:], uint16(pmLen))
@@ -247,15 +272,16 @@ func (c *cache) createCache() (glc glcache.Cache) {
 }
 
 // set tries to add the ci into cache.
-func (c *cache) set(ci *cacheItem) {
-	if !isCacheable(ci.m) {
+func (c *cache) set(m *dns.Msg, u upstream.Upstream) {
+	item := respToItem(m, u)
+	if item == nil {
 		return
 	}
 
 	c.initLazy()
 
-	key := msgToKey(ci.m)
-	packed := ci.pack()
+	key := msgToKey(m)
+	packed := item.pack()
 
 	c.itemsLock.RLock()
 	defer c.itemsLock.RUnlock()
@@ -265,16 +291,17 @@ func (c *cache) set(ci *cacheItem) {
 
 // setWithSubnet tries to add the ci into cache with subnet and ip used to
 // calculate the key.
-func (c *cache) setWithSubnet(ci *cacheItem, subnet *net.IPNet) {
-	if !isCacheable(ci.m) {
+func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet) {
+	item := respToItem(m, u)
+	if item == nil {
 		return
 	}
 
 	c.initLazyWithSubnet()
 
 	pref, _ := subnet.Mask.Size()
-	key := msgToKeyWithSubnet(ci.m, subnet.IP, pref)
-	packed := ci.pack()
+	key := msgToKeyWithSubnet(m, subnet.IP, pref)
+	packed := item.pack()
 
 	c.itemsWithSubnetLock.RLock()
 	defer c.itemsWithSubnetLock.RUnlock()
@@ -282,46 +309,51 @@ func (c *cache) setWithSubnet(ci *cacheItem, subnet *net.IPNet) {
 	c.itemsWithSubnet.Set(key, packed)
 }
 
-// isCacheable checks if m is valid to be cached.  For negative answers it
-// follows RFC 2308 on how to cache NXDOMAIN and NODATA kinds of responses.
+// cacheTTL returns the number of seconds for which m is valid to be cached.
+// For negative answers it follows RFC 2308 on how to cache NXDOMAIN and NODATA
+// kinds of responses.
 //
 // See https://datatracker.ietf.org/doc/html/rfc2308#section-2.1,
 // https://datatracker.ietf.org/doc/html/rfc2308#section-2.2.
-func isCacheable(m *dns.Msg) bool {
+func cacheTTL(m *dns.Msg) (ttl uint32) {
 	switch {
 	case m == nil:
-		return false
+		return 0
 	case m.Truncated:
 		log.Tracef("refusing to cache truncated message")
 
-		return false
+		return 0
 	case len(m.Question) != 1:
 		log.Tracef("refusing to cache message with wrong number of questions")
 
-		return false
-	case lowestTTL(m) == 0:
-		return false
+		return 0
+	default:
+		ttl = calculateTTL(m)
+		if ttl == 0 {
+			return 0
+		}
 	}
 
-	qName := m.Question[0].Name
 	switch rcode := m.Rcode; rcode {
 	case dns.RcodeSuccess:
-		if qType := m.Question[0].Qtype; qType != dns.TypeA && qType != dns.TypeAAAA {
-			return true
+		if isCacheableSuccceded(m) {
+			return ttl
 		}
-
-		return hasIPAns(m) || isCacheableNegative(m)
 	case dns.RcodeNameError:
-		return isCacheableNegative(m)
+		if isCacheableNegative(m) {
+			return ttl
+		}
+	case dns.RcodeServerFailure:
+		return ttl
 	default:
 		log.Tracef(
 			"%s: refusing to cache message with response code %s",
-			qName,
+			m.Question[0].Name,
 			dns.RcodeToString[rcode],
 		)
-
-		return false
 	}
+
+	return 0
 }
 
 // hasIPAns check the m for containing at least one A or AAAA RR in answer
@@ -334,6 +366,14 @@ func hasIPAns(m *dns.Msg) (ok bool) {
 	}
 
 	return false
+}
+
+// isCacheableSuccceded returns true if m contains useful data to be cached
+// treating it as a succeesful response.
+func isCacheableSuccceded(m *dns.Msg) (ok bool) {
+	qType := m.Question[0].Qtype
+
+	return (qType != dns.TypeA && qType != dns.TypeAAAA) || hasIPAns(m) || isCacheableNegative(m)
 }
 
 // isCacheableNegative returns true if m's header has at least a single SOA RR
@@ -357,22 +397,38 @@ func isCacheableNegative(m *dns.Msg) (ok bool) {
 	return ok
 }
 
-// lowestTTL returns the lowest TTL in m's RRs or 0 if the information is
-// absent.
-func lowestTTL(m *dns.Msg) (ttl uint32) {
-	ttl = math.MaxUint32
+// ServFailMaxCacheTTL is the maximum time-to-live value for caching
+// SERVFAIL responses in seconds.  It's consistent with the upper constraint
+// of 5 minutes given by RFC 2308.
+//
+// See https://datatracker.ietf.org/doc/html/rfc2308#section-7.1.
+const ServFailMaxCacheTTL = 30
 
+// calculateTTL returns the number of seconds for which m could be cached.  It's
+// usually the lowest TTL among all m's resource records.  It returns 0 if m
+// isn't cacheable according to it's contents.
+func calculateTTL(m *dns.Msg) (ttl uint32) {
+	// Use the maximum value as a guard value.  If the inner loop is entered,
+	// it's going to be rewritten with an actual TTL value that is lower than
+	// MaxUint32.  If the inner loop isn't entered, catch that and return zero.
+	ttl = math.MaxUint32
 	for _, rrset := range [...][]dns.RR{m.Answer, m.Ns, m.Extra} {
-		for _, r := range rrset {
-			ttl = minTTL(r.Header(), ttl)
+		for _, rr := range rrset {
+			ttl = minTTL(rr.Header(), ttl)
+			if ttl == 0 {
+				return 0
+			}
 		}
 	}
 
-	if ttl == math.MaxUint32 {
+	switch {
+	case m.Rcode == dns.RcodeServerFailure && ttl > ServFailMaxCacheTTL:
+		return ServFailMaxCacheTTL
+	case ttl == math.MaxUint32:
 		return 0
+	default:
+		return ttl
 	}
-
-	return ttl
 }
 
 // minTTL returns the minimum of h's ttl and the passed ttl.

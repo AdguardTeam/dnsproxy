@@ -55,23 +55,13 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 
 // cacheResp stores the response from d in general or subnet cache.
 func (p *Proxy) cacheResp(d *DNSContext) {
-	upsAddr := ""
-	if u := d.Upstream; u != nil {
-		upsAddr = u.Address()
-	}
-	res := d.Res
-	item := &cacheItem{
-		m: res,
-		u: upsAddr,
-	}
-
 	if !p.EnableEDNSClientSubnet {
-		p.cache.set(item)
+		p.cache.set(d.Res, d.Upstream)
 
 		return
 	}
 
-	switch ecs, scope := ecsFromMsg(res); {
+	switch ecs, scope := ecsFromMsg(d.Res); {
 	case ecs != nil && d.ReqECS != nil:
 		ones, bits := ecs.Mask.Size()
 		reqOnes, _ := d.ReqECS.Mask.Size()
@@ -101,12 +91,12 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 		}
 		log.Debug("ecs option in response: %s", ecs)
 
-		p.cache.setWithSubnet(item, ecs)
+		p.cache.setWithSubnet(d.Res, d.Upstream, ecs)
 	case d.ReqECS != nil:
 		// Cache the response for all subnets since the server doesn't support
 		// EDNS Client Subnet option.
-		p.cache.setWithSubnet(item, &net.IPNet{IP: nil, Mask: nil})
+		p.cache.setWithSubnet(d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil})
 	default:
-		p.cache.set(item)
+		p.cache.set(d.Res, d.Upstream)
 	}
 }

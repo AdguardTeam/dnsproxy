@@ -453,7 +453,10 @@ func (p *Proxy) Resolve(d *DNSContext) (err error) {
 	d.calcFlagsAndSize()
 
 	// Use cache only if it's enabled and the query doesn't use custom upstream.
-	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil
+	// Also don't lookup the cache for responses with DNSSEC checking disabled
+	// since only validated responses are cached and those may be not the
+	// desired result for user specifying CD flag.
+	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil && !d.Req.CheckingDisabled
 	if cacheWorks {
 		if p.replyFromCache(d) {
 			// Complete the response from cache.
@@ -462,15 +465,20 @@ func (p *Proxy) Resolve(d *DNSContext) (err error) {
 			return nil
 		}
 
-		// On cache miss request for DNSSEC from the upstream to cache
-		// it afterwards.
+		// On cache miss request for DNSSEC from the upstream to cache it
+		// afterwards.
 		addDO(d.Req)
 	}
 
 	var ok bool
 	ok, err = p.replyFromUpstream(d)
 
-	if cacheWorks && ok {
+	// Don't cache the responses having CD flag, just like Dnsmasq does.  It
+	// prevents the cache from being poisoned with unvalidated answers which may
+	// differ from validated ones.
+	//
+	// See https://github.com/imp/dnsmasq/blob/770bce967cfc9967273d0acfb3ea018fb7b17522/src/forward.c#L1169-L1172.
+	if cacheWorks && ok && !d.Res.CheckingDisabled {
 		// Cache the response with DNSSEC RRs.
 		p.cacheResp(d)
 	}

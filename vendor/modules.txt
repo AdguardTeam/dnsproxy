@@ -43,7 +43,7 @@ github.com/golang/mock/mockgen/model
 github.com/jessevdk/go-flags
 # github.com/kr/text v0.2.0
 ## explicit
-# github.com/lucas-clemente/quic-go v0.29.0
+# github.com/lucas-clemente/quic-go v0.29.2
 ## explicit; go 1.18
 github.com/lucas-clemente/quic-go
 github.com/lucas-clemente/quic-go/http3
@@ -63,10 +63,10 @@ github.com/lucas-clemente/quic-go/quicvarint
 # github.com/marten-seemann/qpack v0.2.1
 ## explicit; go 1.14
 github.com/marten-seemann/qpack
-# github.com/marten-seemann/qtls-go1-18 v0.1.2
+# github.com/marten-seemann/qtls-go1-18 v0.1.3
 ## explicit; go 1.18
 github.com/marten-seemann/qtls-go1-18
-# github.com/marten-seemann/qtls-go1-19 v0.1.0
+# github.com/marten-seemann/qtls-go1-19 v0.1.1
 ## explicit; go 1.19
 github.com/marten-seemann/qtls-go1-19
 # github.com/miekg/dns v1.1.50

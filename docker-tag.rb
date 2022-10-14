@@ -4,10 +4,10 @@
 require "./version"
 
 REGISTRY = "docker.io"
-DOCKER_USER = "initdc"
-DOCKER_IMAGE = "demo"
+DOCKER_USER = "adguard"
+DOCKER_IMAGE = "dnsproxy"
 # VERSION = "v0.0.1"
-LATEST = "scratch"
+LATEST = "ubuntu"
 # the base of docker `FROM scratch`, if not, set: { false | "" }
 ACTION = "--push"
 # options: { --push | --load | "" }
@@ -75,7 +75,7 @@ BASE_TAG = {
     # "scratch": "",
     "alpine": "alpine",
     # "busybox": "busybox",
-    "ubuntu": ""
+    "ubuntu": "ubuntu"
 }
 
 bin_exist = {}

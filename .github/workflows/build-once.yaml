@@ -3,7 +3,7 @@ name: Build Once Time
 env:
   GO_VERSION: '1.18'
   REGISTRY: docker.io
-  IMAGE_NAME: initdc/dnsproxy
+  IMAGENAME: adguard/dnsproxy
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
       - name: Extract Docker metadata
         uses: docker/metadata-action@v3
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}   
+          images: ${{ env.REGISTRY }}/${{ env.IMAGENAME }}   
       - name: Set RELEASE_VERSION
         run: |
           set -e

@@ -2,8 +2,8 @@ package upstream
 
 import (
 	"fmt"
-	"net"
 	"net/url"
+	"runtime"
 	"sync"
 
 	"github.com/AdguardTeam/golibs/errors"
@@ -53,14 +53,16 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 	}
 
 	p.RLock()
-	poolConn, err := p.pool.Get()
+	poolConnAndStore, err := p.pool.Get()
+	// Put the connection right back in to allow the connection to be reused while requests are in flight
+	p.pool.Put(poolConnAndStore)
 	p.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("getting connection to %s: %w", p.Address(), err)
 	}
 
 	logBegin(p.Address(), m)
-	reply, err = p.exchangeConn(poolConn, m)
+	reply, err = p.exchangeConn(poolConnAndStore, m)
 	logFinish(p.Address(), err)
 	if err != nil {
 		log.Tracef("The TLS connection is expired due to %s", err)
@@ -70,7 +72,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 		// We are forcing creation of a new connection instead of calling Get() again
 		// as there's no guarantee that other pooled connections are intact
 		p.RLock()
-		poolConn, err = p.pool.Create()
+		poolConnAndStore, err = p.pool.Create()
 		p.RUnlock()
 		if err != nil {
 			return nil, fmt.Errorf("creating new connection to %s: %w", p.Address(), err)
@@ -78,41 +80,81 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 
 		// Retry sending the DNS request
 		logBegin(p.Address(), m)
-		reply, err = p.exchangeConn(poolConn, m)
+		reply, err = p.exchangeConn(poolConnAndStore, m)
 		logFinish(p.Address(), err)
 	}
 
-	if err == nil {
-		p.RLock()
-		p.pool.Put(poolConn)
-		p.RUnlock()
-	}
 	return reply, err
 }
 
-func (p *dnsOverTLS) exchangeConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg, err error) {
+func (p *dnsOverTLS) exchangeConn(connAndStore *connAndStore, m *dns.Msg) (reply *dns.Msg, err error) {
 	defer func() {
 		if err == nil {
 			return
 		}
 
-		if cerr := conn.Close(); cerr != nil {
+		if cerr := connAndStore.conn.Close(); cerr != nil {
 			err = &errors.Pair{Returned: err, Deferred: cerr}
 		}
 	}()
 
-	dnsConn := dns.Conn{Conn: conn}
+	dnsConn := dns.Conn{Conn: connAndStore.conn}
 
 	err = dnsConn.WriteMsg(m)
 	if err != nil {
 		return nil, fmt.Errorf("sending request to %s: %w", p.Address(), err)
 	}
 
-	reply, err = dnsConn.ReadMsg()
-	if err != nil {
-		return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
-	} else if reply.Id != m.Id {
-		err = dns.ErrId
+	// Since we might receive out-of-order responses when processing multiple queries through a single upstream (cf.
+	// PR #269), we will store all responses that don't match our DNS ID and retry until we find the response we are
+	// looking for (either by receiving it directly or by finding it in the stored responses).
+	responseFound := false
+	present := false
+	for !responseFound {
+		connAndStore.Lock()
+
+		// has someone already received our response?
+		reply, present = connAndStore.store[m.Id]
+		if present { // matching response in store
+			log.Tracef("Found matching ID in store for request %d", m.Id)
+			delete(connAndStore.store, m.Id) // delete response from store
+			responseFound = true
+		} else { // no matching response in store
+			reply, err = dnsConn.ReadMsg()
+			if err != nil {
+				connAndStore.Unlock()
+				return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
+			} else if reply.Id != m.Id {
+				// not the response we were looking for -> store it in the store
+				log.Tracef("Received unknown ID %d, storing in store for later use", reply.Id)
+				connAndStore.store[reply.Id] = reply
+			} else {
+				responseFound = true
+			}
+		}
+		connAndStore.Unlock()
+
+		// yield to scheduler if we added something to the store
+		if !responseFound {
+			runtime.Gosched()
+		}
+	}
+
+	// Match response QNAME, QCLASS, and QTYPE to query according to RFC 7766
+	// (https://www.rfc-editor.org/rfc/rfc7766#section-7)
+	if len(reply.Question) != 0 && len(m.Question) != 0 {
+		if reply.Question[0].Name != m.Question[0].Name {
+			err = fmt.Errorf("Query and response QNAME do not match; received %s, expected %s", reply.Question[0].Name, m.Question[0].Name)
+			return reply, err
+		}
+		if reply.Question[0].Qtype != m.Question[0].Qtype {
+			err = fmt.Errorf("Query and response QTYPE do not match; received %d, expected %d", reply.Question[0].Qtype, m.Question[0].Qtype)
+			return reply, err
+		}
+		if reply.Question[0].Qclass != m.Question[0].Qclass {
+			err = fmt.Errorf("Query and response QCLASS do not match; received %d, expected %d", reply.Question[0].Qclass, m.Question[0].Qclass)
+			return reply, err
+		}
 	}
 
 	return reply, err

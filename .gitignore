@@ -8,3 +8,6 @@ example.crt
 example.key
 coverage.txt
 config.yaml
+
+target/
+upload/

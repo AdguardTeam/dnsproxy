@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+FROM --platform=$TARGETPLATFORM ubuntu:22.04
+
+ARG TARGETPLATFORM
+# ARG BUILDPLATFORM
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN set -e \
+    && apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates \
+    && apt-get autoremove --purge \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /root
+COPY target/$TARGETPLATFORM/* .
+
+CMD ["/bin/sh"]
+
+# For image needs glic
+# GitHub Actions CMD
+# docker buildx build --platform linux/amd64,linux/arm/v7,linux/arm64/v8,linux/ppc64le,linux/riscv64,linux/s390x -t initdc/demo:ubuntu -f Dockerfile.ubuntu . --push

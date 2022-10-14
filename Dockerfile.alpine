@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1
+FROM --platform=$TARGETPLATFORM alpine:edge
+
+ARG TARGETPLATFORM
+# ARG BUILDPLATFORM
+
+RUN set -e \
+    && apk add --no-cache ca-certificates
+
+WORKDIR /root
+COPY target/$TARGETPLATFORM/* .
+
+CMD ["/bin/sh"]
+
+# For image needs shell and https
+# GitHub Actions CMD
+# docker buildx build --platform linux/amd64,linux/arm64,linux/riscv64,linux/ppc64le,linux/s390x,linux/386,linux/arm/v7,linux/arm/v6 -t initdc/demo:alpine -f Dockerfile.alpine . --push

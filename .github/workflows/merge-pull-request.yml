@@ -1,0 +1,51 @@
+name: Merge or Pull requests
+
+env:
+  GO_VERSION: '1.18'
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'dev'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set go version  
+        uses: actions/setup-go@v2
+        with:
+          go-version: '${{ env.GO_VERSION }}'   
+      - name: Build Artifact
+        run: ruby build.rb test --run-test
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          path: "upload/*"
+
+  notify:
+    needs:
+      - build
+    if:
+      ${{ always() &&
+        (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        )
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conclusion
+        uses: technote-space/workflow-conclusion-action@v1
+      - name: Send Slack notif
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ env.WORKFLOW_CONCLUSION }}
+          fields: workflow, repo, message, commit, author, eventName,ref
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

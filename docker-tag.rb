@@ -78,6 +78,12 @@ BASE_TAG = {
     "ubuntu": "ubuntu"
 }
 
+registry = ENV['REGISTRY'] || REGISTRY
+docker_user = ENV['DOCKER_USER'] || DOCKER_USER
+docker_image = ENV['DOCKER_IMAGE'] || DOCKER_IMAGE
+imagename = ENV['IMAGENAME'] || "#{docker_user}/#{docker_image}"
+version = ARGV[0] || VERSION
+
 bin_exist = {}
 
 for target_platform in BUILDER_SUPPORT
@@ -107,12 +113,6 @@ BASE_TAG.each do |base, distro|
         end
     end
     # print "\n"
-
-    registry = ENV['REGISTRY'] || REGISTRY
-    docker_user = ENV['DOCKER_USER'] || DOCKER_USER
-    docker_image = ENV['DOCKER_IMAGE'] || DOCKER_IMAGE
-    imagename = ENV['IMAGENAME'] || "#{docker_user}/#{docker_image}"
-    version = ARGV[0] || VERSION
 
     tag = distro.to_s == "" ? version : "#{version}-#{distro}"
     # p tag

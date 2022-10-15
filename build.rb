@@ -105,6 +105,8 @@ for target_platform in os_arch do
     os = tp_array[0]
     architecture = tp_array[1]
 
+    program_bin = os != "windows" ? PROGRAM : "#{PROGRAM}.exe"
+
     if architecture == "arm" 
         for variant in ARM do
             puts "GOOS=#{os} GOARCH=#{architecture} GOARM=#{variant}"
@@ -120,8 +122,10 @@ for target_platform in os_arch do
                 end
             end
 
-            `GOOS=#{os} GOARCH=#{architecture} GOARM=#{variant} #{BUILD_CMD} #{TARGET_DIR}/#{os}/#{architecture}/v#{variant}/#{PROGRAM}`
-            `ln #{TARGET_DIR}/#{os}/#{architecture}/v#{variant}/#{PROGRAM} #{UPLOAD_DIR}/#{PROGRAM}-#{version}-#{os}-#{architecture}-#{variant}`
+            upload_bin = os != "windows" ? "#{PROGRAM}-#{version}-#{os}-#{architecture}-#{variant}" : "#{PROGRAM}-#{version}-#{os}-#{architecture}-#{variant}.exe"
+
+            `GOOS=#{os} GOARCH=#{architecture} GOARM=#{variant} #{BUILD_CMD} #{TARGET_DIR}/#{os}/#{architecture}/v#{variant}/#{program_bin}`
+            `ln #{TARGET_DIR}/#{os}/#{architecture}/v#{variant}/#{program_bin} #{UPLOAD_DIR}/#{upload_bin}`
         end
     else
         puts "GOOS=#{os} GOARCH=#{architecture}"
@@ -137,8 +141,10 @@ for target_platform in os_arch do
             end            
         end
 
-        `GOOS=#{os} GOARCH=#{architecture} #{BUILD_CMD} #{TARGET_DIR}/#{os}/#{architecture}/#{PROGRAM}`
-        `ln #{TARGET_DIR}/#{os}/#{architecture}/#{PROGRAM} #{UPLOAD_DIR}/#{PROGRAM}-#{version}-#{os}-#{architecture}`
+        upload_bin = os != "windows" ? "#{PROGRAM}-#{version}-#{os}-#{architecture}" : "#{PROGRAM}-#{version}-#{os}-#{architecture}.exe"
+
+        `GOOS=#{os} GOARCH=#{architecture} #{BUILD_CMD} #{TARGET_DIR}/#{os}/#{architecture}/#{program_bin}`
+        `ln #{TARGET_DIR}/#{os}/#{architecture}/#{program_bin} #{UPLOAD_DIR}/#{upload_bin}`
     end
 end
 

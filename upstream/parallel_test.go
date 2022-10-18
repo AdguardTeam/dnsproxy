@@ -106,7 +106,11 @@ type testUpstream struct {
 	sleep time.Duration // a delay before response
 }
 
-func (u *testUpstream) Exchange(req *dns.Msg) (*dns.Msg, error) {
+// type check
+var _ Upstream = (*testUpstream)(nil)
+
+// Exchange implements the Upstream interface for *testUpstream.
+func (u *testUpstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	if u.sleep != 0 {
 		time.Sleep(u.sleep)
 	}
@@ -115,7 +119,7 @@ func (u *testUpstream) Exchange(req *dns.Msg) (*dns.Msg, error) {
 		return nil, nil
 	}
 
-	resp := &dns.Msg{}
+	resp = &dns.Msg{}
 	resp.SetReply(req)
 
 	if len(u.a) != 0 {
@@ -131,8 +135,14 @@ func (u *testUpstream) Exchange(req *dns.Msg) (*dns.Msg, error) {
 	return resp, nil
 }
 
-func (u *testUpstream) Address() string {
+// Address implements the Upstream interface for *testUpstream.
+func (u *testUpstream) Address() (addr string) {
 	return ""
+}
+
+// Close implements the Upstream interface for *testUpstream.
+func (u *testUpstream) Close() (err error) {
+	return nil
 }
 
 func TestExchangeAll(t *testing.T) {

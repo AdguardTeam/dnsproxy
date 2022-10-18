@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"runtime"
 	"sync"
 
 	"github.com/AdguardTeam/golibs/errors"
@@ -14,14 +15,13 @@ import (
 // dnsOverTLS is a struct that implements the Upstream interface for the
 // DNS-over-TLS protocol.
 type dnsOverTLS struct {
-	boot *bootstrapper
-	pool *TLSPool
-
-	sync.RWMutex // protects pool
+	boot   *bootstrapper
+	pool   *TLSPool
+	poolMu sync.Mutex
 }
 
 // type check
-var _ Upstream = &dnsOverTLS{}
+var _ Upstream = (*dnsOverTLS)(nil)
 
 // newDoT returns the DNS-over-TLS Upstream.
 func newDoT(uu *url.URL, opts *Options) (u Upstream, err error) {
@@ -33,7 +33,11 @@ func newDoT(uu *url.URL, opts *Options) (u Upstream, err error) {
 		return nil, fmt.Errorf("creating tls bootstrapper: %w", err)
 	}
 
-	return &dnsOverTLS{boot: b}, nil
+	u = &dnsOverTLS{boot: b}
+
+	runtime.SetFinalizer(u, (*dnsOverTLS).Close)
+
+	return u, nil
 }
 
 // Address implements the Upstream interface for *dnsOverTLS.
@@ -41,20 +45,9 @@ func (p *dnsOverTLS) Address() string { return p.boot.URL.String() }
 
 // Exchange implements the Upstream interface for *dnsOverTLS.
 func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
-	var pool *TLSPool
-	p.RLock()
-	pool = p.pool
-	p.RUnlock()
-	if pool == nil {
-		p.Lock()
-		// lazy initialize it
-		p.pool = &TLSPool{boot: p.boot}
-		p.Unlock()
-	}
+	pool := p.getPool()
 
-	p.RLock()
-	poolConn, err := p.pool.Get()
-	p.RUnlock()
+	poolConn, err := pool.Get()
 	if err != nil {
 		return nil, fmt.Errorf("getting connection to %s: %w", p.Address(), err)
 	}
@@ -62,6 +55,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 	logBegin(p.Address(), m)
 	reply, err = p.exchangeConn(poolConn, m)
 	logFinish(p.Address(), err)
+
 	if err != nil {
 		log.Tracef("The TLS connection is expired due to %s", err)
 
@@ -69,9 +63,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 		// So we're trying to re-connect right away here.
 		// We are forcing creation of a new connection instead of calling Get() again
 		// as there's no guarantee that other pooled connections are intact
-		p.RLock()
-		poolConn, err = p.pool.Create()
-		p.RUnlock()
+		poolConn, err = pool.Create()
 		if err != nil {
 			return nil, fmt.Errorf("creating new connection to %s: %w", p.Address(), err)
 		}
@@ -83,11 +75,23 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 	}
 
 	if err == nil {
-		p.RLock()
-		p.pool.Put(poolConn)
-		p.RUnlock()
+		pool.Put(poolConn)
 	}
 	return reply, err
+}
+
+// Close implements the Upstream interface for *dnsOverTLS.
+func (p *dnsOverTLS) Close() (err error) {
+	p.poolMu.Lock()
+	defer p.poolMu.Unlock()
+
+	runtime.SetFinalizer(p, nil)
+
+	if p.pool == nil {
+		return nil
+	}
+
+	return p.pool.Close()
 }
 
 func (p *dnsOverTLS) exchangeConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg, err error) {
@@ -116,4 +120,15 @@ func (p *dnsOverTLS) exchangeConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg, er
 	}
 
 	return reply, err
+}
+
+func (p *dnsOverTLS) getPool() (pool *TLSPool) {
+	p.poolMu.Lock()
+	defer p.poolMu.Unlock()
+
+	if p.pool == nil {
+		p.pool = &TLSPool{boot: p.boot}
+	}
+
+	return p.pool
 }

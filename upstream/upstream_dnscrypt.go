@@ -49,6 +49,12 @@ func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	return reply, err
 }
 
+// Close implements the Upstream interface for *dnsCrypt.
+func (p *dnsCrypt) Close() (err error) {
+	// Nothing to close here.
+	return nil
+}
+
 // exchangeDNSCrypt attempts to send the DNS query and returns the response
 func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (reply *dns.Msg, err error) {
 	p.RLock()

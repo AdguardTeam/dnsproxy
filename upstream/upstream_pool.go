@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 )
 
@@ -36,33 +38,38 @@ type TLSPool struct {
 	boot *bootstrapper
 
 	// conns is the list of connections available in the pool.
-	conns []net.Conn
-	// connsMutex protects conns.
-	connsMutex sync.Mutex
+	conns   []net.Conn
+	connsMu sync.Mutex
 }
+
+// type check
+var _ io.Closer = (*TLSPool)(nil)
 
 // Get gets a connection from the pool (if there's one available) or creates
 // a new TLS connection.
-func (n *TLSPool) Get() (net.Conn, error) {
+func (n *TLSPool) Get() (conn net.Conn, err error) {
 	// Get the connection from the slice inside the lock.
-	var c net.Conn
-	n.connsMutex.Lock()
+	n.connsMu.Lock()
 	num := len(n.conns)
 	if num > 0 {
 		last := num - 1
-		c = n.conns[last]
+		conn = n.conns[last]
 		n.conns = n.conns[:last]
 	}
-	n.connsMutex.Unlock()
+	n.connsMu.Unlock()
 
 	// If we got connection from the slice, update deadline and return it.
-	if c != nil {
-		err := c.SetDeadline(time.Now().Add(dialTimeout))
+	if conn != nil {
+		err = conn.SetDeadline(time.Now().Add(dialTimeout))
 
 		// If deadLine can't be updated it means that connection was already closed
 		if err == nil {
-			log.Tracef("Returning existing connection to %s with updated deadLine", c.RemoteAddr())
-			return c, nil
+			log.Tracef(
+				"Returning existing connection to %s with updated deadLine",
+				conn.RemoteAddr(),
+			)
+
+			return conn, nil
 		}
 	}
 
@@ -70,14 +77,13 @@ func (n *TLSPool) Get() (net.Conn, error) {
 }
 
 // Create creates a new connection for the pool (but not puts it there).
-func (n *TLSPool) Create() (net.Conn, error) {
+func (n *TLSPool) Create() (conn net.Conn, err error) {
 	tlsConfig, dialContext, err := n.boot.get()
 	if err != nil {
 		return nil, err
 	}
 
-	// we'll need a new connection, dial now
-	conn, err := tlsDial(dialContext, "tcp", tlsConfig)
+	conn, err = tlsDial(dialContext, "tcp", tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to %s: %w", tlsConfig.ServerName, err)
 	}
@@ -86,13 +92,35 @@ func (n *TLSPool) Create() (net.Conn, error) {
 }
 
 // Put returns the connection to the pool.
-func (n *TLSPool) Put(c net.Conn) {
-	if c == nil {
+func (n *TLSPool) Put(conn net.Conn) {
+	if conn == nil {
 		return
 	}
-	n.connsMutex.Lock()
-	n.conns = append(n.conns, c)
-	n.connsMutex.Unlock()
+
+	n.connsMu.Lock()
+	defer n.connsMu.Unlock()
+
+	n.conns = append(n.conns, conn)
+}
+
+// Close implements io.Closer for *TLSPool.
+func (n *TLSPool) Close() (err error) {
+	n.connsMu.Lock()
+	defer n.connsMu.Unlock()
+
+	var closeErrs []error
+	for _, c := range n.conns {
+		cErr := c.Close()
+		if cErr != nil {
+			closeErrs = append(closeErrs, cErr)
+		}
+	}
+
+	if len(closeErrs) > 0 {
+		return errors.List("failed to close some connections", closeErrs...)
+	}
+
+	return nil
 }
 
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own
@@ -108,17 +136,17 @@ func tlsDial(dialContext dialHandler, network string, config *tls.Config) (*tls.
 	// We want the timeout to cover the whole process: TCP connection and
 	// TLS handshake dialTimeout will be used as connection deadLine.
 	conn := tls.Client(rawConn, config)
+
 	err = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err != nil {
-		log.Printf("DeadLine is not supported cause: %s", err)
-		conn.Close()
-		return nil, err
+		// Must not happen in normal circumstances.
+		panic(fmt.Errorf("cannot set deadline: %w", err))
 	}
 
 	err = conn.Handshake()
 	if err != nil {
-		conn.Close()
-		return nil, err
+		return nil, errors.WithDeferred(err, conn.Close())
 	}
+
 	return conn, nil
 }

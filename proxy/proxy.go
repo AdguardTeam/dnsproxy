@@ -261,6 +261,10 @@ func (p *Proxy) Stop() error {
 	closeAll(p.dnsCryptTCPListen, &errs)
 	p.dnsCryptTCPListen = nil
 
+	if p.UpstreamConfig != nil {
+		closeAll([]io.Closer{p.UpstreamConfig}, &errs)
+	}
+
 	p.started = false
 	log.Println("Stopped the DNS proxy server")
 	if len(errs) > 0 {

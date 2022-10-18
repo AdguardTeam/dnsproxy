@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"strconv"
@@ -26,6 +27,7 @@ type Upstream interface {
 	Exchange(m *dns.Msg) (*dns.Msg, error)
 	// Address returns the address of the upstream DNS resolver.
 	Address() string
+	io.Closer
 }
 
 // Options for AddressToUpstream func.  With these options we can configure the

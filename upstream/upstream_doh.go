@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"sync"
 	"time"
 
@@ -57,7 +58,7 @@ type dnsOverHTTPS struct {
 }
 
 // type check
-var _ Upstream = &dnsOverHTTPS{}
+var _ Upstream = (*dnsOverHTTPS)(nil)
 
 // newDoH returns the DNS-over-HTTPS Upstream.
 func newDoH(uu *url.URL, opts *Options) (u Upstream, err error) {
@@ -69,14 +70,18 @@ func newDoH(uu *url.URL, opts *Options) (u Upstream, err error) {
 		return nil, fmt.Errorf("creating https bootstrapper: %w", err)
 	}
 
-	return &dnsOverHTTPS{
+	u = &dnsOverHTTPS{
 		boot: b,
 
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
 		},
-	}, nil
+	}
+
+	runtime.SetFinalizer(u, (*dnsOverHTTPS).Close)
+
+	return u, nil
 }
 
 // Address implements the Upstream interface for *dnsOverHTTPS.
@@ -126,6 +131,26 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	}
 
 	return resp, err
+}
+
+// Close implements the Upstream interface for *dnsOverHTTPS.
+func (p *dnsOverHTTPS) Close() (err error) {
+	p.clientGuard.Lock()
+	defer p.clientGuard.Unlock()
+
+	runtime.SetFinalizer(p, nil)
+
+	if p.client == nil {
+		return nil
+	}
+
+	// We should only explicitly close it when the client is for DoH3.  Native
+	// http.Client is stateless and does not require explicit cleanup.
+	if t, ok := p.client.Transport.(*http3.RoundTripper); ok {
+		err = t.Close()
+	}
+
+	return err
 }
 
 // exchangeHTTPS creates an HTTP client and sends the DNS query using it.

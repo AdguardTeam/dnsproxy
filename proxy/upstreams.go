@@ -2,13 +2,14 @@ package proxy
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
+	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/stringutil"
-
-	"github.com/AdguardTeam/dnsproxy/upstream"
 )
 
 // UpstreamConfig is a wrapper for list of default upstreams and map of reserved domains and corresponding upstreams
@@ -18,6 +19,9 @@ type UpstreamConfig struct {
 	SpecifiedDomainUpstreams map[string][]upstream.Upstream // map of excluded domains and lists of corresponding upstreams
 	SubdomainExclusions      *stringutil.Set                // set of domains with sub-domains exclusions
 }
+
+// type check
+var _ io.Closer = (*UpstreamConfig)(nil)
 
 // ParseUpstreamsConfig returns UpstreamConfig and error if upstreams configuration is invalid
 // default upstream syntax: <upstreamString>
@@ -159,12 +163,15 @@ func parseUpstreamLine(l string) (string, []string, error) {
 	return u, hosts, nil
 }
 
-// getUpstreamsForDomain looks for a domain in reserved domains map and returns a list of corresponding upstreams.
-// returns default upstreams list if domain isn't found. More specific domains take priority over less specific domains.
-// For example, map contains the following keys: host.com and www.host.com
-// If we are looking for domain mail.host.com, this method will return value of host.com key
-// If we are looking for domain www.host.com, this method will return value of www.host.com key
-// If more specific domain value is nil, it means that domain was excluded and should be exchanged with default upstreams
+// getUpstreamsForDomain looks for a domain in the reserved domains map and
+// returns a list of corresponding upstreams.  It returns default upstreams list
+// if the domain was not found in the map.  More specific domains take priority
+// over less specific domains.  For example, take a map that contains the
+// following keys: host.com and www.host.com.  If we are looking for domain
+// mail.host.com, this method will return value of host.com key.  If we are
+// looking for domain www.host.com, this method will return value of the
+// www.host.com key.  If a more specific domain value is nil, it means that the
+// domain was excluded and should be exchanged with default upstreams.
 func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Upstream) {
 	if len(uc.DomainReservedUpstreams) == 0 {
 		return uc.Upstreams
@@ -213,4 +220,16 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 	}
 
 	return uc.Upstreams
+}
+
+// Close implements the io.Closer interface for *UpstreamConfig.
+func (uc *UpstreamConfig) Close() (err error) {
+	closeErrs := []error{}
+	closeAll(uc.Upstreams, &closeErrs)
+
+	if len(closeErrs) > 0 {
+		return errors.List("failed to close some upstreams", closeErrs...)
+	}
+
+	return nil
 }

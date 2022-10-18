@@ -81,7 +81,7 @@ type errUpstream struct {
 	err error
 }
 
-func (u errUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
+func (u errUpstream) Exchange(_ *dns.Msg) (*dns.Msg, error) {
 	return nil, u.err
 }
 
@@ -89,6 +89,10 @@ type testAUpstream struct {
 	recs []*dns.A
 }
 
+// type check
+var _ upstream.Upstream = (*testAUpstream)(nil)
+
+// Exchange implements the upstream.Upstream interface for *testAUpstream.
 func (u *testAUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	resp = &dns.Msg{}
 	resp.SetReply(m)
@@ -100,8 +104,14 @@ func (u *testAUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	return resp, nil
 }
 
-func (u *testAUpstream) Address() string {
+// Address implements the upstream.Upstream interface for *testAUpstream.
+func (u *testAUpstream) Address() (addr string) {
 	return ""
+}
+
+// Close implements the upstream.Upstream interface for *testAUpstream.
+func (u *testAUpstream) Close() (err error) {
+	return nil
 }
 
 func (u *testAUpstream) add(host string, ip net.IP) (chain *testAUpstream) {

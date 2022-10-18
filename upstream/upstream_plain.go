@@ -68,3 +68,9 @@ func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
 
 	return reply, err
 }
+
+// Close implements the Upstream interface for *plainDNS.
+func (p *plainDNS) Close() (err error) {
+	// Nothing to close here.
+	return nil
+}

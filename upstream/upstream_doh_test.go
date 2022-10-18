@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/miekg/dns"
@@ -85,6 +86,7 @@ func TestUpstreamDoH(t *testing.T) {
 			}
 			u, err := AddressToUpstream(address, opts)
 			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			// Test that it responds properly.
 			for i := 0; i < 10; i++ {
@@ -179,6 +181,7 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 			}
 			u, err := AddressToUpstream(address, opts)
 			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			checkRaceCondition(u)
 		})
@@ -218,6 +221,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 				},
 			)
 			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			// Test that the upstream works properly.
 			checkUpstream(t, u, address)

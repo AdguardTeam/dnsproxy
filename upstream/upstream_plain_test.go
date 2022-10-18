@@ -3,29 +3,25 @@ package upstream
 import (
 	"testing"
 
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/require"
 )
 
+// TODO(ameshkov): make this test not depend on external resources.
 func TestDNSTruncated(t *testing.T) {
 	// AdGuard DNS
 	address := "94.140.14.14:53"
-	// Google DNS
-	// address := "8.8.8.8:53"
+
 	u, err := AddressToUpstream(address, &Options{Timeout: timeout})
-	if err != nil {
-		t.Fatalf("error while creating an upstream: %s", err)
-	}
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	req := new(dns.Msg)
 	req.SetQuestion("unit-test2.dns.adguard.com.", dns.TypeTXT)
 	req.RecursionDesired = true
 
 	res, err := u.Exchange(req)
-	if err != nil {
-		t.Fatalf("error while making a request: %s", err)
-	}
-
-	if res.Truncated {
-		t.Fatalf("response must NOT be truncated")
-	}
+	require.NoError(t, err)
+	require.False(t, res.Truncated)
 }

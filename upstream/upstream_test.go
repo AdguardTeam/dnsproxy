@@ -25,6 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TODO(ameshkov): make tests here not depend on external servers.
+
 func TestMain(m *testing.M) {
 	// Disable logging in tests.
 	log.SetOutput(io.Discard)
@@ -44,6 +46,7 @@ func TestBootstrapTimeout(t *testing.T) {
 		Timeout:   timeout,
 	})
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	ch := make(chan int, count)
 	abort := make(chan string, 1)
@@ -91,9 +94,8 @@ func TestUpstreamRace(t *testing.T) {
 		"tls://1.1.1.1",
 		&Options{Timeout: timeout},
 	)
-	if err != nil {
-		t.Fatalf("cannot create upstream: %s", err)
-	}
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	ch := make(chan int, count)
 	abort := make(chan string, 1)
@@ -213,6 +215,7 @@ func TestUpstreams(t *testing.T) {
 				&Options{Bootstrap: test.bootstrap, Timeout: timeout},
 			)
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", test.address)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			checkUpstream(t, u, test.address)
 		})
@@ -260,6 +263,7 @@ func TestAddressToUpstream(t *testing.T) {
 		t.Run(tc.addr, func(t *testing.T) {
 			u, err := AddressToUpstream(tc.addr, tc.opt)
 			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			assert.Equal(t, tc.want, u.Address())
 		})
@@ -315,6 +319,7 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 				Timeout:   timeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			checkUpstream(t, u, tc.address)
 		})
@@ -327,6 +332,7 @@ func TestUpstreamDefaultOptions(t *testing.T) {
 	for _, address := range addresses {
 		u, err := AddressToUpstream(address, nil)
 		require.NoErrorf(t, err, "failed to generate upstream from address %s", address)
+		testutil.CleanupAndRequireSuccess(t, u.Close)
 
 		checkUpstream(t, u, address)
 	}
@@ -366,6 +372,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 				Timeout:   timeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			checkUpstream(t, u, tc.address)
 		})
@@ -415,6 +422,7 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to generate upstream from address %s: %s", tc.address, err)
 		}
+		testutil.CleanupAndRequireSuccess(t, u.Close)
 
 		t.Run(tc.address, func(t *testing.T) {
 			checkUpstream(t, u, tc.address)

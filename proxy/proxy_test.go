@@ -82,6 +82,10 @@ type testDNSSECUpstream struct {
 	rrsig dns.RR
 }
 
+// type check
+var _ upstream.Upstream = (*testDNSSECUpstream)(nil)
+
+// Exchange implements the upstream.Upstream interface for *testDNSSECUpstream.
 func (u *testDNSSECUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	resp = &dns.Msg{}
 	resp.SetReply(m)
@@ -113,8 +117,14 @@ func (u *testDNSSECUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	return resp, nil
 }
 
+// Address implements the upstream.Upstream interface for *testDNSSECUpstream.
 func (u *testDNSSECUpstream) Address() string {
 	return ""
+}
+
+// Close implements the upstream.Upstream interface for *testDNSSECUpstream.
+func (u *testDNSSECUpstream) Close() (err error) {
+	return nil
 }
 
 func TestProxy_Resolve_dnssecCache(t *testing.T) {
@@ -347,90 +357,71 @@ func TestUpstreamsSort(t *testing.T) {
 func TestExchangeWithReservedDomains(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 
-	// upstreams specification. Domains adguard.com and google.ru reserved with fake upstreams, maps.google.ru excluded from dnsmasq.
-	upstreams := []string{"[/adguard.com/]1.2.3.4", "[/google.ru/]2.3.4.5", "[/maps.google.ru/]#", "1.1.1.1"}
+	// Upstreams specification. Domains adguard.com and google.ru reserved
+	// with fake upstreams, maps.google.ru excluded from dnsmasq.
+	upstreams := []string{
+		"[/adguard.com/]1.2.3.4",
+		"[/google.ru/]2.3.4.5",
+		"[/maps.google.ru/]#",
+		"1.1.1.1",
+	}
 	config, err := ParseUpstreamsConfig(
 		upstreams,
 		&upstream.Options{
 			InsecureSkipVerify: false,
 			Bootstrap:          []string{"8.8.8.8"},
 			Timeout:            1 * time.Second,
-		})
-	if err != nil {
-		t.Fatalf("Error while upstream config parsing: %s", err)
-	}
+		},
+	)
+	require.NoError(t, err)
+
 	dnsProxy.UpstreamConfig = config
 
 	err = dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
-	// create a DNS-over-TCP client connection
+	// Create a DNS-over-TCP client connection.
 	addr := dnsProxy.Addr(ProtoTCP)
 	conn, err := dns.Dial("tcp", addr.String())
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
+	require.NoError(t, err)
 
-	// create google-a test message
+	// Create google-a test message.
 	req := createTestMessage()
 	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
+	require.NoError(t, err)
 
-	// make sure if dnsproxy is working
+	// Make sure that dnsproxy is working.
 	res, err := conn.ReadMsg()
-	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
-	}
+	require.NoError(t, err)
 	requireResponse(t, req, res)
 
-	// create adguard.com test message
+	// Create adguard.com test message.
 	req = createHostTestMessage("adguard.com")
 	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
+	require.NoError(t, err)
 
-	// test message should not be resolved
+	// Test message should not be resolved.
 	res, _ = conn.ReadMsg()
-	if res.Answer != nil {
-		t.Fatal("adguard.com should not be resolved")
-	}
+	require.Nil(t, res.Answer)
 
-	// create www.google.ru test message
+	// Create www.google.ru test message.
 	req = createHostTestMessage("www.google.ru")
 	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
+	require.NoError(t, err)
 
-	// test message should not be resolved
+	// Test message should not be resolved.
 	res, _ = conn.ReadMsg()
-	if res.Answer != nil {
-		t.Fatal("www.google.ru should not be resolved")
-	}
+	require.Nil(t, res.Answer)
 
-	// create maps.google.ru test message
+	// Create maps.google.ru test message.
 	req = createHostTestMessage("maps.google.ru")
 	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
+	require.NoError(t, err)
 
-	// test message should be resolved
+	// Test message should be resolved.
 	res, _ = conn.ReadMsg()
-	if res.Answer == nil {
-		t.Fatal("maps.google.ru should be resolved")
-	}
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
-	}
+	require.NotNil(t, res.Answer)
 }
 
 // TestOneByOneUpstreamsExchange tries to resolve DNS request
@@ -757,6 +748,9 @@ type funcUpstream struct {
 	addressFunc  func() (addr string)
 }
 
+// type check
+var _ upstream.Upstream = (*funcUpstream)(nil)
+
 // Exchange implements upstream.Upstream interface for *funcUpstream.
 func (wu *funcUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	if wu.exchangeFunc == nil {
@@ -767,12 +761,17 @@ func (wu *funcUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
 }
 
 // Address implements upstream.Upstream interface for *funcUpstream.
-func (wu *funcUpstream) Address() string {
+func (wu *funcUpstream) Address() (addr string) {
 	if wu.addressFunc == nil {
 		return "stub"
 	}
 
 	return wu.addressFunc()
+}
+
+// Close implements upstream.Upstream interface for *funcUpstream.
+func (wu *funcUpstream) Close() (err error) {
+	return nil
 }
 
 func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
@@ -1289,6 +1288,10 @@ type testUpstream struct {
 	ecsReqMask int
 }
 
+// type check
+var _ upstream.Upstream = (*testUpstream)(nil)
+
+// Exchange implements the upstream.Upstream interface for *testUpstream.
 func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	resp = &dns.Msg{}
 	resp.SetReply(m)
@@ -1309,8 +1312,14 @@ func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	return resp, nil
 }
 
-func (u *testUpstream) Address() string {
+// Address implements the upstream.Upstream interface for *testUpstream.
+func (u *testUpstream) Address() (addr string) {
 	return ""
+}
+
+// Close implements the upstream.Upstream interface for *testUpstream.
+func (u *testUpstream) Close() (err error) {
+	return nil
 }
 
 func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {

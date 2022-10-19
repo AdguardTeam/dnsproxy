@@ -348,6 +348,13 @@ func sendTestDoHMessage(
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, httpResp.Body.Close)
 
+	require.True(
+		t,
+		httpResp.ProtoAtLeast(2, 0),
+		"the proto is too old: %s",
+		httpResp.Proto,
+	)
+
 	body, err := io.ReadAll(httpResp.Body)
 	require.NoError(t, err)
 
@@ -372,6 +379,8 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 	var transport http.RoundTripper
 
 	if http3Enabled {
+		tlsClientConfig.NextProtos = []string{"h3"}
+
 		transport = &http3.RoundTripper{
 			Dial: func(
 				ctx context.Context,
@@ -395,10 +404,12 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 			return dialer.DialContext(ctx, network, dnsProxy.Addr(ProtoHTTPS).String())
 		}
 
+		tlsClientConfig.NextProtos = []string{"h2", "http/1.1"}
 		transport = &http.Transport{
 			TLSClientConfig:    tlsClientConfig,
 			DisableCompression: true,
 			DialContext:        dialContext,
+			ForceAttemptHTTP2:  true,
 		}
 	}
 

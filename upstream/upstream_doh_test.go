@@ -108,6 +108,9 @@ func TestUpstreamDoH(t *testing.T) {
 }
 
 func TestUpstreamDoH_raceReconnect(t *testing.T) {
+	// TODO(ameshkov): report or fix races in quic-go and enable this back.
+	t.Skip("Disable this test temporarily until races are fixed in quic-go")
+
 	testCases := []struct {
 		name             string
 		http3Enabled     bool

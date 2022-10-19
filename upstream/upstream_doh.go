@@ -48,8 +48,8 @@ type dnsOverHTTPS struct {
 	// The Client's Transport typically has internal state (cached TCP
 	// connections), so Clients should be reused instead of created as
 	// needed. Clients are safe for concurrent use by multiple goroutines.
-	client      *http.Client
-	clientGuard sync.Mutex
+	client   *http.Client
+	clientMu sync.Mutex
 
 	// quicConfig is the QUIC configuration that is used if HTTP/3 is enabled
 	// for this upstream.
@@ -106,28 +106,33 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 
 	// Check if there was already an active client before sending the request.
 	// We'll only attempt to re-connect if there was one.
-	hasClient := p.hasClient()
+	client, isCached, err := p.getClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to init http client: %w", err)
+	}
 
 	// Make the first attempt to send the DNS query.
-	resp, err = p.exchangeHTTPS(m)
+	resp, err = p.exchangeHTTPS(client, m)
 
 	// Make up to 2 attempts to re-create the HTTP client and send the request
 	// again.  There are several cases (mostly, with QUIC) where this workaround
 	// is necessary to make HTTP client usable.  We need to make 2 attempts in
 	// the case when the connection was closed (due to inactivity for example)
 	// AND the server refuses to open a 0-RTT connection.
-	for i := 0; hasClient && p.shouldRetry(err) && i < 2; i++ {
-		log.Debug("re-creating the HTTP client and retrying due to %v", err)
+	for i := 0; isCached && p.shouldRetry(err) && i < 2; i++ {
+		client, err = p.resetClient(err)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reset http client: %w", err)
+		}
 
-		// Make sure we reset the client here.
-		p.resetClient(err)
-
-		resp, err = p.exchangeHTTPS(m)
+		resp, err = p.exchangeHTTPS(client, m)
 	}
 
 	if err != nil {
 		// If the request failed anyway, make sure we don't use this client.
-		p.resetClient(err)
+		_, resErr := p.resetClient(err)
+
+		return nil, errors.WithDeferred(err, resErr)
 	}
 
 	return resp, err
@@ -135,8 +140,8 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 
 // Close implements the Upstream interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Close() (err error) {
-	p.clientGuard.Lock()
-	defer p.clientGuard.Unlock()
+	p.clientMu.Lock()
+	defer p.clientMu.Unlock()
 
 	runtime.SetFinalizer(p, nil)
 
@@ -144,24 +149,24 @@ func (p *dnsOverHTTPS) Close() (err error) {
 		return nil
 	}
 
-	// We should only explicitly close it when the client is for DoH3.  Native
-	// http.Client is stateless and does not require explicit cleanup.
-	if t, ok := p.client.Transport.(*http3.RoundTripper); ok {
-		err = t.Close()
-	}
-
-	return err
+	return p.closeClient(p.client)
 }
 
-// exchangeHTTPS creates an HTTP client and sends the DNS query using it.
-func (p *dnsOverHTTPS) exchangeHTTPS(m *dns.Msg) (resp *dns.Msg, err error) {
-	client, err := p.getClient()
-	if err != nil {
-		return nil, fmt.Errorf("initializing http client: %w", err)
+// closeClient cleans up resources used by client if necessary.  Note, that at
+// this point it should only be done for HTTP/3 as it may leak due to keep-alive
+// connections.
+func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
+	if t, ok := client.Transport.(*http3.RoundTripper); ok {
+		return t.Close()
 	}
 
-	logBegin(p.Address(), m)
-	resp, err = p.exchangeHTTPSClient(m, client)
+	return nil
+}
+
+// exchangeHTTPS logs the request and its result and calls exchangeHTTPSClient.
+func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *dns.Msg, err error) {
+	logBegin(p.Address(), req)
+	resp, err = p.exchangeHTTPSClient(client, req)
 	logFinish(p.Address(), err)
 
 	return resp, err
@@ -169,8 +174,11 @@ func (p *dnsOverHTTPS) exchangeHTTPS(m *dns.Msg) (resp *dns.Msg, err error) {
 
 // exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
 // http.Client instance.
-func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dns.Msg, error) {
-	buf, err := m.Pack()
+func (p *dnsOverHTTPS) exchangeHTTPSClient(
+	client *http.Client,
+	req *dns.Msg,
+) (resp *dns.Msg, err error) {
+	buf, err := req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("packing message: %w", err)
 	}
@@ -190,50 +198,51 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(m *dns.Msg, client *http.Client) (*dn
 		RawQuery: fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(buf)),
 	}
 
-	req, err := http.NewRequest(method, u.String(), nil)
+	httpReq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating http request to %s: %w", p.boot.URL, err)
 	}
 
-	req.Header.Set("Accept", "application/dns-message")
-	req.Header.Set("User-Agent", "")
+	httpReq.Header.Set("Accept", "application/dns-message")
+	httpReq.Header.Set("User-Agent", "")
 
-	resp, err := client.Do(req)
-	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
-	}
+	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("requesting %s: %w", p.boot.URL, err)
 	}
+	defer httpResp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", p.boot.URL, err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("got status code %d from %s", resp.StatusCode, p.boot.URL)
+	if httpResp.StatusCode != http.StatusOK {
+		return nil,
+			fmt.Errorf(
+				"expected status %d, got %d from %s",
+				http.StatusOK,
+				httpResp.StatusCode,
+				p.boot.URL,
+			)
 	}
 
-	response := dns.Msg{}
-	err = response.Unpack(body)
+	resp = &dns.Msg{}
+	err = resp.Unpack(body)
 	if err != nil {
-		return nil, fmt.Errorf("unpacking response from %s: body is %s: %w", p.boot.URL, string(body), err)
+		return nil, fmt.Errorf(
+			"unpacking response from %s: body is %s: %w",
+			p.boot.URL,
+			body,
+			err,
+		)
 	}
 
-	if response.Id != m.Id {
+	if resp.Id != req.Id {
 		err = dns.ErrId
 	}
 
-	return &response, err
-}
-
-// hasClient returns true if this connection already has an active HTTP client.
-func (p *dnsOverHTTPS) hasClient() (ok bool) {
-	p.clientGuard.Lock()
-	defer p.clientGuard.Unlock()
-
-	return p.client != nil
+	return resp, err
 }
 
 // shouldRetry checks what error we have received and returns true if we should
@@ -263,16 +272,27 @@ func (p *dnsOverHTTPS) shouldRetry(err error) (ok bool) {
 // resetClient triggers re-creation of the *http.Client that is used by this
 // upstream.  This method accepts the error that caused resetting client as
 // depending on the error we may also reset the QUIC config.
-func (p *dnsOverHTTPS) resetClient(err error) {
-	p.clientGuard.Lock()
-	defer p.clientGuard.Unlock()
+func (p *dnsOverHTTPS) resetClient(resetErr error) (client *http.Client, err error) {
+	p.clientMu.Lock()
+	defer p.clientMu.Unlock()
 
-	p.client = nil
-
-	if errors.Is(err, quic.Err0RTTRejected) {
+	if errors.Is(resetErr, quic.Err0RTTRejected) {
 		// Reset the TokenStore only if 0-RTT was rejected.
 		p.resetQUICConfig()
 	}
+
+	oldClient := p.client
+	if oldClient != nil {
+		closeErr := p.closeClient(oldClient)
+		if closeErr != nil {
+			log.Info("warning: failed to close the old http client: %v", closeErr)
+		}
+	}
+
+	log.Debug("re-creating the http client due to %v", resetErr)
+	p.client, err = p.createClient()
+
+	return p.client, err
 }
 
 // getQUICConfig returns the QUIC config in a thread-safe manner.  Note, that
@@ -296,25 +316,26 @@ func (p *dnsOverHTTPS) resetQUICConfig() {
 
 // getClient gets or lazily initializes an HTTP client (and transport) that will
 // be used for this DoH resolver.
-func (p *dnsOverHTTPS) getClient() (c *http.Client, err error) {
+func (p *dnsOverHTTPS) getClient() (c *http.Client, isCached bool, err error) {
 	startTime := time.Now()
 
-	p.clientGuard.Lock()
-	defer p.clientGuard.Unlock()
+	p.clientMu.Lock()
+	defer p.clientMu.Unlock()
 	if p.client != nil {
-		return p.client, nil
+		return p.client, true, nil
 	}
 
 	// Timeout can be exceeded while waiting for the lock. This happens quite
 	// often on mobile devices.
 	elapsed := time.Since(startTime)
 	if p.boot.options.Timeout > 0 && elapsed > p.boot.options.Timeout {
-		return nil, fmt.Errorf("timeout exceeded: %s", elapsed)
+		return nil, false, fmt.Errorf("timeout exceeded: %s", elapsed)
 	}
 
+	log.Debug("creating a new http client")
 	p.client, err = p.createClient()
 
-	return p.client, err
+	return p.client, false, err
 }
 
 // createClient creates a new *http.Client instance.  The HTTP protocol version

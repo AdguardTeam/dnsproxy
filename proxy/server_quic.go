@@ -396,7 +396,8 @@ func newQUICAddrValidator(cacheSize int, ttl time.Duration) (v *quicAddrValidato
 // client. This allows the server to verify the client's address but increases
 // the latency.
 func (v *quicAddrValidator) requiresValidation(addr net.Addr) (ok bool) {
-	key := addr.String()
+	// addr must be *net.UDPAddr here and if it's not we don't mind panic.
+	key := addr.(*net.UDPAddr).IP.String()
 	if v.cache.Has(key) {
 		return false
 	}

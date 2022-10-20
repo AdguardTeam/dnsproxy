@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -236,6 +237,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 			_, portStr, err := net.SplitHostPort(srv.addr)
 			require.NoError(t, err)
 			port, err := strconv.Atoi(portStr)
+			require.NoError(t, err)
 
 			// Shutdown the first server.
 			srv.Shutdown()
@@ -261,6 +263,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 				http3Enabled: true,
 				port:         port,
 			})
+			defer srv.Shutdown()
 
 			// Check that everything works after the second restart.
 			checkUpstream(t, u, address)
@@ -284,6 +287,9 @@ type testDoHServer struct {
 
 	// tlsConfig is the TLS configuration that is used for this server.
 	tlsConfig *tls.Config
+
+	// rootCAs is the pool with root certificates used by the test server.
+	rootCAs *x509.CertPool
 
 	// server is an HTTP/1.1 and HTTP/2 server.
 	server *http.Server
@@ -314,7 +320,7 @@ func startDoHServer(
 	t *testing.T,
 	opts testDoHServerOptions,
 ) (s *testDoHServer) {
-	tlsConfig := createServerTLSConfig(t, "127.0.0.1")
+	tlsConfig, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 	handler := opts.handler
 	if handler == nil {
 		handler = createDoHHandler()
@@ -323,7 +329,8 @@ func startDoHServer(
 	// Step one is to create a regular HTTP server, we'll always have it
 	// running.
 	server := &http.Server{
-		Handler: handler,
+		Handler:     handler,
+		ReadTimeout: time.Second,
 	}
 
 	// Listen TCP first.
@@ -345,7 +352,10 @@ func startDoHServer(
 	tlsListen := tls.NewListener(tcpListen, tlsConfigH2)
 
 	// Run the H1/H2 server.
-	go server.Serve(tlsListen)
+	go func() {
+		// TODO(ameshkov): check the error here.
+		_ = server.Serve(tlsListen)
+	}()
 
 	// Get the real address that the listener now listens to.
 	tcpAddr = tcpListen.Addr().(*net.TCPAddr)
@@ -376,11 +386,15 @@ func startDoHServer(
 		require.NoError(t, err)
 
 		// Run the H3 server.
-		go serverH3.ServeListener(listenerH3)
+		go func() {
+			// TODO(ameshkov): check the error here.
+			_ = serverH3.ServeListener(listenerH3)
+		}()
 	}
 
 	return &testDoHServer{
 		tlsConfig:  tlsConfig,
+		rootCAs:    rootCAs,
 		server:     server,
 		serverH3:   serverH3,
 		listenerH3: listenerH3,
@@ -428,7 +442,11 @@ func createDoHHandlerFunc() (f http.HandlerFunc) {
 		}
 
 		w.Header().Set("Content-Type", "application/dns-message")
+
 		_, err = w.Write(buf)
+		if err != nil {
+			panic(fmt.Errorf("unexpected error on writing response: %w", err))
+		}
 	}
 }
 

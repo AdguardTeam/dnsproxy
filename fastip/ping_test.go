@@ -98,7 +98,7 @@ func TestFastestAddr_PingAll_cache(t *testing.T) {
 	})
 
 	t.Run("not_cached", func(t *testing.T) {
-		listener, err := net.Listen("tcp", ":0")
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
 		testutil.CleanupAndRequireSuccess(t, listener.Close)
 
@@ -225,7 +225,7 @@ func TestFastestAddr_PingAll(t *testing.T) {
 func getFreePort(t *testing.T) (port uint) {
 	t.Helper()
 
-	l, err := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	port = uint(l.Addr().(*net.TCPAddr).Port)

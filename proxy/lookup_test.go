@@ -4,9 +4,9 @@ import (
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLookupIPAddr(t *testing.T) {
@@ -23,7 +23,8 @@ func TestLookupIPAddr(t *testing.T) {
 	p.UpstreamConfig.Upstreams = append(upstreams, dnsUpstream)
 
 	// Init the proxy
-	p.Init()
+	err = p.Init()
+	require.NoError(t, err)
 
 	// Now let's try doing some lookups
 	addrs, err := p.LookupIPAddr("dns.google")

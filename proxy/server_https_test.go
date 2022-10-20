@@ -60,24 +60,25 @@ func TestHttpsProxy(t *testing.T) {
 	}
 }
 
-func TestHttpsProxyTrustedProxies(t *testing.T) {
-	// Prepare the proxy server.
-	tlsConf, caPem := createServerTLSConfig(t)
-	dnsProxy := createTestProxy(t, tlsConf)
-
-	var gotAddr net.Addr
-	dnsProxy.RequestHandler = func(_ *Proxy, d *DNSContext) (err error) {
-		gotAddr = d.Addr
-
-		return dnsProxy.Resolve(d)
-	}
-
-	client := createTestHTTPClient(dnsProxy, caPem, false)
-
+func TestProxy_trustedProxies(t *testing.T) {
 	clientIP, proxyIP := net.IP{1, 2, 3, 4}, net.IP{127, 0, 0, 1}
-	msg := createTestMessage()
 
-	doRequest := func(t *testing.T, proxyAddr string) {
+	doRequest := func(t *testing.T, proxyAddr string, expectedClientIP net.IP) {
+		// Prepare the proxy server.
+		tlsConf, caPem := createServerTLSConfig(t)
+		dnsProxy := createTestProxy(t, tlsConf)
+
+		var gotAddr net.Addr
+		dnsProxy.RequestHandler = func(_ *Proxy, d *DNSContext) (err error) {
+			gotAddr = d.Addr
+
+			return dnsProxy.Resolve(d)
+		}
+
+		client := createTestHTTPClient(dnsProxy, caPem, false)
+
+		msg := createTestMessage()
+
 		dnsProxy.TrustedProxies = []string{proxyAddr}
 
 		// Start listening.
@@ -91,20 +92,17 @@ func TestHttpsProxyTrustedProxies(t *testing.T) {
 
 		resp := sendTestDoHMessage(t, client, msg, hdrs)
 		requireResponse(t, msg, resp)
+
+		ip, _ := netutil.IPAndPortFromAddr(gotAddr)
+		require.True(t, ip.Equal(expectedClientIP))
 	}
 
 	t.Run("success", func(t *testing.T) {
-		doRequest(t, proxyIP.String())
-
-		ip, _ := netutil.IPAndPortFromAddr(gotAddr)
-		assert.True(t, ip.Equal(clientIP))
+		doRequest(t, proxyIP.String(), clientIP)
 	})
 
 	t.Run("not_in_trusted", func(t *testing.T) {
-		doRequest(t, "127.0.0.2")
-
-		ip, _ := netutil.IPAndPortFromAddr(gotAddr)
-		assert.True(t, ip.Equal(proxyIP))
+		doRequest(t, "127.0.0.2", proxyIP)
 	})
 }
 
@@ -344,7 +342,7 @@ func sendTestDoHMessage(
 		req.Header.Set(k, v)
 	}
 
-	httpResp, err := client.Do(req)
+	httpResp, err := client.Do(req) // nolint:bodyclose
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, httpResp.Body.Close)
 

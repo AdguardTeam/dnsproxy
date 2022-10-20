@@ -6,13 +6,40 @@ plan:
   name: dnsproxy - Build and run tests
 variables:
   dockerGo: adguard/golang-ubuntu:5.0
+  dockerLint: golangci/golangci-lint:v1.50.0
 
 stages:
+  - Lint:
+      manual: false
+      final: false
+      jobs:
+        - Lint
   - Tests:
       manual: false
       final: false
       jobs:
         - Test
+
+Lint:
+  docker:
+    image: ${bamboo.dockerLint}
+    volumes:
+      ${system.GO_CACHE_DIR}: "${bamboo.cacheGo}"
+      ${system.GO_PKG_CACHE_DIR}: "${bamboo.cacheGoPkg}"
+      ${bamboo.build.working.directory}: "/app"
+  key: LINT
+  other:
+    clean-working-dir: true
+  tasks:
+    - checkout:
+        force-clean-build: 'true'
+    - script:
+        interpreter: SHELL
+        scripts:
+          - |-
+            golangci-lint run -v
+  requirements:
+    - adg-docker: 'true'
 
 Test:
   docker:
@@ -33,10 +60,6 @@ Test:
             set -e -f -u -x
 
             go version
-            golangci-lint --version
-
-            # Run linter.
-            golangci-lint run
 
             # Run tests.
             make VERBOSE=1 test

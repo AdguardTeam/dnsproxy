@@ -34,15 +34,20 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestBootstrapTimeout(t *testing.T) {
+func TestUpstream_bootstrapTimeout(t *testing.T) {
 	const (
 		timeout = 100 * time.Millisecond
 		count   = 10
 	)
 
-	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
-	u, err := AddressToUpstream("tls://one.one.one.one", &Options{
-		Bootstrap: []string{"8.8.8.8:555"},
+	// Test listener that never accepts connections to emulate faulty bootstrap.
+	udpListener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, udpListener.Close)
+
+	// Create an upstream that uses this faulty bootstrap.
+	u, err := AddressToUpstream("tls://random-domain-name", &Options{
+		Bootstrap: []string{udpListener.LocalAddr().String()},
 		Timeout:   timeout,
 	})
 	require.NoError(t, err)
@@ -59,60 +64,27 @@ func TestBootstrapTimeout(t *testing.T) {
 			_, err := u.Exchange(req)
 
 			if err == nil {
+				// Must not happen since bootstrap server cannot work.
 				abort <- fmt.Sprintf("the upstream must have timed out: %v", err)
 			}
 
 			elapsed := time.Since(start)
-			if elapsed > 2*timeout {
-				abort <- fmt.Sprintf("exchange took more time than the configured timeout: %v", elapsed)
+
+			// Check that the test didn't take too much time compared to the
+			// configured timeout.  The actual elapsed time may be higher than
+			// the timeout due to the execution environment, 3 is an arbitrarily
+			// chosen multiplier to account for that.
+			if elapsed > 3*timeout {
+				abort <- fmt.Sprintf(
+					"exchange took more time than the configured timeout: %s",
+					elapsed,
+				)
 			}
 			t.Logf("Finished %d", idx)
 			ch <- idx
 		}(i)
 	}
-	for i := 0; i < count; i++ {
-		select {
-		case res := <-ch:
-			t.Logf("Got result from %d", res)
-		case msg := <-abort:
-			t.Fatalf("Aborted from the goroutine: %s", msg)
-		case <-time.After(timeout * 10):
-			t.Fatalf("No response in time")
-		}
-	}
-}
 
-// TestUpstreamRace launches several parallel lookups, useful when testing with -race
-func TestUpstreamRace(t *testing.T) {
-	const (
-		timeout = 5 * time.Second
-		count   = 5
-	)
-
-	// Specifying some wrong port instead so that bootstrap DNS timed out for sure
-	u, err := AddressToUpstream(
-		"tls://1.1.1.1",
-		&Options{Timeout: timeout},
-	)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, u.Close)
-
-	ch := make(chan int, count)
-	abort := make(chan string, 1)
-	for i := 0; i < count; i++ {
-		go func(idx int) {
-			t.Logf("Start %d", idx)
-			req := createTestMessage()
-			res, err := u.Exchange(req)
-			if err != nil {
-				abort <- fmt.Sprintf("%s failed to resolve: %v", u.Address(), err)
-				return
-			}
-			requireResponse(t, req, res)
-			t.Logf("Finished %d", idx)
-			ch <- idx
-		}(i)
-	}
 	for i := 0; i < count; i++ {
 		select {
 		case res := <-ch:
@@ -326,18 +298,6 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 	}
 }
 
-func TestUpstreamDefaultOptions(t *testing.T) {
-	addresses := []string{"tls://1.1.1.1", "8.8.8.8"}
-
-	for _, address := range addresses {
-		u, err := AddressToUpstream(address, nil)
-		require.NoErrorf(t, err, "failed to generate upstream from address %s", address)
-		testutil.CleanupAndRequireSuccess(t, u.Close)
-
-		checkUpstream(t, u, address)
-	}
-}
-
 // Test for DoH and DoT upstreams with two bootstraps (only one is valid)
 func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	upstreams := []struct {
@@ -523,10 +483,14 @@ func checkRaceCondition(u Upstream) {
 	wg.Wait()
 }
 
+// createTestMessage creates a *dns.Msg that we use for tests and that we then
+// check with requireResponse.
 func createTestMessage() (m *dns.Msg) {
 	return createHostTestMessage("google-public-dns-a.google.com")
 }
 
+// respondToTestMessage crafts a *dns.Msg response to a message created by
+// createTestMessage.
 func respondToTestMessage(m *dns.Msg) (resp *dns.Msg) {
 	resp = &dns.Msg{}
 	resp.SetReply(m)
@@ -543,6 +507,8 @@ func respondToTestMessage(m *dns.Msg) (resp *dns.Msg) {
 	return resp
 }
 
+// createHostTestMessage creates a *dns.Msg with A request for the specified
+// host name.
 func createHostTestMessage(host string) (req *dns.Msg) {
 	return &dns.Msg{
 		MsgHdr: dns.MsgHdr{
@@ -557,7 +523,9 @@ func createHostTestMessage(host string) (req *dns.Msg) {
 	}
 }
 
-func requireResponse(t *testing.T, req, reply *dns.Msg) {
+// requireResponse validates that the *dns.Msg is a valid response to the
+// message created by createTestMessage.
+func requireResponse(t require.TestingT, req, reply *dns.Msg) {
 	require.NotNil(t, reply)
 	require.Lenf(t, reply.Answer, 1, "wrong number of answers: %d", len(reply.Answer))
 	require.Equal(t, req.Id, reply.Id)
@@ -569,8 +537,13 @@ func requireResponse(t *testing.T, req, reply *dns.Msg) {
 }
 
 // createServerTLSConfig creates a test server TLS configuration. It returns
-// a *tls.Config that can be used for both the server and the client.
-func createServerTLSConfig(t *testing.T, tlsServerName string) (tlsConfig *tls.Config) {
+// a *tls.Config that can be used for both the server and the client and the
+// root certificate pem-encoded.
+// TODO(ameshkov): start using rootCAs in tests instead of InsecureVerify.
+func createServerTLSConfig(
+	t *testing.T,
+	tlsServerName string,
+) (tlsConfig *tls.Config, rootCAs *x509.CertPool) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -616,17 +589,17 @@ func createServerTLSConfig(t *testing.T, tlsServerName string) (tlsConfig *tls.C
 	cert, err := tls.X509KeyPair(certPem, keyPem)
 	require.NoError(t, err)
 
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(certPem)
+	rootCAs = x509.NewCertPool()
+	rootCAs.AppendCertsFromPEM(certPem)
 
 	tlsConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		ServerName:   tlsServerName,
-		RootCAs:      roots,
+		RootCAs:      rootCAs,
 		MinVersion:   tls.VersionTLS12,
 	}
 
-	return tlsConfig
+	return tlsConfig, rootCAs
 }
 
 // publicKey extracts the public key from the specified private key.

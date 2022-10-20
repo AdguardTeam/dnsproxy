@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ func TestUpstreamDoQ(t *testing.T) {
 		InsecureSkipVerify: true,
 		VerifyConnection: func(state tls.ConnectionState) error {
 			lastState = state
+
 			return nil
 		},
 	}
@@ -86,6 +88,7 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 	_, portStr, err := net.SplitHostPort(srv.addr)
 	require.NoError(t, err)
 	port, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
 
 	// Shutdown the first server.
 	srv.Shutdown()
@@ -105,6 +108,7 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 
 	// Start the server one more time.
 	srv = startDoQServer(t, port)
+	defer srv.Shutdown()
 
 	// Check that everything works after the second restart.
 	checkUpstream(t, u, address)
@@ -117,6 +121,9 @@ type testDoQServer struct {
 
 	// tlsConfig is the TLS configuration that is used for this server.
 	tlsConfig *tls.Config
+
+	// rootCAs is the pool with root certificates used by the test server.
+	rootCAs *x509.CertPool
 
 	// listener is the QUIC connections listener.
 	listener quic.EarlyListener
@@ -196,7 +203,7 @@ func (s *testDoQServer) handleQUICStream(stream quic.Stream) (err error) {
 
 // startDoQServer starts a test DoQ server.
 func startDoQServer(t *testing.T, port int) (s *testDoQServer) {
-	tlsConfig := createServerTLSConfig(t, "127.0.0.1")
+	tlsConfig, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 	tlsConfig.NextProtos = []string{NextProtoDQ}
 
 	listen, err := quic.ListenAddrEarly(
@@ -209,6 +216,7 @@ func startDoQServer(t *testing.T, port int) (s *testDoQServer) {
 	s = &testDoQServer{
 		addr:      listen.Addr().String(),
 		tlsConfig: tlsConfig,
+		rootCAs:   rootCAs,
 		listener:  listen,
 	}
 

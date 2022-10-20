@@ -785,7 +785,7 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 		hdr := dns.RR_Header{
 			Name:   m.Question[0].Name,
 			Class:  dns.ClassINET,
-			Rrtype: uint16(dns.TypeA),
+			Rrtype: dns.TypeA,
 		}
 		resp.Answer = append(resp.Answer, &dns.A{
 			Hdr: hdr,
@@ -1083,7 +1083,7 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 }
 
 func getFreePort() uint {
-	l, _ := net.Listen("tcp", ":0")
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := uint(l.Addr().(*net.TCPAddr).Port)
 
 	// stop listening immediately
@@ -1198,7 +1198,9 @@ func createHostTestMessage(host string) *dns.Msg {
 	return &req
 }
 
-func requireResponse(t *testing.T, req, reply *dns.Msg) {
+func requireResponse(t testing.TB, req, reply *dns.Msg) {
+	t.Helper()
+
 	require.NotNil(t, reply)
 	require.Lenf(t, reply.Answer, 1, "wrong number of answers: %d", len(reply.Answer))
 	require.Equal(t, req.Id, reply.Id)

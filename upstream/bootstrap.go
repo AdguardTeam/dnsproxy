@@ -28,6 +28,7 @@ var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq-i02"}
 // RootCAs is the CertPool that must be used by all upstreams. Redefining
 // RootCAs makes sense on iOS to overcome the 15MB memory limit of the
 // NEPacketTunnelProvider.
+// TODO(ameshkov): remove this and replace with an upstream option.
 var RootCAs *x509.CertPool
 
 // CipherSuites is a custom list of TLSv1.2 ciphers.

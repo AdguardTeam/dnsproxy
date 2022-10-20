@@ -49,8 +49,15 @@ func TestDNSCryptTruncated(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, udpConn.Close)
 
 	// Start the server
-	go s.ServeUDP(udpConn)
-	go s.ServeTCP(tcpConn)
+	go func() {
+		// TODO(ameshkov): check the error here.
+		_ = s.ServeUDP(udpConn)
+	}()
+
+	go func() {
+		// TODO(ameshkov): check the error here.
+		_ = s.ServeTCP(tcpConn)
+	}()
 
 	// Now prepare a client for this test server
 	stamp, err := rc.CreateStamp(udpConn.LocalAddr().String())

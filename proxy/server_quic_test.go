@@ -36,7 +36,10 @@ func TestQuicProxy(t *testing.T) {
 	// Open QUIC connection.
 	conn, err := quic.DialAddrEarly(addr.String(), tlsConfig, nil)
 	require.NoError(t, err)
-	defer conn.CloseWithError(DoQCodeNoError, "")
+	defer func() {
+		// TODO(ameshkov): check the error here.
+		_ = conn.CloseWithError(DoQCodeNoError, "")
+	}()
 
 	// Send several test messages.
 	for i := 0; i < 10; i++ {

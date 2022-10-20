@@ -26,6 +26,8 @@ jobs:
         with:
           go-version: '${{ env.GO_VERSION }}'
       - name: Run tests
+        env:
+          CI: "1"
         run: |-
           make test
       - name: Upload coverage

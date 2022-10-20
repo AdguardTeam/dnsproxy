@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -108,8 +109,10 @@ func TestUpstreamDoH(t *testing.T) {
 }
 
 func TestUpstreamDoH_raceReconnect(t *testing.T) {
-	// TODO(ameshkov): report or fix races in quic-go and enable this back.
-	t.Skip("Disable this test temporarily until races are fixed in quic-go")
+	// TODO(ameshkov): fix other races before removing this.
+	if os.Getenv("CI") == "1" {
+		t.Skip("Skipping this test on CI until all races are fixed")
+	}
 
 	testCases := []struct {
 		name             string

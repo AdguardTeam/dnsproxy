@@ -156,8 +156,8 @@ func (p *dnsOverHTTPS) Close() (err error) {
 // this point it should only be done for HTTP/3 as it may leak due to keep-alive
 // connections.
 func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
-	if t, ok := client.Transport.(*http3.RoundTripper); ok {
-		return t.Close()
+	if isHTTP3(client) {
+		return client.Transport.(io.Closer).Close()
 	}
 
 	return nil
@@ -186,7 +186,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.
 	method := http.MethodGet
-	if _, ok := client.Transport.(*http3.RoundTripper); ok {
+	if isHTTP3(client) {
 		// If we're using HTTP/3, use http3.MethodGet0RTT to force using 0-RTT.
 		method = http3.MethodGet0RTT
 	}
@@ -414,6 +414,53 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 	return transport, nil
 }
 
+// http3Transport is a wrapper over *http3.RoundTripper that tries to optimize
+// its behavior.  The main thing that it does is trying to force use a single
+// connection to a host instead of creating a new one all the time.  It also
+// helps mitigate race issues with quic-go.
+type http3Transport struct {
+	baseTransport *http3.RoundTripper
+
+	closed bool
+	mu     sync.RWMutex
+}
+
+// type check
+var _ http.RoundTripper = (*http3Transport)(nil)
+
+// RoundTrip implements the http.RoundTripper interface for *http3Transport.
+func (h *http3Transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if h.closed {
+		return nil, net.ErrClosed
+	}
+
+	// Try to use cached connection to the target host if it's available.
+	resp, err = h.baseTransport.RoundTripOpt(req, http3.RoundTripOpt{OnlyCachedConn: true})
+
+	if errors.Is(err, http3.ErrNoCachedConn) {
+		// If there are no cached connection, trigger creating a new one.
+		resp, err = h.baseTransport.RoundTrip(req)
+	}
+
+	return resp, err
+}
+
+// type check
+var _ io.Closer = (*http3Transport)(nil)
+
+// Close implements the io.Closer interface for *http3Transport.
+func (h *http3Transport) Close() (err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.closed = true
+
+	return h.baseTransport.Close()
+}
+
 // createTransportH3 tries to create an HTTP/3 transport for this upstream.
 // We should be able to fall back to H1/H2 in case if HTTP/3 is unavailable or
 // if it is too slow.  In order to do that, this method will run two probes
@@ -450,7 +497,7 @@ func (p *dnsOverHTTPS) createTransportH3(
 		QuicConfig:         p.getQUICConfig(),
 	}
 
-	return rt, nil
+	return &http3Transport{baseTransport: rt}, nil
 }
 
 // probeH3 runs a test to check whether QUIC is faster than TLS for this
@@ -598,4 +645,11 @@ func (p *dnsOverHTTPS) supportedHTTPVersions() (v []HTTPVersion) {
 	}
 
 	return v
+}
+
+// isHTTP3 checks if the *http.Client is an HTTP/3 client.
+func isHTTP3(client *http.Client) (ok bool) {
+	_, ok = client.Transport.(*http3Transport)
+
+	return ok
 }

@@ -27,7 +27,7 @@ Test:
         force-clean-build: 'true'
     - script:
         interpreter: SHELL
-        environment: GOFLAGS="-buildvcs=false"
+        environment: GOFLAGS="-buildvcs=false" CI="1"
         scripts:
           - |-
             set -e -f -u -x

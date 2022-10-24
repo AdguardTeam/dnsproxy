@@ -17,6 +17,7 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
+	"github.com/lucas-clemente/quic-go/logging"
 	"github.com/miekg/dns"
 )
 
@@ -66,6 +67,10 @@ type Options struct {
 	// will be passed to.  It's called in dnsCrypt.exchangeDNSCrypt.
 	// Upstream.Exchange method returns any error caused by it.
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
+
+	// QUICTracer is an optional object that allows tracing every QUIC
+	// connection and logging every packet that goes through.
+	QUICTracer logging.Tracer
 }
 
 // Clone copies o to a new struct.  Note, that this is not a deep clone.

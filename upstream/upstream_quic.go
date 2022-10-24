@@ -77,6 +77,7 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
+			Tracer:          opts.QUICTracer,
 		},
 	}
 

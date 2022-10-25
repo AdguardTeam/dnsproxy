@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -224,8 +225,23 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 
 // Close implements the io.Closer interface for *UpstreamConfig.
 func (uc *UpstreamConfig) Close() (err error) {
-	closeErrs := []error{}
-	closeAll(uc.Upstreams, &closeErrs)
+	closeErrs := closeAll(nil, uc.Upstreams...)
+
+	for _, specUps := range []map[string][]upstream.Upstream{
+		uc.DomainReservedUpstreams,
+		uc.SpecifiedDomainUpstreams,
+	} {
+		domains := make([]string, 0, len(specUps))
+		for domain := range specUps {
+			domains = append(domains, domain)
+		}
+		// TODO(e.burkov):  Use functions from golang.org/x/exp.
+		sort.Stable(sort.StringSlice(domains))
+
+		for _, domain := range domains {
+			closeErrs = closeAll(closeErrs, specUps[domain]...)
+		}
+	}
 
 	if len(closeErrs) > 0 {
 		return errors.List("failed to close some upstreams", closeErrs...)

@@ -203,15 +203,16 @@ func (p *Proxy) Start() (err error) {
 	return nil
 }
 
-// closeAll closes all elements in the toClose slice and if there's any error
-// appends it to the errs slice.
-func closeAll[T io.Closer](toClose []T, errs *[]error) {
-	for _, c := range toClose {
+// closeAll closes all closers and appends the occurred errors to errs.
+func closeAll[C io.Closer](errs []error, closers ...C) (appended []error) {
+	for _, c := range closers {
 		err := c.Close()
 		if err != nil {
-			*errs = append(*errs, err)
+			errs = append(errs, err)
 		}
 	}
+
+	return errs
 }
 
 // Stop stops the proxy server including all its listeners
@@ -225,19 +226,17 @@ func (p *Proxy) Stop() error {
 		return nil
 	}
 
-	errs := []error{}
-
-	closeAll(p.tcpListen, &errs)
+	errs := closeAll(nil, p.tcpListen...)
 	p.tcpListen = nil
 
-	closeAll(p.udpListen, &errs)
+	errs = closeAll(errs, p.udpListen...)
 	p.udpListen = nil
 
-	closeAll(p.tlsListen, &errs)
+	errs = closeAll(errs, p.tlsListen...)
 	p.tlsListen = nil
 
 	if p.httpsServer != nil {
-		closeAll([]io.Closer{p.httpsServer}, &errs)
+		errs = closeAll(errs, p.httpsServer)
 		p.httpsServer = nil
 
 		// No need to close these since they're closed by httpsServer.Close().
@@ -245,24 +244,24 @@ func (p *Proxy) Stop() error {
 	}
 
 	if p.h3Server != nil {
-		closeAll([]io.Closer{p.h3Server}, &errs)
+		errs = closeAll(errs, p.h3Server)
 		p.h3Server = nil
 	}
 
-	closeAll(p.h3Listen, &errs)
+	errs = closeAll(errs, p.h3Listen...)
 	p.h3Listen = nil
 
-	closeAll(p.quicListen, &errs)
+	errs = closeAll(errs, p.quicListen...)
 	p.quicListen = nil
 
-	closeAll(p.dnsCryptUDPListen, &errs)
+	errs = closeAll(errs, p.dnsCryptUDPListen...)
 	p.dnsCryptUDPListen = nil
 
-	closeAll(p.dnsCryptTCPListen, &errs)
+	errs = closeAll(errs, p.dnsCryptTCPListen...)
 	p.dnsCryptTCPListen = nil
 
 	if p.UpstreamConfig != nil {
-		closeAll([]io.Closer{p.UpstreamConfig}, &errs)
+		errs = closeAll(errs, p.UpstreamConfig)
 	}
 
 	p.started = false

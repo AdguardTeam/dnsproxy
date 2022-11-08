@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -163,6 +165,10 @@ type Options struct {
 	// The maximum number of go routines
 	MaxGoRoutines int `yaml:"max-go-routines" long:"max-go-routines" description:"Set the maximum number of go routines. A value <= 0 will not not set a maximum."`
 
+	// Pprof defines whether the pprof information needs to be exposed via
+	// localhost:6060 or not.
+	Pprof bool `yaml:"pprof" long:"pprof" description:"If present, exposes pprof information on localhost:6060." optional:"yes" optional-value:"true"`
+
 	// Print DNSProxy version (just for the help)
 	Version bool `yaml:"version" long:"version" description:"Prints the program version"`
 }
@@ -229,23 +235,24 @@ func run(options *Options) {
 		log.SetOutput(file)
 	}
 
-	// Log the dnsproxy startup + version
+	runPprof(options)
+
 	log.Info("Starting dnsproxy %s", VersionString)
 
-	// Prepare the proxy server
+	// Prepare the proxy server and its configuration.
 	config := createProxyConfig(options)
 	dnsProxy := &proxy.Proxy{Config: config}
 
-	// Init DNS64 if needed
+	// Init DNS64 if needed.
 	initDNS64(dnsProxy, options)
 
-	// Add extra handler if needed
+	// Add extra handler if needed.
 	if options.IPv6Disabled {
 		ipv6Configuration := ipv6Configuration{ipv6Disabled: options.IPv6Disabled}
 		dnsProxy.RequestHandler = ipv6Configuration.handleDNSRequest
 	}
 
-	// Start the proxy
+	// Start the proxy server.
 	err := dnsProxy.Start()
 	if err != nil {
 		log.Fatalf("cannot start the DNS proxy due to %s", err)
@@ -255,11 +262,42 @@ func run(options *Options) {
 	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
 	<-signalChannel
 
-	// Stopping the proxy
+	// Stopping the proxy.
 	err = dnsProxy.Stop()
 	if err != nil {
 		log.Fatalf("cannot stop the DNS proxy due to %s", err)
 	}
+}
+
+// runPprof runs pprof server on localhost:6060 if it's enabled in the options.
+func runPprof(options *Options) {
+	if !options.Pprof {
+		return
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	mux.Handle("/debug/pprof/block", pprof.Handler("block"))
+	mux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	mux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	mux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	mux.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+
+	go func() {
+		log.Info("pprof: listening on localhost:6060")
+		srv := &http.Server{
+			Addr:        "localhost:6060",
+			ReadTimeout: 60 * time.Second,
+			Handler:     mux,
+		}
+		err := srv.ListenAndServe()
+		log.Error("error while running the pprof server: %s", err)
+	}()
 }
 
 // createProxyConfig creates proxy.Config from the command line arguments

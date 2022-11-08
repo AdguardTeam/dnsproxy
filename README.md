@@ -79,6 +79,7 @@ Application Options:
                           and CIDRs into NXDOMAIN.  Can be specified multiple times.
       --udp-buf-size=     Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
       --max-go-routines=  Set the maximum number of go routines. A value <= 0 will not not set a maximum.
+      --pprof             If present, exposes pprof information on localhost:6060.
       --version           Prints the program version
 
 Help Options:

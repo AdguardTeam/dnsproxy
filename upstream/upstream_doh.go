@@ -398,6 +398,7 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 		// make golang http.Client attempt to use HTTP/2. Otherwise, it would
 		// only be used when negotiated on the TLS level.
 		ForceAttemptHTTP2: true,
+		Proxy:             http.ProxyFromEnvironment,
 	}
 
 	// Explicitly configure transport to use HTTP/2.

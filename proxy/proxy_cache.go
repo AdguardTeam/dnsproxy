@@ -100,3 +100,9 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 		p.cache.set(d.Res, d.Upstream)
 	}
 }
+
+// ClearCache clears the DNS cache of p.
+func (p *Proxy) ClearCache() {
+	p.cache.clearItems()
+	p.cache.clearItemsWithSubnet()
+}

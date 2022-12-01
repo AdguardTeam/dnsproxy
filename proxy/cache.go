@@ -43,12 +43,12 @@ type cacheItem struct {
 	// m contains the cached response.
 	m *dns.Msg
 
+	// u contains an address of the upstream which resolved m.
+	u string
+
 	// ttl is the time-to-live value for the item.  Should be set before calling
 	// [cacheItem.pack].
 	ttl uint32
-
-	// u contains an address of the upstream which resolved m.
-	u string
 }
 
 // respToItem converts the pair of the response and upstream resolved the one
@@ -66,8 +66,8 @@ func respToItem(m *dns.Msg, u upstream.Upstream) (item *cacheItem) {
 
 	return &cacheItem{
 		m:   m,
-		ttl: ttl,
 		u:   upsAddr,
+		ttl: ttl,
 	}
 }
 
@@ -187,7 +187,7 @@ func (c *cache) get(req *dns.Msg) (ci *cacheItem, expired bool, key []byte) {
 	c.itemsLock.RLock()
 	defer c.itemsLock.RUnlock()
 
-	if c.items == nil || req == nil || len(req.Question) != 1 {
+	if !canLookUpInCache(c.items, req) {
 		return nil, false, nil
 	}
 
@@ -211,21 +211,19 @@ func (c *cache) get(req *dns.Msg) (ci *cacheItem, expired bool, key []byte) {
 // Note that a slow longest-prefix-match algorithm is used, so cache searches
 // are performed up to mask+1 times.
 func (c *cache) getWithSubnet(req *dns.Msg, n *net.IPNet) (ci *cacheItem, expired bool, k []byte) {
-	mask, _ := n.Mask.Size()
-
 	c.itemsWithSubnetLock.RLock()
 	defer c.itemsWithSubnetLock.RUnlock()
 
-	if c.itemsWithSubnet == nil || req == nil || len(req.Question) != 1 {
+	if !canLookUpInCache(c.itemsWithSubnet, req) {
 		return nil, false, nil
 	}
 
 	var data []byte
-	for mask++; mask > 0 && data == nil; {
-		mask--
+	for mask, _ := n.Mask.Size(); mask >= 0 && data == nil; mask-- {
 		k = msgToKeyWithSubnet(req, n.IP, mask)
 		data = c.itemsWithSubnet.Get(k)
 	}
+
 	if data == nil {
 		return nil, false, k
 	}
@@ -235,6 +233,12 @@ func (c *cache) getWithSubnet(req *dns.Msg, n *net.IPNet) (ci *cacheItem, expire
 	}
 
 	return ci, expired, k
+}
+
+// canLookUpInCache returns true if these parameters could be used to make a
+// cache lookup.
+func canLookUpInCache(cache glcache.Cache, req *dns.Msg) (ok bool) {
+	return cache != nil && req != nil && len(req.Question) == 1
 }
 
 // initLazy initializes the cache for general requests.
@@ -283,8 +287,8 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream) {
 	key := msgToKey(m)
 	packed := item.pack()
 
-	c.itemsLock.RLock()
-	defer c.itemsLock.RUnlock()
+	c.itemsLock.Lock()
+	defer c.itemsLock.Unlock()
 
 	c.items.Set(key, packed)
 }
@@ -303,10 +307,26 @@ func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet
 	key := msgToKeyWithSubnet(m, subnet.IP, pref)
 	packed := item.pack()
 
-	c.itemsWithSubnetLock.RLock()
-	defer c.itemsWithSubnetLock.RUnlock()
+	c.itemsWithSubnetLock.Lock()
+	defer c.itemsWithSubnetLock.Unlock()
 
 	c.itemsWithSubnet.Set(key, packed)
+}
+
+// clearItems empties the simple cache.
+func (c *cache) clearItems() {
+	c.itemsLock.Lock()
+	defer c.itemsLock.Unlock()
+
+	c.items.Clear()
+}
+
+// clearItemsWithSubnet empties the subnet cache.
+func (c *cache) clearItemsWithSubnet() {
+	c.itemsWithSubnetLock.Lock()
+	defer c.itemsWithSubnetLock.Unlock()
+
+	c.itemsWithSubnet.Clear()
 }
 
 // cacheTTL returns the number of seconds for which m is valid to be cached.
@@ -336,7 +356,7 @@ func cacheTTL(m *dns.Msg) (ttl uint32) {
 
 	switch rcode := m.Rcode; rcode {
 	case dns.RcodeSuccess:
-		if isCacheableSuccceded(m) {
+		if isCacheableSucceded(m) {
 			return ttl
 		}
 	case dns.RcodeNameError:
@@ -368,9 +388,9 @@ func hasIPAns(m *dns.Msg) (ok bool) {
 	return false
 }
 
-// isCacheableSuccceded returns true if m contains useful data to be cached
+// isCacheableSucceded returns true if m contains useful data to be cached
 // treating it as a succeesful response.
-func isCacheableSuccceded(m *dns.Msg) (ok bool) {
+func isCacheableSucceded(m *dns.Msg) (ok bool) {
 	qType := m.Question[0].Qtype
 
 	return (qType != dns.TypeA && qType != dns.TypeAAAA) || hasIPAns(m) || isCacheableNegative(m)

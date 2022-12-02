@@ -318,7 +318,9 @@ func (c *cache) clearItems() {
 	c.itemsLock.Lock()
 	defer c.itemsLock.Unlock()
 
-	c.items.Clear()
+	if c.items != nil {
+		c.items.Clear()
+	}
 }
 
 // clearItemsWithSubnet empties the subnet cache.
@@ -326,7 +328,9 @@ func (c *cache) clearItemsWithSubnet() {
 	c.itemsWithSubnetLock.Lock()
 	defer c.itemsWithSubnetLock.Unlock()
 
-	c.itemsWithSubnet.Clear()
+	if c.itemsWithSubnet != nil {
+		c.itemsWithSubnet.Clear()
+	}
 }
 
 // cacheTTL returns the number of seconds for which m is valid to be cached.

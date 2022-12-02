@@ -146,8 +146,8 @@ func TestCache_expired(t *testing.T) {
 			key := msgToKey(reply)
 			data := (&cacheItem{
 				m:   reply,
-				ttl: tc.ttl,
 				u:   testUpsAddr,
+				ttl: tc.ttl,
 			}).pack()
 			testCache.items.Set(key, data)
 			t.Cleanup(testCache.items.Clear)

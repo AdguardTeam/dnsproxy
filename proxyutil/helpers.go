@@ -53,7 +53,7 @@ func AppendIPAddrs(ipAddrs *[]net.IPAddr, answers []dns.RR) {
 }
 
 // SortIPAddrs sorts the specified IP addresses array
-// IPv4 addresses go first, then IPv6 addresses
+// IPv6 addresses go first, then IPv4 addresses
 func SortIPAddrs(ipAddrs []net.IPAddr) []net.IPAddr {
 	l := len(ipAddrs)
 	if l <= 1 {
@@ -86,9 +86,9 @@ func compareIPAddrs(a, b net.IPAddr) int {
 	l4 := a.IP.To4()
 	r4 := b.IP.To4()
 	if l4 != nil && r4 == nil {
-		return -1 // IPv4 addresses first
+		return 1 // IPv6 addresses first
 	} else if l4 == nil && r4 != nil {
-		return 1 // IPv4 addresses first
+		return -1 // IPv6 addresses first
 	}
 	return bytes.Compare(a.IP, b.IP)
 }

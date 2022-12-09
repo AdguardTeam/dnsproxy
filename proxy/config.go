@@ -185,7 +185,7 @@ func (p *Proxy) validateConfig() error {
 	return nil
 }
 
-// validateListenAddrs returns an error if the addressses are not configured
+// validateListenAddrs returns an error if the addresses are not configured
 // properly.
 func (p *Proxy) validateListenAddrs() error {
 	if !p.hasListenAddrs() {

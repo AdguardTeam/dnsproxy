@@ -33,7 +33,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	d.Res = ci.m
 	d.CachedUpstreamAddr = ci.u
 
-	log.Debug(hitMsg)
+	log.Debug("dnsproxy: cache: %s", hitMsg)
 
 	if p.cache.optimistic && expired {
 		// Build a reduced clone of the current context to avoid data race.
@@ -75,7 +75,7 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 		// TODO(a.meshkov):  The whole response MUST be dropped if ECS in it
 		// doesn't correspond.
 		if !ecs.IP.Mask(ecs.Mask).Equal(d.ReqECS.IP.Mask(d.ReqECS.Mask)) || ones != reqOnes {
-			log.Debug("invalid response: ecs %s mismatches requested %s", ecs, d.ReqECS)
+			log.Debug("dnsproxy: cache: bad response: ecs %s does not match %s", ecs, d.ReqECS)
 
 			return
 		}
@@ -89,7 +89,8 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 			ecs.Mask = net.CIDRMask(scope, bits)
 			ecs.IP = ecs.IP.Mask(ecs.Mask)
 		}
-		log.Debug("ecs option in response: %s", ecs)
+
+		log.Debug("dnsproxy: cache: ecs option in response: %s", ecs)
 
 		p.cache.setWithSubnet(d.Res, d.Upstream, ecs)
 	case d.ReqECS != nil:
@@ -103,6 +104,9 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 
 // ClearCache clears the DNS cache of p.
 func (p *Proxy) ClearCache() {
-	p.cache.clearItems()
-	p.cache.clearItemsWithSubnet()
+	if p.cache != nil {
+		p.cache.clearItems()
+		p.cache.clearItemsWithSubnet()
+		log.Debug("dnsproxy: cache: cleared")
+	}
 }

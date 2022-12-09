@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +16,9 @@ import (
 
 	"github.com/miekg/dns"
 )
+
+// testCacheSize is the maximum size of cache for tests.
+const testCacheSize = 4096
 
 func newRR(t *testing.T, rr string) (r dns.RR) {
 	t.Helper()
@@ -26,18 +28,6 @@ func newRR(t *testing.T, rr string) (r dns.RR) {
 	require.NoError(t, err)
 
 	return r
-}
-
-func TestCacheSanity(t *testing.T) {
-	testCache := &cache{}
-	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
-
-	ci, expired, key := testCache.get(request)
-
-	assert.Nil(t, ci)
-	assert.False(t, expired)
-
-	assert.Nil(t, key)
 }
 
 const testUpsAddr = "https://upstream.address"
@@ -127,12 +117,7 @@ func TestCache_expired(t *testing.T) {
 		optimistic: true,
 	}}
 
-	testCache := &cache{
-		items: glcache.New(glcache.Config{
-			MaxSize:   defaultCacheSize,
-			EnableLRU: true,
-		}),
-	}
+	testCache := newCache(testCacheSize, false, false)
 	for _, tc := range testCases {
 		ans.Hdr.Ttl = tc.ttl
 		req := (&dns.Msg{}).SetQuestion(host, dns.TypeA)
@@ -169,7 +154,7 @@ func TestCache_expired(t *testing.T) {
 }
 
 func TestCacheDO(t *testing.T) {
-	testCache := &cache{}
+	testCache := newCache(testCacheSize, false, false)
 
 	// Fill the cache.
 	reply := (&dns.Msg{
@@ -212,7 +197,7 @@ func TestCacheDO(t *testing.T) {
 }
 
 func TestCacheCNAME(t *testing.T) {
-	testCache := &cache{}
+	testCache := newCache(testCacheSize, false, false)
 
 	// Fill the cache
 	reply := (&dns.Msg{
@@ -227,10 +212,9 @@ func TestCacheCNAME(t *testing.T) {
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
 
 	t.Run("no_cnames", func(t *testing.T) {
-		r, expired, key := testCache.get(request)
-		assert.False(t, expired)
-		assert.Nil(t, key)
+		r, expired, _ := testCache.get(request)
 		assert.Nil(t, r)
+		assert.False(t, expired)
 	})
 
 	// Now fill the cache with a cacheable CNAME response.
@@ -250,7 +234,7 @@ func TestCacheCNAME(t *testing.T) {
 }
 
 func TestCache_uncacheable(t *testing.T) {
-	testCache := &cache{}
+	testCache := newCache(testCacheSize, false, false)
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -260,14 +244,13 @@ func TestCache_uncacheable(t *testing.T) {
 	// We are testing that SERVFAIL responses aren't cached
 	testCache.set(reply, upstreamWithAddr)
 
-	r, expired, key := testCache.get(request)
-	assert.False(t, expired)
-	assert.Nil(t, key)
+	r, expired, _ := testCache.get(request)
 	assert.Nil(t, r)
+	assert.False(t, expired)
 }
 
 func TestCache_concurrent(t *testing.T) {
-	testCache := &cache{}
+	testCache := newCache(testCacheSize, false, false)
 
 	hosts := map[string]string{
 		dns.Fqdn("yandex.com"):     "213.180.204.62",
@@ -399,23 +382,41 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	})
 }
 
+type testEntry struct {
+	q string
+	a []dns.RR
+	t uint16
+}
+
+type testCase struct {
+	ok require.BoolAssertionFunc
+	q  string
+	a  []dns.RR
+	t  uint16
+}
+
+type testCases struct {
+	cache []testEntry
+	cases []testCase
+}
+
 func TestCache(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
 		testCases{
 			cache: []testEntry{{
 				q: "google.com.",
-				t: dns.TypeA,
 				a: []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				t: dns.TypeA,
 			}},
 			cases: []testCase{{
-				q:  "google.com.",
-				t:  dns.TypeA,
-				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
 				ok: require.True,
+				q:  "google.com.",
+				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				t:  dns.TypeA,
 			}, {
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeMX,
-				ok: require.False,
 			}},
 		}.run(t)
 	})
@@ -424,36 +425,36 @@ func TestCache(t *testing.T) {
 		testCases{
 			cache: []testEntry{{
 				q: "gOOgle.com.",
-				t: dns.TypeA,
 				a: []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				t: dns.TypeA,
 			}},
 			cases: []testCase{{
+				ok: require.True,
 				q:  "gOOgle.com.",
-				t:  dns.TypeA,
 				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
-				ok: require.True,
+				t:  dns.TypeA,
 			}, {
+				ok: require.True,
 				q:  "google.com.",
-				t:  dns.TypeA,
 				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
-				ok: require.True,
+				t:  dns.TypeA,
 			}, {
-				q:  "GOOGLE.COM.",
-				t:  dns.TypeA,
-				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
 				ok: require.True,
+				q:  "GOOGLE.COM.",
+				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				t:  dns.TypeA,
 			}, {
 				q:  "gOOgle.com.",
 				t:  dns.TypeMX,
 				ok: require.False,
 			}, {
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeMX,
-				ok: require.False,
 			}, {
+				ok: require.False,
 				q:  "GOOGLE.COM.",
 				t:  dns.TypeMX,
-				ok: require.False,
 			}},
 		}.run(t)
 	})
@@ -462,40 +463,40 @@ func TestCache(t *testing.T) {
 		testCases{
 			cache: []testEntry{{
 				q: "gOOgle.com.",
-				t: dns.TypeA,
 				a: []dns.RR{newRR(t, "google.com. 0 IN A 8.8.8.8")},
+				t: dns.TypeA,
 			}},
 			cases: []testCase{{
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeA,
-				ok: require.False,
 			}, {
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeA,
-				ok: require.False,
 			}, {
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeA,
-				ok: require.False,
 			}, {
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeMX,
-				ok: require.False,
 			}, {
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeMX,
-				ok: require.False,
 			}, {
+				ok: require.False,
 				q:  "google.com.",
 				t:  dns.TypeMX,
-				ok: require.False,
 			}},
 		}.run(t)
 	})
 }
 
 func (tests testCases) run(t *testing.T) {
-	testCache := &cache{}
+	testCache := newCache(testCacheSize, false, false)
 
 	for _, res := range tests.cache {
 		reply := (&dns.Msg{
@@ -531,24 +532,6 @@ func (tests testCases) run(t *testing.T) {
 
 		requireEqualMsgs(t, ci.m, reply)
 	}
-}
-
-type testCases struct {
-	cache []testEntry
-	cases []testCase
-}
-
-type testEntry struct {
-	q string
-	t uint16
-	a []dns.RR
-}
-
-type testCase struct {
-	q  string
-	t  uint16
-	a  []dns.RR
-	ok require.BoolAssertionFunc
 }
 
 // requireEqualMsgs asserts the messages are equal except their ID, Rdlength, and
@@ -610,18 +593,17 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 }
 
 func TestSubnet(t *testing.T) {
-	c := &cache{}
+	c := newCache(testCacheSize, true, false)
 	ip1234, ip2234, ip3234 := net.IP{1, 2, 3, 4}, net.IP{2, 2, 3, 4}, net.IP{3, 2, 3, 4}
 	req := (&dns.Msg{}).SetQuestion("example.com.", dns.TypeA)
 
 	t.Run("empty", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+		ci, expired, _ := c.getWithSubnet(req, &net.IPNet{
 			IP:   ip1234,
 			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
 		})
-		assert.False(t, expired)
-		assert.Nil(t, key)
 		assert.Nil(t, ci)
+		assert.False(t, expired)
 	})
 
 	// Add a response with subnet.

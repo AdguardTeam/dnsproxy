@@ -1,11 +1,17 @@
 package netutil
 
-import "net"
+import (
+	"net"
+
+	"golang.org/x/exp/slices"
+)
 
 // IPPort And Utilities
 
 // IPPort is a convenient type for network addresses that contain an IP address
 // and a port, like "1.2.3.4:56789" or "[1234::cdef]:12345".
+//
+// Deprecated: use netip.AddrPort.
 type IPPort struct {
 	IP   net.IP
 	Port int
@@ -20,7 +26,7 @@ func IPPortFromAddr(a net.Addr) (ipp *IPPort) {
 	}
 
 	return &IPPort{
-		IP:   CloneIP(ip),
+		IP:   slices.Clone(ip),
 		Port: port,
 	}
 }
@@ -70,7 +76,7 @@ func (ipp *IPPort) Clone() (clone *IPPort) {
 	}
 
 	return &IPPort{
-		IP:   CloneIP(ipp.IP),
+		IP:   slices.Clone(ipp.IP),
 		Port: ipp.Port,
 	}
 }
@@ -93,7 +99,7 @@ func (ipp IPPort) String() (s string) {
 // TCP returns a *net.TCPAddr with a clone of ipp's IP address and its port.
 func (ipp *IPPort) TCP() (a *net.TCPAddr) {
 	return &net.TCPAddr{
-		IP:   CloneIP(ipp.IP),
+		IP:   slices.Clone(ipp.IP),
 		Port: ipp.Port,
 	}
 }
@@ -101,7 +107,7 @@ func (ipp *IPPort) TCP() (a *net.TCPAddr) {
 // UDP returns a *net.UDPAddr with a clone of ipp's IP address and its port.
 func (ipp *IPPort) UDP() (a *net.UDPAddr) {
 	return &net.UDPAddr{
-		IP:   CloneIP(ipp.IP),
+		IP:   slices.Clone(ipp.IP),
 		Port: ipp.Port,
 	}
 }

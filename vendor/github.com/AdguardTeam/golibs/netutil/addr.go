@@ -10,18 +10,17 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/exp/slices"
 	"golang.org/x/net/idna"
 )
 
 // Various Network Address Utilities
 
 // CloneMAC returns a clone of a MAC address.
+//
+// Deprecated: use [slices.Clone].
 func CloneMAC(mac net.HardwareAddr) (clone net.HardwareAddr) {
-	if mac != nil && len(mac) == 0 {
-		return net.HardwareAddr{}
-	}
-
-	return append(clone, mac...)
+	return slices.Clone(mac)
 }
 
 // CloneURL returns a deep clone of u.  The User pointer of clone is the same,
@@ -58,8 +57,8 @@ func JoinHostPort(host string, port int) (hostport string) {
 	return net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port))
 }
 
-// SplitHostPort is a convenient wrapper for net.SplitHostPort with port of type
-// int.
+// SplitHostPort is a convenient wrapper for [net.SplitHostPort] with port of
+// type int.
 func SplitHostPort(hostport string) (host string, port int, err error) {
 	var portStr string
 	host, portStr, err = net.SplitHostPort(hostport)
@@ -76,8 +75,8 @@ func SplitHostPort(hostport string) (host string, port int, err error) {
 	return host, int(portUint), nil
 }
 
-// SplitHost is a wrapper for net.SplitHostPort for cases when the hostport may
-// or may not contain a port.
+// SplitHost is a wrapper for [net.SplitHostPort] for cases when the hostport
+// may or may not contain a port.
 func SplitHost(hostport string) (host string, err error) {
 	host, _, err = net.SplitHostPort(hostport)
 	if err != nil {
@@ -124,7 +123,7 @@ func Subdomains(domain string) (sub []string) {
 // ValidateMAC returns an error if mac is not a valid EUI-48, EUI-64, or
 // 20-octet InfiniBand link-layer address.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 func ValidateMAC(mac net.HardwareAddr) (err error) {
 	defer makeAddrError(&err, mac.String(), AddrKindMAC)
 
@@ -143,19 +142,23 @@ func ValidateMAC(mac net.HardwareAddr) (err error) {
 }
 
 // MaxDomainLabelLen is the maximum allowed length of a domain name label
-// according to RFC 1035.
+// according to [RFC 1035].
+//
+// [RFC 1035]: https://datatracker.ietf.org/doc/html/rfc1035
 const MaxDomainLabelLen = 63
 
 // MaxDomainNameLen is the maximum allowed length of a full domain name
-// according to RFC 1035.
+// according to [RFC 1035].
 //
 // See also: https://stackoverflow.com/a/32294443/1892060.
+//
+// [RFC 1035]: https://datatracker.ietf.org/doc/html/rfc1035
 const MaxDomainNameLen = 253
 
 // ValidateDomainNameLabel returns an error if label is not a valid label of
 // a domain name.  An empty label is considered invalid.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 func ValidateDomainNameLabel(label string) (err error) {
 	defer makeAddrError(&err, label, AddrKindLabel)
 
@@ -201,11 +204,14 @@ func ValidateDomainNameLabel(label string) (err error) {
 }
 
 // ValidateDomainName validates the domain name in accordance to RFC 952,
-// RFC 1035, and with RFC 1123's inclusion of digits at the start of the host.
-// It doesn't validate against two or more hyphens to allow punycode and
+// [RFC 1035], and with [RFC 1123]'s inclusion of digits at the start of the
+// host.  It doesn't validate against two or more hyphens to allow punycode and
 // internationalized domains.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
+//
+// [RFC 1035]: https://datatracker.ietf.org/doc/html/rfc1035
+// [RFC 1123]: https://datatracker.ietf.org/doc/html/rfc1123
 func ValidateDomainName(name string) (err error) {
 	defer makeAddrError(&err, name, AddrKindName)
 
@@ -236,13 +242,15 @@ func ValidateDomainName(name string) (err error) {
 }
 
 // MaxServiceLabelLen is the maximum allowed length of a service name label
-// according to RFC 6335.
+// according to [RFC 6335].
+//
+// [RFC 6335]: https://datatracker.ietf.org/doc/html/rfc6335
 const MaxServiceLabelLen = 16
 
 // ValidateServiceNameLabel returns an error if label is not a valid label of
 // a service domain name.  An empty label is considered invalid.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 func ValidateServiceNameLabel(label string) (err error) {
 	defer makeAddrError(&err, label, AddrKindSRVLabel)
 
@@ -266,7 +274,7 @@ func ValidateServiceNameLabel(label string) (err error) {
 
 	// TODO(e.burkov):  Validate adjacent hyphens since service labels can't be
 	// internationalized.  See RFC 6336 Section 5.1.
-	if err := ValidateDomainNameLabel(label[1:]); err != nil {
+	if err = ValidateDomainNameLabel(label[1:]); err != nil {
 		err = errors.Unwrap(err)
 		if rerr, ok := err.(*RuneError); ok {
 			rerr.Kind = AddrKindSRVLabel
@@ -279,11 +287,14 @@ func ValidateServiceNameLabel(label string) (err error) {
 }
 
 // ValidateSRVDomainName validates of domain name assuming it belongs to the
-// superset of service domain names in accordance to RFC 2782 and RFC 6763.  It
-// doesn't validate against two or more hyphens to allow punycode and
+// superset of service domain names in accordance to [RFC 2782] and [RFC 6763].
+// It doesn't validate against two or more hyphens to allow punycode and
 // internationalized domains.
 //
 // Any error returned will have the underlying type of *AddrError.
+//
+// [RFC 2782]: https://datatracker.ietf.org/doc/html/rfc2782
+// [RFC 6763]: https://datatracker.ietf.org/doc/html/rfc6763
 func ValidateSRVDomainName(name string) (err error) {
 	defer makeAddrError(&err, name, AddrKindSRVName)
 

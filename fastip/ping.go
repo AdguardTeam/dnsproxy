@@ -1,11 +1,10 @@
 package fastip
 
 import (
-	"net"
+	"net/netip"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/netutil"
 )
 
 // pingTCPTimeout is a TCP connection timeout.  It's higher than pingWaitTimeout
@@ -14,8 +13,8 @@ const pingTCPTimeout = 4 * time.Second
 
 // pingResult is the result of dialing the address.
 type pingResult struct {
-	// ipp is the address-port pair the result is related to.
-	ipp netutil.IPPort
+	// addrPort is the address-port pair the result is related to.
+	addrPort netip.AddrPort
 	// latency is the duration of dialing process in milliseconds.
 	latency uint
 	// success is true when the dialing succeeded.
@@ -24,15 +23,15 @@ type pingResult struct {
 
 // pingAll pings all ips concurrently and returns as soon as the fastest one is
 // found or the timeout is exceeded.
-func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
+func (f *FastestAddr) pingAll(host string, ips []netip.Addr) (pr *pingResult) {
 	ipN := len(ips)
 	switch ipN {
 	case 0:
 		return nil
 	case 1:
 		return &pingResult{
-			ipp:     netutil.IPPort{IP: ips[0]},
-			success: true,
+			addrPort: netip.AddrPortFrom(ips[0], 0),
+			success:  true,
 		}
 	}
 
@@ -45,7 +44,7 @@ func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
 		cached := f.cacheFind(ip)
 		if cached == nil {
 			for _, port := range f.pingPorts {
-				go f.pingDoTCP(host, netutil.IPPort{IP: ip, Port: int(port)}, resCh)
+				go f.pingDoTCP(host, netip.AddrPortFrom(ip, uint16(port)), resCh)
 			}
 			scheduled += portN
 
@@ -56,9 +55,9 @@ func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
 
 		if pr == nil || cached.latencyMsec < pr.latency {
 			pr = &pingResult{
-				ipp:     netutil.IPPort{IP: ip},
-				latency: cached.latencyMsec,
-				success: true,
+				addrPort: netip.AddrPortFrom(ip, 0),
+				latency:  cached.latencyMsec,
+				success:  true,
 			}
 		}
 	}
@@ -66,7 +65,7 @@ func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
 	cached := pr != nil
 	if scheduled == 0 {
 		if cached {
-			log.Debug("pingAll: %s: return cached response: %s", host, pr.ipp)
+			log.Debug("pingAll: %s: return cached response: %s", host, pr.addrPort)
 		} else {
 			log.Debug("pingAll: %s: returning nothing", host)
 		}
@@ -81,7 +80,7 @@ func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
 			log.Debug(
 				"pingAll: %s: got result for %s status %v",
 				host,
-				res.ipp,
+				res.addrPort,
 				res.success,
 			)
 			if !res.success {
@@ -98,7 +97,7 @@ func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
 				log.Debug(
 					"pingAll: %s: pinging timed out, returning cached: %s",
 					host,
-					pr.ipp,
+					pr.addrPort,
 				)
 			} else {
 				log.Debug(
@@ -115,12 +114,11 @@ func (f *FastestAddr) pingAll(host string, ips []net.IP) (pr *pingResult) {
 }
 
 // pingDoTCP sends the result of dialing the specified address into resCh.
-func (f *FastestAddr) pingDoTCP(host string, ipp netutil.IPPort, resCh chan *pingResult) {
-	log.Debug("pingDoTCP: %s: connecting to %s", host, ipp)
-	addr := ipp.String()
+func (f *FastestAddr) pingDoTCP(host string, addrPort netip.AddrPort, resCh chan *pingResult) {
+	log.Debug("pingDoTCP: %s: connecting to %s", host, addrPort)
 
 	start := time.Now()
-	conn, err := f.pinger.Dial("tcp", addr)
+	conn, err := f.pinger.Dial("tcp", addrPort.String())
 	elapsed := time.Since(start)
 
 	success := err == nil
@@ -133,22 +131,23 @@ func (f *FastestAddr) pingDoTCP(host string, ipp netutil.IPPort, resCh chan *pin
 	latency := uint(elapsed.Milliseconds())
 
 	resCh <- &pingResult{
-		ipp:     ipp,
-		latency: latency,
-		success: success,
+		addrPort: addrPort,
+		latency:  latency,
+		success:  success,
 	}
 
+	addr := addrPort.Addr().Unmap()
 	if success {
-		log.Debug("pingDoTCP: %s: elapsed %s ms on %s", host, elapsed, ipp)
-		f.cacheAddSuccessful(ipp.IP, latency)
+		log.Debug("pingDoTCP: %s: elapsed %s ms on %s", host, elapsed, addrPort)
+		f.cacheAddSuccessful(addr, latency)
 	} else {
 		log.Debug(
 			"pingDoTCP: %s: failed to connect to %s, elapsed %s ms: %v",
 			host,
-			ipp,
+			addrPort,
 			elapsed,
 			err,
 		)
-		f.cacheAddFailure(ipp.IP)
+		f.cacheAddFailure(addr)
 	}
 }

@@ -52,11 +52,16 @@ const (
 type AddrError struct {
 	// Err is the underlying error, if any.
 	Err error
+
 	// Kind is the kind of address or address part.
 	Kind AddrKind
+
 	// Addr is the text of the invalid address.
 	Addr string
 }
+
+// type check
+var _ error = (*AddrError)(nil)
 
 // Error implements the error interface for *AddrError.
 func (err *AddrError) Error() (msg string) {
@@ -67,17 +72,19 @@ func (err *AddrError) Error() (msg string) {
 	return fmt.Sprintf("bad %s %q", err.Kind, err.Addr)
 }
 
-// Unwrap implements the errors.Wrapper interface for *AddrError.  It returns
+// type check
+var _ errors.Wrapper = (*AddrError)(nil)
+
+// Unwrap implements the [errors.Wrapper] interface for *AddrError.  It returns
 // err.Err.
 func (err *AddrError) Unwrap() (unwrapped error) {
 	return err.Err
 }
 
-// makeAddrError is a deferrable helper for functions that return *AddrError.
+// makeAddrError is a deferrable helper for functions that return [*AddrError].
 // errPtr must be non-nil.  Usage example:
 //
-//   defer makeAddrError(&err, addr, AddrKindARPA)
-//
+//	defer makeAddrError(&err, addr, AddrKindARPA)
 func makeAddrError(errPtr *error, addr string, k AddrKind) {
 	err := *errPtr
 	if err == nil {
@@ -96,12 +103,15 @@ func makeAddrError(errPtr *error, addr string, k AddrKind) {
 type LengthError struct {
 	// Kind is the kind of address or address part.
 	Kind AddrKind
+
 	// Allowed are the allowed lengths for this kind of address.  If allowed
 	// is empty, Max should be non-zero.
 	Allowed []int
+
 	// Max is the maximum length for this part or address kind.  If Max is
 	// zero, Allowed should be non-empty.
 	Max int
+
 	// Length is the length of the provided address.
 	Length int
 }
@@ -125,6 +135,7 @@ func (err *LengthError) Error() (msg string) {
 type RuneError struct {
 	// Kind is the kind of address or address part.
 	Kind AddrKind
+
 	// Rune is the invalid rune.
 	Rune rune
 }

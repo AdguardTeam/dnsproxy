@@ -2,7 +2,7 @@ package fastip
 
 import (
 	"encoding/binary"
-	"net"
+	"net/netip"
 	"time"
 )
 
@@ -18,11 +18,12 @@ type cacheEntry struct {
 	latencyMsec uint
 }
 
-// packCacheEntry - packss cache entry + ttl to bytes
+// packCacheEntry packs the cache entry and the TTL to bytes in the following
+// order:
 //
-// expire [4]byte
-// status byte
-// latency_msec [2]byte
+//	expire   [4]byte  (Unix time, seconds)
+//	status   byte     (0 for ok, 1 for timed out)
+//	latency  [2]byte  (milliseconds)
 func packCacheEntry(ent *cacheEntry, ttl uint32) []byte {
 	expire := uint32(time.Now().Unix()) + ttl
 
@@ -61,9 +62,8 @@ func unpackCacheEntry(data []byte) *cacheEntry {
 
 // cacheFind - find entry in the cache for this IP
 // returns null if nothing found or if the record for this ip is expired
-func (f *FastestAddr) cacheFind(ip net.IP) *cacheEntry {
-	k := getCacheKey(ip)
-	val := f.ipCache.Get(k)
+func (f *FastestAddr) cacheFind(ip netip.Addr) *cacheEntry {
+	val := f.ipCache.Get(ip.AsSlice())
 	if val == nil {
 		return nil
 	}
@@ -75,7 +75,7 @@ func (f *FastestAddr) cacheFind(ip net.IP) *cacheEntry {
 }
 
 // cacheAddFailure - store unsuccessful attempt in cache
-func (f *FastestAddr) cacheAddFailure(addr net.IP) {
+func (f *FastestAddr) cacheAddFailure(ip netip.Addr) {
 	ent := cacheEntry{
 		status: 1,
 	}
@@ -83,14 +83,14 @@ func (f *FastestAddr) cacheAddFailure(addr net.IP) {
 	f.ipCacheLock.Lock()
 	defer f.ipCacheLock.Unlock()
 
-	if f.cacheFind(addr) == nil {
-		f.cacheAdd(&ent, addr, fastestAddrCacheTTLSec)
+	if f.cacheFind(ip) == nil {
+		f.cacheAdd(&ent, ip, fastestAddrCacheTTLSec)
 	}
 }
 
 // store a successful ping result in cache
 // replace previous result if our latency is lower
-func (f *FastestAddr) cacheAddSuccessful(addr net.IP, latency uint) {
+func (f *FastestAddr) cacheAddSuccessful(ip netip.Addr, latency uint) {
 	ent := cacheEntry{
 		latencyMsec: latency,
 	}
@@ -98,24 +98,14 @@ func (f *FastestAddr) cacheAddSuccessful(addr net.IP, latency uint) {
 	f.ipCacheLock.Lock()
 	defer f.ipCacheLock.Unlock()
 
-	entCached := f.cacheFind(addr)
+	entCached := f.cacheFind(ip)
 	if entCached == nil || entCached.status != 0 || entCached.latencyMsec > latency {
-		f.cacheAdd(&ent, addr, fastestAddrCacheTTLSec)
+		f.cacheAdd(&ent, ip, fastestAddrCacheTTLSec)
 	}
 }
 
 // cacheAdd -- adds a new entry to the cache
-func (f *FastestAddr) cacheAdd(ent *cacheEntry, addr net.IP, ttl uint32) {
-	ip := getCacheKey(addr)
+func (f *FastestAddr) cacheAdd(ent *cacheEntry, ip netip.Addr, ttl uint32) {
 	val := packCacheEntry(ent, ttl)
-	f.ipCache.Set(ip, val)
-}
-
-// getCacheKey - gets cache key (compresses ipv4 to 4 bytes)
-func getCacheKey(addr net.IP) net.IP {
-	ip := addr.To4()
-	if ip == nil {
-		ip = addr
-	}
-	return ip
+	f.ipCache.Set(ip.AsSlice(), val)
 }

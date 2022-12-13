@@ -53,7 +53,7 @@ func StartTimer() Timer {
 }
 
 // LogElapsed writes to log message and elapsed time
-func (t *Timer) LogElapsed(message string, args ...interface{}) {
+func (t *Timer) LogElapsed(message string, args ...any) {
 	var buf strings.Builder
 	buf.WriteString(message)
 	buf.WriteString(fmt.Sprintf("; Elapsed time: %dms", int(time.Since(t.start)/time.Millisecond)))
@@ -86,10 +86,7 @@ func GetLevel() (l Level) {
 
 // These constants are the same as in the standard package "log".
 //
-// See the output of:
-//
-//   go doc log.Ldate
-//
+// See the documentation for [log.Ldate], etc.
 const (
 	Ldate = 1 << iota
 	Ltime
@@ -113,24 +110,24 @@ func SetFlags(flags int) {
 }
 
 // Fatal writes to error log and exits application
-func Fatal(args ...interface{}) {
+func Fatal(args ...any) {
 	writeLog("fatal", "", "%s", fmt.Sprint(args...))
 	os.Exit(1)
 }
 
 // Fatalf writes to error log and exits application
-func Fatalf(format string, args ...interface{}) {
+func Fatalf(format string, args ...any) {
 	writeLog("fatal", "", format, args...)
 	os.Exit(1)
 }
 
 // Error writes to error log
-func Error(format string, args ...interface{}) {
+func Error(format string, args ...any) {
 	writeLog("error", "", format, args...)
 }
 
 // Panic is equivalent to Print() followed by a call to panic().
-func Panic(args ...interface{}) {
+func Panic(args ...any) {
 	s := fmt.Sprint(args...)
 	writeLog("panic", "", "%s", s)
 
@@ -138,7 +135,7 @@ func Panic(args ...interface{}) {
 }
 
 // Panicf is equivalent to Printf() followed by a call to panic().
-func Panicf(format string, args ...interface{}) {
+func Panicf(format string, args ...any) {
 	s := fmt.Sprintf(format, args...)
 	writeLog("panic", "", "%s", s)
 
@@ -146,36 +143,36 @@ func Panicf(format string, args ...interface{}) {
 }
 
 // Print writes to info log
-func Print(args ...interface{}) {
+func Print(args ...any) {
 	Info("%s", fmt.Sprint(args...))
 }
 
 // Printf writes to info log
-func Printf(format string, args ...interface{}) {
+func Printf(format string, args ...any) {
 	Info(format, args...)
 }
 
 // Println writes to info log
-func Println(args ...interface{}) {
+func Println(args ...any) {
 	Info("%s", fmt.Sprint(args...))
 }
 
 // Info writes to info log
-func Info(format string, args ...interface{}) {
+func Info(format string, args ...any) {
 	if atomic.LoadUint32(&level) >= uint32(INFO) {
 		writeLog("info", "", format, args...)
 	}
 }
 
 // Debug writes to debug log
-func Debug(format string, args ...interface{}) {
+func Debug(format string, args ...any) {
 	if atomic.LoadUint32(&level) >= uint32(DEBUG) {
 		writeLog("debug", "", format, args...)
 	}
 }
 
 // Tracef writes to debug log and adds the calling function's name
-func Tracef(format string, args ...interface{}) {
+func Tracef(format string, args ...any) {
 	if atomic.LoadUint32(&level) >= uint32(DEBUG) {
 		writeLog("debug", getCallerName(), format, args...)
 	}
@@ -194,7 +191,7 @@ func goroutineID() uint64 {
 
 // Construct a log message and write it
 // TIME PID#GOID [LEVEL] FUNCNAME(): TEXT
-func writeLog(levelStr string, funcName string, format string, args ...interface{}) {
+func writeLog(levelStr, funcName, format string, args ...any) {
 	var buf strings.Builder
 
 	if atomic.LoadUint32(&level) >= uint32(DEBUG) {
@@ -237,7 +234,7 @@ func (w *stdLogWriter) Write(p []byte) (n int, err error) {
 	// the message before calling Write.  We do the same thing, so trim it.
 	p = bytes.TrimSuffix(p, []byte{'\n'})
 
-	var logFunc func(format string, args ...interface{})
+	var logFunc func(format string, args ...any)
 	switch w.level {
 	case ERROR:
 		logFunc = Error
@@ -297,11 +294,11 @@ func OnPanicAndExit(prefix string, exitCode int) {
 //
 // Instead of:
 //
-//   defer f.Close()
+//	defer f.Close()
 //
 // You can now write:
 //
-//   defer log.OnCloserError(f, log.DEBUG)
+//	defer log.OnCloserError(f, log.DEBUG)
 //
 // Note that if closer is nil, it is simply ignored.
 func OnCloserError(closer io.Closer, l Level) {

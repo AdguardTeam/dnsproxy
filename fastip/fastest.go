@@ -1,16 +1,21 @@
+// Package fastip implements the algorithm that allows to query multiple
+// resolvers, ping all IP addresses that were returned, and return the fastest
+// one among them.
 package fastip
 
 import (
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
+	"golang.org/x/exp/maps"
 )
 
 // DefaultPingWaitTimeout is the default period of time for waiting ping
@@ -53,7 +58,7 @@ func NewFastestAddr() (f *FastestAddr) {
 }
 
 // ExchangeFastest queries each specified upstream and returns a response with
-// the fastest IP address.  The fastest IP address is cosidered to be the first
+// the fastest IP address.  The fastest IP address is considered to be the first
 // one successfully dialed and other addresses are removed from the answer.
 func (f *FastestAddr) ExchangeFastest(req *dns.Msg, ups []upstream.Upstream) (
 	resp *dns.Msg,
@@ -67,16 +72,17 @@ func (f *FastestAddr) ExchangeFastest(req *dns.Msg, ups []upstream.Upstream) (
 
 	host := strings.ToLower(req.Question[0].Name)
 
-	ips := make([]net.IP, 0, len(replies))
+	ipSet := map[netip.Addr]struct{}{}
 	for _, r := range replies {
 		for _, rr := range r.Resp.Answer {
-			ip := proxyutil.IPFromRR(rr)
-			if ip != nil && !containsIP(ips, ip) {
-				ips = append(ips, ip)
+			ip := ipFromRR(rr)
+			if _, ok := ipSet[ip]; !ok && ip != (netip.Addr{}) {
+				ipSet[ip] = struct{}{}
 			}
 		}
 	}
 
+	ips := maps.Keys(ipSet)
 	if pingRes := f.pingAll(host, ips); pingRes != nil {
 		return f.prepareReply(pingRes, replies)
 	}
@@ -86,25 +92,23 @@ func (f *FastestAddr) ExchangeFastest(req *dns.Msg, ups []upstream.Upstream) (
 	return replies[0].Resp, replies[0].Upstream, nil
 }
 
-// prepareReply converts replies into the DNS answer message accoding to
-// pingRes.  The returned upstreams is the one which replied with the fastest
-// address.
-func (f *FastestAddr) prepareReply(pingRes *pingResult, replies []upstream.ExchangeAllResult) (
-	m *dns.Msg,
-	u upstream.Upstream,
-	err error,
-) {
-	ip := pingRes.ipp.IP
+// prepareReply converts replies into the DNS answer message according to res.
+// The returned upstreams is the one which replied with the fastest address.
+func (f *FastestAddr) prepareReply(
+	res *pingResult,
+	replies []upstream.ExchangeAllResult,
+) (resp *dns.Msg, u upstream.Upstream, err error) {
+	ip := res.addrPort.Addr()
 	for _, r := range replies {
 		if hasInAns(r.Resp, ip) {
-			m = r.Resp
+			resp = r.Resp
 			u = r.Upstream
 
 			break
 		}
 	}
 
-	if m == nil {
+	if resp == nil {
 		log.Error("found no replies with IP %s, most likely this is a bug", ip)
 
 		return replies[0].Resp, replies[0].Upstream, nil
@@ -112,35 +116,34 @@ func (f *FastestAddr) prepareReply(pingRes *pingResult, replies []upstream.Excha
 
 	// Modify the message and keep only A and AAAA records containing the
 	// fastest IP address.
-	ans := make([]dns.RR, 0, len(m.Answer))
-	for _, rr := range m.Answer {
+	ans := make([]dns.RR, 0, len(resp.Answer))
+	ipBytes := ip.AsSlice()
+	for _, rr := range resp.Answer {
 		switch addr := rr.(type) {
 		case *dns.A:
-			if ip.Equal(addr.A.To4()) {
+			if addr.A.Equal(ipBytes) {
 				ans = append(ans, rr)
 			}
-
 		case *dns.AAAA:
-			if ip.Equal(addr.AAAA) {
+			if addr.AAAA.Equal(ipBytes) {
 				ans = append(ans, rr)
 			}
-
 		default:
 			ans = append(ans, rr)
 		}
 	}
 
 	// Set new answer.
-	m.Answer = ans
+	resp.Answer = ans
 
-	return m, u, nil
+	return resp, u, nil
 }
 
 // hasInAns returns true if m contains ip in its Answer section.
-func hasInAns(m *dns.Msg, ip net.IP) (ok bool) {
+func hasInAns(m *dns.Msg, ip netip.Addr) (ok bool) {
 	for _, rr := range m.Answer {
-		respIP := proxyutil.IPFromRR(rr)
-		if respIP != nil && respIP.Equal(ip) {
+		respIP := ipFromRR(rr)
+		if respIP == ip {
 			return true
 		}
 	}
@@ -148,17 +151,14 @@ func hasInAns(m *dns.Msg, ip net.IP) (ok bool) {
 	return false
 }
 
-// containsIP returns true if ips contains the ip.
-func containsIP(ips []net.IP, ip net.IP) (ok bool) {
-	if len(ips) == 0 {
-		return false
+// ipFromRR returns the IP address from rr if any.
+func ipFromRR(rr dns.RR) (ip netip.Addr) {
+	switch rr := rr.(type) {
+	case *dns.A:
+		ip, _ = netutil.IPToAddr(rr.A, netutil.AddrFamilyIPv4)
+	case *dns.AAAA:
+		ip, _ = netutil.IPToAddr(rr.AAAA, netutil.AddrFamilyIPv6)
 	}
 
-	for _, i := range ips {
-		if i.Equal(ip) {
-			return true
-		}
-	}
-
-	return false
+	return ip
 }

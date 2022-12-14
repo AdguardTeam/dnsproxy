@@ -86,7 +86,6 @@ func (p *Proxy) quicPacketLoop(l quic.EarlyListener, requestGoroutinesSema semap
 	log.Info("Entering the DNS-over-QUIC listener loop on %s", l.Addr())
 	for {
 		conn, err := l.Accept(context.Background())
-
 		if err != nil {
 			if isQUICNonCrit(err) {
 				log.Tracef("quic connection closed or timed out: %s", err)
@@ -345,15 +344,12 @@ func isQUICNonCrit(err error) (ok bool) {
 		return true
 	}
 
+	// This error is returned when we're trying to accept a new stream from a
+	// connection that had no activity for over than the keep-alive timeout.
+	// This is a common scenario, no need for extra logs.
 	var qIdleErr *quic.IdleTimeoutError
-	if errors.As(err, &qIdleErr) {
-		// This error is returned when we're trying to accept a new stream from
-		// a connection that had no activity for over than the keep-alive
-		// timeout.  This is a common scenario, no need for extra logs.
-		return true
-	}
 
-	return false
+	return errors.As(err, &qIdleErr)
 }
 
 // closeQUICConn quietly closes the QUIC connection.

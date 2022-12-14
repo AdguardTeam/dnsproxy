@@ -26,8 +26,12 @@ type Upstream interface {
 	// Exchange sends the DNS query m to this upstream and returns the response
 	// that has been received or an error if something went wrong.
 	Exchange(m *dns.Msg) (*dns.Msg, error)
+
 	// Address returns the address of the upstream DNS resolver.
 	Address() string
+
+	// Closer used to close the upstreams properly.  Exchange shouldn't be
+	// called after calling Close.
 	io.Closer
 }
 

@@ -58,17 +58,16 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 	for i := 0; i < count; i++ {
 		go func(idx int) {
 			t.Logf("Start %d", idx)
-			start := time.Now()
 			req := createTestMessage()
 
+			start := time.Now()
 			_, err := u.Exchange(req)
+			elapsed := time.Since(start)
 
 			if err == nil {
 				// Must not happen since bootstrap server cannot work.
 				abort <- fmt.Sprintf("the upstream must have timed out: %v", err)
 			}
-
-			elapsed := time.Since(start)
 
 			// Check that the test didn't take too much time compared to the
 			// configured timeout.  The actual elapsed time may be higher than
@@ -152,7 +151,7 @@ func TestUpstreams(t *testing.T) {
 		address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMjo1NDQzILgxXdexS27jIKRw3C7Wsao5jMnlhvhdRUXWuMm1AFq6ITIuZG5zY3J5cHQuZmFtaWx5Lm5zMS5hZGd1YXJkLmNvbQ",
 		bootstrap: []string{"8.8.8.8"},
 	}, {
-		// Cloudflare DNS (DoH)
+		// Cloudflare DNS (DNS-over-HTTPS)
 		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
 		bootstrap: []string{"8.8.8.8:53"},
 	}, {
@@ -168,13 +167,13 @@ func TestUpstreams(t *testing.T) {
 		address:   "sdns://BAcAAAAAAAAAAAATZG5zLmFkZ3VhcmQuY29tOjc4NA",
 		bootstrap: []string{"8.8.8.8:53"},
 	}, {
-		// Cloudflare DNS
+		// Cloudflare DNS (DNS-over-HTTPS)
 		address:   "https://1.1.1.1/dns-query",
 		bootstrap: []string{},
 	}, {
-		// Cloudflare DNS
-		address:   "quic://dns-unfiltered.adguard.com:784",
-		bootstrap: []string{},
+		// AdGuard DNS (DNS-over-QUIC)
+		address:   "quic://dns.adguard-dns.com",
+		bootstrap: []string{"1.1.1.1:53"},
 	}, {
 		// Google DNS (HTTP3)
 		address:   "h3://dns.google/dns-query",
@@ -541,15 +540,15 @@ func requireResponse(t require.TestingT, req, reply *dns.Msg) {
 // root certificate pem-encoded.
 // TODO(ameshkov): start using rootCAs in tests instead of InsecureVerify.
 func createServerTLSConfig(
-	t *testing.T,
+	tb testing.TB,
 	tlsServerName string,
 ) (tlsConfig *tls.Config, rootCAs *x509.CertPool) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	notBefore := time.Now()
 	notAfter := notBefore.Add(5 * 365 * time.Hour * 24)
@@ -576,7 +575,7 @@ func createServerTLSConfig(
 		publicKey(privateKey),
 		privateKey,
 	)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	certPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	keyPem := pem.EncodeToMemory(
@@ -587,7 +586,7 @@ func createServerTLSConfig(
 	)
 
 	cert, err := tls.X509KeyPair(certPem, keyPem)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	rootCAs = x509.NewCertPool()
 	rootCAs.AppendCertsFromPEM(certPem)

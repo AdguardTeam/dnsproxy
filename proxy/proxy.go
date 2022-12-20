@@ -134,7 +134,8 @@ type Proxy struct {
 	Config // proxy configuration
 }
 
-// Init - initializes the proxy structures but does not start it
+// Init populates fields of p but does not start it.  Init must be called before
+// calling Start.
 func (p *Proxy) Init() (err error) {
 	p.initCache()
 
@@ -448,54 +449,75 @@ const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
 // upstream servers.
-func (p *Proxy) Resolve(d *DNSContext) (err error) {
+func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	if p.EnableEDNSClientSubnet {
-		d.processECS(p.EDNSAddr)
+		dctx.processECS(p.EDNSAddr)
 	}
 
-	d.calcFlagsAndSize()
+	dctx.calcFlagsAndSize()
 
 	// Use cache only if it's enabled and the query doesn't use custom upstream.
 	// Also don't lookup the cache for responses with DNSSEC checking disabled
 	// since only validated responses are cached and those may be not the
 	// desired result for user specifying CD flag.
-	cacheWorks := p.cache != nil && d.CustomUpstreamConfig == nil && !d.Req.CheckingDisabled
+	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
-		if p.replyFromCache(d) {
+		if p.replyFromCache(dctx) {
 			// Complete the response from cache.
-			d.scrub()
+			dctx.scrub()
 
 			return nil
 		}
 
 		// On cache miss request for DNSSEC from the upstream to cache it
 		// afterwards.
-		addDO(d.Req)
+		addDO(dctx.Req)
 	}
 
 	var ok bool
-	ok, err = p.replyFromUpstream(d)
+	ok, err = p.replyFromUpstream(dctx)
 
 	// Don't cache the responses having CD flag, just like Dnsmasq does.  It
 	// prevents the cache from being poisoned with unvalidated answers which may
 	// differ from validated ones.
 	//
 	// See https://github.com/imp/dnsmasq/blob/770bce967cfc9967273d0acfb3ea018fb7b17522/src/forward.c#L1169-L1172.
-	if cacheWorks && ok && !d.Res.CheckingDisabled {
+	if cacheWorks && ok && !dctx.Res.CheckingDisabled {
 		// Cache the response with DNSSEC RRs.
-		p.cacheResp(d)
+		p.cacheResp(dctx)
 	}
 
-	filterMsg(d.Res, d.Res, d.adBit, d.doBit, 0)
+	filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
 
 	// Complete the response.
-	d.scrub()
+	dctx.scrub()
 
 	if p.ResponseHandler != nil {
-		p.ResponseHandler(d, err)
+		p.ResponseHandler(dctx, err)
 	}
 
 	return err
+}
+
+// cacheWorks returns true if the cache works for the given context.  If not, it
+// returns false and logs the reason why.
+func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
+	var reason string
+	switch {
+	case p.cache == nil:
+		reason = "disabled"
+	case dctx.CustomUpstreamConfig != nil:
+		// See https://github.com/AdguardTeam/dnsproxy/issues/169.
+		reason = "custom upstreams used"
+	case dctx.Req.CheckingDisabled:
+		reason = "dnssec check disabled"
+	default:
+		return true
+	}
+
+	log.Debug("dnsproxy: cache: %s; not caching", reason)
+
+	return false
 }
 
 // processECS adds EDNS Client Subnet data into the request from d.

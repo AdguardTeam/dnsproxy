@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +26,6 @@ func TestUpstream_dnsOverTLS(t *testing.T) {
 		pt := testutil.PanicT{}
 		require.NoError(pt, err)
 	})
-	testutil.CleanupAndRequireSuccess(t, srv.Close)
 
 	// Create a DoT upstream that we'll be testing.
 	addr := fmt.Sprintf("tls://127.0.0.1:%d", srv.port)
@@ -49,7 +50,6 @@ func TestUpstream_dnsOverTLS_race(t *testing.T) {
 		pt := testutil.PanicT{}
 		require.NoError(pt, err)
 	})
-	testutil.CleanupAndRequireSuccess(t, srv.Close)
 
 	// Creating a DoT upstream that we will be testing.
 	addr := fmt.Sprintf("tls://127.0.0.1:%d", srv.port)
@@ -76,16 +76,12 @@ func TestUpstream_dnsOverTLS_race(t *testing.T) {
 	wg.Wait()
 }
 
+// TODO(e.burkov, a.garipov):  Add to golibs and use here some kind of helper
+// for type assertion of interface types.
 func TestUpstream_dnsOverTLS_poolReconnect(t *testing.T) {
 	srv := startDoTServer(t, func(w dns.ResponseWriter, req *dns.Msg) {
-		resp := respondToTestMessage(req)
-
-		err := w.WriteMsg(resp)
-
-		pt := testutil.PanicT{}
-		require.NoError(pt, err)
+		require.NoError(testutil.PanicT{}, w.WriteMsg(respondToTestMessage(req)))
 	})
-	testutil.CleanupAndRequireSuccess(t, srv.Close)
 
 	// This var is used to store the last connection state in order to check
 	// if session resumption works as expected.
@@ -93,20 +89,22 @@ func TestUpstream_dnsOverTLS_poolReconnect(t *testing.T) {
 
 	// Init the upstream to the test DoT server that also keeps track of the
 	// session resumptions.
-	addr := fmt.Sprintf("tls://127.0.0.1:%d", srv.port)
-	u, err := AddressToUpstream(
-		addr,
-		&Options{
-			InsecureSkipVerify: true,
-			VerifyConnection: func(state tls.ConnectionState) error {
-				lastState = state
+	addr := (&url.URL{
+		Scheme: "tls",
+		Host:   srv.srv.Listener.Addr().String(),
+	}).String()
+	u, err := AddressToUpstream(addr, &Options{
+		InsecureSkipVerify: true,
+		VerifyConnection: func(state tls.ConnectionState) error {
+			lastState = state
 
-				return nil
-			},
+			return nil
 		},
-	)
+	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
+
+	p := testutil.RequireTypeAssert[*dnsOverTLS](t, u)
 
 	// Send the first test message.
 	req := createTestMessage()
@@ -115,12 +113,9 @@ func TestUpstream_dnsOverTLS_poolReconnect(t *testing.T) {
 	requireResponse(t, req, reply)
 
 	// Now let's close the pooled connection.
-	p := u.(*dnsOverTLS)
-	conn, _ := p.pool.Get()
-	conn.Close()
-
-	// And return it back to the pool.
-	p.pool.Put(conn)
+	require.Len(t, p.conns, 1)
+	conn := p.conns[0]
+	require.NoError(t, conn.Close())
 
 	// Send the second test message.
 	req = createTestMessage()
@@ -129,27 +124,28 @@ func TestUpstream_dnsOverTLS_poolReconnect(t *testing.T) {
 	requireResponse(t, req, reply)
 
 	// Now assert that the number of connections in the pool is not changed.
-	require.Len(t, p.pool.conns, 1)
+	require.Len(t, p.conns, 1)
+	assert.NotSame(t, conn, p.conns[0])
 
 	// Check that the session was resumed on the last attempt.
-	require.True(t, lastState.DidResume)
+	assert.True(t, lastState.DidResume)
 }
 
 func TestUpstream_dnsOverTLS_poolDeadline(t *testing.T) {
 	srv := startDoTServer(t, func(w dns.ResponseWriter, req *dns.Msg) {
-		resp := respondToTestMessage(req)
-
-		err := w.WriteMsg(resp)
-
-		pt := testutil.PanicT{}
-		require.NoError(pt, err)
+		require.NoError(testutil.PanicT{}, w.WriteMsg(respondToTestMessage(req)))
 	})
-	testutil.CleanupAndRequireSuccess(t, srv.Close)
 
 	// Create a DoT upstream that we'll be testing.
-	addr := fmt.Sprintf("tls://127.0.0.1:%d", srv.port)
-	u, err := AddressToUpstream(addr, &Options{InsecureSkipVerify: true})
+	addr := (&url.URL{
+		Scheme: "tls",
+		Host:   srv.srv.Listener.Addr().String(),
+	}).String()
+	u, err := AddressToUpstream(addr, &Options{
+		InsecureSkipVerify: true,
+	})
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	// Send the first test message.
 	req := createTestMessage()
@@ -157,13 +153,17 @@ func TestUpstream_dnsOverTLS_poolDeadline(t *testing.T) {
 	require.NoError(t, err)
 	requireResponse(t, req, response)
 
-	p := u.(*dnsOverTLS)
+	p := testutil.RequireTypeAssert[*dnsOverTLS](t, u)
 
 	// Now let's get connection from the pool and use it again.
-	conn, err := p.pool.Get()
-	require.NoError(t, err)
+	require.Len(t, p.conns, 1)
+	conn := p.conns[0]
 
-	response, err = p.exchangeConn(conn, req)
+	usedConn, err := p.conn()
+	require.NoError(t, err)
+	require.Same(t, usedConn, conn)
+
+	response, err = p.exchangeWithConn(conn, req)
 	require.NoError(t, err)
 	requireResponse(t, req, response)
 
@@ -171,23 +171,26 @@ func TestUpstream_dnsOverTLS_poolDeadline(t *testing.T) {
 	err = conn.SetDeadline(time.Now().Add(10 * time.Hour))
 	require.NoError(t, err)
 
-	// And put it back to the pool.
-	p.pool.Put(conn)
+	p.putBack(conn)
 
 	// Get connection from the pool and reuse it.
-	conn, err = p.pool.Get()
-	require.NoError(t, err)
+	require.Len(t, p.conns, 1)
+	conn = p.conns[0]
 
-	response, err = p.exchangeConn(conn, req)
+	usedConn, err = p.conn()
+	require.NoError(t, err)
+	require.Same(t, usedConn, conn)
+
+	response, err = p.exchangeWithConn(usedConn, req)
 	require.NoError(t, err)
 	requireResponse(t, req, response)
 
 	// Set connection's deadLine to the past and try to reuse it.
-	err = conn.SetDeadline(time.Now().Add(-10 * time.Hour))
+	err = usedConn.SetDeadline(time.Now().Add(-10 * time.Hour))
 	require.NoError(t, err)
 
 	// Connection with expired deadLine can't be used.
-	response, err = p.exchangeConn(conn, req)
+	response, err = p.exchangeWithConn(usedConn, req)
 	require.Error(t, err)
 	require.Nil(t, response)
 }
@@ -211,13 +214,15 @@ type testDoTServer struct {
 var _ io.Closer = (*testDoTServer)(nil)
 
 // startDoTServer starts *testDoTServer on a random port.
-func startDoTServer(t *testing.T, handler dns.HandlerFunc) (s *testDoTServer) {
-	t.Helper()
+//
+// TODO(e.burkov):  Also return address?
+func startDoTServer(tb testing.TB, handler dns.HandlerFunc) (s *testDoTServer) {
+	tb.Helper()
 
 	tcpListener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	tlsConfig, rootCAs := createServerTLSConfig(t, "127.0.0.1")
+	tlsConfig, rootCAs := createServerTLSConfig(tb, "127.0.0.1")
 	tlsListener := tls.NewListener(tcpListener, tlsConfig)
 
 	srv := &dns.Server{
@@ -232,15 +237,59 @@ func startDoTServer(t *testing.T, handler dns.HandlerFunc) (s *testDoTServer) {
 		require.NoError(pt, srv.ActivateAndServe())
 	}()
 
-	return &testDoTServer{
+	s = &testDoTServer{
 		srv:       srv,
 		tlsConfig: tlsConfig,
 		rootCAs:   rootCAs,
 		port:      tcpListener.Addr().(*net.TCPAddr).Port,
 	}
+	testutil.CleanupAndRequireSuccess(tb, s.Close)
+
+	return s
 }
 
 // Close implements the io.Closer interface for *testDoTServer.
 func (s *testDoTServer) Close() error {
 	return s.srv.Shutdown()
+}
+
+func BenchmarkDoTUpstream(b *testing.B) {
+	srv := startDoTServer(b, func(w dns.ResponseWriter, m *dns.Msg) {
+		err := w.WriteMsg(respondToTestMessage(m))
+		require.NoError(testutil.PanicT{}, err)
+	})
+
+	addr := (&url.URL{
+		Scheme: "tls",
+		Host:   srv.srv.Listener.Addr().String(),
+	}).String()
+
+	u, err := AddressToUpstream(addr, &Options{
+		InsecureSkipVerify: true,
+	})
+	require.NoError(b, err)
+	testutil.CleanupAndRequireSuccess(b, u.Close)
+
+	reqChan := make(chan *dns.Msg, 64)
+	go func() {
+		for {
+			reqChan <- createTestMessage()
+		}
+	}()
+
+	// Wait for channel to fill.
+	require.Eventually(b, func() bool {
+		return len(reqChan) == cap(reqChan)
+	}, time.Second, time.Millisecond)
+
+	b.Run("exchange_p", func(b *testing.B) {
+		b.ResetTimer()
+		b.ReportAllocs()
+
+		b.RunParallel(func(p *testing.PB) {
+			for p.Next() {
+				_, _ = u.Exchange(<-reqChan)
+			}
+		})
+	})
 }

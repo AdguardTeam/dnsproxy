@@ -30,8 +30,6 @@ type cache struct {
 	// itemsWithSubnetLock protects requests cache.
 	itemsWithSubnetLock sync.RWMutex
 
-	// cacheSize is the size of a key-value pair of cache.
-	cacheSize int
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
 	optimistic bool
@@ -162,22 +160,30 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 // initCache initializes cache if it's enabled.
 func (p *Proxy) initCache() {
 	if !p.CacheEnabled {
+		log.Info("dnsproxy: cache: disabled")
+
 		return
 	}
 
-	log.Printf("DNS cache is enabled")
+	size := p.CacheSizeBytes
+	log.Info("dnsproxy: cache: enabled, size %d b", size)
 
-	c := &cache{
-		optimistic: p.CacheOptimistic,
-		cacheSize:  p.CacheSizeBytes,
-	}
-	p.cache = c
-	c.initLazy()
-	if p.EnableEDNSClientSubnet {
-		c.initLazyWithSubnet()
-	}
-
+	p.cache = newCache(size, p.EnableEDNSClientSubnet, p.CacheOptimistic)
 	p.shortFlighter = newOptimisticResolver(p)
+}
+
+// newCache returns a properly initialized cache.
+func newCache(size int, withECS, optimistic bool) (c *cache) {
+	c = &cache{
+		items:      createCache(size),
+		optimistic: optimistic,
+	}
+
+	if withECS {
+		c.itemsWithSubnet = createCache(size)
+	}
+
+	return c
 }
 
 // get returns cached item for the req if it's found.  expired is true if the
@@ -241,35 +247,15 @@ func canLookUpInCache(cache glcache.Cache, req *dns.Msg) (ok bool) {
 	return cache != nil && req != nil && len(req.Question) == 1
 }
 
-// initLazy initializes the cache for general requests.
-func (c *cache) initLazy() {
-	c.itemsLock.Lock()
-	defer c.itemsLock.Unlock()
-
-	if c.items == nil {
-		c.items = c.createCache()
-	}
-}
-
-// initLazyWithSubnet initializes the cache for requests with subnets.
-func (c *cache) initLazyWithSubnet() {
-	c.itemsWithSubnetLock.Lock()
-	defer c.itemsWithSubnetLock.Unlock()
-
-	if c.itemsWithSubnet == nil {
-		c.itemsWithSubnet = c.createCache()
-	}
-}
-
-// createCache returns new Cache with predefined settings.
-func (c *cache) createCache() (glc glcache.Cache) {
+// createCache returns new Cache with the given cacheSize.
+func createCache(cacheSize int) (glc glcache.Cache) {
 	conf := glcache.Config{
 		MaxSize:   defaultCacheSize,
 		EnableLRU: true,
 	}
 
-	if c.cacheSize > 0 {
-		conf.MaxSize = uint(c.cacheSize)
+	if cacheSize > 0 {
+		conf.MaxSize = uint(cacheSize)
 	}
 
 	return glcache.New(conf)
@@ -281,8 +267,6 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream) {
 	if item == nil {
 		return
 	}
-
-	c.initLazy()
 
 	key := msgToKey(m)
 	packed := item.pack()
@@ -301,8 +285,6 @@ func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet
 		return
 	}
 
-	c.initLazyWithSubnet()
-
 	pref, _ := subnet.Mask.Size()
 	key := msgToKeyWithSubnet(m, subnet.IP, pref)
 	packed := item.pack()
@@ -318,19 +300,20 @@ func (c *cache) clearItems() {
 	c.itemsLock.Lock()
 	defer c.itemsLock.Unlock()
 
-	if c.items != nil {
-		c.items.Clear()
-	}
+	c.items.Clear()
 }
 
-// clearItemsWithSubnet empties the subnet cache.
+// clearItemsWithSubnet empties the subnet cache, if any.
 func (c *cache) clearItemsWithSubnet() {
+	if c.itemsWithSubnet == nil {
+		// ECS disabled, return immediately.
+		return
+	}
+
 	c.itemsWithSubnetLock.Lock()
 	defer c.itemsWithSubnetLock.Unlock()
 
-	if c.itemsWithSubnet != nil {
-		c.itemsWithSubnet.Clear()
-	}
+	c.itemsWithSubnet.Clear()
 }
 
 // cacheTTL returns the number of seconds for which m is valid to be cached.
@@ -344,16 +327,18 @@ func cacheTTL(m *dns.Msg) (ttl uint32) {
 	case m == nil:
 		return 0
 	case m.Truncated:
-		log.Tracef("refusing to cache truncated message")
+		log.Debug("dnsproxy: cache: truncated message; not caching")
 
 		return 0
 	case len(m.Question) != 1:
-		log.Tracef("refusing to cache message with wrong number of questions")
+		log.Debug("dnsproxy: cache: message with wrong number of questions; not caching")
 
 		return 0
 	default:
 		ttl = calculateTTL(m)
 		if ttl == 0 {
+			log.Debug("dnsproxy: cache: ttl calculated to be 0; not caching")
+
 			return 0
 		}
 	}
@@ -363,18 +348,18 @@ func cacheTTL(m *dns.Msg) (ttl uint32) {
 		if isCacheableSucceded(m) {
 			return ttl
 		}
+
+		log.Debug("dnsproxy: cache: not a cacheable noerror response; not caching")
 	case dns.RcodeNameError:
 		if isCacheableNegative(m) {
 			return ttl
 		}
+
+		log.Debug("dnsproxy: cache: not a cacheable nxdomain response; not caching")
 	case dns.RcodeServerFailure:
 		return ttl
 	default:
-		log.Tracef(
-			"%s: refusing to cache message with response code %s",
-			m.Question[0].Name,
-			dns.RcodeToString[rcode],
-		)
+		log.Debug("dnsproxy: cache: response code %s; not caching", dns.RcodeToString[rcode])
 	}
 
 	return 0
@@ -393,7 +378,7 @@ func hasIPAns(m *dns.Msg) (ok bool) {
 }
 
 // isCacheableSucceded returns true if m contains useful data to be cached
-// treating it as a succeesful response.
+// treating it as a successful response.
 func isCacheableSucceded(m *dns.Msg) (ok bool) {
 	qType := m.Question[0].Qtype
 

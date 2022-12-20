@@ -2,6 +2,7 @@ package fastip
 
 import (
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -14,7 +15,8 @@ func TestCacheAdd(t *testing.T) {
 		status:      0,
 		latencyMsec: 111,
 	}
-	ip := net.ParseIP("1.1.1.1")
+
+	ip := netip.MustParseAddr("1.1.1.1")
 	f.cacheAdd(&ent, ip, fastestAddrCacheTTLSec)
 
 	// check that it's there
@@ -27,7 +29,8 @@ func TestCacheTtl(t *testing.T) {
 		status:      0,
 		latencyMsec: 111,
 	}
-	ip := net.ParseIP("1.1.1.1")
+
+	ip := netip.MustParseAddr("1.1.1.1")
 	f.cacheAdd(&ent, ip, 1)
 
 	// check that it's there
@@ -42,8 +45,8 @@ func TestCacheTtl(t *testing.T) {
 
 func TestCacheAddSuccessfulOverwrite(t *testing.T) {
 	f := NewFastestAddr()
-	ip := net.ParseIP("1.1.1.1")
 
+	ip := netip.MustParseAddr("1.1.1.1")
 	f.cacheAddFailure(ip)
 
 	// check that it's there
@@ -63,8 +66,8 @@ func TestCacheAddSuccessfulOverwrite(t *testing.T) {
 
 func TestCacheAddFailureNoOverwrite(t *testing.T) {
 	f := NewFastestAddr()
-	ip := net.ParseIP("1.1.1.1")
 
+	ip := netip.MustParseAddr("1.1.1.1")
 	f.cacheAddSuccessful(ip, 11)
 
 	// check that it's there
@@ -88,12 +91,13 @@ func TestCache(t *testing.T) {
 		status:      0,
 		latencyMsec: 111,
 	}
-	// f.cacheAdd(&ent, net.ParseIP("1.1.1.1"), fastestAddrCacheMinTTLSec)
-	val := packCacheEntry(&ent, 1) // ttl=1
+
+	val := packCacheEntry(&ent, 1)
 	f.ipCache.Set(net.ParseIP("1.1.1.1").To4(), val)
 	ent = cacheEntry{
 		status:      0,
 		latencyMsec: 222,
 	}
-	f.cacheAdd(&ent, net.ParseIP("2.2.2.2"), fastestAddrCacheTTLSec)
+
+	f.cacheAdd(&ent, netip.MustParseAddr("2.2.2.2"), fastestAddrCacheTTLSec)
 }

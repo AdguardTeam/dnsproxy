@@ -47,25 +47,27 @@ func (f SubnetSetFunc) Contains(ip net.IP) (ok bool) { return f(ip) }
 
 // Optimized Implementations Of Some Commonly Used Sets Of Networks
 
-// IsLocallyServed checks if ip belongs to any network defined by RFC 6303:
+// IsLocallyServed checks if ip belongs to any network defined by [RFC 6303]:
 //
-//   10.0.0.0/8
-//   172.16.0.0/12
-//   192.168.0.0/16
-//   127.0.0.0/8
-//   169.254.0.0/16
-//   192.0.2.0/24
-//   198.51.100.0/24
-//   203.0.113.0/24
-//   255.255.255.255/32
+//	10.0.0.0/8
+//	127.0.0.0/8
+//	169.254.0.0/16
+//	172.16.0.0/12
+//	192.0.2.0/24
+//	192.168.0.0/16
+//	198.51.100.0/24
+//	203.0.113.0/24
+//	255.255.255.255/32
 //
-//   ::/128
-//   ::1/128
-//   fe80::/10
-//   2001:db8::/32
-//   fd00::/8
+//	::/128
+//	::1/128
+//	2001:db8::/32
+//	fd00::/8
+//	fe80::/10
 //
-// It may also be used as a SubnetSetFunc.
+// It may also be used as a [SubnetSetFunc].
+//
+// [RFC 6303]: https://datatracker.ietf.org/doc/html/rfc6303
 func IsLocallyServed(ip net.IP) (ok bool) {
 	if ip == nil {
 		return false
@@ -81,9 +83,11 @@ func IsLocallyServed(ip net.IP) (ok bool) {
 }
 
 // isLocallyServedV6 returns true if ip belongs to at least one of networks
-// listed in RFC 6303.  The ip is expected to be a valid IPv6.
+// listed in [RFC 6303].  The ip is expected to be a valid IPv6.
 //
-// See go doc IsLocallyServed.
+// See also [IsLocallyServed].
+//
+// [RFC 6303]: https://datatracker.ietf.org/doc/html/rfc6303
 func isLocallyServedV6(ip net.IP) (ok bool) {
 	switch ip[0] {
 	case 0x00:
@@ -99,9 +103,11 @@ func isLocallyServedV6(ip net.IP) (ok bool) {
 }
 
 // isLocallyServedV4 returns true if ip belongs to at least one of networks
-// listed in RFC 6303.  The ip is expected to be a valid IPv4.
+// listed in [RFC 6303].  The ip is expected to be a valid IPv4.
 //
-// See go doc IsLocallyServed.
+// See also [IsLocallyServed].
+//
+// [RFC 6303]: https://datatracker.ietf.org/doc/html/rfc6303
 func isLocallyServedV4(ip net.IP) (ok bool) {
 	switch ip[0] {
 	case 10, 127:
@@ -124,47 +130,47 @@ func isLocallyServedV4(ip net.IP) (ok bool) {
 // IsSpecialPurpose checks if ip belongs to any network defined by IANA
 // Special-Purpose Address Registry:
 //
-//   0.0.0.0/8          "This host on this network".
-//   10.0.0.0/8         Private-Use.
-//   100.64.0.0/10      Shared Address Space.
-//   127.0.0.0/8        Loopback.
-//   169.254.0.0/16     Link Local.
-//   172.16.0.0/12      Private-Use.
-//   192.0.0.0/24       IETF Protocol Assignments.
-//   192.0.0.0/29       DS-Lite.
-//   192.0.2.0/24       Documentation (TEST-NET-1)
-//   192.88.99.0/24     6to4 Relay Anycast.
-//   192.168.0.0/16     Private-Use.
-//   198.18.0.0/15      Benchmarking.
-//   198.51.100.0/24    Documentation (TEST-NET-2).
-//   203.0.113.0/24     Documentation (TEST-NET-3).
-//   240.0.0.0/4        Reserved.
-//   255.255.255.255/32 Limited Broadcast.
+//	0.0.0.0/8          "This host on this network".
+//	10.0.0.0/8         Private-Use.
+//	100.64.0.0/10      Shared Address Space.
+//	127.0.0.0/8        Loopback.
+//	169.254.0.0/16     Link Local.
+//	172.16.0.0/12      Private-Use.
+//	192.0.0.0/24       IETF Protocol Assignments.
+//	192.0.0.0/29       DS-Lite.
+//	192.0.2.0/24       Documentation (TEST-NET-1)
+//	192.88.99.0/24     6to4 Relay Anycast.
+//	192.168.0.0/16     Private-Use.
+//	198.18.0.0/15      Benchmarking.
+//	198.51.100.0/24    Documentation (TEST-NET-2).
+//	203.0.113.0/24     Documentation (TEST-NET-3).
+//	240.0.0.0/4        Reserved.
+//	255.255.255.255/32 Limited Broadcast.
 //
-//   ::/128            Unspecified Address.
-//   ::1/128           Loopback Address.
-//   64:ff9b::/96      IPv4-IPv6 Translation Address.
-//   64:ff9b:1::/48    IPv4-IPv6 Translation Address.
-//   100::/64          Discard-Only Address Block.
-//   2001::/23         IETF Protocol Assignments.
-//   2001::/32         TEREDO.
-//   2001:1::1/128     Port Control Protocol Anycast.
-//   2001:1::2/128     Traversal Using Relays around NAT Anycast.
-//   2001:2::/48       Benchmarking.
-//   2001:3::/32       AMT.
-//   2001:4:112::/48   AS112-v6.
-//   2001:10::/28      ORCHID.
-//   2001:20::/28      ORCHIDv2.
-//   2001:db8::/32     Documentation.
-//   2002::/16         6to4.
-//   2620:4f:8000::/48 Direct Delegation AS112 Service.
-//   fc00::/7          Unique-Local.
-//   fe80::/10         Linked-Scoped Unicast.
+//	::/128            Unspecified Address.
+//	::1/128           Loopback Address.
+//	64:ff9b::/96      IPv4-IPv6 Translation Address.
+//	64:ff9b:1::/48    IPv4-IPv6 Translation Address.
+//	100::/64          Discard-Only Address Block.
+//	2001::/23         IETF Protocol Assignments.
+//	2001::/32         TEREDO.
+//	2001:1::1/128     Port Control Protocol Anycast.
+//	2001:1::2/128     Traversal Using Relays around NAT Anycast.
+//	2001:2::/48       Benchmarking.
+//	2001:3::/32       AMT.
+//	2001:4:112::/48   AS112-v6.
+//	2001:10::/28      ORCHID.
+//	2001:20::/28      ORCHIDv2.
+//	2001:db8::/32     Documentation.
+//	2002::/16         6to4.
+//	2620:4f:8000::/48 Direct Delegation AS112 Service.
+//	fc00::/7          Unique-Local.
+//	fe80::/10         Linked-Scoped Unicast.
 //
 // See https://www.iana.org/assignments/iana-ipv4-special-registry and
 // https://www.iana.org/assignments/iana-ipv6-special-registry.
 //
-// It may also be used as a SubnetSetFunc.
+// It may also be used as a [SubnetSetFunc].
 func IsSpecialPurpose(ip net.IP) (ok bool) {
 	if ip == nil {
 		return false
@@ -183,7 +189,7 @@ func IsSpecialPurpose(ip net.IP) (ok bool) {
 // from special-purpose address registries.  The ip is expected to be a valid
 // IPv6.
 //
-// See go doc IsSpecialPurpose.
+// See also [IsSpecialPurpose].
 func isSpecialPurposeV6(ip net.IP) (ok bool) {
 	switch ip[0] {
 	case 0x00:
@@ -208,7 +214,7 @@ func isSpecialPurposeV6(ip net.IP) (ok bool) {
 // from special-purpose address registries.  The ip is expected to be a valid
 // IPv4.
 //
-// See go doc IsSpecialPurpose.
+// See also [IsSpecialPurpose].
 func isSpecialPurposeV4(ip net.IP) (ok bool) {
 	switch ip[0] {
 	case 0:

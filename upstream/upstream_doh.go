@@ -593,7 +593,7 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
 
 	ch <- nil
 
-	elapsed := time.Now().Sub(startTime)
+	elapsed := time.Since(startTime)
 	log.Debug("elapsed on establishing a QUIC connection: %s", elapsed)
 }
 
@@ -613,7 +613,7 @@ func (p *dnsOverHTTPS) probeTLS(dialContext dialHandler, tlsConfig *tls.Config, 
 
 	ch <- nil
 
-	elapsed := time.Now().Sub(startTime)
+	elapsed := time.Since(startTime)
 	log.Debug("elapsed on establishing a TLS connection: %s", elapsed)
 }
 

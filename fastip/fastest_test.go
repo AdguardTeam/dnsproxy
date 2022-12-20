@@ -2,6 +2,7 @@ package fastip
 
 import (
 	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -29,7 +30,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	})
 
 	t.Run("one_dead", func(t *testing.T) {
-		port := listen(t, nil)
+		port := listen(t, netip.IPv4Unspecified())
 
 		f := NewFastestAddr()
 		f.pingPorts = []uint{port}

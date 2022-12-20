@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"golang.org/x/exp/slices"
 )
 
 // IP Address Constants And Utilities
@@ -16,12 +18,10 @@ const (
 
 // CloneIP returns a clone of an IP address that doesn't share the same
 // underlying array with it.
+//
+// Deprecated: use slices.Clone.
 func CloneIP(ip net.IP) (clone net.IP) {
-	if ip != nil && len(ip) == 0 {
-		return net.IP{}
-	}
-
-	return append(clone, ip...)
+	return slices.Clone(ip)
 }
 
 // CloneIPs returns a deep clone of ips.
@@ -32,14 +32,14 @@ func CloneIPs(ips []net.IP) (clone []net.IP) {
 
 	clone = make([]net.IP, len(ips))
 	for i, ip := range ips {
-		clone[i] = CloneIP(ip)
+		clone[i] = slices.Clone(ip)
 	}
 
 	return clone
 }
 
 // IPAndPortFromAddr returns the IP address and the port from addr.  If addr is
-// neither a *net.TCPAddr nor a *net.UDPAddr, it returns nil and 0.
+// neither a [*net.TCPAddr] nor a [*net.UDPAddr], it returns nil and 0.
 func IPAndPortFromAddr(addr net.Addr) (ip net.IP, port int) {
 	switch addr := addr.(type) {
 	case *net.TCPAddr:
@@ -79,7 +79,7 @@ func IPv6Zero() (ip net.IP) {
 
 // ParseIP is a wrapper around net.ParseIP that returns a useful error.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 func ParseIP(s string) (ip net.IP, err error) {
 	ip = net.ParseIP(s)
 	if ip == nil {
@@ -95,7 +95,7 @@ func ParseIP(s string) (ip net.IP, err error) {
 // ParseIPv4 is a wrapper around net.ParseIP that makes sure that the parsed IP
 // is an IPv4 address and returns a useful error.
 //
-// Any error returned will have the underlying type of either *AddrError.
+// Any error returned will have the underlying type of either [*AddrError].
 func ParseIPv4(s string) (ip net.IP, err error) {
 	ip, err = ParseIP(s)
 	if err != nil {
@@ -121,9 +121,9 @@ func CloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 	}
 
 	return &net.IPNet{
-		IP: CloneIP(n.IP),
+		IP: slices.Clone(n.IP),
 		// TODO(e.burkov):  Consider adding CloneIPMask.
-		Mask: net.IPMask(CloneIP(net.IP(n.Mask))),
+		Mask: net.IPMask(slices.Clone(net.IP(n.Mask))),
 	}
 }
 
@@ -134,7 +134,7 @@ func CloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 // If s contains a CIDR with an IP address that is an IPv4-mapped IPv6 address,
 // the behavior is undefined.
 //
-// Any error returned will have the underlying type of either *AddrError.
+// Any error returned will have the underlying type of either [*AddrError].
 func ParseSubnet(s string) (n *net.IPNet, err error) {
 	var ip net.IP
 
@@ -220,7 +220,7 @@ func ParseSubnets(ss ...string) (ns []*net.IPNet, err error) {
 
 // ValidateIP returns an error if ip is not a valid IPv4 or IPv6 address.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 func ValidateIP(ip net.IP) (err error) {
 	// TODO(a.garipov):  Get rid of unnecessary allocations in case of valid IP.
 	defer makeAddrError(&err, ip.String(), AddrKindIP)

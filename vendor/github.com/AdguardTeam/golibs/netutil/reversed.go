@@ -39,12 +39,11 @@ const (
 //
 // An example of IPv4 with a maximum length:
 //
-//   49.91.20.104.in-addr.arpa
+//	49.91.20.104.in-addr.arpa
 //
 // An example of IPv6 with a maximum length:
 //
-//   1.3.b.5.4.1.8.6.0.0.0.0.0.0.0.0.0.0.0.0.0.1.0.0.0.0.7.4.6.0.6.2.ip6.arpa
-//
+//	1.3.b.5.4.1.8.6.0.0.0.0.0.0.0.0.0.0.0.0.0.1.0.0.0.0.7.4.6.0.6.2.ip6.arpa
 const (
 	arpaV4MaxIPLen = len("000.000.000.000")
 	arpaV6MaxIPLen = len("0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0")
@@ -156,7 +155,7 @@ func IPFromReversedAddr(arpa string) (ip net.IP, err error) {
 // DNS (PTR) record lookups.  This is a modified version of function ReverseAddr
 // from package github.com/miekg/dns package that accepts an IP.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 func IPToReversedAddr(ip net.IP) (arpa string, err error) {
 	const dot = "."
 
@@ -332,7 +331,7 @@ func subnetFromReversedV6(arpa string) (subnet *net.IPNet, err error) {
 // SubnetFromReversedAddr tries to convert a reversed ARPA address to an IP
 // network.  arpa can be domain name or an FQDN.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 func SubnetFromReversedAddr(arpa string) (subnet *net.IPNet, err error) {
 	arpa = strings.TrimSuffix(arpa, ".")
 	err = ValidateDomainName(arpa)

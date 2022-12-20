@@ -1,5 +1,10 @@
 package netutil
 
+import (
+	"encoding"
+	"fmt"
+)
+
 // HostPort And Utilities
 
 // HostPort is a convenient type for addresses that contain a hostname and
@@ -10,7 +15,7 @@ type HostPort struct {
 }
 
 // ParseHostPort parses a HostPort from addr.  Any error returned will have the
-// underlying type of *AddrError.
+// underlying type of [*AddrError].
 func ParseHostPort(addr string) (hp *HostPort, err error) {
 	defer makeAddrError(&err, addr, AddrKindHostPort)
 
@@ -53,18 +58,27 @@ func (hp *HostPort) Clone() (clone *HostPort) {
 	}
 }
 
-// MarshalText implements the encoding.TextMarshaler interface for HostPort.
+// type check
+var _ encoding.TextMarshaler = HostPort{}
+
+// MarshalText implements the [encoding.TextMarshaler] interface for HostPort.
 func (hp HostPort) MarshalText() (b []byte, err error) {
 	return []byte(hp.String()), nil
 }
 
-// String implements the fmt.Stringer interface for *HostPort.
+// type check
+var _ fmt.Stringer = HostPort{}
+
+// String implements the [fmt.Stringer] interface for *HostPort.
 func (hp HostPort) String() (s string) {
 	return JoinHostPort(hp.Host, hp.Port)
 }
 
-// UnmarshalText implements the encoding.TextUnmarshaler interface for
-// *HostPort.  Any error returned will have the underlying type of *AddrError.
+// type check
+var _ encoding.TextUnmarshaler = (*HostPort)(nil)
+
+// UnmarshalText implements the [encoding.TextUnmarshaler] interface for
+// *HostPort.  Any error returned will have the underlying type of [*AddrError].
 func (hp *HostPort) UnmarshalText(b []byte) (err error) {
 	var newHP *HostPort
 	newHP, err = ParseHostPort(string(b))

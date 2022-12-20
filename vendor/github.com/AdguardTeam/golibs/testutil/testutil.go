@@ -65,25 +65,25 @@ func newStringCodecChecker(s string) (c *stringCodecChecker) {
 // newGenericCodecChecker constructs a pointer to value of a type similar to the
 // following:
 //
-//   type checker struct {
-//       PtrMap   map[string]*T `json:"ptr_map"`
-//       Map      map[string]T  `json:"map"`
+//	type checker struct {
+//		PtrMap   map[string]*T `json:"ptr_map"`
+//		Map      map[string]T  `json:"map"`
 //
-//       PtrValue *T            `json:"ptr_value"`
-//       Value    T             `json:"value"`
+//		PtrValue *T            `json:"ptr_value"`
+//		Value    T             `json:"value"`
 //
-//       PtrArray [1]*T         `json:"ptr_array"`
-//       Array    [1]T          `json:"array"`
+//		PtrArray [1]*T         `json:"ptr_array"`
+//		Array    [1]T          `json:"array"`
 //
-//       PtrSlice []*T          `json:"ptr_slice"`
-//       Slice    []T           `json:"slice"`
-//   }
+//		PtrSlice []*T          `json:"ptr_slice"`
+//		Slice    []T           `json:"slice"`
+//	}
 //
 // where T is the type v points to.  The slice and pointer fields are properly
 // initialized.
 //
 // TODO(a.garipov): Redo this with type parameters in Go 1.18.
-func newGenericCodecChecker(v interface{}) (checkerVal reflect.Value) {
+func newGenericCodecChecker(v any) (checkerVal reflect.Value) {
 	strTyp := reflect.TypeOf("")
 
 	ptrTyp := reflect.TypeOf(v)
@@ -142,7 +142,7 @@ func newGenericCodecChecker(v interface{}) (checkerVal reflect.Value) {
 }
 
 // assignGenericCodecChecker assigns all fields to v or the value v points to.
-func assignGenericCodecChecker(checkerVal reflect.Value, v interface{}) {
+func assignGenericCodecChecker(checkerVal reflect.Value, v any) {
 	keyVal := reflect.ValueOf("1")
 	valPtr := reflect.ValueOf(v)
 	val := valPtr.Elem()
@@ -216,4 +216,14 @@ func CleanupAndRequireSuccess(t testing.TB, f func() (err error)) {
 		err := f()
 		require.NoError(t, err)
 	})
+}
+
+// RequireTypeAssert is a helper that first requires the desired type and then,
+// if the type is correct, converts and returns the value.
+func RequireTypeAssert[T any](t testing.TB, v any) (res T) {
+	t.Helper()
+
+	require.IsType(t, res, v)
+
+	return v.(T)
 }

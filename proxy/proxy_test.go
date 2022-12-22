@@ -1225,6 +1225,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	} else {
 		p.UDPListenAddr = []*net.UDPAddr{{IP: ip, Port: 0}}
 		p.TCPListenAddr = []*net.TCPAddr{{IP: ip, Port: 0}}
+		p.HTTPListenAddr = []*net.TCPAddr{{IP: ip, Port: 0}}
 	}
 	upstreams := make([]upstream.Upstream, 0)
 	dnsUpstream, err := upstream.AddressToUpstream(

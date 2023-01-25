@@ -88,9 +88,9 @@ func (p *Proxy) quicPacketLoop(l quic.EarlyListener, requestGoroutinesSema semap
 		conn, err := l.Accept(context.Background())
 		if err != nil {
 			if isQUICNonCrit(err) {
-				log.Tracef("quic connection closed or timed out: %s", err)
+				log.Debug("accepting quic conn: closed or timed out: %s", err)
 			} else {
-				log.Error("reading from quic listen: %s", err)
+				log.Error("accepting quic conn: %s", err)
 			}
 
 			break
@@ -118,9 +118,9 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, requestGoroutinesSema
 		stream, err := conn.AcceptStream(context.Background())
 		if err != nil {
 			if isQUICNonCrit(err) {
-				log.Tracef("quic connection closed or timeout: %s", err)
+				log.Debug("accepting quic stream: closed or timed out: %s", err)
 			} else {
-				log.Info("got error when accepting a new QUIC stream: %s", err)
+				log.Error("accepting quic stream: %s", err)
 			}
 
 			// Close the connection to make sure resources are freed.
@@ -310,7 +310,7 @@ func logShortQUICRead(err error) {
 	}
 
 	if isQUICNonCrit(err) {
-		log.Tracef("quic connection closed or timeout: %s", err)
+		log.Debug("reading from quic stream: closed or timeout: %s", err)
 	} else {
 		log.Error("reading from quic stream: %s", err)
 	}
@@ -354,9 +354,11 @@ func isQUICNonCrit(err error) (ok bool) {
 
 // closeQUICConn quietly closes the QUIC connection.
 func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode) {
+	log.Debug("closing quic conn %s with code %d", conn.LocalAddr(), code)
+
 	err := conn.CloseWithError(code, "")
 	if err != nil {
-		log.Debug("failed to close QUIC connection: %v", err)
+		log.Debug("closing quic connection with code %d: %s", code, err)
 	}
 }
 

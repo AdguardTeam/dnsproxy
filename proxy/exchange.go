@@ -50,14 +50,15 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 
 func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {
 	// clone upstreams list to avoid race conditions
-	p.rttLock.Lock()
 	clone := make([]upstream.Upstream, len(u))
 	copy(clone, u)
+
+	p.rttLock.Lock()
+	defer p.rttLock.Unlock()
 
 	sort.Slice(clone, func(i, j int) bool {
 		return p.upstreamRttStats[clone[i].Address()] < p.upstreamRttStats[clone[j].Address()]
 	})
-	p.rttLock.Unlock()
 
 	return clone
 }
@@ -89,9 +90,10 @@ func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, err
 // updateRtt updates rtt in upstreamRttStats for given address
 func (p *Proxy) updateRtt(address string, rtt int) {
 	p.rttLock.Lock()
+	defer p.rttLock.Unlock()
+
 	if p.upstreamRttStats == nil {
 		p.upstreamRttStats = map[string]int{}
 	}
 	p.upstreamRttStats[address] = (p.upstreamRttStats[address] + rtt) / 2
-	p.rttLock.Unlock()
 }

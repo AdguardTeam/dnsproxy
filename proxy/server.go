@@ -200,9 +200,9 @@ func (p *Proxy) genNotImpl(request *dns.Msg) (resp *dns.Msg) {
 	return resp
 }
 
-func (p *Proxy) genWithRCode(r *dns.Msg, code int) (resp *dns.Msg) {
+func (p *Proxy) genWithRCode(req *dns.Msg, code int) (resp *dns.Msg) {
 	resp = &dns.Msg{}
-	resp.SetRcode(r, code)
+	resp.SetRcode(req, code)
 	resp.RecursionAvailable = true
 
 	return resp

@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -19,16 +18,6 @@ import (
 
 // testCacheSize is the maximum size of cache for tests.
 const testCacheSize = 4096
-
-func newRR(t *testing.T, rr string) (r dns.RR) {
-	t.Helper()
-
-	var err error
-	r, err = dns.NewRR(rr)
-	require.NoError(t, err)
-
-	return r
-}
 
 const testUpsAddr = "https://upstream.address"
 
@@ -52,7 +41,7 @@ func TestServeCached(t *testing.T) {
 		MsgHdr: dns.MsgHdr{
 			Response: true,
 		},
-		Answer: []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+		Answer: []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 	}).SetQuestion("google.com.", dns.TypeA)
 	reply.SetEdns0(defaultUDPBufSize, false)
 
@@ -161,7 +150,7 @@ func TestCacheDO(t *testing.T) {
 		MsgHdr: dns.MsgHdr{
 			Response: true,
 		},
-		Answer: []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+		Answer: []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 	}).SetQuestion("google.com.", dns.TypeA)
 	reply.SetEdns0(4096, true)
 
@@ -204,7 +193,7 @@ func TestCacheCNAME(t *testing.T) {
 		MsgHdr: dns.MsgHdr{
 			Response: true,
 		},
-		Answer: []dns.RR{newRR(t, "google.com. 3600 IN CNAME test.google.com.")},
+		Answer: []dns.RR{newRR(t, "google.com.", dns.TypeCNAME, 3600, "test.google.com.")},
 	}).SetQuestion("google.com.", dns.TypeA)
 	testCache.set(reply, upstreamWithAddr)
 
@@ -218,7 +207,7 @@ func TestCacheCNAME(t *testing.T) {
 	})
 
 	// Now fill the cache with a cacheable CNAME response.
-	reply.Answer = append(reply.Answer, newRR(t, "google.com. 3600 IN A 8.8.8.8"))
+	reply.Answer = append(reply.Answer, newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8}))
 	testCache.set(reply, upstreamWithAddr)
 
 	// We are testing that a proper CNAME response gets cached
@@ -280,10 +269,10 @@ func TestCacheExpiration(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
 	// Create dns messages with TTL of 1 second.
-	rrs := []string{
-		"youtube.com 1 IN A 173.194.221.198",
-		"google.com. 1 IN A 8.8.8.8",
-		"yandex.com. 1 IN A 213.180.204.62",
+	rrs := []dns.RR{
+		newRR(t, "youtube.com.", dns.TypeA, 1, net.IP{173, 194, 221, 198}),
+		newRR(t, "google.com.", dns.TypeA, 1, net.IP{8, 8, 8, 8}),
+		newRR(t, "yandex.com.", dns.TypeA, 1, net.IP{213, 180, 204, 62}),
 	}
 	replies := make([]*dns.Msg, len(rrs))
 	for i, rr := range rrs {
@@ -291,8 +280,8 @@ func TestCacheExpiration(t *testing.T) {
 			MsgHdr: dns.MsgHdr{
 				Response: true,
 			},
-			Answer: []dns.RR{newRR(t, rr)},
-		}).SetQuestion(dns.Fqdn(strings.Fields(rr)[0]), dns.TypeA)
+			Answer: []dns.RR{dns.Copy(rr)},
+		}).SetQuestion(rr.Header().Name, dns.TypeA)
 		dnsProxy.cache.set(rep, upstreamWithAddr)
 		replies[i] = rep
 	}
@@ -405,13 +394,13 @@ func TestCache(t *testing.T) {
 		testCases{
 			cache: []testEntry{{
 				q: "google.com.",
-				a: []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				a: []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 				t: dns.TypeA,
 			}},
 			cases: []testCase{{
 				ok: require.True,
 				q:  "google.com.",
-				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				a:  []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 				t:  dns.TypeA,
 			}, {
 				ok: require.False,
@@ -425,23 +414,23 @@ func TestCache(t *testing.T) {
 		testCases{
 			cache: []testEntry{{
 				q: "gOOgle.com.",
-				a: []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				a: []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 				t: dns.TypeA,
 			}},
 			cases: []testCase{{
 				ok: require.True,
 				q:  "gOOgle.com.",
-				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				a:  []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 				t:  dns.TypeA,
 			}, {
 				ok: require.True,
 				q:  "google.com.",
-				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				a:  []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 				t:  dns.TypeA,
 			}, {
 				ok: require.True,
 				q:  "GOOGLE.COM.",
-				a:  []dns.RR{newRR(t, "google.com. 3600 IN A 8.8.8.8")},
+				a:  []dns.RR{newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 				t:  dns.TypeA,
 			}, {
 				q:  "gOOgle.com.",
@@ -463,7 +452,7 @@ func TestCache(t *testing.T) {
 		testCases{
 			cache: []testEntry{{
 				q: "gOOgle.com.",
-				a: []dns.RR{newRR(t, "google.com. 0 IN A 8.8.8.8")},
+				a: []dns.RR{newRR(t, "google.com.", dns.TypeA, 0, net.IP{8, 8, 8, 8})},
 				t: dns.TypeA,
 			}},
 			cases: []testCase{{
@@ -566,11 +555,13 @@ func requireEqualMsgs(t *testing.T, expected, actual *dns.Msg) {
 func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) {
 	defer g.Done()
 
+	ipAddr := net.ParseIP(ip)
+
 	dnsMsg := (&dns.Msg{
 		MsgHdr: dns.MsgHdr{
 			Response: true,
 		},
-		Answer: []dns.RR{newRR(t, fmt.Sprintf("%s 1 IN A %s", host, ip))},
+		Answer: []dns.RR{newRR(t, host, dns.TypeA, 1, ipAddr)},
 	}).SetQuestion(host, dns.TypeA)
 
 	c.set(dnsMsg, upstreamWithAddr)
@@ -611,7 +602,7 @@ func TestSubnet(t *testing.T) {
 		MsgHdr: dns.MsgHdr{
 			Response: true,
 		},
-		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 1.1.1.1")},
+		Answer: []dns.RR{newRR(t, "example.com.", dns.TypeA, 1, net.IP{1, 1, 1, 1})},
 	}).SetQuestion("example.com.", dns.TypeA)
 	c.setWithSubnet(
 		resp,
@@ -635,7 +626,7 @@ func TestSubnet(t *testing.T) {
 		MsgHdr: dns.MsgHdr{
 			Response: true,
 		},
-		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 2.2.2.2")},
+		Answer: []dns.RR{newRR(t, "example.com.", dns.TypeA, 1, net.IP{2, 2, 2, 2})},
 	}).SetQuestion("example.com.", dns.TypeA)
 	c.setWithSubnet(
 		resp,
@@ -648,7 +639,7 @@ func TestSubnet(t *testing.T) {
 		MsgHdr: dns.MsgHdr{
 			Response: true,
 		},
-		Answer: []dns.RR{newRR(t, "example.com. 1 IN A 3.3.3.3")},
+		Answer: []dns.RR{newRR(t, "example.com.", dns.TypeA, 1, net.IP{3, 3, 3, 3})},
 	}).SetQuestion("example.com.", dns.TypeA)
 	c.setWithSubnet(
 		resp,

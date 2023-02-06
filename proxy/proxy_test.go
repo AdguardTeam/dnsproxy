@@ -1127,6 +1127,8 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	p.UpstreamConfig = &UpstreamConfig{}
 	p.UpstreamConfig.Upstreams = append(upstreams, dnsUpstream)
 
+	p.PrivateRDNSUpstreamConfig = &UpstreamConfig{}
+
 	p.TrustedProxies = []string{"0.0.0.0/0", "::0/0"}
 
 	return &p

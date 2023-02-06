@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
@@ -25,7 +26,6 @@ import (
 // use the default option since it will cause some problems when config files
 // are used.
 type Options struct {
-
 	// Configuration file path (yaml), the config path should be read without
 	// using goFlags in order not to have default values overriding yaml
 	// options.
@@ -98,6 +98,10 @@ type Options struct {
 	// Fallback DNS resolver
 	Fallbacks []string `yaml:"fallback" short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
 
+	// PrivateRDNSUpstreams are upstreams to use for reverse DNS lookups of
+	// private addresses.
+	PrivateRDNSUpstreams []string `yaml:"private-rdns-upstream" long:"private-rdns-upstream" description:"Private DNS upstreams to use for reverse DNS lookups of private addresses, can be specified multiple times"`
+
 	// If true, parallel queries to all configured upstream servers
 	AllServers bool `yaml:"all-servers" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
 
@@ -147,8 +151,10 @@ type Options struct {
 	// Defines whether DNS64 functionality is enabled or not
 	DNS64 bool `yaml:"dns64" long:"dns64" description:"If specified, dnsproxy will act as a DNS64 server" optional:"yes" optional-value:"true"`
 
-	// DNS64Prefix defines the DNS64 prefix that dnsproxy should use when it acts as a DNS64 server
-	DNS64Prefix string `yaml:"dns64-prefix" long:"dns64-prefix" description:"If specified, this is the DNS64 prefix dnsproxy will be using when it works as a DNS64 server. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::" required:"false"`
+	// DNS64Prefix defines the DNS64 prefixes that dnsproxy should use when it
+	// acts as a DNS64 server.  If not specified, dnsproxy uses the default
+	// Well-Known Prefix.  This option can be specified multiple times.
+	DNS64Prefix []string `yaml:"dns64-prefix" long:"dns64-prefix" description:"Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times" required:"false"`
 
 	// Other settings and options
 	// --
@@ -176,11 +182,10 @@ type Options struct {
 // VersionString will be set through ldflags, contains current version
 var VersionString = "dev" // nolint:gochecknoglobals
 
-const defaultTimeout = 10 * time.Second
-
-// defaultDNS64Prefix is a so-called "Well-Known Prefix" for DNS64.
-// if dnsproxy operates as a DNS64 server, we'll be using it.
-const defaultDNS64Prefix = "64:ff9b::/96"
+const (
+	defaultTimeout      = 10 * time.Second
+	defaultLocalTimeout = 1 * time.Second
+)
 
 func main() {
 	options := &Options{}
@@ -242,9 +247,6 @@ func run(options *Options) {
 	// Prepare the proxy server and its configuration.
 	config := createProxyConfig(options)
 	dnsProxy := &proxy.Proxy{Config: config}
-
-	// Init DNS64 if needed.
-	initDNS64(dnsProxy, options)
 
 	// Add extra handler if needed.
 	if options.IPv6Disabled {
@@ -321,12 +323,14 @@ func createProxyConfig(options *Options) proxy.Config {
 		MaxGoroutines:          options.MaxGoRoutines,
 	}
 
+	// TODO(e.burkov):  Make these methods of [Options].
 	initUpstreams(&config, options)
 	initEDNS(&config, options)
 	initBogusNXDomain(&config, options)
 	initTLSConfig(&config, options)
 	initDNSCryptConfig(&config, options)
 	initListenAddrs(&config, options)
+	initDNS64(&config, options)
 
 	return config
 }
@@ -334,7 +338,6 @@ func createProxyConfig(options *Options) proxy.Config {
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
-	upstreams := loadServersList(options.Upstreams)
 
 	httpVersions := upstream.DefaultHTTPVersions
 	if options.HTTP3 {
@@ -345,24 +348,29 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		}
 	}
 
+	var err error
+
+	upstreams := loadServersList(options.Upstreams)
 	upsOpts := &upstream.Options{
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: options.Insecure,
 		Bootstrap:          options.BootstrapDNS,
 		Timeout:            defaultTimeout,
 	}
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(upstreams, upsOpts)
+	config.UpstreamConfig, err = proxy.ParseUpstreamsConfig(upstreams, upsOpts)
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}
-	config.UpstreamConfig = upstreamConfig
 
-	if options.AllServers {
-		config.UpstreamMode = proxy.UModeParallel
-	} else if options.FastestAddress {
-		config.UpstreamMode = proxy.UModeFastestAddr
-	} else {
-		config.UpstreamMode = proxy.UModeLoadBalance
+	privUpstreams := loadServersList(options.PrivateRDNSUpstreams)
+	privUpsOpts := &upstream.Options{
+		HTTPVersions: httpVersions,
+		Bootstrap:    options.BootstrapDNS,
+		Timeout:      defaultLocalTimeout,
+	}
+	config.PrivateRDNSUpstreamConfig, err = proxy.ParseUpstreamsConfig(privUpstreams, privUpsOpts)
+	if err != nil {
+		log.Fatalf("error while parsing private rdns upstreams configuration: %s", err)
 	}
 
 	if options.Fallbacks != nil {
@@ -373,14 +381,26 @@ func initUpstreams(config *proxy.Config, options *Options) {
 			// separately.
 			//
 			// See https://github.com/AdguardTeam/dnsproxy/issues/161.
-			fallback, err := upstream.AddressToUpstream(f, upsOpts)
+			var fallback upstream.Upstream
+			fallback, err = upstream.AddressToUpstream(f, upsOpts)
 			if err != nil {
 				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)
 			}
-			log.Printf("Fallback %d is %s", i, fallback.Address())
+
+			log.Printf("fallback at index %d is %s", i, fallback.Address())
+
 			fallbacks = append(fallbacks, fallback)
 		}
+
 		config.Fallbacks = fallbacks
+	}
+
+	if options.AllServers {
+		config.UpstreamMode = proxy.UModeParallel
+	} else if options.FastestAddress {
+		config.UpstreamMode = proxy.UModeFastestAddr
+	} else {
+		config.UpstreamMode = proxy.UModeLoadBalance
 	}
 }
 
@@ -527,30 +547,27 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 	}
 }
 
-// initDNS64 inits the DNS64 configuration for dnsproxy
-func initDNS64(p *proxy.Proxy, options *Options) {
-	if !options.DNS64 {
+// initDNS64 sets the DNS64 configuration into conf.
+func initDNS64(conf *proxy.Config, options *Options) {
+	if conf.UseDNS64 = options.DNS64; !conf.UseDNS64 {
 		return
 	}
 
-	dns64Prefix := options.DNS64Prefix
-	if dns64Prefix == "" {
-		dns64Prefix = defaultDNS64Prefix
+	if len(conf.PrivateRDNSUpstreamConfig.Upstreams) == 0 {
+		log.Fatalf("at least one private upstream must be configured to use dns64")
 	}
 
-	// DNS64 prefix may be specified as a CIDR: "64:ff9b::/96"
-	ip, _, err := net.ParseCIDR(dns64Prefix)
-	if err != nil {
-		// Or it could be specified as an IP address: "64:ff9b::"
-		ip = net.ParseIP(dns64Prefix)
+	var prefs []netip.Prefix
+	for i, p := range options.DNS64Prefix {
+		pref, err := netip.ParsePrefix(p)
+		if err != nil {
+			log.Fatalf("parsing prefix at index %d: %v", i, err)
+		}
+
+		prefs = append(prefs, pref)
 	}
 
-	if ip == nil || len(ip) < net.IPv6len {
-		log.Fatalf("Invalid DNS64 prefix: %s", dns64Prefix)
-		return
-	}
-
-	p.SetNAT64Prefix(ip[:proxy.NAT64PrefixLength])
+	conf.DNS64Prefs = prefs
 }
 
 // IPv6 configuration

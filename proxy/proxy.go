@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -88,8 +89,10 @@ type Proxy struct {
 	// DNS64 (in case dnsproxy works in a NAT64/DNS64 network)
 	// --
 
-	nat64Prefix     []byte     // NAT 64 prefix
-	nat64PrefixLock sync.Mutex // Prefix lock
+	// dns64Prefs is a set of NAT64 prefixes that are used to detect and
+	// construct DNS64 responses.  The DNS64 function is disabled if it is
+	// empty.
+	dns64Prefs []netip.Prefix
 
 	// Ratelimit
 	// --
@@ -134,8 +137,7 @@ type Proxy struct {
 	Config // proxy configuration
 }
 
-// Init populates fields of p but does not start it.  Init must be called before
-// calling Start.
+// Init populates fields of p but does not start listeners.
 func (p *Proxy) Init() (err error) {
 	p.initCache()
 
@@ -175,6 +177,11 @@ func (p *Proxy) Init() (err error) {
 	}
 
 	p.proxyVerifier = netutil.SliceSubnetSet(trusted)
+
+	err = p.setupDNS64()
+	if err != nil {
+		return fmt.Errorf("setting up DNS64: %w", err)
+	}
 
 	return nil
 }
@@ -370,32 +377,76 @@ func (p *Proxy) Addr(proto Proto) net.Addr {
 	}
 }
 
-// replyFromUpstream tries to resolve the request.
-func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
-	req := d.Req
+// needsLocalUpstream returns true if the request should be handled by a private
+// upstream servers.
+func (p *Proxy) needsLocalUpstream(req *dns.Msg) (ok bool) {
+	if req.Question[0].Qtype != dns.TypePTR {
+		return false
+	}
+
 	host := req.Question[0].Name
-	var upstreams []upstream.Upstream
-	// Get custom upstreams first.  Note that they might be empty.
+	ip, err := netutil.IPFromReversedAddr(host)
+	if err != nil {
+		log.Debug("proxy: failed to parse ip from ptr request: %s", err)
+
+		return false
+	}
+
+	return p.shouldStripDNS64(ip)
+}
+
+// selectUpstreams returns the upstreams to use for the specified host.  It
+// firstly considers custom upstreams if those aren't empty and then the
+// configured ones.  It returns false, if no upstreams are available for current
+// request.
+func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, ok bool) {
+	host := d.Req.Question[0].Name
+	if p.needsLocalUpstream(d.Req) {
+		if p.PrivateRDNSUpstreamConfig == nil {
+			return nil, false
+		}
+
+		ip, _ := netutil.IPAndPortFromAddr(d.Addr)
+		// TODO(e.burkov):  Detect against the actual configured subnet set.
+		// Perhaps, even much earlier.
+		if !netutil.IsLocallyServed(ip) {
+			return nil, false
+		}
+
+		return p.PrivateRDNSUpstreamConfig.getUpstreamsForDomain(host), true
+	}
+
 	if d.CustomUpstreamConfig != nil {
 		upstreams = d.CustomUpstreamConfig.getUpstreamsForDomain(host)
 	}
-	// If nothing is found in the custom upstreams, start using the default
-	// ones.
-	if upstreams == nil {
-		upstreams = p.UpstreamConfig.getUpstreamsForDomain(host)
+
+	if upstreams != nil {
+		return upstreams, true
+	}
+
+	return p.UpstreamConfig.getUpstreamsForDomain(host), true
+}
+
+// replyFromUpstream tries to resolve the request.
+func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
+	req := d.Req
+
+	upstreams, ok := p.selectUpstreams(d)
+	if !ok {
+		return false, upstream.ErrNoUpstreams
 	}
 
 	start := time.Now()
+
 	// Perform the DNS request.
 	var reply *dns.Msg
 	var u upstream.Upstream
 	reply, u, err = p.exchange(req, upstreams)
-	if p.isNAT64PrefixAvailable() && p.isEmptyAAAAResponse(reply, req) {
-		log.Tracef("received an empty AAAA response, checking DNS64")
-		reply, u, err = p.checkDNS64(req, reply, upstreams)
+	if dns64Ups := p.performDNS64(req, reply, upstreams); dns64Ups != nil {
+		u = dns64Ups
 	} else if p.isBogusNXDomain(reply) {
 		log.Tracef("response ip is contained in bogus-nxdomain list")
-		reply = p.genWithRCode(reply, dns.RcodeNameError)
+		reply = p.genWithRCode(req, dns.RcodeNameError)
 	}
 
 	log.Tracef("RTT: %s", time.Since(start))
@@ -419,8 +470,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		//
 		// See https://github.com/AdguardTeam/AdGuardHome/issues/3551.
 		if len(req.Question) > 0 && len(reply.Question) == 0 {
-			reply.Question = make([]dns.Question, 1)
-			reply.Question[0] = req.Question[0]
+			reply.Question = []dns.Question{req.Question[0]}
 		}
 	} else {
 		reply = p.genServerFailure(req)
@@ -478,8 +528,8 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	ok, err = p.replyFromUpstream(dctx)
 
 	// Don't cache the responses having CD flag, just like Dnsmasq does.  It
-	// prevents the cache from being poisoned with unvalidated answers which may
-	// differ from validated ones.
+	// prevents the cache from being poisoned with unvalidated answers which
+	// may differ from validated ones.
 	//
 	// See https://github.com/imp/dnsmasq/blob/770bce967cfc9967273d0acfb3ea018fb7b17522/src/forward.c#L1169-L1172.
 	if cacheWorks && ok && !dctx.Res.CheckingDisabled {
@@ -487,7 +537,11 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 		p.cacheResp(dctx)
 	}
 
-	filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
+	// It is possible that the response is nil if the upstream hasn't been
+	// chosen.
+	if dctx.Res != nil {
+		filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
+	}
 
 	// Complete the response.
 	dctx.scrub()

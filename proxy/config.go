@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/tls"
 	"net"
+	"net/netip"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -74,16 +75,30 @@ type Config struct {
 	// Upstream DNS servers and their settings
 	// --
 
-	UpstreamConfig *UpstreamConfig     // Upstream DNS servers configuration
-	Fallbacks      []upstream.Upstream // list of fallback resolvers (which will be used if regular upstream failed to answer)
-	UpstreamMode   UpstreamModeType    // How to request the upstream servers
+	// UpstreamConfig is a general set of DNS servers to forward requests to.
+	UpstreamConfig *UpstreamConfig
+
+	// PrivateRDNSUpstreamConfig is the set of upstream DNS servers for
+	// resolving private IP addresses.  All the requests considered private will
+	// be resolved via these upstream servers.  Such queries will finish with
+	// [upstream.ErrNoUpstream] if it's empty.
+	PrivateRDNSUpstreamConfig *UpstreamConfig
+
+	// Fallbacks is a list of fallback resolvers.  Those will be used if the
+	// general set fails responding.
+	Fallbacks []upstream.Upstream
+
+	// UpstreamMode determines the logic through which upstreams will be used.
+	UpstreamMode UpstreamModeType
+
 	// FastestPingTimeout is the timeout for waiting the first successful
-	// dialing when the UpstreamMode is set to UModeFastestAddr.
-	// Non-positive value will be replaced with the default one.
+	// dialing when the UpstreamMode is set to UModeFastestAddr.  Non-positive
+	// value will be replaced with the default one.
 	FastestPingTimeout time.Duration
 
-	// BogusNXDomain - transforms responses that contain at least one of the given IP addresses into NXDOMAIN
-	// Similar to dnsmasq's "bogus-nxdomain"
+	// BogusNXDomain is the set of networks used to transform responses into
+	// NXDOMAIN ones if they contain at least a single IP address within these
+	// networks.  It's similar to dnsmasq's "bogus-nxdomain".
 	BogusNXDomain []*net.IPNet
 
 	// Enable EDNS Client Subnet option DNS requests to the upstream server will
@@ -107,7 +122,9 @@ type Config struct {
 	// store these responses in general cache (without subnet) so they will
 	// never be used for clients with public IP addresses.
 	EnableEDNSClientSubnet bool
-	EDNSAddr               net.IP // ECS IP used in request
+
+	// EDNSAddr is the ECS IP used in request.
+	EDNSAddr net.IP
 
 	// Cache settings
 	// --
@@ -141,6 +158,17 @@ type Config struct {
 	// The size of the read buffer on the underlying socket. Larger read buffers can handle
 	// larger bursts of requests before packets get dropped.
 	UDPBufferSize int
+
+	// UseDNS64 enables DNS64 handling.  If true, proxy will translate IPv4
+	// answers into IPv6 answers using first of DNS64Prefs.  Note also that PTR
+	// requests for addresses within the specified networks are considered
+	// private and will be forwarded as PrivateRDNSUpstreamConfig specifies.
+	UseDNS64 bool
+
+	// DNS64Prefs is the set of NAT64 prefixes used for DNS64 handling.  nil
+	// value disables the feature.  An empty value will be interpreted as the
+	// default Well-Known Prefix.
+	DNS64Prefs []netip.Prefix
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

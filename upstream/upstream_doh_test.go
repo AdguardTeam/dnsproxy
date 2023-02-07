@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -111,6 +111,9 @@ func TestUpstreamDoH(t *testing.T) {
 
 func TestUpstreamDoH_raceReconnect(t *testing.T) {
 	// TODO(ameshkov): fix other races before removing this.
+	//
+	// Race issues in quic-go:
+	// https://github.com/quic-go/quic-go/issues/3694
 	if os.Getenv("CI") == "1" {
 		t.Skip("Skipping this test on CI until all races are fixed")
 	}
@@ -434,7 +437,16 @@ func startDoHServer(
 		udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", tcpAddr.Port))
 		require.NoError(t, err)
 
-		listenerH3, err = quic.ListenAddrEarly(udpAddr.String(), tlsConfigH3, &quic.Config{})
+		// QUIC configuration with the 0-RTT support enabled by default.
+		quicConfig := &quic.Config{
+			RequireAddressValidation: func(net.Addr) (ok bool) {
+				return true
+			},
+			Allow0RTT: func(net.Addr) (ok bool) {
+				return true
+			},
+		}
+		listenerH3, err = quic.ListenAddrEarly(udpAddr.String(), tlsConfigH3, quicConfig)
 		require.NoError(t, err)
 
 		// Run the H3 server.

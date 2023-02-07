@@ -12,8 +12,8 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 	// controls the period with with keep-alive frames are being sent to the
 	// connection. We set it to 20s as it would be in the quic-go@v0.27.1 with
 	// KeepAlive field set to true This value is specified in
-	// https://pkg.go.dev/github.com/lucas-clemente/quic-go/internal/protocol#MaxKeepAliveInterval.
+	// https://pkg.go.dev/github.com/quic-go/quic-go/internal/protocol#MaxKeepAliveInterval.
 	//
 	// TODO(ameshkov):  Consider making it configurable.
 	QUICKeepAlivePeriod = time.Second * 20
@@ -400,7 +400,7 @@ func isQUICRetryError(err error) (ok bool) {
 		// and that's why one can run into this.
 		// In addition to that, quic-go HTTP3 client implementation does not
 		// clean up dead connections (this one is specific to DoH3 upstream):
-		// https://github.com/lucas-clemente/quic-go/issues/765
+		// https://github.com/quic-go/quic-go/issues/765
 		return true
 	}
 

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
 )
 
 // startListeners configures and starts listener loops

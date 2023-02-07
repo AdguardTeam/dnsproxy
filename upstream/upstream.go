@@ -17,8 +17,8 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
-	"github.com/lucas-clemente/quic-go/logging"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go/logging"
 )
 
 // Upstream is an interface for a DNS resolver.

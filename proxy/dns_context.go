@@ -8,8 +8,8 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/ameshkov/dnscrypt/v2"
-	"github.com/lucas-clemente/quic-go"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
 )
 
 // DNSContext represents a DNS request message context

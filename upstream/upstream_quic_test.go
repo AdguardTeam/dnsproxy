@@ -16,9 +16,9 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/logging"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/logging"
 	"github.com/stretchr/testify/require"
 )
 
@@ -261,8 +261,11 @@ func startDoQServer(t *testing.T, port int) (s *testDoQServer) {
 		tlsConfig,
 		&quic.Config{
 			// Necessary for 0-RTT.
-			RequireAddressValidation: func(addr net.Addr) (ok bool) {
+			RequireAddressValidation: func(net.Addr) (ok bool) {
 				return false
+			},
+			Allow0RTT: func(net.Addr) (ok bool) {
+				return true
 			},
 		},
 	)
@@ -354,9 +357,9 @@ type quicConnTracer struct {
 // type check
 var _ logging.ConnectionTracer = (*quicConnTracer)(nil)
 
-// SentPacket implements the logging.ConnectionTracer interface for
+// SentLongHeaderPacket implements the logging.ConnectionTracer interface for
 // *quicConnTracer.
-func (q *quicConnTracer) SentPacket(
+func (q *quicConnTracer) SentLongHeaderPacket(
 	hdr *logging.ExtendedHeader,
 	_ logging.ByteCount,
 	_ *logging.AckFrame,

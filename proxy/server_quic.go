@@ -157,7 +157,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 	// indicated as error here.  Instead, we should check the number of bytes
 	// received.
 	buf := *bufPtr
-	n, err := stream.Read(buf)
+	n, err := readAll(stream, buf)
 
 	// Note that io.EOF does not really mean that there's any error, this is
 	// just a signal that there will be no data to read anymore from this
@@ -318,6 +318,7 @@ func logShortQUICRead(err error) {
 
 // isQUICNonCrit returns true if err is a non-critical error, most probably
 // related to the current QUIC implementation.
+//
 // TODO(ameshkov): re-test when updating quic-go.
 func isQUICNonCrit(err error) (ok bool) {
 	if err == nil {
@@ -413,4 +414,30 @@ func (v *quicAddrValidator) requiresValidation(addr net.Addr) (ok bool) {
 	// Address not found in the cache so return true to make sure the server
 	// will require address validation.
 	return true
+}
+
+// readAll reads from r until an error or io.EOF into the specified buffer buf.
+// A successful call returns err == nil, not err == io.EOF.  If the buffer is
+// too small, it returns error io.ErrShortBuffer.  This function has some
+// similarities to io.ReadAll, but it reads to the specified buffer and not
+// allocates (and grows) a new one.  Also, it is completely different from
+// io.ReadFull as that one reads the exact number of bytes (buffer length) and
+// readAll reads until io.EOF or until the buffer is filled.
+func readAll(r io.Reader, buf []byte) (n int, err error) {
+	for {
+		if n == len(buf) {
+			return n, io.ErrShortBuffer
+		}
+
+		var read int
+		read, err = r.Read(buf[n:])
+		n += read
+
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return n, err
+		}
+	}
 }

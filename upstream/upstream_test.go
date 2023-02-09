@@ -228,6 +228,10 @@ func TestAddressToUpstream(t *testing.T) {
 		addr: "h3://one.one.one.one",
 		opt:  opt,
 		want: "https://one.one.one.one:443",
+	}, {
+		addr: "!",
+		opt:  nil,
+		want: "!",
 	}}
 
 	for _, tc := range testCases {

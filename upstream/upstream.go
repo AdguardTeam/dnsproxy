@@ -133,6 +133,7 @@ const (
 //   - https://dns.adguard.com/dns-query for DNS-over-HTTPS;
 //   - h3://dns.google for DNS-over-HTTPS that only works with HTTP/3;
 //   - sdns://... for DNS stamp, see https://dnscrypt.info/stamps-specifications.
+//   - ! for an Upstream instance that refuses all queries
 //
 // opts are applied to the u.  nil is a valid value for opts.
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
@@ -148,6 +149,10 @@ func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 		}
 
 		return urlToUpstream(uu, opts)
+	}
+
+	if addr == "!" {
+		return &refuseDNS{}, nil
 	}
 
 	var host, port string

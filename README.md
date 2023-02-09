@@ -280,9 +280,10 @@ You can specify upstreams that will be used for a specific domain(s). We use the
 If one or more domains are specified, that upstream (`upstreamString`) is used only for those domains. Usually, it is used for private nameservers. For instance, if you have a nameserver on your network which deals with `xxx.internal.local` at `192.168.0.1` then you can specify `[/internal.local/]192.168.0.1`, and dnsproxy will send all queries to that nameserver. Everything else will be sent to the default upstreams (which are mandatory!).
 
 1. An empty domain specification, // has the special meaning of "unqualified names only" ie names without any dots in them.
-2. More specific domains take precedence over less specific domains, so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send queries for *.host.com to 1.2.3.4, except *.www.host.com, which will go to 2.3.4.5
-3. The special server address `#` means, "use the standard servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for \*.host.com to 1.2.3.4, except \*.www.host.com which will be forwarded as usual.
-4. The wildcard `*` has special meaning of "any sub-domain", so: `--upstream=[/*.host.com/]1.2.3.4` will send queries for \*.host.com to 1.2.3.4, but host.com will be forwarded to default upstreams.
+2. More specific domains take precedence over less specific domains, so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send queries for \*.host.com to 1.2.3.4, except \*.www.host.com, which will go to 2.3.4.5
+3. The special server address `#` means "use the standard servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for \*.host.com to 1.2.3.4, except \*.www.host.com which will be forwarded as usual.
+4. The special server address `!` means "refuse all queries", so: `--upstream=[/host.com/]!` will respond to all queries for \*.host.com with a REFUSED response.
+5. The wildcard `*` has special meaning of "any sub-domain", so: `--upstream=[/*.host.com/]1.2.3.4` will send queries for \*.host.com to 1.2.3.4, but host.com will be forwarded to default upstreams.
 
 **Examples**
 

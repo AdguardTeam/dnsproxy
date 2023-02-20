@@ -108,10 +108,9 @@ func IPFromReversedAddr(arpa string) (ip net.IP, err error) {
 	arpa = strings.TrimSuffix(arpa, ".")
 	err = ValidateDomainName(arpa)
 	if err != nil {
-		bdErr := err.(*AddrError)
-		bdErr.Kind = AddrKindARPA
+		replaceKind(err, AddrKindARPA)
 
-		return nil, bdErr
+		return nil, err
 	}
 
 	defer makeAddrError(&err, arpa, AddrKindARPA)
@@ -221,7 +220,7 @@ func ipv4NetFromReversed(arpa string) (subnet *net.IPNet, err error) {
 			// See RFC 1035 Section 3.5.
 			return nil, &AddrError{
 				Err:  errors.Error("leading zero is forbidden at this position"),
-				Kind: AddrKindLabel,
+				Kind: LabelKindDomain,
 				Addr: addr[octetIdx:],
 			}
 		}
@@ -336,10 +335,9 @@ func SubnetFromReversedAddr(arpa string) (subnet *net.IPNet, err error) {
 	arpa = strings.TrimSuffix(arpa, ".")
 	err = ValidateDomainName(arpa)
 	if err != nil {
-		bdErr := err.(*AddrError)
-		bdErr.Kind = AddrKindARPA
+		replaceKind(err, AddrKindARPA)
 
-		return nil, bdErr
+		return nil, err
 	}
 
 	defer makeAddrError(&err, arpa, AddrKindARPA)

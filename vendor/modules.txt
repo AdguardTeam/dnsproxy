@@ -1,4 +1,4 @@
-# github.com/AdguardTeam/golibs v0.11.4
+# github.com/AdguardTeam/golibs v0.12.0
 ## explicit; go 1.18
 github.com/AdguardTeam/golibs/cache
 github.com/AdguardTeam/golibs/errors

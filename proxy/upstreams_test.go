@@ -15,6 +15,7 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 		"[/www.google.com//]1.2.3.4",
 		"[/maps.google.com/]#",
 		"[/www.google.com/]tls://1.1.1.1",
+		"[/_acme-challenge.example.org/]#",
 	}
 
 	config, err := ParseUpstreamsConfig(
@@ -31,6 +32,7 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 	assertUpstreamsForDomain(t, config, "www2.google.com.", []string{"4.3.2.1:53"})
 	assertUpstreamsForDomain(t, config, "internal.local.", []string{"4.3.2.1:53"})
 	assertUpstreamsForDomain(t, config, "google.", []string{"1.2.3.4:53"})
+	assertUpstreamsForDomain(t, config, "_acme-challenge.example.org.", []string{})
 	assertUpstreamsForDomain(t, config, "maps.google.com.", []string{})
 }
 

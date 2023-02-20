@@ -3,13 +3,13 @@
 package netutil
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"golang.org/x/exp/slices"
 	"golang.org/x/net/idna"
 )
@@ -164,6 +164,37 @@ func ValidateMAC(mac net.HardwareAddr) (err error) {
 // [RFC 1035]: https://datatracker.ietf.org/doc/html/rfc1035
 const MaxDomainLabelLen = 63
 
+// ValidateTLDLabel validates the top-level domain label in accordance to [RFC
+// 3696 Section 2].  In addition to the validations performed by
+// [ValidateHostnameLabel], it also checks that the label contains at least one
+// non-digit character.
+//
+// Any error returned will have the underlying type of [*LabelError].
+//
+// [RFC 3696 Section 2]: https://datatracker.ietf.org/doc/html/rfc3696#section-2
+func ValidateTLDLabel(tld string) (err error) {
+	defer makeLabelError(&err, tld, LabelKindTLD)
+
+	if err = ValidateHostnameLabel(tld); err != nil {
+		err = errors.Unwrap(err)
+		replaceKind(err, LabelKindTLD)
+
+		return err
+	}
+
+	for _, r := range tld {
+		if r < '0' || r > '9' {
+			return nil
+		}
+	}
+
+	// There is a requirement for top-level domain label to contain at least one
+	// non-digit character.  See [RFC 3696 Section 2].
+	//
+	// [RFC 3696 Section 2]: https://datatracker.ietf.org/doc/html/rfc3696#section-2
+	return errors.Error("all octets are numeric")
+}
+
 // MaxDomainNameLen is the maximum allowed length of a full domain name
 // according to [RFC 1035].
 //
@@ -172,12 +203,56 @@ const MaxDomainLabelLen = 63
 // [RFC 1035]: https://datatracker.ietf.org/doc/html/rfc1035
 const MaxDomainNameLen = 253
 
-// ValidateDomainNameLabel returns an error if label is not a valid label of
-// a domain name.  An empty label is considered invalid.
+// ValidateDomainName validates the domain name in accordance to [RFC 1035] and
+// [RFC 3696 Section 2].  As opposed to [ValidateHostname], this function only
+// validates the lengths of the name itself and its labels, except the TLD.
 //
 // Any error returned will have the underlying type of [*AddrError].
+//
+// [RFC 1035]: https://datatracker.ietf.org/doc/html/rfc1035
+// [RFC 3696 Section 2]: https://datatracker.ietf.org/doc/html/rfc3696#section-2
+func ValidateDomainName(name string) (err error) {
+	defer makeAddrError(&err, name, AddrKindDomainName)
+
+	name, err = idna.ToASCII(name)
+	if err != nil {
+		return err
+	}
+
+	if name == "" {
+		return ErrAddrIsEmpty
+	} else if l := len(name); l > MaxDomainNameLen {
+		return &LengthError{
+			Kind:   AddrKindDomainName,
+			Max:    MaxDomainNameLen,
+			Length: l,
+		}
+	}
+
+	labels := strings.Split(name, ".")
+	tldIdx := len(labels) - 1
+	for _, l := range labels[:tldIdx] {
+		err = ValidateDomainNameLabel(l)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Use stricter rules for the TLD.
+	return ValidateTLDLabel(labels[tldIdx])
+}
+
+// ValidateDomainNameLabel returns an error if label is not a valid label of a
+// domain name.  An empty label is considered invalid.  Essentially it validates
+// the length of the label since the name in DNS is permitted to contain any
+// printable ASCII character, see [RFC 3696 Section 2].  label must only contain
+// ASCII characters, see [idna.ToASCII].
+//
+// Any error returned will have the underlying type of [*LabelError].
+//
+// [RFC 3696 Section 2]: https://datatracker.ietf.org/doc/html/rfc3696#section-2
 func ValidateDomainNameLabel(label string) (err error) {
-	defer makeAddrError(&err, label, AddrKindLabel)
+	defer makeLabelError(&err, label, LabelKindDomain)
 
 	if label == "" {
 		return ErrLabelIsEmpty
@@ -186,15 +261,35 @@ func ValidateDomainNameLabel(label string) (err error) {
 	l := len(label)
 	if l > MaxDomainLabelLen {
 		return &LengthError{
-			Kind:   AddrKindLabel,
+			Kind:   LabelKindDomain,
 			Max:    MaxDomainLabelLen,
 			Length: l,
 		}
 	}
 
+	return nil
+}
+
+// ValidateHostnameLabel returns an error if label is not a valid label of a
+// domain name.  An empty label is considered invalid.
+//
+// Any error returned will have the underlying type of [*LabelError].
+func ValidateHostnameLabel(label string) (err error) {
+	defer makeLabelError(&err, label, LabelKindHost)
+
+	if err = ValidateDomainNameLabel(label); err != nil {
+		err = errors.Unwrap(err)
+		if lerr, ok := err.(*LengthError); ok {
+			lerr.Kind = LabelKindHost
+		}
+
+		return err
+	}
+
+	l := len(label)
 	if r := rune(label[0]); !IsValidHostOuterRune(r) {
 		return &RuneError{
-			Kind: AddrKindLabel,
+			Kind: LabelKindHost,
 			Rune: r,
 		}
 	} else if l == 1 {
@@ -204,7 +299,7 @@ func ValidateDomainNameLabel(label string) (err error) {
 	for _, r := range label[1 : l-1] {
 		if !IsValidHostInnerRune(r) {
 			return &RuneError{
-				Kind: AddrKindLabel,
+				Kind: LabelKindHost,
 				Rune: r,
 			}
 		}
@@ -212,7 +307,7 @@ func ValidateDomainNameLabel(label string) (err error) {
 
 	if r := rune(label[l-1]); !IsValidHostOuterRune(r) {
 		return &RuneError{
-			Kind: AddrKindLabel,
+			Kind: LabelKindHost,
 			Rune: r,
 		}
 	}
@@ -220,16 +315,17 @@ func ValidateDomainNameLabel(label string) (err error) {
 	return nil
 }
 
-// ValidateDomainName validates the domain name in accordance to RFC 952,
-// [RFC 1035], and with [RFC 1123]'s inclusion of digits at the start of the
-// host.  It doesn't validate against two or more hyphens to allow punycode and
+// ValidateHostname validates the domain name in accordance to [RFC 952], [RFC
+// 1035], and with [RFC 1123]'s inclusion of digits at the start of the host.
+// It doesn't validate against two or more hyphens to allow punycode and
 // internationalized domains.
 //
 // Any error returned will have the underlying type of [*AddrError].
 //
+// [RFC 952]: https://datatracker.ietf.org/doc/html/rfc952
 // [RFC 1035]: https://datatracker.ietf.org/doc/html/rfc1035
 // [RFC 1123]: https://datatracker.ietf.org/doc/html/rfc1123
-func ValidateDomainName(name string) (err error) {
+func ValidateHostname(name string) (err error) {
 	defer makeAddrError(&err, name, AddrKindName)
 
 	name, err = idna.ToASCII(name)
@@ -248,14 +344,15 @@ func ValidateDomainName(name string) (err error) {
 	}
 
 	labels := strings.Split(name, ".")
-	for _, l := range labels {
-		err = ValidateDomainNameLabel(l)
+	tldIdx := len(labels) - 1
+	for _, l := range labels[:tldIdx] {
+		err = ValidateHostnameLabel(l)
 		if err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return ValidateTLDLabel(labels[tldIdx])
 }
 
 // MaxServiceLabelLen is the maximum allowed length of a service name label
@@ -267,15 +364,15 @@ const MaxServiceLabelLen = 16
 // ValidateServiceNameLabel returns an error if label is not a valid label of
 // a service domain name.  An empty label is considered invalid.
 //
-// Any error returned will have the underlying type of [*AddrError].
+// Any error returned will have the underlying type of [*LabelError].
 func ValidateServiceNameLabel(label string) (err error) {
-	defer makeAddrError(&err, label, AddrKindSRVLabel)
+	defer makeLabelError(&err, label, LabelKindSRV)
 
-	if label == "" {
+	if label == "" || label == "_" {
 		return ErrLabelIsEmpty
 	} else if r := rune(label[0]); r != '_' {
 		return &RuneError{
-			Kind: AddrKindSRVLabel,
+			Kind: LabelKindSRV,
 			Rune: r,
 		}
 	}
@@ -283,7 +380,7 @@ func ValidateServiceNameLabel(label string) (err error) {
 	l := len(label)
 	if l > MaxServiceLabelLen {
 		return &LengthError{
-			Kind:   AddrKindSRVLabel,
+			Kind:   LabelKindSRV,
 			Max:    MaxServiceLabelLen,
 			Length: l,
 		}
@@ -291,11 +388,9 @@ func ValidateServiceNameLabel(label string) (err error) {
 
 	// TODO(e.burkov):  Validate adjacent hyphens since service labels can't be
 	// internationalized.  See RFC 6336 Section 5.1.
-	if err = ValidateDomainNameLabel(label[1:]); err != nil {
+	if err = ValidateHostnameLabel(label[1:]); err != nil {
 		err = errors.Unwrap(err)
-		if rerr, ok := err.(*RuneError); ok {
-			rerr.Kind = AddrKindSRVLabel
-		}
+		replaceKind(err, LabelKindSRV)
 
 		return err
 	}
@@ -303,12 +398,12 @@ func ValidateServiceNameLabel(label string) (err error) {
 	return nil
 }
 
-// ValidateSRVDomainName validates of domain name assuming it belongs to the
-// superset of service domain names in accordance to [RFC 2782] and [RFC 6763].
-// It doesn't validate against two or more hyphens to allow punycode and
-// internationalized domains.
+// ValidateSRVDomainName validates name assuming it belongs to the superset of
+// service domain names in accordance to [RFC 2782] and [RFC 6763].  It doesn't
+// validate against two or more hyphens to allow punycode and internationalized
+// domains.
 //
-// Any error returned will have the underlying type of *AddrError.
+// Any error returned will have the underlying type of [*AddrError].
 //
 // [RFC 2782]: https://datatracker.ietf.org/doc/html/rfc2782
 // [RFC 6763]: https://datatracker.ietf.org/doc/html/rfc6763
@@ -331,16 +426,17 @@ func ValidateSRVDomainName(name string) (err error) {
 	}
 
 	labels := strings.Split(name, ".")
-	for _, l := range labels {
-		if l != "" && l[0] == '_' {
+	tldIdx := len(labels) - 1
+	for _, l := range labels[:tldIdx] {
+		if strings.HasPrefix(l, "_") {
 			err = ValidateServiceNameLabel(l)
 		} else {
-			err = ValidateDomainNameLabel(l)
+			err = ValidateHostnameLabel(l)
 		}
 		if err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return ValidateTLDLabel(labels[tldIdx])
 }

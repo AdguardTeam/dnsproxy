@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -110,14 +109,6 @@ func TestUpstreamDoH(t *testing.T) {
 }
 
 func TestUpstreamDoH_raceReconnect(t *testing.T) {
-	// TODO(ameshkov): fix other races before removing this.
-	//
-	// Race issues in quic-go:
-	// https://github.com/quic-go/quic-go/issues/3694
-	if os.Getenv("CI") == "1" {
-		t.Skip("Skipping this test on CI until all races are fixed")
-	}
-
 	testCases := []struct {
 		name             string
 		http3Enabled     bool

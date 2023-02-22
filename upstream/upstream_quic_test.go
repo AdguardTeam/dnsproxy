@@ -223,7 +223,7 @@ func (s *testDoQServer) handleQUICConnection(conn quic.EarlyConnection) {
 // handleQUICStream handles new QUIC streams, reads DNS messages and responds to
 // them.
 func (s *testDoQServer) handleQUICStream(stream quic.Stream) (err error) {
-	defer stream.Close()
+	defer log.OnCloserError(stream, log.DEBUG)
 
 	buf := make([]byte, dns.MaxMsgSize+2)
 	_, err = stream.Read(buf)

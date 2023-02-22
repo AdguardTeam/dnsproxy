@@ -1,3 +1,4 @@
+// Package main is responsible for command-line interface of dnsproxy.
 package main
 
 import (

@@ -5,8 +5,8 @@ plan:
   key: DNSPROXYSPECS
   name: dnsproxy - Build and run tests
 variables:
-  dockerGo: adguard/golang-ubuntu:5.4
-  dockerLint: golangci/golangci-lint:v1.50.0
+  dockerGo: 'golang:1.19.6'
+  dockerLint: golangci/golangci-lint:v1.51
 
 stages:
   - Lint:

@@ -125,7 +125,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
-		defer r.Body.Close()
+		defer log.OnCloserError(r.Body, log.DEBUG)
 	default:
 		log.Tracef("Wrong HTTP method: %s", r.Method)
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)

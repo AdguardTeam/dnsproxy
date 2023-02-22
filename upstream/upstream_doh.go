@@ -212,7 +212,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	if err != nil {
 		return nil, fmt.Errorf("requesting %s: %w", p.boot.URL, err)
 	}
-	defer httpResp.Body.Close()
+	defer log.OnCloserError(httpResp.Body, log.DEBUG)
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {

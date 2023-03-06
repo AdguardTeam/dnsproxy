@@ -154,7 +154,7 @@ DNS-over-HTTPS upstream with enabled HTTP/3 support (chooses it if it's faster):
 
 DNS-over-HTTPS upstream with forced HTTP/3 (no fallback to other protocol):
 ```shell
-./dnsproxy -u h3://dns.google/dns-query
+./dnsproxy -u h3://dns.google/dns-query --http3
 ```
 
 DNSCrypt upstream ([DNS Stamp](https://dnscrypt.info/stamps) of AdGuard DNS):

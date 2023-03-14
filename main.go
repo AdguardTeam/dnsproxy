@@ -74,7 +74,7 @@ type Options struct {
 	// Minimum TLS version
 	TLSMinVersion float32 `yaml:"tls-min-version" long:"tls-min-version" description:"Minimum TLS version, for example 1.0" optional:"yes"`
 
-	// Minimum TLS version
+	// Maximum TLS version
 	TLSMaxVersion float32 `yaml:"tls-max-version" long:"tls-max-version" description:"Maximum TLS version, for example 1.3" optional:"yes"`
 
 	// Disable TLS certificate verification

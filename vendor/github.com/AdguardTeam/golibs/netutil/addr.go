@@ -10,18 +10,10 @@ import (
 	"strings"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"golang.org/x/exp/slices"
 	"golang.org/x/net/idna"
 )
 
 // Various Network Address Utilities
-
-// CloneMAC returns a clone of a MAC address.
-//
-// Deprecated: use [slices.Clone].
-func CloneMAC(mac net.HardwareAddr) (clone net.HardwareAddr) {
-	return slices.Clone(mac)
-}
 
 // CloneURL returns a deep clone of u.  The User pointer of clone is the same,
 // since a *url.Userinfo is effectively an immutable value.
@@ -146,7 +138,10 @@ func ValidateMAC(mac net.HardwareAddr) (err error) {
 
 	switch l := len(mac); l {
 	case 0:
-		return ErrAddrIsEmpty
+		return &LengthError{
+			Kind:   AddrKindMAC,
+			Length: 0,
+		}
 	case 6, 8, 20:
 		return nil
 	default:
@@ -220,7 +215,10 @@ func ValidateDomainName(name string) (err error) {
 	}
 
 	if name == "" {
-		return ErrAddrIsEmpty
+		return &LengthError{
+			Kind:   AddrKindDomainName,
+			Length: 0,
+		}
 	} else if l := len(name); l > MaxDomainNameLen {
 		return &LengthError{
 			Kind:   AddrKindDomainName,
@@ -255,7 +253,10 @@ func ValidateDomainNameLabel(label string) (err error) {
 	defer makeLabelError(&err, label, LabelKindDomain)
 
 	if label == "" {
-		return ErrLabelIsEmpty
+		return &LengthError{
+			Kind:   LabelKindDomain,
+			Length: 0,
+		}
 	}
 
 	l := len(label)
@@ -279,9 +280,7 @@ func ValidateHostnameLabel(label string) (err error) {
 
 	if err = ValidateDomainNameLabel(label); err != nil {
 		err = errors.Unwrap(err)
-		if lerr, ok := err.(*LengthError); ok {
-			lerr.Kind = LabelKindHost
-		}
+		replaceKind(err, LabelKindHost)
 
 		return err
 	}
@@ -334,7 +333,10 @@ func ValidateHostname(name string) (err error) {
 	}
 
 	if name == "" {
-		return ErrAddrIsEmpty
+		return &LengthError{
+			Kind:   AddrKindName,
+			Length: 0,
+		}
 	} else if l := len(name); l > MaxDomainNameLen {
 		return &LengthError{
 			Kind:   AddrKindName,
@@ -369,7 +371,10 @@ func ValidateServiceNameLabel(label string) (err error) {
 	defer makeLabelError(&err, label, LabelKindSRV)
 
 	if label == "" || label == "_" {
-		return ErrLabelIsEmpty
+		return &LengthError{
+			Kind:   LabelKindSRV,
+			Length: 0,
+		}
 	} else if r := rune(label[0]); r != '_' {
 		return &RuneError{
 			Kind: LabelKindSRV,
@@ -416,7 +421,10 @@ func ValidateSRVDomainName(name string) (err error) {
 	}
 
 	if name == "" {
-		return ErrAddrIsEmpty
+		return &LengthError{
+			Kind:   AddrKindSRVName,
+			Length: 0,
+		}
 	} else if l := len(name); l > MaxDomainNameLen {
 		return &LengthError{
 			Kind:   AddrKindSRVName,

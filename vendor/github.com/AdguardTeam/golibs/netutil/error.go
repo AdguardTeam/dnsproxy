@@ -12,14 +12,6 @@ import (
 // tests to test the whole content of the errors.
 
 const (
-	// ErrAddrIsEmpty is the underlying error returned from validation
-	// functions when an address is empty.
-	ErrAddrIsEmpty errors.Error = "address is empty"
-
-	// ErrLabelIsEmpty is the underlying error returned from validation
-	// functions when a domain name label is empty.
-	ErrLabelIsEmpty errors.Error = "label is empty"
-
 	// ErrNotAReversedIP is the underlying error returned from validation
 	// functions when a domain name is not a full reversed IP address.
 	ErrNotAReversedIP errors.Error = "not a full reversed ip address"
@@ -184,6 +176,10 @@ type LengthError struct {
 func (err *LengthError) Error() (msg string) {
 	if err.Max > 0 {
 		return fmt.Sprintf("%s is too long: got %d, max %d", err.Kind, err.Length, err.Max)
+	}
+
+	if err.Length == 0 {
+		return fmt.Sprintf("%s is empty", err.Kind)
 	}
 
 	format := "bad %s length %d, allowed: %v"

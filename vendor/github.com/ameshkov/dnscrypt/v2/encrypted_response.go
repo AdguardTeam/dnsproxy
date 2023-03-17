@@ -32,7 +32,7 @@ func (r *EncryptedResponse) Encrypt(packet []byte, sharedKey [sharedKeySize]byte
 	var response []byte
 
 	// Step 1: generate nonce
-	rand.Read(r.Nonce[12:16])
+	_, _ = rand.Read(r.Nonce[12:16])
 	binary.BigEndian.PutUint64(r.Nonce[16:nonceSize], uint64(time.Now().UnixNano()))
 
 	// Unencrypted part of the query:

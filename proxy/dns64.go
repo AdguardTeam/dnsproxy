@@ -302,6 +302,10 @@ func (p *Proxy) performDNS64(
 	origResp *dns.Msg,
 	upstreams []upstream.Upstream,
 ) (u upstream.Upstream) {
+	if origResp == nil {
+		return nil
+	}
+
 	dns64Req := p.checkDNS64(origReq, origResp)
 	if dns64Req == nil {
 		return nil

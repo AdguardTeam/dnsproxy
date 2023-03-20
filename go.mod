@@ -3,8 +3,8 @@ module github.com/AdguardTeam/dnsproxy
 go 1.19
 
 require (
-	github.com/AdguardTeam/golibs v0.12.0
-	github.com/ameshkov/dnscrypt/v2 v2.2.5
+	github.com/AdguardTeam/golibs v0.13.0
+	github.com/ameshkov/dnscrypt/v2 v2.2.6
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 	github.com/bluele/gcache v0.0.2
@@ -12,10 +12,10 @@ require (
 	github.com/miekg/dns v1.1.50
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/quic-go/quic-go v0.33.0
-	github.com/stretchr/testify v1.8.0
-	golang.org/x/exp v0.0.0-20230124195608-d38c7dcee874
-	golang.org/x/net v0.5.0
-	golang.org/x/sys v0.4.0
+	github.com/stretchr/testify v1.8.2
+	golang.org/x/exp v0.0.0-20230306221820-f0f767cdffd6
+	golang.org/x/net v0.8.0
+	golang.org/x/sys v0.6.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -34,8 +34,8 @@ require (
 	github.com/quic-go/qtls-go1-19 v0.2.1 // indirect
 	github.com/quic-go/qtls-go1-20 v0.1.1 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
-	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
-	golang.org/x/tools v0.5.0 // indirect
+	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )

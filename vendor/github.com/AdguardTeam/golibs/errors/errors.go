@@ -1,5 +1,5 @@
 // Package errors is a drop-in replacement and extension of the Go standard
-// library's package errors.
+// library's package [errors].
 package errors
 
 import (
@@ -27,8 +27,7 @@ type Wrapper interface {
 // As finds the first error in err's chain that matches target, and if so, sets
 // target to that error value and returns true.  Otherwise, it returns false.
 //
-// It calls errors.As from the Go standard library.  See go doc errors.As for
-// the full documentation.
+// It calls [errors.As] from the Go standard library.
 func As(err error, target any) (ok bool) {
 	return stderrors.As(err, target)
 }
@@ -41,8 +40,7 @@ type Aser interface {
 
 // Is reports whether any error in err's chain matches target.
 //
-// It calls errors.Is from the Go standard library.  See go doc errors.Is for
-// the full documentation.
+// It calls [errors.Is] from the Go standard library.
 func Is(err, target error) (ok bool) {
 	return stderrors.Is(err, target)
 }
@@ -56,10 +54,9 @@ type Iser interface {
 // New returns an error that formats as the given msg.  Each call to New returns
 // a distinct error value even if the text is identical.
 //
-// It calls errors.New from the Go standard library.  See go doc errors.New for
-// the full documentation.
+// It calls [errors.New] from the Go standard library.
 //
-// Deprecated: Use type Error and constant errors instead.
+// Deprecated: Use type [Error] and constant errors instead.
 func New(msg string) (err error) {
 	return stderrors.New(msg)
 }
@@ -67,8 +64,7 @@ func New(msg string) (err error) {
 // Unwrap returns the result of calling the Unwrap method on err, if err's type
 // contains an Unwrap method returning error.  Otherwise, Unwrap returns nil.
 //
-// It calls errors.Unwrap from the Go standard library.  See go doc
-// errors.Unwrap for the full documentation.
+// It calls [errors.Unwrap] from the Go standard library.
 func Unwrap(err error) (unwrapped error) {
 	return stderrors.Unwrap(err)
 }
@@ -78,9 +74,9 @@ func Unwrap(err error) (unwrapped error) {
 // differently, for example to log them as warnings.
 //
 // Method Deferred returns a bool to mirror the behavior of types like
-// net.Error and allow implementations to decide if the error is a deferred one
-// dynamically.  Users of this API must check it's return value as well as the
-// result errors.As.
+// [net.Error] and allow implementations to decide if the error is a deferred
+// one dynamically.  Users of this API must check it's return value as well as
+// the result [errors.As].
 //
 //	if derr := errors.Deferred(nil); errors.As(err, &derr) && derr.Deferred() {
 //	        // …
@@ -97,17 +93,23 @@ type deferredError struct {
 	error
 }
 
-// Deferred implements the Deferred interface for deferredError.
+// type check
+var _ Deferred = deferredError{}
+
+// Deferred implements the [Deferred] interface for deferredError.
 func (err deferredError) Deferred() (ok bool) {
 	return true
 }
+
+// type check
+var _ error = deferredError{}
 
 // Error implements the error interface for deferredError.
 func (err deferredError) Error() (msg string) {
 	return fmt.Sprintf("deferred: %s", err.error)
 }
 
-// Unwrap implements the Wrapper interface for deferredError.
+// Unwrap implements the [Wrapper] interface for deferredError.
 func (err deferredError) Unwrap() (unwrapped error) {
 	return err.error
 }
@@ -116,19 +118,25 @@ func (err deferredError) Unwrap() (unwrapped error) {
 // returned by a function.  The Deferred error is the error returned by the
 // cleanup function, such as Close.
 //
-// In pairs returned from WithDeferred, the Deferred error always implements the
-// Deferred interface.
+// In pairs returned from [WithDeferred], the Deferred error always implements
+// the [Deferred] interface.
 type Pair struct {
 	Returned error
 	Deferred error
 }
+
+// type check
+var _ error = (*Pair)(nil)
 
 // Error implements the error interface for *Pair.
 func (err *Pair) Error() string {
 	return fmt.Sprintf("returned: %q, deferred: %q", err.Returned, Unwrap(err.Deferred))
 }
 
-// Unwrap implements the Wrapper interface for *Pair.  It returns the
+// type check
+var _ Wrapper = (*Pair)(nil)
+
+// Unwrap implements the [Wrapper] interface for *Pair.  It returns the
 // Returned error.
 func (err *Pair) Unwrap() (unwrapped error) {
 	return err.Returned
@@ -144,8 +152,8 @@ func (err *Pair) Unwrap() (unwrapped error) {
 //	defer func() { err = errors.WithDeferred(err, f.Close()) }
 //
 // If returned is nil and deferred is non-nil, the returned error implements the
-// Deferred interface.  If both returned and deferred are non-nil, result has
-// the underlying type of *Pair.
+// [Deferred] interface.  If both returned and deferred are non-nil, result has
+// the underlying type of [*Pair].
 //
 // # Warning
 //
@@ -174,12 +182,17 @@ type listError struct {
 }
 
 // List wraps several errors into a single error with an additional message.
+//
+// TODO(a.garipov): Deprecate once golibs switches to Go 1.20.
 func List(msg string, errs ...error) (err error) {
 	return &listError{
 		msg:  msg,
 		errs: errs,
 	}
 }
+
+// type check
+var _ error = (*listError)(nil)
 
 // Error implements the error interface for *listError.
 func (err *listError) Error() (msg string) {
@@ -206,6 +219,9 @@ func (err *listError) Error() (msg string) {
 		return b.String()
 	}
 }
+
+// type check
+var _ Wrapper = (*listError)(nil)
 
 // Unwrap implements the Wrapper interface for *listError.
 func (err *listError) Unwrap() (unwrapped error) {

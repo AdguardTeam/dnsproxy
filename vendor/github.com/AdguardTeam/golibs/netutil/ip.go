@@ -16,14 +16,6 @@ const (
 	IPv6BitLen = net.IPv6len * 8
 )
 
-// CloneIP returns a clone of an IP address that doesn't share the same
-// underlying array with it.
-//
-// Deprecated: use slices.Clone.
-func CloneIP(ip net.IP) (clone net.IP) {
-	return slices.Clone(ip)
-}
-
 // CloneIPs returns a deep clone of ips.
 func CloneIPs(ips []net.IP) (clone []net.IP) {
 	if ips == nil {
@@ -227,7 +219,10 @@ func ValidateIP(ip net.IP) (err error) {
 
 	switch l := len(ip); l {
 	case 0:
-		return ErrAddrIsEmpty
+		return &LengthError{
+			Kind:   AddrKindIP,
+			Length: 0,
+		}
 	case net.IPv4len, net.IPv6len:
 		return nil
 	default:

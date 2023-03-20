@@ -49,7 +49,7 @@ func (q *EncryptedQuery) Encrypt(packet []byte, sharedKey [sharedKeySize]byte) (
 
 	// Step 1: generate nonce
 	binary.BigEndian.PutUint64(q.Nonce[:8], uint64(time.Now().UnixNano()))
-	rand.Read(q.Nonce[8:12])
+	_, _ = rand.Read(q.Nonce[8:12])
 
 	// Unencrypted part of the query:
 	// <client-magic> <client-pk> <client-nonce>

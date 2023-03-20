@@ -305,6 +305,7 @@ func (p *Proxy) performDNS64(
 	if origResp == nil {
 		return nil
 	}
+
 	dns64Req := p.checkDNS64(origReq, origResp)
 	if dns64Req == nil {
 		return nil

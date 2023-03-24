@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/errors"
 
 	"github.com/miekg/dns"
 )
@@ -31,12 +32,18 @@ func (p *Proxy) lookupIPAddr(host string, qtype uint16, ch chan *lookupResult) {
 	ch <- &lookupResult{d.Res, err}
 }
 
+// ErrEmptyHost is returned by LookupIPAddr when the host is empty and can't be
+// resolved.
+const ErrEmptyHost = errors.Error("host is empty")
+
 // LookupIPAddr resolves the specified host IP addresses
 // It sends two DNS queries (A and AAAA) in parallel and returns both results
 func (p *Proxy) LookupIPAddr(host string) ([]net.IPAddr, error) {
-	if host[:1] != "." {
-		host += "."
+	if host == "" {
+		return nil, ErrEmptyHost
 	}
+
+	host = dns.Fqdn(host)
 
 	ch := make(chan *lookupResult)
 	go p.lookupIPAddr(host, dns.TypeA, ch)

@@ -54,6 +54,9 @@ func AppendIPAddrs(ipAddrs *[]net.IPAddr, answers []dns.RR) {
 
 // SortIPAddrs sorts the specified IP addresses array
 // IPv4 addresses go first, then IPv6 addresses
+//
+// Deprecated: This function is deprecated.  Packages in module dnsproxy should
+// use internal/netutil.SortIPAddrs instead.
 func SortIPAddrs(ipAddrs []net.IPAddr) []net.IPAddr {
 	l := len(ipAddrs)
 	if l <= 1 {

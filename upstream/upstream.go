@@ -52,9 +52,6 @@ type Options struct {
 	// DNS servers won't be used at all.
 	ServerIPAddrs []net.IP
 
-	// InsecureSkipVerify disables verifying the server's certificate.
-	InsecureSkipVerify bool
-
 	// HTTPVersions is a list of HTTP versions that should be supported by the
 	// DNS-over-HTTPS client.  If not set, HTTP/1.1 and HTTP/2 will be used.
 	HTTPVersions []HTTPVersion
@@ -75,6 +72,13 @@ type Options struct {
 	// QUICTracer is an optional object that allows tracing every QUIC
 	// connection and logging every packet that goes through.
 	QUICTracer logging.Tracer
+
+	// InsecureSkipVerify disables verifying the server's certificate.
+	InsecureSkipVerify bool
+
+	// PreferIPv6 tells the bootstrapper to prefer IPv6 addresses for an
+	// upstream.
+	PreferIPv6 bool
 }
 
 // Clone copies o to a new struct.  Note, that this is not a deep clone.
@@ -83,11 +87,12 @@ func (o *Options) Clone() (clone *Options) {
 		Bootstrap:                 o.Bootstrap,
 		Timeout:                   o.Timeout,
 		ServerIPAddrs:             o.ServerIPAddrs,
-		InsecureSkipVerify:        o.InsecureSkipVerify,
 		HTTPVersions:              o.HTTPVersions,
 		VerifyServerCertificate:   o.VerifyServerCertificate,
 		VerifyConnection:          o.VerifyConnection,
 		VerifyDNSCryptCertificate: o.VerifyDNSCryptCertificate,
+		InsecureSkipVerify:        o.InsecureSkipVerify,
+		PreferIPv6:                o.PreferIPv6,
 	}
 }
 

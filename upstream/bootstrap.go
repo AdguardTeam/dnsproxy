@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 )
@@ -200,6 +201,8 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("lookup %s: %w", host, err)
 	}
+
+	proxynetutil.SortIPAddrs(addrs, n.options.PreferIPv6)
 
 	resolved := []string{}
 	for _, addr := range addrs {

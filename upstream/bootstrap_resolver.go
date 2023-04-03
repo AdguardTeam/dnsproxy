@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
@@ -141,7 +142,14 @@ func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr,
 		if err != nil {
 			return nil, err
 		}
-		return proxyutil.SortIPAddrs(addrs), nil
+
+		// Use the previous dnsproxy behavior: prefer IPv4 by default.
+		//
+		// TODO(a.garipov): Consider unexporting this entire method or
+		// documenting that the order of addrs is undefined.
+		proxynetutil.SortIPAddrs(addrs, false)
+
+		return addrs, nil
 	}
 
 	if r.upstream == nil || len(host) == 0 {
@@ -171,5 +179,11 @@ func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr,
 		return []net.IPAddr{}, errs[0]
 	}
 
-	return proxyutil.SortIPAddrs(ipAddrs), nil
+	// Use the previous dnsproxy behavior: prefer IPv4 by default.
+	//
+	// TODO(a.garipov): Consider unexporting this entire method or documenting
+	// that the order of addrs is undefined.
+	proxynetutil.SortIPAddrs(ipAddrs, false)
+
+	return ipAddrs, nil
 }

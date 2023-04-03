@@ -169,6 +169,10 @@ type Config struct {
 	// value disables the feature.  An empty value will be interpreted as the
 	// default Well-Known Prefix.
 	DNS64Prefs []netip.Prefix
+
+	// PreferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
+	// upstreams that use hostnames.
+	PreferIPv6 bool
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

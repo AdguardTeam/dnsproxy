@@ -3,6 +3,7 @@ package proxy
 import (
 	"net"
 
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 
@@ -65,5 +66,7 @@ func (p *Proxy) LookupIPAddr(host string) ([]net.IPAddr, error) {
 		return []net.IPAddr{}, errs[0]
 	}
 
-	return proxyutil.SortIPAddrs(ipAddrs), nil
+	proxynetutil.SortIPAddrs(ipAddrs, p.Config.PreferIPv6)
+
+	return ipAddrs, nil
 }

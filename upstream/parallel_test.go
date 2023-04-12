@@ -47,7 +47,7 @@ func TestExchangeParallel(t *testing.T) {
 }
 
 func TestLookupParallel(t *testing.T) {
-	resolvers := []*Resolver{}
+	resolvers := []Resolver{}
 	bootstraps := []string{"1.2.3.4:55", "8.8.8.1:555", "8.8.8.8:53"}
 
 	for _, boot := range bootstraps {
@@ -74,9 +74,9 @@ func TestLookupParallelEmpty(t *testing.T) {
 	u1 := testUpstream{}
 	u2 := testUpstream{}
 
-	resolvers := []*Resolver{}
-	resolvers = append(resolvers, &Resolver{upstream: &u1})
-	resolvers = append(resolvers, &Resolver{upstream: &u2})
+	resolvers := []Resolver{}
+	resolvers = append(resolvers, &upstreamResolver{Upstream: &u1})
+	resolvers = append(resolvers, &upstreamResolver{Upstream: &u2})
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
 	defer cancel()

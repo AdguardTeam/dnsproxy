@@ -78,12 +78,23 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 }
 
 type errUpstream struct {
-	upstream.Upstream
-	err error
+	err      error
+	closeErr error
 }
 
-func (u errUpstream) Exchange(_ *dns.Msg) (*dns.Msg, error) {
+// Address implements the [upstream.Upstream] interface for errUpstream.
+func (u *errUpstream) Address() string {
+	return "bad_upstream"
+}
+
+// Exchange implements the [upstream.Upstream] interface for errUpstream.
+func (u *errUpstream) Exchange(_ *dns.Msg) (*dns.Msg, error) {
 	return nil, u.err
+}
+
+// Close implements the [upstream.Upstream] interface for errUpstream.
+func (u *errUpstream) Close() error {
+	return u.closeErr
 }
 
 type testAUpstream struct {

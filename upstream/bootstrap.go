@@ -43,7 +43,7 @@ type bootstrapper struct {
 
 	// resolvers is a list of *net.Resolver to use to resolve the upstream
 	// hostname, if necessary.
-	resolvers []*Resolver
+	resolvers []Resolver
 
 	// dialContext is the dial function for creating unencrypted TCP
 	// connections.
@@ -100,11 +100,11 @@ func newBootstrapperResolved(upsURL *url.URL, options *Options) (*bootstrapper, 
 // resolver address string (i.e. tls://one.one.one.one:853), options is the
 // upstream configuration options.
 func newBootstrapper(u *url.URL, options *Options) (b *bootstrapper, err error) {
-	resolvers := []*Resolver{}
+	resolvers := []Resolver{}
 	if len(options.Bootstrap) != 0 {
-		// Create a list of resolvers for parallel lookup
+		// Create a list of resolvers for parallel lookup.
 		for _, boot := range options.Bootstrap {
-			var r *Resolver
+			var r Resolver
 			r, err = NewResolver(boot, options)
 			if err != nil {
 				return nil, err
@@ -202,15 +202,13 @@ func (n *bootstrapper) get() (*tls.Config, dialHandler, error) {
 		return nil, nil, fmt.Errorf("lookup %s: %w", host, err)
 	}
 
-	proxynetutil.SortIPAddrs(addrs, n.options.PreferIPv6)
+	proxynetutil.SortNetIPAddrs(addrs, n.options.PreferIPv6)
 
-	resolved := []string{}
+	resolved := make([]string, 0, len(addrs))
 	for _, addr := range addrs {
-		if addr.IP.To4() == nil && addr.IP.To16() == nil {
-			continue
+		if addr.IsValid() {
+			resolved = append(resolved, net.JoinHostPort(addr.String(), port))
 		}
-
-		resolved = append(resolved, net.JoinHostPort(addr.String(), port))
 	}
 
 	if len(resolved) == 0 {

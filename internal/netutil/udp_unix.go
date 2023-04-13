@@ -1,17 +1,17 @@
-//go:build aix || dragonfly || linux || netbsd || openbsd || freebsd || solaris || darwin
-// +build aix dragonfly linux netbsd openbsd freebsd solaris darwin
+//go:build unix
 
-package proxyutil
+package netutil
 
 import (
 	"fmt"
 	"net"
 
+	"github.com/AdguardTeam/golibs/mathutil"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
 
-// ipv*Flags is the set of socket option flags for configuring IPv* UDP
+// These are the set of socket option flags for configuring an IPv[46] UDP
 // connection to receive an appropriate OOB data.  For both versions the flags
 // are:
 //
@@ -26,11 +26,7 @@ const (
 func udpGetOOBSize() (oobSize int) {
 	l4, l6 := len(ipv4.NewControlMessage(ipv4Flags)), len(ipv6.NewControlMessage(ipv6Flags))
 
-	if l4 >= l6 {
-		return l4
-	}
-
-	return l6
+	return mathutil.Max(l4, l6)
 }
 
 func udpSetOptions(c *net.UDPConn) (err error) {

@@ -1,30 +1,37 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
 	"time"
 
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
 
-func (p *Proxy) createTCPListeners() (err error) {
+func (p *Proxy) createTCPListeners(ctx context.Context) (err error) {
 	for _, a := range p.TCPListenAddr {
-		log.Printf("Creating a TCP server socket")
+		log.Info("dnsproxy: creating tcp server socket %s", a)
 
-		var tcpListen *net.TCPListener
-		tcpListen, err = net.ListenTCP("tcp", a)
+		lsnr, err := proxynetutil.ListenConfig().Listen(ctx, "tcp", a.String())
 		if err != nil {
-			return fmt.Errorf("starting listening on tcp socket: %w", err)
+			return fmt.Errorf("listening to tcp socket: %w", err)
+		}
+
+		tcpListen := lsnr.(*net.TCPListener)
+		if err != nil {
+			return fmt.Errorf("listening on tcp addr %s: %w", a, err)
 		}
 
 		p.tcpListen = append(p.tcpListen, tcpListen)
-		log.Printf("Listening to tcp://%s", tcpListen.Addr())
+
+		log.Info("dnsproxy: listening to tcp://%s", tcpListen.Addr())
 	}
 
 	return nil
@@ -32,17 +39,18 @@ func (p *Proxy) createTCPListeners() (err error) {
 
 func (p *Proxy) createTLSListeners() (err error) {
 	for _, a := range p.TLSListenAddr {
-		log.Printf("Creating a TLS server socket")
+		log.Info("dnsproxy: creating tls server socket %s", a)
 
 		var tcpListen *net.TCPListener
 		tcpListen, err = net.ListenTCP("tcp", a)
 		if err != nil {
-			return fmt.Errorf("starting tls listener: %w", err)
+			return fmt.Errorf("listening on tls addr %s: %w", a, err)
 		}
 
 		l := tls.NewListener(tcpListen, p.TLSConfig)
 		p.tlsListen = append(p.tlsListen, l)
-		log.Printf("Listening to tls://%s", l.Addr())
+
+		log.Info("dnsproxy: listening to tls://%s", l.Addr())
 	}
 
 	return nil
@@ -53,15 +61,16 @@ func (p *Proxy) createTLSListeners() (err error) {
 //
 // See also the comment on Proxy.requestGoroutinesSema.
 func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema semaphore) {
-	log.Printf("Entering the %s listener loop on %s", proto, l.Addr())
+	log.Info("dnsproxy: entering %s listener loop on %s", proto, l.Addr())
+
 	for {
 		clientConn, err := l.Accept()
 
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				log.Debug("tcpPacketLoop: connection closed: %s", err)
+				log.Debug("dnsproxy: tcp connection %s closed", l.Addr())
 			} else {
-				log.Info("got error when reading from TCP listen: %s", err)
+				log.Error("dnsproxy: reading from tcp: %s", err)
 			}
 
 			break
@@ -80,11 +89,12 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 	defer log.OnPanic("proxy.handleTCPConnection")
 
-	log.Tracef("handling tcp: started handling %s request from %s", proto, conn.RemoteAddr())
+	log.Debug("dnsproxy: handling new %s request from %s", proto, conn.RemoteAddr())
+
 	defer func() {
 		err := conn.Close()
 		if err != nil {
-			logWithNonCrit(err, "handling tcp: closing conn")
+			logWithNonCrit(err, "dnsproxy: handling tcp: closing conn")
 		}
 	}()
 
@@ -111,7 +121,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		req := &dns.Msg{}
 		err = req.Unpack(packet)
 		if err != nil {
-			log.Error("handling tcp: unpacking msg: %s", err)
+			log.Error("dnsproxy: handling tcp: unpacking msg: %s", err)
 
 			return
 		}

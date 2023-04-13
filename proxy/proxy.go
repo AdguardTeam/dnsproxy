@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/fastip"
-	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
@@ -142,7 +143,7 @@ func (p *Proxy) Init() (err error) {
 	p.initCache()
 
 	if p.MaxGoroutines > 0 {
-		log.Info("MaxGoroutines is set to %d", p.MaxGoroutines)
+		log.Info("dnsproxy: max goroutines is set to %d", p.MaxGoroutines)
 
 		p.requestGoroutinesSema, err = newChanSemaphore(p.MaxGoroutines)
 		if err != nil {
@@ -152,7 +153,7 @@ func (p *Proxy) Init() (err error) {
 		p.requestGoroutinesSema = newNoopSemaphore()
 	}
 
-	p.udpOOBSize = proxyutil.UDPGetOOBSize()
+	p.udpOOBSize = proxynetutil.UDPGetOOBSize()
 	p.bytesPool = &sync.Pool{
 		New: func() interface{} {
 			// 2 bytes may be used to store packet length (see TCP/TLS)
@@ -163,7 +164,8 @@ func (p *Proxy) Init() (err error) {
 	}
 
 	if p.UpstreamMode == UModeFastestAddr {
-		log.Printf("Fastest IP is enabled")
+		log.Info("dnsproxy: fastest ip is enabled")
+
 		p.fastestAddr = fastip.NewFastestAddr()
 		if timeout := p.FastestPingTimeout; timeout > 0 {
 			p.fastestAddr.PingWaitTimeout = timeout
@@ -188,10 +190,11 @@ func (p *Proxy) Init() (err error) {
 
 // Start initializes the proxy server and starts listening
 func (p *Proxy) Start() (err error) {
+	log.Info("dnsproxy: starting dns proxy server")
+
 	p.Lock()
 	defer p.Unlock()
 
-	log.Info("Starting the DNS proxy server")
 	err = p.validateConfig()
 	if err != nil {
 		return err
@@ -202,12 +205,15 @@ func (p *Proxy) Start() (err error) {
 		return err
 	}
 
-	err = p.startListeners()
+	// TODO(a.garipov): Accept a context into this method.
+	ctx := context.Background()
+	err = p.startListeners(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("starting listeners: %w", err)
 	}
 
 	p.started = true
+
 	return nil
 }
 
@@ -225,12 +231,13 @@ func closeAll[C io.Closer](errs []error, closers ...C) (appended []error) {
 
 // Stop stops the proxy server including all its listeners
 func (p *Proxy) Stop() error {
-	log.Info("Stopping the DNS proxy server")
+	log.Info("dnsproxy: stopping dns proxy server")
 
 	p.Lock()
 	defer p.Unlock()
 	if !p.started {
-		log.Info("The DNS proxy server is not started")
+		log.Info("dnsproxy: dns proxy server is not started")
+
 		return nil
 	}
 
@@ -273,7 +280,9 @@ func (p *Proxy) Stop() error {
 	}
 
 	p.started = false
-	log.Println("Stopped the DNS proxy server")
+
+	log.Println("dnsproxy: stopped dns proxy server")
+
 	if len(errs) > 0 {
 		return errors.List("stopping dns proxy server", errs...)
 	}
@@ -387,7 +396,7 @@ func (p *Proxy) needsLocalUpstream(req *dns.Msg) (ok bool) {
 	host := req.Question[0].Name
 	ip, err := netutil.IPFromReversedAddr(host)
 	if err != nil {
-		log.Debug("proxy: failed to parse ip from ptr request: %s", err)
+		log.Debug("dnsproxy: failed to parse ip from ptr request: %s", err)
 
 		return false
 	}
@@ -580,7 +589,7 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 		if ones, _ := ecs.Mask.Size(); ones != 0 {
 			dctx.ReqECS = ecs
 
-			log.Debug("passing through ecs: %s", dctx.ReqECS)
+			log.Debug("dnsproxy: passing through ecs: %s", dctx.ReqECS)
 
 			return
 		}
@@ -599,7 +608,7 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 		// Section 6.
 		dctx.ReqECS = setECS(dctx.Req, cliIP, 0)
 
-		log.Debug("setting ecs: %s", dctx.ReqECS)
+		log.Debug("dnsproxy: setting ecs: %s", dctx.ReqECS)
 	}
 }
 

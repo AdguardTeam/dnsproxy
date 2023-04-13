@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
@@ -11,13 +12,13 @@ import (
 )
 
 // startListeners configures and starts listener loops
-func (p *Proxy) startListeners() error {
-	err := p.createUDPListeners()
+func (p *Proxy) startListeners(ctx context.Context) error {
+	err := p.createUDPListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createTCPListeners()
+	err = p.createTCPListeners(ctx)
 	if err != nil {
 		return err
 	}

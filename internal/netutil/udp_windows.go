@@ -1,9 +1,10 @@
 //go:build windows
-// +build windows
 
-package proxyutil
+package netutil
 
-import "net"
+import (
+	"net"
+)
 
 func udpGetOOBSize() int {
 	return 0

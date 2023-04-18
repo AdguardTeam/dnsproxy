@@ -1,76 +1,111 @@
 package upstream
 
 import (
+	"context"
+	"fmt"
 	"net/url"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
 
-// plainDNS is a struct that implements the Upstream interface for the regular
-// DNS protocol.
+// plainDNS implements the [Upstream] interface for the regular DNS protocol.
 type plainDNS struct {
-	address   string
-	timeout   time.Duration
-	preferTCP bool
+	// addr is the DNS server URL.  Scheme is always "udp" or "tcp".
+	addr *url.URL
+
+	// getDialer either returns an initialized dial handler or creates a new
+	// one.
+	getDialer DialerInitializer
+
+	// timeout is the timeout for DNS requests.
+	timeout time.Duration
 }
 
 // type check
 var _ Upstream = &plainDNS{}
 
 // newPlain returns the plain DNS Upstream.
-func newPlain(uu *url.URL, timeout time.Duration, preferTCP bool) (u *plainDNS) {
-	addPort(uu, defaultPortPlain)
+func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
+	addPort(addr, defaultPortPlain)
+
+	getDialer, err := newDialerInitializer(addr, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	return &plainDNS{
-		address:   uu.Host,
-		timeout:   timeout,
-		preferTCP: preferTCP,
-	}
+		addr:      addr,
+		getDialer: getDialer,
+		timeout:   opts.Timeout,
+	}, nil
 }
 
-// Address implements the Upstream interface for *plainDNS.
+// Address implements the [Upstream] interface for *plainDNS.
 func (p *plainDNS) Address() string {
-	if p.preferTCP {
-		return "tcp://" + p.address
+	if p.addr.Scheme == "udp" {
+		return p.addr.Host
 	}
 
-	return p.address
+	return p.addr.String()
 }
 
-// Exchange implements the Upstream interface for *plainDNS.
-func (p *plainDNS) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	if p.preferTCP {
-		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
+// dialExchange performs a DNS exchange with the specified dial handler.
+// network must be either "udp" or "tcp".
+func (p *plainDNS) dialExchange(
+	network string,
+	dial bootstrap.DialHandler,
+	m *dns.Msg,
+) (resp *dns.Msg, err error) {
+	addr := p.Address()
+	client := &dns.Client{Timeout: p.timeout}
 
-		logBegin(p.Address(), m)
-		reply, _, tcpErr := tcpClient.Exchange(m, p.address)
-		logFinish(p.Address(), tcpErr)
-
-		return reply, tcpErr
+	conn := &dns.Conn{}
+	if network == "udp" {
+		conn.UDPSize = dns.MinMsgSize
 	}
 
-	client := dns.Client{Timeout: p.timeout, UDPSize: dns.MaxMsgSize}
+	logBegin(addr, m)
+	conn.Conn, err = dial(context.Background(), network, "")
+	if err != nil {
+		logFinish(addr, err)
 
-	logBegin(p.Address(), m)
-	reply, _, err := client.Exchange(m, p.address)
-	logFinish(p.Address(), err)
-
-	if reply != nil && reply.Truncated {
-		log.Tracef("Truncated message was received, retrying over TCP, question: %s", m.Question[0].String())
-		tcpClient := dns.Client{Net: "tcp", Timeout: p.timeout}
-
-		logBegin(p.Address(), m)
-		reply, _, err = tcpClient.Exchange(m, p.address)
-		logFinish(p.Address(), err)
+		return nil, fmt.Errorf("dialing %s over %s: %w", p.addr.Host, network, err)
 	}
 
-	return reply, err
+	resp, _, err = client.ExchangeWithConn(m, conn)
+	logFinish(addr, err)
+
+	return resp, err
 }
 
-// Close implements the Upstream interface for *plainDNS.
+// Exchange implements the [Upstream] interface for *plainDNS.
+func (p *plainDNS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+	dial, err := p.getDialer()
+	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return nil, err
+	}
+
+	addr := p.Address()
+
+	resp, err = p.dialExchange(p.addr.Scheme, dial, m)
+	if p.addr.Scheme == "udp" {
+		if resp == nil || !resp.Truncated {
+			return resp, err
+		}
+
+		log.Debug("plain %s: received truncated, falling back to tcp with %s", addr, &m.Question[0])
+
+		resp, err = p.dialExchange("tcp", dial, m)
+	}
+
+	return resp, err
+}
+
+// Close implements the [Upstream] interface for *plainDNS.
 func (p *plainDNS) Close() (err error) {
-	// Nothing to close here.
 	return nil
 }

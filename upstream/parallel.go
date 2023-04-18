@@ -128,7 +128,7 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 }
 
 // exchangeResult represents the result of DNS exchange.
-type exchangeResult struct {
+type exchangeResult = struct {
 	// upstream is the Upstream that successfully resolved the request.
 	upstream Upstream
 

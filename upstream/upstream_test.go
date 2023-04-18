@@ -12,6 +12,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"sync"
@@ -19,7 +20,9 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -249,14 +252,16 @@ func TestAddressToUpstream_bads(t *testing.T) {
 		addr:       "asdf://1.1.1.1",
 		wantErrMsg: "unsupported url scheme: asdf",
 	}, {
-		addr:       "12345.1.1.1:1234567",
-		wantErrMsg: "invalid address: 12345.1.1.1:1234567",
+		addr: "12345.1.1.1:1234567",
+		wantErrMsg: `invalid address 12345.1.1.1:1234567: ` +
+			`strconv.ParseUint: parsing "1234567": value out of range`,
 	}, {
-		addr:       ":1234567",
-		wantErrMsg: "invalid address: :1234567",
+		addr: ":1234567",
+		wantErrMsg: `invalid address :1234567: ` +
+			`strconv.ParseUint: parsing "1234567": value out of range`,
 	}, {
 		addr:       "host:",
-		wantErrMsg: "invalid address: host:",
+		wantErrMsg: `invalid address host:: strconv.ParseUint: parsing "": invalid syntax`,
 	}}
 
 	for _, tc := range testCases {
@@ -347,43 +352,60 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 	// use invalid bootstrap to make sure it fails if tries to use it
 	invalidBootstrap := []string{"1.2.3.4:55"}
 
+	h := func(w dns.ResponseWriter, m *dns.Msg) {
+		require.NoError(testutil.PanicT{}, w.WriteMsg(respondToTestMessage(m)))
+	}
+	dotSrv := startDoTServer(t, h)
+	dohSrv := startDoHServer(t, testDoHServerOptions{})
+	_, dohPort, err := net.SplitHostPort(dohSrv.addr)
+	require.NoError(t, err)
+
+	dotStamp := (&dnsstamps.ServerStamp{
+		ServerAddrStr: netip.AddrPortFrom(netutil.IPv4Localhost(), uint16(dotSrv.port)).String(),
+		Proto:         dnsstamps.StampProtoTypeTLS,
+		ProviderName:  netip.AddrPortFrom(netutil.IPv4Localhost(), uint16(dotSrv.port)).String(),
+	}).String()
+	dohStamp := (&dnsstamps.ServerStamp{
+		ServerAddrStr: dohSrv.addr,
+		Proto:         dnsstamps.StampProtoTypeDoH,
+		ProviderName:  dohSrv.addr,
+		Path:          "/dns-query",
+	}).String()
+
 	upstreams := []struct {
+		name      string
 		address   string
-		serverIP  net.IP
-		bootstrap []string
+		serverIPs []net.IP
 	}{{
-		address:   "tls://dns.adguard.com",
-		serverIP:  net.IP{94, 140, 14, 14},
-		bootstrap: invalidBootstrap,
+		name:      "dot",
+		address:   fmt.Sprintf("tls://some.dns.server:%d", dotSrv.port),
+		serverIPs: []net.IP{netutil.IPv4Localhost().AsSlice()},
 	}, {
-		address:   "https://dns.adguard.com/dns-query",
-		serverIP:  net.IP{94, 140, 14, 14},
-		bootstrap: invalidBootstrap,
+		name:      "doh",
+		address:   fmt.Sprintf("https://some.dns.server:%s/dns-query", dohPort),
+		serverIPs: []net.IP{netutil.IPv4Localhost().AsSlice()},
 	}, {
-		// AdGuard DNS DoH with the IP address specified.
-		address:   "sdns://AgcAAAAAAAAADzE3Ni4xMDMuMTMwLjEzMAAPZG5zLmFkZ3VhcmQuY29tCi9kbnMtcXVlcnk",
-		serverIP:  nil,
-		bootstrap: invalidBootstrap,
+		name:      "dot_stamp",
+		address:   dotStamp,
+		serverIPs: nil,
 	}, {
-		// AdGuard DNS DoT with the IP address specified.
-		address:   "sdns://AwAAAAAAAAAAEzE3Ni4xMDMuMTMwLjEzMDo4NTMAD2Rucy5hZGd1YXJkLmNvbQ",
-		serverIP:  nil,
-		bootstrap: invalidBootstrap,
+		name:      "doh_stamp",
+		address:   dohStamp,
+		serverIPs: nil,
 	}}
 
 	for _, tc := range upstreams {
-		opts := &Options{
-			Bootstrap:     tc.bootstrap,
-			Timeout:       timeout,
-			ServerIPAddrs: []net.IP{tc.serverIP},
-		}
-		u, err := AddressToUpstream(tc.address, opts)
-		if err != nil {
-			t.Fatalf("Failed to generate upstream from address %s: %s", tc.address, err)
-		}
-		testutil.CleanupAndRequireSuccess(t, u.Close)
+		t.Run(tc.name, func(t *testing.T) {
+			opts := &Options{
+				Bootstrap:          invalidBootstrap,
+				Timeout:            timeout,
+				ServerIPAddrs:      tc.serverIPs,
+				InsecureSkipVerify: true,
+			}
+			u, err := AddressToUpstream(tc.address, opts)
+			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
 
-		t.Run(tc.address, func(t *testing.T) {
 			checkUpstream(t, u, tc.address)
 		})
 	}
@@ -413,6 +435,11 @@ func TestAddPort(t *testing.T) {
 	}, {
 		name: "ipv6",
 		want: "[::1]:1",
+		host: "::1",
+		port: 1,
+	}, {
+		name: "ipv6_with_brackets",
+		want: "[::1]:1",
 		host: "[::1]",
 		port: 1,
 	}, {
@@ -426,7 +453,7 @@ func TestAddPort(t *testing.T) {
 		host: "1.2.3.4:2",
 		port: 1,
 	}, {
-		name: "ipv6_with_port",
+		name: "ipv6_with_brackets_and_port",
 		want: "[::1]:2",
 		host: "[::1]:2",
 		port: 1,

@@ -3,6 +3,7 @@ package upstream
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -13,55 +14,83 @@ import (
 	"github.com/miekg/dns"
 )
 
-// dnsCrypt is a struct that implements the Upstream interface for the DNSCrypt
-// protocol.
+// dnsCrypt implements the [Upstream] interface for the DNSCrypt protocol.
 type dnsCrypt struct {
-	boot       *bootstrapper
-	client     *dnscrypt.Client       // DNSCrypt client properties
-	serverInfo *dnscrypt.ResolverInfo // DNSCrypt resolver info
+	// mu protects client and serverInfo.
+	mu *sync.RWMutex
 
-	sync.RWMutex // protects DNSCrypt client
+	// client stores the DNSCrypt client properties.
+	client *dnscrypt.Client
+
+	// serverInfo stores the DNSCrypt server properties.
+	serverInfo *dnscrypt.ResolverInfo
+
+	// addr is the DNSCrypt server URL.
+	addr *url.URL
+
+	// verifyCert is a callback that verifies the resolver's certificate.
+	verifyCert func(cert *dnscrypt.Cert) (err error)
+
+	// timeout is the timeout for the DNS requests.
+	timeout time.Duration
+}
+
+// newDNSCrypt returns a new DNSCrypt Upstream.
+func newDNSCrypt(addr *url.URL, opts *Options) (u *dnsCrypt, err error) {
+	return &dnsCrypt{
+		mu:         &sync.RWMutex{},
+		addr:       addr,
+		verifyCert: opts.VerifyDNSCryptCertificate,
+		timeout:    opts.Timeout,
+	}, nil
 }
 
 // type check
 var _ Upstream = (*dnsCrypt)(nil)
 
-// Address implements the Upstream interface for *dnsCrypt.
-func (p *dnsCrypt) Address() string { return p.boot.URL.String() }
+// Address implements the [Upstream] interface for *dnsCrypt.
+func (p *dnsCrypt) Address() string { return p.addr.String() }
 
-// Exchange implements the Upstream interface for *dnsCrypt.
-func (p *dnsCrypt) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	reply, err := p.exchangeDNSCrypt(m)
-
+// Exchange implements the [Upstream] interface for *dnsCrypt.
+func (p *dnsCrypt) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+	resp, err = p.exchangeDNSCrypt(m)
 	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, io.EOF) {
-		// If request times out, it is possible that the server configuration has been changed.
-		// It is safe to assume that the key was rotated (for instance, as it is described here: https://dnscrypt.pl/2017/02/26/how-key-rotation-is-automated/).
-		// We should re-fetch the server certificate info so that the new requests were not failing.
-		p.Lock()
-		p.client = nil
-		p.serverInfo = nil
-		p.Unlock()
+		// If request times out, it is possible that the server configuration
+		// has been changed.  It is safe to assume that the key was rotated, see
+		// https://dnscrypt.pl/2017/02/26/how-key-rotation-is-automated.
+		// Re-fetch the server certificate info for new requests to not fail.
+		_, _, err = p.resetClient()
+		if err != nil {
+			return nil, err
+		}
 
-		// Retry the request one more time
 		return p.exchangeDNSCrypt(m)
 	}
 
-	return reply, err
+	return resp, err
 }
 
-// Close implements the Upstream interface for *dnsCrypt.
+// Close implements the [Upstream] interface for *dnsCrypt.
 func (p *dnsCrypt) Close() (err error) {
-	// Nothing to close here.
 	return nil
 }
 
-// exchangeDNSCrypt attempts to send the DNS query and returns the response
-func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (reply *dns.Msg, err error) {
-	p.RLock()
-	client := p.client
-	resolverInfo := p.serverInfo
-	p.RUnlock()
+// exchangeDNSCrypt attempts to send the DNS query and returns the response.
+func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (resp *dns.Msg, err error) {
+	var client *dnscrypt.Client
+	var resolverInfo *dnscrypt.ResolverInfo
+	func() {
+		p.mu.RLock()
+		defer p.mu.RUnlock()
 
+		client = p.client
+		resolverInfo = p.serverInfo
+	}()
+
+	// Check the client and server info are set and the certificate is not
+	// expired, since any of these cases require a client reset.
+	//
+	// TODO(ameshkov):  Consider using [time.Time] for [dnscrypt.Cert.NotAfter].
 	now := uint32(time.Now().Unix())
 	if client == nil || resolverInfo == nil || resolverInfo.ResolverCert.NotAfter < now {
 		client, resolverInfo, err = p.resetClient()
@@ -71,39 +100,47 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (reply *dns.Msg, err error) {
 		}
 	}
 
-	reply, err = client.Exchange(m, resolverInfo)
-	if reply != nil && reply.Truncated {
-		log.Tracef("truncated message received, retrying over tcp, question: %v", m.Question[0])
-		tcpClient := dnscrypt.Client{Timeout: p.boot.options.Timeout, Net: "tcp"}
-		reply, err = tcpClient.Exchange(m, resolverInfo)
+	resp, err = client.Exchange(m, resolverInfo)
+	if resp != nil && resp.Truncated {
+		q := &m.Question[0]
+		log.Debug("dnscrypt %s: received truncated, falling back to tcp with %s", p.addr, q)
+
+		tcpClient := dnscrypt.Client{Timeout: p.timeout, Net: "tcp"}
+		resp, err = tcpClient.Exchange(m, resolverInfo)
 	}
-	if err == nil && reply != nil && reply.Id != m.Id {
+	if err == nil && resp != nil && resp.Id != m.Id {
 		err = dns.ErrId
 	}
 
-	return reply, err
+	return resp, err
 }
 
+// resetClient renews the DNSCrypt client and server properties and also sets
+// those to nil on fail.
 func (p *dnsCrypt) resetClient() (client *dnscrypt.Client, ri *dnscrypt.ResolverInfo, err error) {
-	p.Lock()
-	defer p.Unlock()
+	addr := p.Address()
 
-	// Using "udp" for DNSCrypt upstreams by default.
-	client = &dnscrypt.Client{Timeout: p.boot.options.Timeout, Net: "udp"}
-	ri, err = client.Dial(p.Address())
+	// Use UDP for DNSCrypt upstreams by default.
+	client = &dnscrypt.Client{Timeout: p.timeout, Net: "udp"}
+	ri, err = client.Dial(addr)
 	if err != nil {
-		return nil, nil, fmt.Errorf("fetching certificate info from %s: %w", p.Address(), err)
-	}
-
-	if p.boot.options.VerifyDNSCryptCertificate != nil {
-		err = p.boot.options.VerifyDNSCryptCertificate(ri.ResolverCert)
+		// Trigger client and server info renewal on the next request.
+		client, ri = nil, nil
+		err = fmt.Errorf("fetching certificate info from %s: %w", addr, err)
+	} else if p.verifyCert != nil {
+		err = p.verifyCert(ri.ResolverCert)
 		if err != nil {
-			return nil, nil, fmt.Errorf("verifying certificate info from %s: %w", p.Address(), err)
+			// Trigger client and server info renewal on the next request.
+			client, ri = nil, nil
+			err = fmt.Errorf("verifying certificate info from %s: %w", addr, err)
 		}
 	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	p.client = client
 	p.serverInfo = ri
 
-	return client, ri, nil
+	return p.client, p.serverInfo, nil
 }

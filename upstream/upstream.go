@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -130,123 +133,138 @@ const (
 	defaultPortDoQ = 853
 )
 
-// AddressToUpstream converts addr to an Upstream instance:
+// RootCAs is the CertPool that must be used by all upstreams.  Redefining
+// RootCAs makes sense on iOS to overcome the 15MB memory limit of the
+// NEPacketTunnelProvider.
 //
-//   - 8.8.8.8:53 or udp://dns.adguard.com for plain DNS;
-//   - tcp://8.8.8.8:53 for plain DNS-over-TCP;
-//   - tls://1.1.1.1 for DNS-over-TLS;
-//   - https://dns.adguard.com/dns-query for DNS-over-HTTPS;
+// TODO(ameshkov): remove this and replace with an upstream option.
+var RootCAs *x509.CertPool
+
+// CipherSuites is a custom list of TLSv1.2 ciphers.
+var CipherSuites []uint16
+
+// AddressToUpstream converts addr to an Upstream using the specified options.
+// addr can be either a URL, or a plain address, either a domain name or an IP.
+//
+//   - udp://5.3.5.3:53 or 5.3.5.3:53 for plain DNS using IP address;
+//   - udp://name.server:53 or name.server:53 for plain DNS using domain name;
+//   - tcp://5.3.5.3:53 for plain DNS-over-TCP using IP address;
+//   - tcp://name.server:53 for plain DNS-over-TCP using domain name;
+//   - tls://5.3.5.3:853 for DNS-over-TLS using IP address;
+//   - tls://name.server:853 for DNS-over-TLS using domain name;
+//   - https://5.3.5.3:443/dns-query for DNS-over-HTTPS using IP address;
+//   - https://name.server:443/dns-query for DNS-over-HTTPS using domain name;
+//   - quic://5.3.5.3:853 for DNS-over-QUIC using IP address;
+//   - quic://name.server:853 for DNS-over-QUIC using domain name;
 //   - h3://dns.google for DNS-over-HTTPS that only works with HTTP/3;
 //   - sdns://... for DNS stamp, see https://dnscrypt.info/stamps-specifications.
 //
-// opts are applied to the u.  nil is a valid value for opts.
+// If addr doesn't have port specified, the default port of the appropriate
+// protocol will be used.
+//
+// opts are applied to the u and shouldn't be modified afterwards, nil value is
+// valid.
+//
+// TODO(e.burkov):  Clone opts?
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 	if opts == nil {
 		opts = &Options{}
 	}
 
+	var uu *url.URL
 	if strings.Contains(addr, "://") {
-		var uu *url.URL
+		// Parse as URL.
 		uu, err = url.Parse(addr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s: %w", addr, err)
 		}
+	} else {
+		// Probably, plain UDP upstream defined by address or address:port.
+		_, port, splitErr := net.SplitHostPort(addr)
+		if splitErr == nil {
+			// Validate port.
+			_, err = strconv.ParseUint(port, 10, 16)
+			if err != nil {
+				return nil, fmt.Errorf("invalid address %s: %w", addr, err)
+			}
+		}
 
-		return urlToUpstream(uu, opts)
+		uu = &url.URL{
+			Scheme: "udp",
+			Host:   addr,
+		}
 	}
 
-	var host, port string
-	host, port, err = net.SplitHostPort(addr)
-	if err != nil {
-		return &plainDNS{address: net.JoinHostPort(addr, "53"), timeout: opts.Timeout}, nil
-	}
-
-	// Validate port.
-	portN, err := strconv.ParseUint(port, 10, 16)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address: %s", addr)
-	}
-
-	return &plainDNS{address: netutil.JoinHostPort(host, int(portN)), timeout: opts.Timeout}, nil
-}
-
-// urlToBoot creates a bootstrapper with the specified options.
-func urlToBoot(u *url.URL, opts *Options) (b *bootstrapper, err error) {
-	if len(opts.ServerIPAddrs) == 0 {
-		return newBootstrapper(u, opts)
-	}
-
-	return newBootstrapperResolved(u, opts)
+	return urlToUpstream(uu, opts)
 }
 
 // urlToUpstream converts uu to an Upstream using opts.
 func urlToUpstream(uu *url.URL, opts *Options) (u Upstream, err error) {
 	switch sch := uu.Scheme; sch {
 	case "sdns":
-		return stampToUpstream(uu, opts)
+		return parseStamp(uu, opts)
 	case "udp", "tcp":
-		return newPlain(uu, opts.Timeout, sch == "tcp"), nil
+		return newPlain(uu, opts)
 	case "quic":
 		return newDoQ(uu, opts)
 	case "tls":
 		return newDoT(uu, opts)
-	case "h3":
-		opts.HTTPVersions = []HTTPVersion{HTTPVersion3}
-		uu.Scheme = "https"
-		return newDoH(uu, opts)
-	case "https":
+	case "h3", "https":
 		return newDoH(uu, opts)
 	default:
 		return nil, fmt.Errorf("unsupported url scheme: %s", sch)
 	}
 }
 
-// stampToUpstream converts a DNS stamp to an Upstream
-// options -- Upstream customization options
-func stampToUpstream(upsURL *url.URL, opts *Options) (Upstream, error) {
+// parseStamp converts a DNS stamp to an Upstream.
+func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 	stamp, err := dnsstamps.NewServerStampFromString(upsURL.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", upsURL, err)
 	}
 
+	// TODO(e.burkov):  Port?
 	if stamp.ServerAddrStr != "" {
-		host, _, err := net.SplitHostPort(stamp.ServerAddrStr)
+		host, _, err := netutil.SplitHostPort(stamp.ServerAddrStr)
 		if err != nil {
 			host = stamp.ServerAddrStr
 		}
 
-		// Parse and add to options
+		// Parse and add to options.
 		ip := net.ParseIP(host)
 		if ip == nil {
-			return nil, fmt.Errorf("invalid server address in the stamp: %s", stamp.ServerAddrStr)
+			return nil, fmt.Errorf("invalid server stamp address %s", stamp.ServerAddrStr)
 		}
+
+		// TODO(e.burkov):  Append?
 		opts.ServerIPAddrs = []net.IP{ip}
 	}
 
 	switch stamp.Proto {
 	case dnsstamps.StampProtoTypePlain:
-		return &plainDNS{address: stamp.ServerAddrStr, timeout: opts.Timeout}, nil
+		return newPlain(&url.URL{Scheme: "udp", Host: stamp.ServerAddrStr}, opts)
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		b, err := newBootstrapper(upsURL, opts)
-		if err != nil {
-			return nil, fmt.Errorf("bootstrap server parse: %s", err)
-		}
-		return &dnsCrypt{boot: b}, nil
+		return newDNSCrypt(upsURL, opts)
 	case dnsstamps.StampProtoTypeDoH:
-		return AddressToUpstream(fmt.Sprintf("https://%s%s", stamp.ProviderName, stamp.Path), opts)
+		return newDoH(&url.URL{Scheme: "https", Host: stamp.ProviderName, Path: stamp.Path}, opts)
 	case dnsstamps.StampProtoTypeDoQ:
-		return AddressToUpstream(fmt.Sprintf("quic://%s%s", stamp.ProviderName, stamp.Path), opts)
+		return newDoQ(&url.URL{Scheme: "quic", Host: stamp.ProviderName, Path: stamp.Path}, opts)
 	case dnsstamps.StampProtoTypeTLS:
-		return AddressToUpstream(fmt.Sprintf("tls://%s", stamp.ProviderName), opts)
+		return newDoT(&url.URL{Scheme: "tls", Host: stamp.ProviderName}, opts)
+	default:
+		return nil, fmt.Errorf("unsupported stamp protocol %s", &stamp.Proto)
 	}
-
-	return nil, fmt.Errorf("unsupported protocol %v in %s", stamp.Proto, upsURL)
 }
 
 // addPort appends port to u if it's absent.
 func addPort(u *url.URL, port int) {
-	if u != nil && u.Port() == "" {
-		u.Host = netutil.JoinHostPort(strings.Trim(u.Host, "[]"), port)
+	if u != nil {
+		_, _, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			u.Host = netutil.JoinHostPort(u.Host, port)
+
+			return
+		}
 	}
 }
 
@@ -268,4 +286,79 @@ func logFinish(upstreamAddress string, err error) {
 		status = err.Error()
 	}
 	log.Debug("%s: response: %s", upstreamAddress, status)
+}
+
+// DialerInitializer returns the handler that it creates.  All the subsequent
+// calls to it, except the first one, will return the same handler so that
+// resolving will be performed only once.
+type DialerInitializer func() (handler bootstrap.DialHandler, err error)
+
+// newDialerInitializer creates an initializer of the dialer that will dial the
+// addresses resolved from u using opts.
+func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer, err error) {
+	host, port, err := netutil.SplitHostPort(u.Host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %s: %w", u.Host, err)
+	}
+
+	if addrsLen := len(opts.ServerIPAddrs); addrsLen > 0 {
+		// Don't resolve the addresses of the server since those from the
+		// options should be used.
+		addrs := make([]string, 0, addrsLen)
+		for _, addr := range opts.ServerIPAddrs {
+			addrs = append(addrs, netutil.JoinHostPort(addr.String(), port))
+		}
+
+		handler := bootstrap.NewDialContext(opts.Timeout, addrs...)
+
+		return func() (bootstrap.DialHandler, error) { return handler, nil }, nil
+	} else if _, err = netip.ParseAddr(host); err == nil {
+		// Don't resolve the address of the server since it's already an IP.
+		handler := bootstrap.NewDialContext(opts.Timeout, u.Host)
+
+		return func() (bootstrap.DialHandler, error) { return handler, nil }, nil
+	}
+
+	bootstraps := opts.Bootstrap
+	if len(opts.Bootstrap) == 0 {
+		// Use the default resolver for bootstrapping.
+		bootstraps = []string{""}
+	}
+
+	// Prepare resolvers for bootstrapping.
+	resolvers := make([]Resolver, 0, len(bootstraps))
+	for _, boot := range bootstraps {
+		var r Resolver
+		r, err = NewResolver(boot, opts)
+		if err != nil {
+			// Don't wrap the error since it's informative enough as is.
+			return nil, err
+		}
+
+		resolvers = append(resolvers, r)
+	}
+
+	var dialHandler atomic.Value
+	di = func() (h bootstrap.DialHandler, resErr error) {
+		// Check if the dial handler has already been created.
+		h, ok := dialHandler.Load().(bootstrap.DialHandler)
+		if ok {
+			return h, nil
+		}
+
+		// TODO(e.burkov):  It may appear that several exchanges will try to
+		// resolve the upstream hostname at the same time.  Currently, the last
+		// successful value will be stored in dialHandler, but ideally we should
+		// resolve only once.
+		h, resolveErr := bootstrap.ResolveDialContext(u, opts.Timeout, resolvers, opts.PreferIPv6)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("creating dial handler: %w", resolveErr)
+		}
+
+		dialHandler.Store(h)
+
+		return h, nil
+	}
+
+	return di, nil
 }

@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/url"
@@ -20,10 +21,12 @@ const (
 	// QUICCodeNoError is used when the connection or stream needs to be closed,
 	// but there is no error to signal.
 	QUICCodeNoError = quic.ApplicationErrorCode(0)
+
 	// QUICCodeInternalError signals that the DoQ implementation encountered
 	// an internal error and is incapable of pursuing the transaction or the
 	// connection.
 	QUICCodeInternalError = quic.ApplicationErrorCode(1)
+
 	// QUICKeepAlivePeriod is the value that we pass to *quic.Config and that
 	// controls the period with with keep-alive frames are being sent to the
 	// connection. We set it to 20s as it would be in the quic-go@v0.27.1 with
@@ -32,53 +35,95 @@ const (
 	//
 	// TODO(ameshkov):  Consider making it configurable.
 	QUICKeepAlivePeriod = time.Second * 20
+
+	// NextProtoDQ is the ALPN token for DoQ. During the connection establishment,
+	// DNS/QUIC support is indicated by selecting the ALPN token "doq" in the
+	// crypto handshake.
+	//
+	// See https://datatracker.ietf.org/doc/rfc9250.
+	NextProtoDQ = "doq"
 )
 
-// dnsOverQUIC is a struct that implements the Upstream interface for the
-// DNS-over-QUIC protocol (spec: https://www.rfc-editor.org/rfc/rfc9250.html).
+// compatProtoDQ is a list of ALPN tokens used by a QUIC connection.
+// NextProtoDQ is the latest draft version supported by dnsproxy, but it also
+// includes previous drafts.
+var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq-i02"}
+
+// dnsOverQUIC implements the [Upstream] interface for the DNS-over-QUIC
+// protocol (spec: https://www.rfc-editor.org/rfc/rfc9250.html).
 type dnsOverQUIC struct {
-	// boot is a bootstrap DNS abstraction that is used to resolve the upstream
-	// server's address and open a network connection to it.
-	boot *bootstrapper
+	// getDialer either returns an initialized dial handler or creates a new
+	// one.
+	getDialer DialerInitializer
+
+	// addr is the DNS-over-QUIC server URL.
+	addr *url.URL
+
+	// tlsConf is the configuration of TLS.
+	tlsConf *tls.Config
 
 	// quicConfig is the QUIC configuration that is used for establishing
 	// connections to the upstream.  This configuration includes the TokenStore
 	// that needs to be stored for the lifetime of dnsOverQUIC since we can
 	// re-create the connection.
-	quicConfig      *quic.Config
-	quicConfigGuard sync.Mutex
+	quicConfig *quic.Config
 
 	// conn is the current active QUIC connection.  It can be closed and
 	// re-opened when needed.
-	conn   quic.Connection
-	connMu sync.RWMutex
+	conn quic.Connection
 
 	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
 	// buffers are used to read responses from the upstream.
-	bytesPool      *sync.Pool
-	bytesPoolGuard sync.Mutex
+	bytesPool *sync.Pool
+
+	// quicConfigMu protects quicConfig.
+	quicConfigMu sync.Mutex
+
+	// connMu protects conn.
+	connMu sync.RWMutex
+
+	// bytesPoolGuard protects bytesPool.
+	bytesPoolMu sync.Mutex
+
+	// timeout is the timeout for the upstream connection.
+	timeout time.Duration
 }
 
 // type check
 var _ Upstream = (*dnsOverQUIC)(nil)
 
 // newDoQ returns the DNS-over-QUIC Upstream.
-func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
-	addPort(uu, defaultPortDoQ)
+func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
+	addPort(addr, defaultPortDoQ)
 
-	var b *bootstrapper
-	b, err = urlToBoot(uu, opts)
+	getDialer, err := newDialerInitializer(addr, opts)
 	if err != nil {
-		return nil, fmt.Errorf("creating quic bootstrapper: %w", err)
+		return nil, err
 	}
 
 	u = &dnsOverQUIC{
-		boot: b,
+		getDialer: getDialer,
+		addr:      addr,
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
 			Tracer:          opts.QUICTracer,
 		},
+		tlsConf: &tls.Config{
+			ServerName:   addr.Hostname(),
+			RootCAs:      RootCAs,
+			CipherSuites: CipherSuites,
+			// Use the default capacity for the LRU cache.  It may be useful to
+			// store several caches since the user may be routed to different
+			// servers in case there's load balancing on the server-side.
+			ClientSessionCache:    tls.NewLRUClientSessionCache(0),
+			MinVersion:            tls.VersionTLS12,
+			InsecureSkipVerify:    opts.InsecureSkipVerify,
+			VerifyPeerCertificate: opts.VerifyServerCertificate,
+			VerifyConnection:      opts.VerifyConnection,
+			NextProtos:            compatProtoDQ,
+		},
+		timeout: opts.Timeout,
 	}
 
 	runtime.SetFinalizer(u, (*dnsOverQUIC).Close)
@@ -86,10 +131,10 @@ func newDoQ(uu *url.URL, opts *Options) (u Upstream, err error) {
 	return u, nil
 }
 
-// Address implements the Upstream interface for *dnsOverQUIC.
-func (p *dnsOverQUIC) Address() string { return p.boot.URL.String() }
+// Address implements the [Upstream] interface for *dnsOverQUIC.
+func (p *dnsOverQUIC) Address() string { return p.addr.String() }
 
-// Exchange implements the Upstream interface for *dnsOverQUIC.
+// Exchange implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be
 	// set to zero.
@@ -134,7 +179,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	return resp, err
 }
 
-// Close implements the Upstream interface for *dnsOverQUIC.
+// Close implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Close() (err error) {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
@@ -191,8 +236,8 @@ func (p *dnsOverQUIC) shouldRetry(err error) (ok bool) {
 
 // getBytesPool returns (creates if needed) a pool we store byte buffers in.
 func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
-	p.bytesPoolGuard.Lock()
-	defer p.bytesPoolGuard.Unlock()
+	p.bytesPoolMu.Lock()
+	defer p.bytesPoolMu.Unlock()
 
 	if p.bytesPool == nil {
 		p.bytesPool = &sync.Pool{
@@ -250,8 +295,8 @@ func (p *dnsOverQUIC) hasConnection() (ok bool) {
 // getQUICConfig returns the QUIC config in a thread-safe manner.  Note, that
 // this method returns a pointer, it is forbidden to change its properties.
 func (p *dnsOverQUIC) getQUICConfig() (c *quic.Config) {
-	p.quicConfigGuard.Lock()
-	defer p.quicConfigGuard.Unlock()
+	p.quicConfigMu.Lock()
+	defer p.quicConfigMu.Unlock()
 
 	return p.quicConfig
 }
@@ -259,8 +304,8 @@ func (p *dnsOverQUIC) getQUICConfig() (c *quic.Config) {
 // resetQUICConfig re-creates the tokens store as we may need to use a new one
 // if we failed to connect.
 func (p *dnsOverQUIC) resetQUICConfig() {
-	p.quicConfigGuard.Lock()
-	defer p.quicConfigGuard.Unlock()
+	p.quicConfigMu.Lock()
+	defer p.quicConfigMu.Unlock()
 
 	p.quicConfig = p.quicConfig.Clone()
 	p.quicConfig.TokenStore = newQUICTokenStore()
@@ -268,7 +313,7 @@ func (p *dnsOverQUIC) resetQUICConfig() {
 
 // openStream opens a new QUIC stream for the specified connection.
 func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
-	ctx, cancel := p.boot.newContext()
+	ctx, cancel := p.withDeadline(context.Background())
 	defer cancel()
 
 	stream, err := conn.OpenStreamSync(ctx)
@@ -288,7 +333,7 @@ func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
 
 // openConnection opens a new QUIC connection.
 func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
-	tlsConfig, dialContext, err := p.boot.get()
+	dialContext, err := p.getDialer()
 	if err != nil {
 		return nil, fmt.Errorf("failed to bootstrap QUIC connection: %w", err)
 	}
@@ -305,17 +350,17 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 
 	udpConn, ok := rawConn.(*net.UDPConn)
 	if !ok {
-		return nil, fmt.Errorf("failed to open connection to %s", p.Address())
+		return nil, fmt.Errorf("failed to open connection to %s", p.addr)
 	}
 
 	addr := udpConn.RemoteAddr().String()
 
-	ctx, cancel := p.boot.newContext()
+	ctx, cancel := p.withDeadline(context.Background())
 	defer cancel()
 
-	conn, err = quic.DialAddrEarlyContext(ctx, addr, tlsConfig, p.getQUICConfig())
+	conn, err = quic.DialAddrEarlyContext(ctx, addr, p.tlsConf.Clone(), p.getQUICConfig())
 	if err != nil {
-		return nil, fmt.Errorf("opening quic connection to %s: %w", p.Address(), err)
+		return nil, fmt.Errorf("opening quic connection to %s: %w", p.addr, err)
 	}
 
 	return conn, nil
@@ -360,7 +405,7 @@ func (p *dnsOverQUIC) readMsg(stream quic.Stream) (m *dns.Msg, err error) {
 	respBuf := *bufPtr
 	n, err := stream.Read(respBuf)
 	if err != nil && n == 0 {
-		return nil, fmt.Errorf("reading response from %s: %w", p.Address(), err)
+		return nil, fmt.Errorf("reading response from %s: %w", p.addr, err)
 	}
 
 	// All DNS messages (queries and responses) sent over DoQ connections MUST
@@ -371,7 +416,7 @@ func (p *dnsOverQUIC) readMsg(stream quic.Stream) (m *dns.Msg, err error) {
 	m = new(dns.Msg)
 	err = m.Unpack(respBuf[2:])
 	if err != nil {
-		return nil, fmt.Errorf("unpacking response from %s: %w", p.Address(), err)
+		return nil, fmt.Errorf("unpacking response from %s: %w", p.addr, err)
 	}
 
 	return m, nil
@@ -442,4 +487,15 @@ func isQUICRetryError(err error) (ok bool) {
 	}
 
 	return false
+}
+
+func (p *dnsOverQUIC) withDeadline(
+	parent context.Context,
+) (ctx context.Context, cancel context.CancelFunc) {
+	ctx, cancel = parent, func() {}
+	if p.timeout > 0 {
+		ctx, cancel = context.WithDeadline(ctx, time.Now().Add(p.timeout))
+	}
+
+	return ctx, cancel
 }

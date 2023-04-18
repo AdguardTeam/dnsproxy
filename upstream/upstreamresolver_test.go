@@ -49,23 +49,23 @@ func TestNewResolver_validity(t *testing.T) {
 	}, {
 		name: "invalid_tls",
 		addr: "tls://dns.adguard.com",
-		wantErrMsg: `resolver "tls://dns.adguard.com" is not a valid ` +
-			`bootstrap DNS server`,
+		wantErrMsg: `bootstrap tls://dns.adguard.com:853: ` +
+			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
 	}, {
 		name: "invalid_https",
 		addr: "https://dns.adguard.com/dns-query",
-		wantErrMsg: `resolver "https://dns.adguard.com/dns-query" is not a ` +
-			`valid bootstrap DNS server`,
+		wantErrMsg: `bootstrap https://dns.adguard.com:443/dns-query: ` +
+			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
 	}, {
 		name: "invalid_tcp",
 		addr: "tcp://dns.adguard.com",
-		wantErrMsg: `resolver "tcp://dns.adguard.com" is not a valid ` +
-			`bootstrap DNS server`,
+		wantErrMsg: `bootstrap tcp://dns.adguard.com:53: ` +
+			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
 	}, {
 		name: "invalid_no_scheme",
 		addr: "dns.adguard.com",
-		wantErrMsg: `resolver "dns.adguard.com" is not a valid bootstrap ` +
-			`DNS server`,
+		wantErrMsg: `bootstrap dns.adguard.com:53: ` +
+			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
 	}}
 
 	for _, tc := range testCases {

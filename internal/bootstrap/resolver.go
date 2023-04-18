@@ -48,7 +48,7 @@ func LookupParallel(
 	}
 
 	var errs []error
-	for n := 0; n < resolversNum; n++ {
+	for range resolvers {
 		result := <-ch
 		if result.err == nil {
 			return result.addrs, nil

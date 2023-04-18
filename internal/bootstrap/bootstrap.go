@@ -23,8 +23,6 @@ type DialHandler func(ctx context.Context, network, addr string) (conn net.Conn,
 
 // ResolveDialContext returns a DialHandler that uses addresses resolved from
 // u using resolvers.  u must not be nil.
-//
-// TODO(e.burkov):  Use in the [upstream] package.
 func ResolveDialContext(
 	u *url.URL,
 	timeout time.Duration,
@@ -68,9 +66,7 @@ func ResolveDialContext(
 }
 
 // NewDialContext returns a DialHandler that dials addrs and returns the first
-// successful connection.
-//
-// TODO(e.burkov):  Use in the [upstream] package.
+// successful connection.  At least a single addr should be specified.
 func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 	dialer := &net.Dialer{
 		Timeout: timeout,
@@ -80,7 +76,7 @@ func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 	if l == 0 {
 		log.Debug("bootstrap: no addresses to dial")
 
-		return func(ctx context.Context, _, _ string) (conn net.Conn, err error) {
+		return func(_ context.Context, _, _ string) (conn net.Conn, err error) {
 			return nil, errors.Error("no addresses")
 		}
 	}

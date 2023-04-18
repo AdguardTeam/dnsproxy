@@ -3,13 +3,13 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"time"
 
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
-	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
@@ -111,7 +111,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 			logWithNonCrit(err, "handling tcp: setting deadline")
 		}
 
-		packet, err := proxyutil.ReadPrefixed(conn)
+		packet, err := readPrefixed(conn)
 		if err != nil {
 			logWithNonCrit(err, "handling tcp: reading msg")
 
@@ -135,6 +135,32 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 			logWithNonCrit(err, fmt.Sprintf("handling tcp: handling %s request", d.Proto))
 		}
 	}
+}
+
+// errTooLarge means that a DNS message is larger than 64KiB.
+const errTooLarge errors.Error = "dns message is too large"
+
+// readPrefixed reads a DNS message with a 2-byte prefix containing message
+// length from conn.
+func readPrefixed(conn net.Conn) (b []byte, err error) {
+	l := make([]byte, 2)
+	_, err = conn.Read(l)
+	if err != nil {
+		return nil, fmt.Errorf("reading len: %w", err)
+	}
+
+	packetLen := binary.BigEndian.Uint16(l)
+	if packetLen > dns.MaxMsgSize {
+		return nil, errTooLarge
+	}
+
+	b = make([]byte, packetLen)
+	_, err = io.ReadFull(conn, b)
+	if err != nil {
+		return nil, fmt.Errorf("reading msg: %w", err)
+	}
+
+	return b, nil
 }
 
 // logWithNonCrit logs the error on the appropriate level depending on whether
@@ -164,10 +190,20 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 		return fmt.Errorf("packing message: %w", err)
 	}
 
-	err = proxyutil.WritePrefixed(bytes, conn)
+	err = writePrefixed(bytes, conn)
 	if err != nil && !errors.Is(err, net.ErrClosed) {
 		return fmt.Errorf("writing message: %w", err)
 	}
 
 	return nil
+}
+
+// writePrefixed writes a DNS message to a TCP connection it first writes
+// a 2-byte prefix followed by the message itself.
+func writePrefixed(b []byte, conn net.Conn) (err error) {
+	l := make([]byte, 2)
+	binary.BigEndian.PutUint16(l, uint16(len(b)))
+	_, err = (&net.Buffers{l, b}).WriteTo(conn)
+
+	return err
 }

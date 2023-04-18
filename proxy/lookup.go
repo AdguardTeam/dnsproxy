@@ -4,7 +4,6 @@ import (
 	"net"
 
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
-	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 
 	"github.com/miekg/dns"
@@ -58,7 +57,7 @@ func (p *Proxy) LookupIPAddr(host string) ([]net.IPAddr, error) {
 			errs = append(errs, result.err)
 		} else {
 			// Copy IP addresses from dns.RR to the resulting IP slice.
-			proxyutil.AppendIPAddrs(&ipAddrs, result.resp.Answer)
+			appendIPAddrs(&ipAddrs, result.resp.Answer)
 		}
 	}
 
@@ -69,4 +68,16 @@ func (p *Proxy) LookupIPAddr(host string) ([]net.IPAddr, error) {
 	proxynetutil.SortIPAddrs(ipAddrs, p.Config.PreferIPv6)
 
 	return ipAddrs, nil
+}
+
+func appendIPAddrs(ipAddrs *[]net.IPAddr, answers []dns.RR) {
+	for _, ans := range answers {
+		if a, ok := ans.(*dns.A); ok {
+			ip := net.IPAddr{IP: a.A}
+			*ipAddrs = append(*ipAddrs, ip)
+		} else if a, ok := ans.(*dns.AAAA); ok {
+			ip := net.IPAddr{IP: a.AAAA}
+			*ipAddrs = append(*ipAddrs, ip)
+		}
+	}
 }

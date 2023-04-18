@@ -25,6 +25,9 @@ func IPFromRR(rr dns.RR) (ip net.IP) {
 }
 
 // ContainsIP returns true if any of nets contains ip.
+//
+// Deprecated: This function is deprecated and will be removed in a future
+// release.
 func ContainsIP(nets []*net.IPNet, ip net.IP) (ok bool) {
 	if netutil.ValidateIP(ip) != nil {
 		return false
@@ -40,6 +43,9 @@ func ContainsIP(nets []*net.IPNet, ip net.IP) (ok bool) {
 }
 
 // AppendIPAddrs appends the IP addresses got from dns.RR to the specified array
+//
+// Deprecated: This function is deprecated and will be removed in a future
+// release.
 func AppendIPAddrs(ipAddrs *[]net.IPAddr, answers []dns.RR) {
 	for _, ans := range answers {
 		if a, ok := ans.(*dns.A); ok {

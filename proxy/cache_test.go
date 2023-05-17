@@ -583,111 +583,75 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 	}, 1100*time.Millisecond, 100*time.Millisecond, "cache for %s should already be removed", host)
 }
 
-func TestSubnet(t *testing.T) {
-	c := newCache(testCacheSize, true, false)
+func TestCache_getWithSubnet(t *testing.T) {
+	const testFQDN = "example.com."
+
 	ip1234, ip2234, ip3234 := net.IP{1, 2, 3, 4}, net.IP{2, 2, 3, 4}, net.IP{3, 2, 3, 4}
-	req := (&dns.Msg{}).SetQuestion("example.com.", dns.TypeA)
+	req := (&dns.Msg{}).SetQuestion(testFQDN, dns.TypeA)
+	mask16 := net.CIDRMask(16, netutil.IPv4BitLen)
+	mask24 := net.CIDRMask(24, netutil.IPv4BitLen)
+
+	c := newCache(testCacheSize, true, false)
 
 	t.Run("empty", func(t *testing.T) {
-		ci, expired, _ := c.getWithSubnet(req, &net.IPNet{
-			IP:   ip1234,
-			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-		})
+		ci, expired, _ := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
 		assert.Nil(t, ci)
 		assert.False(t, expired)
 	})
 
 	// Add a response with subnet.
 	resp := (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Response: true,
-		},
-		Answer: []dns.RR{newRR(t, "example.com.", dns.TypeA, 1, net.IP{1, 1, 1, 1})},
-	}).SetQuestion("example.com.", dns.TypeA)
-	c.setWithSubnet(
-		resp,
-		upstreamWithAddr,
-		&net.IPNet{IP: ip1234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)},
-	)
+		Answer: []dns.RR{newRR(t, testFQDN, dns.TypeA, 1, net.IP{1, 1, 1, 1})},
+	}).SetReply(req)
+	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: ip1234, Mask: mask16})
 
 	t.Run("different_ip", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
-			IP:   ip2234,
-			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-		})
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip2234, Mask: mask24})
 		assert.False(t, expired)
 		assert.Equal(t, msgToKeyWithSubnet(req, ip2234, 0), key)
-
-		require.Nil(t, ci)
+		assert.Nil(t, ci)
 	})
 
 	// Add a response entry with subnet #2.
 	resp = (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Response: true,
-		},
-		Answer: []dns.RR{newRR(t, "example.com.", dns.TypeA, 1, net.IP{2, 2, 2, 2})},
-	}).SetQuestion("example.com.", dns.TypeA)
-	c.setWithSubnet(
-		resp,
-		upstreamWithAddr,
-		&net.IPNet{IP: ip2234, Mask: net.CIDRMask(16, netutil.IPv4BitLen)},
-	)
+		Answer: []dns.RR{newRR(t, testFQDN, dns.TypeA, 1, net.IP{2, 2, 2, 2})},
+	}).SetReply(req)
+	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: ip2234, Mask: mask16})
 
 	// Add a response entry without subnet.
 	resp = (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Response: true,
-		},
-		Answer: []dns.RR{newRR(t, "example.com.", dns.TypeA, 1, net.IP{3, 3, 3, 3})},
-	}).SetQuestion("example.com.", dns.TypeA)
-	c.setWithSubnet(
-		resp,
-		upstreamWithAddr,
-		&net.IPNet{IP: nil, Mask: nil},
-	)
+		Answer: []dns.RR{newRR(t, testFQDN, dns.TypeA, 1, net.IP{3, 3, 3, 3})},
+	}).SetReply(req)
+	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: nil, Mask: nil})
 
 	t.Run("with_subnet_1", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
-			IP:   ip1234,
-			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-		})
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
 		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, ip1234, 16), key)
+		assert.Equal(t, msgToKeyWithSubnet(req, ip1234.Mask(mask16), 16), key)
 
 		require.NotNil(t, ci)
 		require.NotNil(t, ci.m)
 		require.NotEmpty(t, ci.m.Answer)
 
-		a, ok := ci.m.Answer[0].(*dns.A)
-		require.True(t, ok)
-
+		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
 		assert.True(t, a.A.Equal(net.IP{1, 1, 1, 1}))
 	})
 
 	t.Run("with_subnet_2", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
-			IP:   ip2234,
-			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-		})
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip2234, Mask: mask24})
 		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, ip2234, 16), key)
+		assert.Equal(t, msgToKeyWithSubnet(req, ip2234.Mask(mask16), 16), key)
 
 		require.NotNil(t, ci)
 		require.NotNil(t, ci.m)
 		require.NotEmpty(t, ci.m.Answer)
 
-		a, ok := ci.m.Answer[0].(*dns.A)
-		require.True(t, ok)
-
+		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
 		assert.True(t, a.A.Equal(net.IP{2, 2, 2, 2}))
 	})
 
 	t.Run("with_subnet_3", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
-			IP:   ip3234,
-			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-		})
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip3234, Mask: mask24})
 		assert.False(t, expired)
 		assert.Equal(t, msgToKeyWithSubnet(req, ip1234, 0), key)
 
@@ -695,10 +659,62 @@ func TestSubnet(t *testing.T) {
 		require.NotNil(t, ci.m)
 		require.NotEmpty(t, ci.m.Answer)
 
-		a, ok := ci.m.Answer[0].(*dns.A)
-		require.True(t, ok)
-
+		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
 		assert.True(t, a.A.Equal(net.IP{3, 3, 3, 3}))
+	})
+}
+
+func TestCache_getWithSubnet_mask(t *testing.T) {
+	const testFQDN = "example.com."
+
+	testIP := net.IP{176, 112, 191, 0}
+	noMatchIP := net.IP{177, 112, 191, 0}
+
+	// cachedIP/cidrMask network contains the testIP.
+	const cidrMaskOnes = 20
+	cidrMask := net.CIDRMask(cidrMaskOnes, netutil.IPv4BitLen)
+	cachedIP := net.IP{176, 112, 176, 0}
+
+	ansIP := net.IP{4, 4, 4, 4}
+
+	c := newCache(testCacheSize, true, true)
+
+	req := (&dns.Msg{}).SetQuestion(testFQDN, dns.TypeA)
+	resp := (&dns.Msg{
+		Answer: []dns.RR{newRR(t, testFQDN, dns.TypeA, 300, ansIP)},
+	}).SetReply(req)
+
+	// Cache IP network that contains the testIP.
+	c.setWithSubnet(
+		resp,
+		upstreamWithAddr,
+		&net.IPNet{IP: cachedIP, Mask: cidrMask},
+	)
+
+	t.Run("mask_matched", func(t *testing.T) {
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+			IP:   testIP,
+			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+		})
+		assert.False(t, expired)
+		assert.Equal(t, msgToKeyWithSubnet(req, testIP.Mask(cidrMask), cidrMaskOnes), key)
+
+		require.NotNil(t, ci)
+		require.NotNil(t, ci.m)
+		require.NotEmpty(t, ci.m.Answer)
+
+		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
+		assert.True(t, a.A.Equal(ansIP))
+	})
+
+	t.Run("no_mask_matched", func(t *testing.T) {
+		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+			IP:   noMatchIP,
+			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+		})
+		assert.False(t, expired)
+		assert.Equal(t, msgToKeyWithSubnet(req, noMatchIP, 0), key)
+		assert.Nil(t, ci)
 	})
 }
 

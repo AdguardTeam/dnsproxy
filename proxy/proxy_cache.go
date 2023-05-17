@@ -85,7 +85,7 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 		// valid for all addresses that fall within that range.
 		//
 		// See RFC 7871 Section 7.3.1.
-		if scope < ones {
+		if scope < reqOnes {
 			ecs.Mask = net.CIDRMask(scope, bits)
 			ecs.IP = ecs.IP.Mask(ecs.Mask)
 		}

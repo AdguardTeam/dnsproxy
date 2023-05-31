@@ -95,8 +95,10 @@ type upstreamResolver struct {
 var _ Resolver = upstreamResolver{}
 
 // LookupNetIP implements the [Resolver] interface for upstreamResolver.
+//
+// TODO(e.burkov):  Use context.
 func (r upstreamResolver) LookupNetIP(
-	ctx context.Context,
+	_ context.Context,
 	network string,
 	host string,
 ) (ipAddrs []netip.Addr, err error) {

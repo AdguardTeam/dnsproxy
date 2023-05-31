@@ -537,8 +537,8 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	ok, err = p.replyFromUpstream(dctx)
 
 	// Don't cache the responses having CD flag, just like Dnsmasq does.  It
-	// prevents the cache from being poisoned with unvalidated answers which
-	// may differ from validated ones.
+	// prevents the cache from being poisoned with unvalidated answers which may
+	// differ from validated ones.
 	//
 	// See https://github.com/imp/dnsmasq/blob/770bce967cfc9967273d0acfb3ea018fb7b17522/src/forward.c#L1169-L1172.
 	if cacheWorks && ok && !dctx.Res.CheckingDisabled {

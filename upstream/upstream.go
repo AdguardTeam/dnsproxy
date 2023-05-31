@@ -26,9 +26,9 @@ import (
 
 // Upstream is an interface for a DNS resolver.
 type Upstream interface {
-	// Exchange sends the DNS query m to this upstream and returns the response
-	// that has been received or an error if something went wrong.
-	Exchange(m *dns.Msg) (*dns.Msg, error)
+	// Exchange sends the DNS query req to this upstream and returns the
+	// response that has been received or an error if something went wrong.
+	Exchange(req *dns.Msg) (*dns.Msg, error)
 
 	// Address returns the address of the upstream DNS resolver.
 	Address() string

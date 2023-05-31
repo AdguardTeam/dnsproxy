@@ -109,7 +109,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 		log.Debug("dot %s: bad conn from pool: %s", p.addr, err)
 
 		// Retry.
-		conn, err = tlsDial(h, "tcp", p.tlsConf.Clone())
+		conn, err = tlsDial(h, p.tlsConf.Clone())
 		if err != nil {
 			return nil, fmt.Errorf(
 				"dialing %s: connecting to %s: %w",
@@ -158,7 +158,7 @@ func (p *dnsOverTLS) conn(h bootstrap.DialHandler) (conn net.Conn, err error) {
 	// Dial a new connection outside the lock, if needed.
 	defer func() {
 		if conn == nil {
-			conn, err = tlsDial(h, "tcp", p.tlsConf.Clone())
+			conn, err = tlsDial(h, p.tlsConf.Clone())
 			err = errors.Annotate(err, "connecting to %s: %w", p.tlsConf.ServerName)
 		}
 	}()
@@ -220,20 +220,16 @@ func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg
 
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own
 // dialContext function to get connection.
-func tlsDial(
-	dialContext bootstrap.DialHandler,
-	network string,
-	conf *tls.Config,
-) (c *tls.Conn, err error) {
+func tlsDial(dialContext bootstrap.DialHandler, conf *tls.Config) (c *tls.Conn, err error) {
 	// We're using bootstrapped address instead of what's passed to the
 	// function.
-	rawConn, err := dialContext(context.Background(), network, "")
+	rawConn, err := dialContext(context.Background(), string(networkTCP), "")
 	if err != nil {
 		return nil, err
 	}
 
-	// We want the timeout to cover the whole process: TCP connection and
-	// TLS handshake dialTimeout will be used as connection deadLine.
+	// We want the timeout to cover the whole process: TCP connection and TLS
+	// handshake dialTimeout will be used as connection deadLine.
 	conn := tls.Client(rawConn, conf)
 	err = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err != nil {

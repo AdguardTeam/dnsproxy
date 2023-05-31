@@ -650,7 +650,7 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
 func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tls.Config, ch chan error) {
 	startTime := time.Now()
 
-	conn, err := tlsDial(dialContext, "tcp", tlsConfig)
+	conn, err := tlsDial(dialContext, tlsConfig)
 	if err != nil {
 		ch <- fmt.Errorf("opening TLS connection: %w", err)
 		return

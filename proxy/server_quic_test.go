@@ -38,7 +38,7 @@ func TestQuicProxy(t *testing.T) {
 	addr := dnsProxy.Addr(ProtoQUIC)
 
 	// Open a QUIC connection.
-	conn, err := quic.DialAddrEarly(addr.String(), tlsConfig, nil)
+	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, func() (err error) {
 		return conn.CloseWithError(DoQCodeNoError, "")
@@ -95,7 +95,7 @@ func TestQuicProxy_largePackets(t *testing.T) {
 	addr := dnsProxy.Addr(ProtoQUIC)
 
 	// Open a QUIC connection.
-	conn, err := quic.DialAddrEarly(addr.String(), tlsConfig, nil)
+	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, func() (err error) {
 		return conn.CloseWithError(DoQCodeNoError, "")

@@ -64,28 +64,54 @@ type Proxy struct {
 	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG.
 	counter uint64
 
-	started bool // Started flag
+	// started indicates if the proxy has been started.
+	started bool
 
 	// Listeners
 	// --
 
-	udpListen         []*net.UDPConn       // UDP listen connections
-	tcpListen         []net.Listener       // TCP listeners
-	tlsListen         []net.Listener       // TLS listeners
-	quicListen        []quic.EarlyListener // QUIC listeners
-	httpsListen       []net.Listener       // HTTPS listeners
-	httpsServer       *http.Server         // HTTPS server instance
-	h3Listen          []quic.EarlyListener // HTTP/3 listeners
-	h3Server          *http3.Server        // HTTP/3 server instance
-	dnsCryptUDPListen []*net.UDPConn       // UDP listen connections for DNSCrypt
-	dnsCryptTCPListen []net.Listener       // TCP listeners for DNSCrypt
-	dnsCryptServer    *dnscrypt.Server     // DNSCrypt server instance
+	// udpListen are the listened UDP connections.
+	udpListen []*net.UDPConn
+
+	// tcpListen are the listened TCP connections.
+	tcpListen []net.Listener
+
+	// tlsListen are the listened TCP connections with TLS.
+	tlsListen []net.Listener
+
+	// quicListen are the listened QUIC connections.
+	quicListen []*quic.EarlyListener
+
+	// httpsListen are the listened HTTPS connections.
+	httpsListen []net.Listener
+
+	// h3Listen are the listened HTTP/3 connections.
+	h3Listen []*quic.EarlyListener
+
+	// httpsServer serves queries received over HTTPS.
+	httpsServer *http.Server
+
+	// h3Server serves queries received over HTTP/3.
+	h3Server *http3.Server
+
+	// dnsCryptUDPListen are the listened UDP connections for DNSCrypt.
+	dnsCryptUDPListen []*net.UDPConn
+
+	// dnsCryptTCPListen are the listened TCP connections for DNSCrypt.
+	dnsCryptTCPListen []net.Listener
+
+	// dnsCryptServer serves DNSCrypt queries.
+	dnsCryptServer *dnscrypt.Server
 
 	// Upstream
 	// --
 
-	upstreamRttStats map[string]int // Map of upstream addresses and their rtt. Used to sort upstreams "from fast to slow"
-	rttLock          sync.Mutex     // Synchronizes access to the upstreamRttStats map
+	// upstreamRttStats is a map of upstream addresses and their rtt.  Used to
+	// sort upstreams by their latency.
+	upstreamRttStats map[string]int
+
+	// rttLock protects upstreamRttStats.
+	rttLock sync.Mutex
 
 	// DNS64 (in case dnsproxy works in a NAT64/DNS64 network)
 	// --
@@ -98,8 +124,11 @@ type Proxy struct {
 	// Ratelimit
 	// --
 
-	ratelimitBuckets *gocache.Cache // where the ratelimiters are stored, per IP
-	ratelimitLock    sync.Mutex     // Synchronizes access to ratelimitBuckets
+	// ratelimitBuckets is a storage for ratelimiters for individual IPs.
+	ratelimitBuckets *gocache.Cache
+
+	// ratelimitLock protects ratelimitBuckets.
+	ratelimitLock sync.Mutex
 
 	// proxyVerifier checks if the proxy is in the trusted list.
 	proxyVerifier netutil.SubnetSet
@@ -109,6 +138,7 @@ type Proxy struct {
 
 	// cache is used to cache requests.  It is disabled if nil.
 	cache *cache
+
 	// shortFlighter is used to resolve the expired cached requests without
 	// repetitions.
 	shortFlighter *optimisticResolver
@@ -116,14 +146,20 @@ type Proxy struct {
 	// FastestAddr module
 	// --
 
-	fastestAddr *fastip.FastestAddr // fastest-addr module
+	// fastestAddr finds the fastest IP address for the resolved domain.
+	fastestAddr *fastip.FastestAddr
 
 	// Other
 	// --
 
-	bytesPool    *sync.Pool // bytes pool to avoid unnecessary allocations when reading DNS packets
-	udpOOBSize   int        // size for received OOB data
-	sync.RWMutex            // protects parallel access to proxy structures
+	// bytesPool is a pool of byte slices used to read DNS packets.
+	bytesPool *sync.Pool
+
+	// udpOOBSize is the size of the out-of-band data for UDP connections.
+	udpOOBSize int
+
+	// RWMutex protects the whole proxy.
+	sync.RWMutex
 
 	// requestGoroutinesSema limits the number of simultaneous requests.
 	//
@@ -135,7 +171,8 @@ type Proxy struct {
 	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
 	requestGoroutinesSema semaphore
 
-	Config // proxy configuration
+	// Config is the proxy configuration.
+	Config
 }
 
 // Init populates fields of p but does not start listeners.

@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/quic-go/quic-go/internal/protocol"
@@ -17,10 +18,21 @@ import (
 	"github.com/quic-go/quic-go/quicvarint"
 )
 
+// AdditionalTransportParametersClient are additional transport parameters that will be added
+// to the client's transport parameters.
+// This is not intended for production use, but _only_ to increase the size of the ClientHello beyond
+// the usual size of less than 1 MTU.
+var AdditionalTransportParametersClient map[uint64][]byte
+
 const transportParameterMarshalingVersion = 1
 
+var (
+	randomMutex sync.Mutex
+	random      rand.Rand
+)
+
 func init() {
-	rand.Seed(time.Now().UTC().UnixNano())
+	random = *rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 type transportParameterID uint64
@@ -106,6 +118,7 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 	var (
 		readOriginalDestinationConnectionID bool
 		readInitialSourceConnectionID       bool
+		readActiveConnectionIDLimit         bool
 	)
 
 	p.AckDelayExponent = protocol.DefaultAckDelayExponent
@@ -127,6 +140,9 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 		}
 		parameterIDs = append(parameterIDs, paramID)
 		switch paramID {
+		case activeConnectionIDLimitParameterID:
+			readActiveConnectionIDLimit = true
+			fallthrough
 		case maxIdleTimeoutParameterID,
 			maxUDPPayloadSizeParameterID,
 			initialMaxDataParameterID,
@@ -136,7 +152,6 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 			initialMaxStreamsBidiParameterID,
 			initialMaxStreamsUniParameterID,
 			maxAckDelayParameterID,
-			activeConnectionIDLimitParameterID,
 			maxDatagramFrameSizeParameterID,
 			ackDelayExponentParameterID:
 			if err := p.readNumericTransportParameter(r, paramID, int(paramLen)); err != nil {
@@ -184,6 +199,9 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 		}
 	}
 
+	if !readActiveConnectionIDLimit {
+		p.ActiveConnectionIDLimit = protocol.DefaultActiveConnectionIDLimit
+	}
 	if !fromSessionTicket {
 		if sentBy == protocol.PerspectiveServer && !readOriginalDestinationConnectionID {
 			return errors.New("missing original_destination_connection_id")
@@ -324,10 +342,12 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 
 	// add a greased value
 	b = quicvarint.Append(b, uint64(27+31*rand.Intn(100)))
-	length := rand.Intn(16)
+	randomMutex.Lock()
+	length := random.Intn(16)
 	b = quicvarint.Append(b, uint64(length))
 	b = b[:len(b)+length]
-	rand.Read(b[len(b)-length:])
+	random.Read(b[len(b)-length:])
+	randomMutex.Unlock()
 
 	// initial_max_stream_data_bidi_local
 	b = p.marshalVarintParam(b, initialMaxStreamDataBidiLocalParameterID, uint64(p.InitialMaxStreamDataBidiLocal))
@@ -388,7 +408,9 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 		}
 	}
 	// active_connection_id_limit
-	b = p.marshalVarintParam(b, activeConnectionIDLimitParameterID, p.ActiveConnectionIDLimit)
+	if p.ActiveConnectionIDLimit != protocol.DefaultActiveConnectionIDLimit {
+		b = p.marshalVarintParam(b, activeConnectionIDLimitParameterID, p.ActiveConnectionIDLimit)
+	}
 	// initial_source_connection_id
 	b = quicvarint.Append(b, uint64(initialSourceConnectionIDParameterID))
 	b = quicvarint.Append(b, uint64(p.InitialSourceConnectionID.Len()))
@@ -402,6 +424,15 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	if p.MaxDatagramFrameSize != protocol.InvalidByteCount {
 		b = p.marshalVarintParam(b, maxDatagramFrameSizeParameterID, uint64(p.MaxDatagramFrameSize))
 	}
+
+	if pers == protocol.PerspectiveClient && len(AdditionalTransportParametersClient) > 0 {
+		for k, v := range AdditionalTransportParametersClient {
+			b = quicvarint.Append(b, k)
+			b = quicvarint.Append(b, uint64(len(v)))
+			b = append(b, v...)
+		}
+	}
+
 	return b
 }
 

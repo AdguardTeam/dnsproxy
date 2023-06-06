@@ -124,7 +124,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
 		InsecureSkipVerify: true,
-		QUICTracer:         tracer,
+		QUICTracer:         tracer.TracerForConnection,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -176,7 +176,7 @@ type testDoQServer struct {
 	rootCAs *x509.CertPool
 
 	// listener is the QUIC connections listener.
-	listener quic.EarlyListener
+	listener *quic.EarlyListener
 }
 
 // Shutdown stops the test server.
@@ -264,9 +264,7 @@ func startDoQServer(t *testing.T, port int) (s *testDoQServer) {
 			RequireAddressValidation: func(net.Addr) (ok bool) {
 				return false
 			},
-			Allow0RTT: func(net.Addr) (ok bool) {
-				return true
-			},
+			Allow0RTT: true,
 		},
 	)
 	require.NoError(t, err)

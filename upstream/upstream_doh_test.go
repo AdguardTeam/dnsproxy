@@ -277,7 +277,7 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	address := fmt.Sprintf("h3://%s/dns-query", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
 		InsecureSkipVerify: true,
-		QUICTracer:         tracer,
+		QUICTracer:         tracer.TracerForConnection,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -344,7 +344,7 @@ type testDoHServer struct {
 	serverH3 *http3.Server
 
 	// listenerH3 that's used to serve HTTP/3.
-	listenerH3 quic.EarlyListener
+	listenerH3 *quic.EarlyListener
 }
 
 // Shutdown stops the DoH server.
@@ -407,7 +407,7 @@ func startDoHServer(
 	tcpAddr = tcpListen.Addr().(*net.TCPAddr)
 
 	var serverH3 *http3.Server
-	var listenerH3 quic.EarlyListener
+	var listenerH3 *quic.EarlyListener
 
 	if opts.http3Enabled {
 		tlsConfigH3 := tlsConfig.Clone()
@@ -433,9 +433,7 @@ func startDoHServer(
 			RequireAddressValidation: func(net.Addr) (ok bool) {
 				return true
 			},
-			Allow0RTT: func(net.Addr) (ok bool) {
-				return true
-			},
+			Allow0RTT: true,
 		}
 		listenerH3, err = quic.ListenAddrEarly(udpAddr.String(), tlsConfigH3, quicConfig)
 		require.NoError(t, err)

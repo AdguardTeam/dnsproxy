@@ -82,7 +82,7 @@ func (p *Proxy) createQUICListeners() error {
 // quicPacketLoop listens for incoming QUIC packets.
 //
 // See also the comment on Proxy.requestGoroutinesSema.
-func (p *Proxy) quicPacketLoop(l quic.EarlyListener, requestGoroutinesSema semaphore) {
+func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, requestGoroutinesSema semaphore) {
 	log.Info("Entering the DNS-over-QUIC listener loop on %s", l.Addr())
 	for {
 		conn, err := l.Accept(context.Background())
@@ -374,9 +374,7 @@ func newServerQUICConfig() (conf *quic.Config) {
 		MaxIncomingUniStreams:    math.MaxUint16,
 		RequireAddressValidation: v.requiresValidation,
 		// Enable 0-RTT by default for all connections on the server-side.
-		Allow0RTT: func(net.Addr) (ok bool) {
-			return true
-		},
+		Allow0RTT: true,
 	}
 }
 

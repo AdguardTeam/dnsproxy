@@ -358,7 +358,7 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 	ctx, cancel := p.withDeadline(context.Background())
 	defer cancel()
 
-	conn, err = quic.DialAddrEarlyContext(ctx, addr, p.tlsConf.Clone(), p.getQUICConfig())
+	conn, err = quic.DialAddrEarly(ctx, addr, p.tlsConf.Clone(), p.getQUICConfig())
 	if err != nil {
 		return nil, fmt.Errorf("opening quic connection to %s: %w", p.addr, err)
 	}

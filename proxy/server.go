@@ -60,7 +60,7 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 	}
 
 	for _, l := range p.h3Listen {
-		go func(l quic.EarlyListener) { _ = p.h3Server.ServeListener(l) }(l)
+		go func(l *quic.EarlyListener) { _ = p.h3Server.ServeListener(l) }(l)
 	}
 
 	for _, l := range p.quicListen {

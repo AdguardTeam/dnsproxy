@@ -3,6 +3,7 @@
 package upstream
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/logging"
 )
 
@@ -37,6 +39,14 @@ type Upstream interface {
 	// called after calling Close.
 	io.Closer
 }
+
+// QUICTraceFunc is a function that returns a [logging.ConnectionTracer]
+// specific for a given role and connection ID.
+type QUICTraceFunc func(
+	ctx context.Context,
+	role logging.Perspective,
+	connID quic.ConnectionID,
+) (tracer logging.ConnectionTracer)
 
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
@@ -72,9 +82,9 @@ type Options struct {
 	// Upstream.Exchange method returns any error caused by it.
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 
-	// QUICTracer is an optional object that allows tracing every QUIC
+	// QUICTracer is an optional callback that allows tracing every QUIC
 	// connection and logging every packet that goes through.
-	QUICTracer logging.Tracer
+	QUICTracer QUICTraceFunc
 
 	// InsecureSkipVerify disables verifying the server's certificate.
 	InsecureSkipVerify bool

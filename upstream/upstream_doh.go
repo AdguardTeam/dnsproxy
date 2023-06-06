@@ -539,7 +539,7 @@ func (p *dnsOverHTTPS) createTransportH3(
 			tlsCfg *tls.Config,
 			cfg *quic.Config,
 		) (c quic.EarlyConnection, err error) {
-			c, err = quic.DialAddrEarlyContext(ctx, addr, tlsCfg, cfg)
+			c, err = quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
 			return c, err
 		},
 		DisableCompression: true,
@@ -630,7 +630,7 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
 	defer cancel()
 
-	conn, err := quic.DialAddrEarlyContext(ctx, addr, tlsConfig, p.getQUICConfig())
+	conn, err := quic.DialAddrEarly(ctx, addr, tlsConfig, p.getQUICConfig())
 	if err != nil {
 		ch <- fmt.Errorf("opening QUIC connection to %s: %w", p.addr, err)
 		return

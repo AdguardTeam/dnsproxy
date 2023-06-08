@@ -211,9 +211,14 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
 func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *dns.Msg, err error) {
 	addr := p.Address()
 
-	logBegin(addr, req)
+	n := networkTCP
+	if isHTTP3(client) {
+		n = networkUDP
+	}
+
+	logBegin(addr, n, req)
 	resp, err = p.exchangeHTTPSClient(client, req)
-	logFinish(addr, err)
+	logFinish(addr, n, err)
 
 	return resp, err
 }

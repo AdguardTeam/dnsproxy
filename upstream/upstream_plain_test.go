@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,9 +63,8 @@ func TestUpstream_plainDNS_badID(t *testing.T) {
 	assert.Nil(t, resp)
 }
 
-func TestUpstream_plainDNS_fallback(t *testing.T) {
+func TestUpstream_plainDNS_fallbackToTCP(t *testing.T) {
 	req := createTestMessage()
-
 	goodResp := respondToTestMessage(req)
 
 	truncResp := goodResp.Copy()
@@ -79,26 +79,41 @@ func TestUpstream_plainDNS_fallback(t *testing.T) {
 	testCases := []struct {
 		udpResp *dns.Msg
 		name    string
+		wantUDP int
+		wantTCP int
 	}{{
 		udpResp: goodResp,
 		name:    "all_right",
+		wantUDP: 1,
+		wantTCP: 0,
 	}, {
 		udpResp: truncResp,
 		name:    "truncated_response",
+		wantUDP: 1,
+		wantTCP: 1,
 	}, {
 		udpResp: badQNameResp,
 		name:    "bad_qname",
+		wantUDP: 1,
+		wantTCP: 1,
 	}, {
 		udpResp: badQTypeResp,
 		name:    "bad_qtype",
+		wantUDP: 1,
+		wantTCP: 1,
 	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			var udpReqNum, tcpReqNum atomic.Uint32
 			srv := startDNSServer(t, func(w dns.ResponseWriter, _ *dns.Msg) {
-				resp := goodResp
+				var resp *dns.Msg
 				if w.RemoteAddr().Network() == string(networkUDP) {
+					udpReqNum.Add(1)
 					resp = tc.udpResp
+				} else {
+					tcpReqNum.Add(1)
+					resp = goodResp
 				}
 
 				require.NoError(testutil.PanicT{}, w.WriteMsg(resp))
@@ -116,6 +131,9 @@ func TestUpstream_plainDNS_fallback(t *testing.T) {
 			resp, err := u.Exchange(req)
 			require.NoError(t, err)
 			requireResponse(t, req, resp)
+
+			assert.Equal(t, tc.wantUDP, int(udpReqNum.Load()))
+			assert.Equal(t, tc.wantTCP, int(tcpReqNum.Load()))
 		})
 	}
 }

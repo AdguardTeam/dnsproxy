@@ -98,14 +98,15 @@ func (p *plainDNS) dialExchange(
 		conn.UDPSize = dns.MinMsgSize
 	}
 
-	logBegin(addr, req)
-	defer func() { logFinish(addr, err) }()
+	logBegin(addr, network, req)
+	defer func() { logFinish(addr, network, err) }()
 
 	ctx := context.Background()
 	conn.Conn, err = dial(ctx, string(network), "")
 	if err != nil {
 		return nil, fmt.Errorf("dialing %s over %s: %w", p.addr.Host, network, err)
 	}
+	defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
 
 	resp, _, err = client.ExchangeWithConn(req, conn)
 	if isExpectedConnErr(err) {
@@ -113,6 +114,7 @@ func (p *plainDNS) dialExchange(
 		if err != nil {
 			return nil, fmt.Errorf("dialing %s over %s again: %w", p.addr.Host, network, err)
 		}
+		defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
 
 		resp, _, err = client.ExchangeWithConn(req, conn)
 	}
@@ -144,20 +146,30 @@ func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 	resp, err = p.dialExchange(p.net, dial, req)
 	if p.net != networkUDP {
+		// The network is already TCP.
 		return resp, err
 	}
 
 	if resp == nil {
+		// There is likely an error with the upstream.
 		return resp, err
 	}
 
 	if errors.Is(err, errQuestion) {
+		// The upstream responds with malformed messages, so try TCP.
 		log.Debug("plain %s: %s, using tcp", addr, err)
+
+		return p.dialExchange(networkTCP, dial, req)
 	} else if resp.Truncated {
+		// Fallback to TCP on truncated responses.
 		log.Debug("plain %s: resp for %s is truncated, using tcp", &req.Question[0], addr)
+
+		return p.dialExchange(networkTCP, dial, req)
 	}
 
-	return p.dialExchange(networkTCP, dial, req)
+	// There is either no error or the error isn't related to the received
+	// message.
+	return resp, err
 }
 
 // Close implements the [Upstream] interface for *plainDNS.

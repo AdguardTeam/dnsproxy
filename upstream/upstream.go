@@ -278,24 +278,26 @@ func addPort(u *url.URL, port int) {
 	}
 }
 
-// Write to log DNS request information that we are going to send
-func logBegin(upstreamAddress string, req *dns.Msg) {
+// logBegin logs the start of DNS request resolution.  It should be called right
+// before dialing the connection to the upstream.  n is the [network] that will
+// be used to send the request.
+func logBegin(upstreamAddress string, n network, req *dns.Msg) {
 	qtype := ""
 	target := ""
 	if len(req.Question) != 0 {
 		qtype = dns.Type(req.Question[0].Qtype).String()
 		target = req.Question[0].Name
 	}
-	log.Debug("%s: sending request %s %s", upstreamAddress, qtype, target)
+	log.Debug("%s: sending request over %s: %s %s", upstreamAddress, n, qtype, target)
 }
 
 // Write to log about the result of DNS request
-func logFinish(upstreamAddress string, err error) {
+func logFinish(upstreamAddress string, n network, err error) {
 	status := "ok"
 	if err != nil {
 		status = err.Error()
 	}
-	log.Debug("%s: response: %s", upstreamAddress, status)
+	log.Debug("%s: response received over %s: %s", upstreamAddress, n, status)
 }
 
 // DialerInitializer returns the handler that it creates.  All the subsequent

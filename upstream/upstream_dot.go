@@ -198,8 +198,8 @@ func (p *dnsOverTLS) putBack(conn net.Conn) {
 func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg, err error) {
 	addr := p.Address()
 
-	logBegin(addr, m)
-	defer func() { logFinish(addr, err) }()
+	logBegin(addr, networkTCP, m)
+	defer func() { logFinish(addr, networkTCP, err) }()
 
 	dnsConn := dns.Conn{Conn: conn}
 

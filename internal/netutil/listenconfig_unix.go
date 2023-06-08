@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -25,7 +26,14 @@ func defaultListenControl(_, _ string, c syscall.RawConn) (err error) {
 
 		opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
 		if opErr != nil {
-			opErr = fmt.Errorf("setting SO_REUSEPORT: %w", opErr)
+			if errors.Is(opErr, unix.ENOPROTOOPT) {
+				// Some Linux OSs do not seem to support SO_REUSEPORT, including
+				// some varieties of OpenWrt.  Issue a warning.
+				log.Info("warning: SO_REUSEPORT not supported: %s", opErr)
+				opErr = nil
+			} else {
+				opErr = fmt.Errorf("setting SO_REUSEPORT: %w", opErr)
+			}
 		}
 	})
 

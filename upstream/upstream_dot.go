@@ -223,7 +223,7 @@ func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg
 func tlsDial(dialContext bootstrap.DialHandler, conf *tls.Config) (c *tls.Conn, err error) {
 	// We're using bootstrapped address instead of what's passed to the
 	// function.
-	rawConn, err := dialContext(context.Background(), string(networkTCP), "")
+	rawConn, err := dialContext(context.Background(), networkTCP, "")
 	if err != nil {
 		return nil, err
 	}

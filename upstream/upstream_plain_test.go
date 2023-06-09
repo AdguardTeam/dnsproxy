@@ -108,7 +108,7 @@ func TestUpstream_plainDNS_fallbackToTCP(t *testing.T) {
 			var udpReqNum, tcpReqNum atomic.Uint32
 			srv := startDNSServer(t, func(w dns.ResponseWriter, _ *dns.Msg) {
 				var resp *dns.Msg
-				if w.RemoteAddr().Network() == string(networkUDP) {
+				if w.RemoteAddr().Network() == networkUDP {
 					udpReqNum.Add(1)
 					resp = tc.udpResp
 				} else {

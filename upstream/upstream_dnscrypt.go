@@ -22,8 +22,8 @@ type dnsCrypt struct {
 	// client stores the DNSCrypt client properties.
 	client *dnscrypt.Client
 
-	// serverInfo stores the DNSCrypt server properties.
-	serverInfo *dnscrypt.ResolverInfo
+	// resolverInfo stores the DNSCrypt server properties.
+	resolverInfo *dnscrypt.ResolverInfo
 
 	// addr is the DNSCrypt server URL.
 	addr *url.URL
@@ -83,21 +83,25 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (resp *dns.Msg, err error) {
 		p.mu.RLock()
 		defer p.mu.RUnlock()
 
-		client = p.client
-		resolverInfo = p.serverInfo
+		client, resolverInfo = p.client, p.resolverInfo
 	}()
 
 	// Check the client and server info are set and the certificate is not
 	// expired, since any of these cases require a client reset.
 	//
 	// TODO(ameshkov):  Consider using [time.Time] for [dnscrypt.Cert.NotAfter].
-	now := uint32(time.Now().Unix())
-	if client == nil || resolverInfo == nil || resolverInfo.ResolverCert.NotAfter < now {
+	switch {
+	case
+		client == nil,
+		resolverInfo == nil,
+		resolverInfo.ResolverCert.NotAfter < uint32(time.Now().Unix()):
 		client, resolverInfo, err = p.resetClient()
 		if err != nil {
 			// Don't wrap the error, because it's informative enough as is.
 			return nil, err
 		}
+	default:
+		// Go on.
 	}
 
 	resp, err = client.Exchange(m, resolverInfo)
@@ -105,7 +109,7 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (resp *dns.Msg, err error) {
 		q := &m.Question[0]
 		log.Debug("dnscrypt %s: received truncated, falling back to tcp with %s", p.addr, q)
 
-		tcpClient := dnscrypt.Client{Timeout: p.timeout, Net: "tcp"}
+		tcpClient := &dnscrypt.Client{Timeout: p.timeout, Net: networkTCP}
 		resp, err = tcpClient.Exchange(m, resolverInfo)
 	}
 	if err == nil && resp != nil && resp.Id != m.Id {
@@ -120,8 +124,15 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (resp *dns.Msg, err error) {
 func (p *dnsCrypt) resetClient() (client *dnscrypt.Client, ri *dnscrypt.ResolverInfo, err error) {
 	addr := p.Address()
 
+	defer func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+
+		p.client, p.resolverInfo = client, ri
+	}()
+
 	// Use UDP for DNSCrypt upstreams by default.
-	client = &dnscrypt.Client{Timeout: p.timeout, Net: "udp"}
+	client = &dnscrypt.Client{Timeout: p.timeout, Net: networkUDP}
 	ri, err = client.Dial(addr)
 	if err != nil {
 		// Trigger client and server info renewal on the next request.
@@ -136,11 +147,5 @@ func (p *dnsCrypt) resetClient() (client *dnscrypt.Client, ri *dnscrypt.Resolver
 		}
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.client = client
-	p.serverInfo = ri
-
-	return p.client, p.serverInfo, nil
+	return client, ri, err
 }

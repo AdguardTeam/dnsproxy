@@ -15,9 +15,10 @@ import (
 	"github.com/miekg/dns"
 )
 
-// network is the type of the network.  It's either [networkUDP] or
-// [networkTCP].
-type network string
+// network is the semantic type alias of the network to pass to dialing
+// functions.  It's either [networkUDP] or [networkTCP].  It may also be used as
+// URL scheme for plain upstreams.
+type network = string
 
 const (
 	// networkUDP is the UDP network.
@@ -50,7 +51,7 @@ var _ Upstream = &plainDNS{}
 // or "tcp".
 func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
 	switch addr.Scheme {
-	case string(networkUDP), string(networkTCP):
+	case networkUDP, networkTCP:
 		// Go on.
 	default:
 		return nil, fmt.Errorf("unsupported url scheme: %s", addr.Scheme)
@@ -66,7 +67,7 @@ func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
 	return &plainDNS{
 		addr:      addr,
 		getDialer: getDialer,
-		net:       network(addr.Scheme),
+		net:       addr.Scheme,
 		timeout:   opts.Timeout,
 	}, nil
 }
@@ -102,7 +103,7 @@ func (p *plainDNS) dialExchange(
 	defer func() { logFinish(addr, network, err) }()
 
 	ctx := context.Background()
-	conn.Conn, err = dial(ctx, string(network), "")
+	conn.Conn, err = dial(ctx, network, "")
 	if err != nil {
 		return nil, fmt.Errorf("dialing %s over %s: %w", p.addr.Host, network, err)
 	}
@@ -110,7 +111,7 @@ func (p *plainDNS) dialExchange(
 
 	resp, _, err = client.ExchangeWithConn(req, conn)
 	if isExpectedConnErr(err) {
-		conn.Conn, err = dial(ctx, string(network), "")
+		conn.Conn, err = dial(ctx, network, "")
 		if err != nil {
 			return nil, fmt.Errorf("dialing %s over %s again: %w", p.addr.Host, network, err)
 		}

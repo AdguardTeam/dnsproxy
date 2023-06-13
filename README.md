@@ -63,6 +63,8 @@ Application Options:
                                be specified multiple times
       --all-servers            If specified, parallel queries to all configured upstream servers are enabled
       --fastest-addr           Respond to A or AAAA requests only with the fastest IP address
+      --timeout=               Timeout for outbound DNS queries to remote upstream servers in a
+                               human-readable form (default: 10s)
       --cache                  If specified, DNS cache is enabled
       --cache-size=            Cache size (in bytes). Default: 64k
       --cache-min-ttl=         Minimum TTL value for DNS entries, in seconds. Capped at 3600.

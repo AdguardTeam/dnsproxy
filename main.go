@@ -17,7 +17,9 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	goFlags "github.com/jessevdk/go-flags"
 	"gopkg.in/yaml.v3"
@@ -110,6 +112,10 @@ type Options struct {
 	//  detected by ICMP response time or TCP connection time
 	FastestAddress bool `yaml:"fastest-addr" long:"fastest-addr" description:"Respond to A or AAAA requests only with the fastest IP address" optional:"yes" optional-value:"true"`
 
+	// Timeout for outbound DNS queries to remote upstream servers in a
+	// human-readable form.  Default is 10s.
+	Timeout timeutil.Duration `yaml:"timeout" long:"timeout" description:"Timeout for outbound DNS queries to remote upstream servers in a human-readable form" default:"10s"`
+
 	// Cache settings
 	// --
 
@@ -184,7 +190,6 @@ type Options struct {
 var VersionString = "dev" // nolint:gochecknoglobals
 
 const (
-	defaultTimeout      = 10 * time.Second
 	defaultLocalTimeout = 1 * time.Second
 )
 
@@ -351,12 +356,13 @@ func initUpstreams(config *proxy.Config, options *Options) {
 
 	var err error
 
+	timeout := options.Timeout.Duration
 	upstreams := loadServersList(options.Upstreams)
 	upsOpts := &upstream.Options{
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: options.Insecure,
 		Bootstrap:          options.BootstrapDNS,
-		Timeout:            defaultTimeout,
+		Timeout:            timeout,
 	}
 	config.UpstreamConfig, err = proxy.ParseUpstreamsConfig(upstreams, upsOpts)
 	if err != nil {
@@ -367,7 +373,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 	privUpsOpts := &upstream.Options{
 		HTTPVersions: httpVersions,
 		Bootstrap:    options.BootstrapDNS,
-		Timeout:      defaultLocalTimeout,
+		Timeout:      mathutil.Min(defaultLocalTimeout, timeout),
 	}
 	config.PrivateRDNSUpstreamConfig, err = proxy.ParseUpstreamsConfig(privUpstreams, privUpsOpts)
 	if err != nil {

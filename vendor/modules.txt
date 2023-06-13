@@ -7,6 +7,7 @@ github.com/AdguardTeam/golibs/mathutil
 github.com/AdguardTeam/golibs/netutil
 github.com/AdguardTeam/golibs/stringutil
 github.com/AdguardTeam/golibs/testutil
+github.com/AdguardTeam/golibs/timeutil
 # github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da
 ## explicit
 github.com/aead/chacha20/chacha

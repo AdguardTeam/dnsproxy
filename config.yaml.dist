@@ -15,3 +15,4 @@ ratelimit: 0
 udp-buf-size: 0
 upstream: 
   - "1.1.1.1:53"
+timeout: '10s'

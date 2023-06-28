@@ -87,7 +87,7 @@ func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, requestGoroutinesSema sema
 	for {
 		conn, err := l.Accept(context.Background())
 		if err != nil {
-			if isQUICNonCrit(err) {
+			if isQUICErrorForDebugLog(err) {
 				log.Debug("accepting quic conn: closed or timed out: %s", err)
 			} else {
 				log.Error("accepting quic conn: %s", err)
@@ -117,7 +117,7 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, requestGoroutinesSema
 		// bidirectional stream.
 		stream, err := conn.AcceptStream(context.Background())
 		if err != nil {
-			if isQUICNonCrit(err) {
+			if isQUICErrorForDebugLog(err) {
 				log.Debug("accepting quic stream: closed or timed out: %s", err)
 			} else {
 				log.Error("accepting quic stream: %s", err)
@@ -309,22 +309,28 @@ func logShortQUICRead(err error) {
 		return
 	}
 
-	if isQUICNonCrit(err) {
+	if isQUICErrorForDebugLog(err) {
 		log.Debug("reading from quic stream: closed or timeout: %s", err)
 	} else {
 		log.Error("reading from quic stream: %s", err)
 	}
 }
 
-// isQUICNonCrit returns true if err is a non-critical error, most probably
-// related to the current QUIC implementation.
+const (
+	// qCodeNoError is returned when the QUIC connection was gracefully closed
+	// and there is no error to signal.
+	qCodeNoError = quic.ApplicationErrorCode(quic.NoError)
+
+	// qCodeApplicationErrorError is used for Initial and Handshake packets.
+	// This error is considered as non-critical and will not be logged as error.
+	qCodeApplicationErrorError = quic.ApplicationErrorCode(quic.ApplicationErrorErrorCode)
+)
+
+// isQUICErrorForDebugLog returns true if err is a non-critical error, most probably
+// related to the current QUIC implementation. err must not be nil.
 //
 // TODO(ameshkov): re-test when updating quic-go.
-func isQUICNonCrit(err error) (ok bool) {
-	if err == nil {
-		return false
-	}
-
+func isQUICErrorForDebugLog(err error) (ok bool) {
 	if errors.Is(err, quic.ErrServerClosed) {
 		// This error is returned when the QUIC listener was closed by us. This
 		// is an expected error, we don't need the detailed logs here.
@@ -332,9 +338,11 @@ func isQUICNonCrit(err error) (ok bool) {
 	}
 
 	var qAppErr *quic.ApplicationError
-	if errors.As(err, &qAppErr) && qAppErr.ErrorCode == 0 {
-		// This error is returned when a QUIC connection was gracefully closed.
-		// No need to have detailed logs for it either.
+	if errors.As(err, &qAppErr) &&
+		(qAppErr.ErrorCode == qCodeNoError || qAppErr.ErrorCode == qCodeApplicationErrorError) {
+		// No need to have detailed logs for these error codes either.
+		//
+		// TODO(a.garipov): Consider adding other error codes.
 		return true
 	}
 

@@ -232,6 +232,10 @@ func (p *Proxy) Start() (err error) {
 	p.Lock()
 	defer p.Unlock()
 
+	if p.started {
+		return errors.Error("server has been already started")
+	}
+
 	err = p.validateConfig()
 	if err != nil {
 		return err
@@ -272,6 +276,7 @@ func (p *Proxy) Stop() error {
 
 	p.Lock()
 	defer p.Unlock()
+
 	if !p.started {
 		log.Info("dnsproxy: dns proxy server is not started")
 
@@ -312,8 +317,14 @@ func (p *Proxy) Stop() error {
 	errs = closeAll(errs, p.dnsCryptTCPListen...)
 	p.dnsCryptTCPListen = nil
 
-	if p.UpstreamConfig != nil {
-		errs = closeAll(errs, p.UpstreamConfig)
+	for _, u := range []*UpstreamConfig{
+		p.UpstreamConfig,
+		p.PrivateRDNSUpstreamConfig,
+		p.Fallbacks,
+	} {
+		if u != nil {
+			errs = closeAll(errs, u)
+		}
 	}
 
 	p.started = false
@@ -443,88 +454,99 @@ func (p *Proxy) needsLocalUpstream(req *dns.Msg) (ok bool) {
 
 // selectUpstreams returns the upstreams to use for the specified host.  It
 // firstly considers custom upstreams if those aren't empty and then the
-// configured ones.  It returns false, if no upstreams are available for current
-// request.
-func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, ok bool) {
+// configured ones.  The returned slice may be empty or nil.
+func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream) {
 	host := d.Req.Question[0].Name
-	if p.needsLocalUpstream(d.Req) {
-		if p.PrivateRDNSUpstreamConfig == nil {
-			return nil, false
+	if !p.needsLocalUpstream(d.Req) {
+		if custom := d.CustomUpstreamConfig; custom != nil {
+			// Try to use custom.
+			upstreams = custom.getUpstreamsForDomain(host)
+			if len(upstreams) > 0 {
+				return upstreams
+			}
 		}
 
-		ip, _ := netutil.IPAndPortFromAddr(d.Addr)
-		// TODO(e.burkov):  Detect against the actual configured subnet set.
-		// Perhaps, even much earlier.
-		if !netutil.IsLocallyServed(ip) {
-			return nil, false
-		}
-
-		return p.PrivateRDNSUpstreamConfig.getUpstreamsForDomain(host), true
+		// Use configured.
+		return p.UpstreamConfig.getUpstreamsForDomain(host)
 	}
 
-	if d.CustomUpstreamConfig != nil {
-		upstreams = d.CustomUpstreamConfig.getUpstreamsForDomain(host)
+	// Use private upstreams.
+	private := p.PrivateRDNSUpstreamConfig
+	if private == nil {
+		return nil
 	}
 
-	if upstreams != nil {
-		return upstreams, true
+	ip, _ := netutil.IPAndPortFromAddr(d.Addr)
+	// TODO(e.burkov):  Detect against the actual configured subnet set.
+	// Perhaps, even much earlier.
+	if !netutil.IsLocallyServed(ip) {
+		return nil
 	}
 
-	return p.UpstreamConfig.getUpstreamsForDomain(host), true
+	return private.getUpstreamsForDomain(host)
 }
 
 // replyFromUpstream tries to resolve the request.
 func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	req := d.Req
 
-	upstreams, ok := p.selectUpstreams(d)
-	if !ok {
-		return false, upstream.ErrNoUpstreams
+	upstreams := p.selectUpstreams(d)
+	if len(upstreams) == 0 {
+		return false, fmt.Errorf("selecting general upstream: %w", upstream.ErrNoUpstreams)
 	}
 
 	start := time.Now()
 
 	// Perform the DNS request.
-	var reply *dns.Msg
-	var u upstream.Upstream
-	reply, u, err = p.exchange(req, upstreams)
-	if dns64Ups := p.performDNS64(req, reply, upstreams); dns64Ups != nil {
+	resp, u, err := p.exchange(req, upstreams)
+	if dns64Ups := p.performDNS64(req, resp, upstreams); dns64Ups != nil {
 		u = dns64Ups
-	} else if p.isBogusNXDomain(reply) {
-		log.Tracef("response ip is contained in bogus-nxdomain list")
-		reply = p.genWithRCode(req, dns.RcodeNameError)
+	} else if p.isBogusNXDomain(resp) {
+		log.Debug("proxy: replying from upstream: response contains bogus-nxdomain ip")
+		resp = p.genWithRCode(req, dns.RcodeNameError)
 	}
 
-	log.Tracef("RTT: %s", time.Since(start))
+	log.Debug("proxy: replying from upstream: rtt is %s", time.Since(start))
 
 	if err != nil && p.Fallbacks != nil {
-		log.Tracef("using the fallback upstream due to %s", err)
+		log.Debug("proxy: replying from upstream: using fallback due to %s", err)
 
-		reply, u, err = upstream.ExchangeParallel(p.Fallbacks, req)
+		upstreams = p.Fallbacks.getUpstreamsForDomain(req.Question[0].Name)
+		if len(upstreams) == 0 {
+			return false, fmt.Errorf("selecting fallback upstream: %w", upstream.ErrNoUpstreams)
+		}
+
+		resp, u, err = upstream.ExchangeParallel(upstreams, req)
 	}
 
-	if ok = reply != nil; ok {
-		// This branch handles the successfully exchanged response.
+	p.handleExchangeResult(d, req, resp, u)
 
-		// Set upstream that have resolved the request to DNSContext.
-		d.Upstream = u
-		p.setMinMaxTTL(reply)
+	return resp != nil, err
+}
 
+// handleExchangeResult handles the result after the upstream exchange.  It sets
+// the response to d and sets the upstream that have resolved the request.  If
+// the response is nil, it generates a server failure response.
+func (p *Proxy) handleExchangeResult(d *DNSContext, req, resp *dns.Msg, u upstream.Upstream) {
+	if resp == nil {
+		d.Res = p.genServerFailure(req)
+		d.hasEDNS0 = false
+
+		return
+	}
+
+	d.Upstream = u
+	d.Res = resp
+
+	p.setMinMaxTTL(resp)
+	if len(req.Question) > 0 && len(resp.Question) == 0 {
 		// Explicitly construct the question section since some upstreams may
 		// respond with invalidly constructed messages which cause out-of-range
 		// panics afterwards.
 		//
 		// See https://github.com/AdguardTeam/AdGuardHome/issues/3551.
-		if len(req.Question) > 0 && len(reply.Question) == 0 {
-			reply.Question = []dns.Question{req.Question[0]}
-		}
-	} else {
-		reply = p.genServerFailure(req)
-		d.hasEDNS0 = false
+		resp.Question = []dns.Question{req.Question[0]}
 	}
-	d.Res = reply
-
-	return ok, err
 }
 
 // addDO adds EDNS0 RR if needed and sets DO bit of msg to true.

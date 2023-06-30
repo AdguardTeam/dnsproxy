@@ -343,7 +343,9 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := createTestProxy(t, nil)
 			p.Config.UpstreamConfig.Upstreams = []upstream.Upstream{newUps(tc.upsAns)}
-			p.Config.PrivateRDNSUpstreamConfig.Upstreams = []upstream.Upstream{localUps}
+			p.Config.PrivateRDNSUpstreamConfig = &UpstreamConfig{
+				Upstreams: []upstream.Upstream{localUps},
+			}
 			p.Config.UseDNS64 = true
 
 			require.NoError(t, p.Start())

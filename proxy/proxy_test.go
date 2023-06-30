@@ -11,6 +11,8 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"sync"
 	"testing"
@@ -430,17 +432,14 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	timeOut := 1 * time.Second
 	dnsProxy := createTestProxy(t, nil)
 
-	// invalid fallback to make sure that reply is not coming from fallback server
-	dnsProxy.Fallbacks = []upstream.Upstream{}
-	fallback := "1.2.3.4:567"
-	f, err := upstream.AddressToUpstream(
-		fallback,
+	// invalid fallback to make sure that reply is not coming from fallback
+	// server
+	var err error
+	dnsProxy.Fallbacks, err = ParseUpstreamsConfig(
+		[]string{"1.2.3.4:567"},
 		&upstream.Options{Timeout: timeOut},
 	)
-	if err != nil {
-		t.Fatalf("cannot create fallback upstream %s cause %s", fallback, err)
-	}
-	dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
+	require.NoError(t, err)
 
 	// add one valid and two invalid upstreams
 	upstreams := []string{"https://fake-dns.com/fake-dns-query", "tls://fake-dns.com", "1.1.1.1"}
@@ -454,113 +453,167 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 				Timeout:   timeOut,
 			},
 		)
-		if err != nil {
-			t.Fatalf("cannot create upstream %s cause %s", line, err)
-		}
+		require.NoError(t, err)
 
 		dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, u)
 	}
 
 	err = dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
 	// create a DNS-over-TCP client connection
 	addr := dnsProxy.Addr(ProtoTCP)
 	conn, err := dns.Dial("tcp", addr.String())
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
+	require.NoError(t, err)
 
 	// make sure that the response is okay and resolved by valid upstream
 	req := createTestMessage()
 	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
+	require.NoError(t, err)
 
 	start := time.Now()
 	res, err := conn.ReadMsg()
-	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
-	}
+	require.NoError(t, err)
 	requireResponse(t, req, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeOut {
 		t.Fatalf("the operation took much more time than the configured timeout")
 	}
+}
 
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
+// newLocalUpstreamListener creates a new localhost listener on the specified
+// port for tcp4 network and returns its listening address.
+func newLocalUpstreamListener(t *testing.T, port uint16, h dns.Handler) (real netip.AddrPort) {
+	t.Helper()
+
+	startCh := make(chan struct{})
+	upsSrv := &dns.Server{
+		Addr:              netip.AddrPortFrom(netutil.IPv4Localhost(), port).String(),
+		Net:               "tcp",
+		Handler:           h,
+		NotifyStartedFunc: func() { close(startCh) },
 	}
+	go func() {
+		err := upsSrv.ListenAndServe()
+		require.NoError(testutil.PanicT{}, err)
+	}()
+
+	<-startCh
+	testutil.CleanupAndRequireSuccess(t, upsSrv.Shutdown)
+
+	return testutil.RequireTypeAssert[*net.TCPAddr](t, upsSrv.Listener.Addr()).AddrPort()
 }
 
 func TestFallback(t *testing.T) {
-	timeout := 1 * time.Second
-	// Prepare the proxy server
+	responseCh := make(chan uint16)
+	failCh := make(chan uint16)
+
+	const timeout = 1 * time.Second
+
+	successHandler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		testutil.RequireSend(testutil.PanicT{}, responseCh, r.Id, timeout)
+
+		require.NoError(testutil.PanicT{}, w.WriteMsg((&dns.Msg{}).SetReply(r)))
+	})
+	failHandler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		testutil.RequireSend(testutil.PanicT{}, failCh, r.Id, timeout)
+
+		require.NoError(testutil.PanicT{}, w.WriteMsg(&dns.Msg{}))
+	})
+
+	successAddr := (&url.URL{
+		Scheme: string(ProtoTCP),
+		Host:   newLocalUpstreamListener(t, 0, successHandler).String(),
+	}).String()
+	alsoSuccessAddr := (&url.URL{
+		Scheme: string(ProtoTCP),
+		Host:   newLocalUpstreamListener(t, 0, successHandler).String(),
+	}).String()
+	failAddr := (&url.URL{
+		Scheme: string(ProtoTCP),
+		Host:   newLocalUpstreamListener(t, 0, failHandler).String(),
+	}).String()
+
 	dnsProxy := createTestProxy(t, nil)
 
-	// List of fallback server addresses. Only one is valid
-	fallbackAddresses := []string{"1.2.3.4", "1.2.3.5", "8.8.8.8"}
-	dnsProxy.Fallbacks = []upstream.Upstream{}
-
-	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(
-			s,
-			&upstream.Options{Timeout: timeout},
-		)
-		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
-	}
-
-	// using some random port to make sure that this upstream won't work
-	u, _ := upstream.AddressToUpstream(
-		"8.8.8.8:555",
+	var err error
+	dnsProxy.UpstreamConfig, err = ParseUpstreamsConfig(
+		[]string{
+			failAddr,
+			"[/specific.example/]" + alsoSuccessAddr,
+			// almost.failing.example will fall here first.
+			"[/failing.example/]" + failAddr,
+		},
 		&upstream.Options{Timeout: timeout},
 	)
-	dnsProxy.UpstreamConfig = &UpstreamConfig{}
-	dnsProxy.UpstreamConfig.Upstreams = make([]upstream.Upstream, 0)
-	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, u)
+	require.NoError(t, err)
 
-	// Start listening
-	err := dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
+	dnsProxy.Fallbacks, err = ParseUpstreamsConfig(
+		[]string{
+			failAddr,
+			successAddr,
+			"[/failing.example/]" + failAddr,
+			"[/almost.failing.example/]" + alsoSuccessAddr,
+		},
+		&upstream.Options{Timeout: timeout},
+	)
+	require.NoError(t, err)
 
-	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr(ProtoUDP)
-	conn, err := dns.Dial("udp", addr.String())
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
+	err = dnsProxy.Start()
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
-	// Make sure that the response is okay and resolved by the fallback
-	req := createTestMessage()
-	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
+	conn, err := dns.Dial("tcp", dnsProxy.Addr(ProtoTCP).String())
+	require.NoError(t, err)
 
-	start := time.Now()
-	res, err := conn.ReadMsg()
-	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
-	}
-	requireResponse(t, req, res)
+	testCases := []struct {
+		name        string
+		wantSignals []chan uint16
+	}{{
+		name: "general.example",
+		wantSignals: []chan uint16{
+			failCh,
+			// Both non-specific fallbacks tried.
+			failCh,
+			responseCh,
+		},
+	}, {
+		name: "specific.example",
+		wantSignals: []chan uint16{
+			responseCh,
+		},
+	}, {
+		name: "failing.example",
+		wantSignals: []chan uint16{
+			failCh,
+			failCh,
+		},
+	}, {
+		name: "almost.failing.example",
+		wantSignals: []chan uint16{
+			failCh,
+			responseCh,
+		},
+	}}
 
-	elapsed := time.Since(start)
-	if elapsed > 3*timeout {
-		t.Fatalf("the operation took much more time than the configured timeout")
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := createHostTestMessage(tc.name)
+			err = conn.WriteMsg(req)
+			require.NoError(t, err)
 
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
+			for _, ch := range tc.wantSignals {
+				reqID, ok := testutil.RequireReceive(testutil.PanicT{}, ch, timeout)
+				require.True(t, ok)
+
+				assert.Equal(t, req.Id, reqID)
+			}
+
+			_, err := conn.ReadMsg()
+			require.NoError(t, err)
+		})
 	}
 }
 
@@ -570,16 +623,12 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 
 	// List of fallback server addresses. Both are valid
-	fallbackAddresses := []string{"1.0.0.1", "8.8.8.8"}
-	dnsProxy.Fallbacks = []upstream.Upstream{}
-
-	for _, s := range fallbackAddresses {
-		f, _ := upstream.AddressToUpstream(
-			s,
-			&upstream.Options{Timeout: timeout},
-		)
-		dnsProxy.Fallbacks = append(dnsProxy.Fallbacks, f)
-	}
+	var err error
+	dnsProxy.Fallbacks, err = ParseUpstreamsConfig(
+		[]string{"1.0.0.1", "8.8.8.8"},
+		&upstream.Options{Timeout: timeout},
+	)
+	require.NoError(t, err)
 
 	// Using a DoT server with invalid bootstrap.
 	u, _ := upstream.AddressToUpstream(
@@ -593,41 +642,28 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	dnsProxy.UpstreamConfig.Upstreams = append(dnsProxy.UpstreamConfig.Upstreams, u)
 
 	// Start listening
-	err := dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
+	err = dnsProxy.Start()
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr(ProtoUDP)
 	conn, err := dns.Dial("udp", addr.String())
-	if err != nil {
-		t.Fatalf("cannot connect to the proxy: %s", err)
-	}
+	require.NoError(t, err)
 
 	// Make sure that the response is okay and resolved by the fallback
 	req := createTestMessage()
 	err = conn.WriteMsg(req)
-	if err != nil {
-		t.Fatalf("cannot write message: %s", err)
-	}
+	require.NoError(t, err)
 
 	start := time.Now()
 	res, err := conn.ReadMsg()
-	if err != nil {
-		t.Fatalf("cannot read response to message: %s", err)
-	}
+	require.NoError(t, err)
 	requireResponse(t, req, res)
 
 	elapsed := time.Since(start)
 	if elapsed > 3*timeout {
 		t.Fatalf("the operation took much more time than the configured timeout")
-	}
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
 	}
 }
 
@@ -1095,39 +1131,28 @@ func getFreePort() uint {
 }
 
 func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
+	t.Helper()
+
 	p := Proxy{}
 
-	if tlsConfig != nil {
-		p.TLSListenAddr = []*net.TCPAddr{
-			{Port: 0, IP: net.ParseIP(listenIP)},
-		}
-		p.HTTPSListenAddr = []*net.TCPAddr{
-			{Port: 0, IP: net.ParseIP(listenIP)},
-		}
-		p.QUICListenAddr = []*net.UDPAddr{
-			{Port: 0, IP: net.ParseIP(listenIP)},
-		}
+	if ip := net.ParseIP(listenIP); tlsConfig != nil {
+		p.TLSListenAddr = []*net.TCPAddr{{IP: ip, Port: 0}}
+		p.HTTPSListenAddr = []*net.TCPAddr{{IP: ip, Port: 0}}
+		p.QUICListenAddr = []*net.UDPAddr{{IP: ip, Port: 0}}
 		p.TLSConfig = tlsConfig
 	} else {
-		p.UDPListenAddr = []*net.UDPAddr{
-			{Port: 0, IP: net.ParseIP(listenIP)},
-		}
-		p.TCPListenAddr = []*net.TCPAddr{
-			{Port: 0, IP: net.ParseIP(listenIP)},
-		}
+		p.UDPListenAddr = []*net.UDPAddr{{IP: ip, Port: 0}}
+		p.TCPListenAddr = []*net.TCPAddr{{IP: ip, Port: 0}}
 	}
 	upstreams := make([]upstream.Upstream, 0)
 	dnsUpstream, err := upstream.AddressToUpstream(
 		upstreamAddr,
 		&upstream.Options{Timeout: defaultTimeout},
 	)
-	if err != nil {
-		t.Fatalf("cannot prepare the upstream: %s", err)
-	}
+	require.NoError(t, err)
+
 	p.UpstreamConfig = &UpstreamConfig{}
 	p.UpstreamConfig.Upstreams = append(upstreams, dnsUpstream)
-
-	p.PrivateRDNSUpstreamConfig = &UpstreamConfig{}
 
 	p.TrustedProxies = []string{"0.0.0.0/0", "::0/0"}
 

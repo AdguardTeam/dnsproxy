@@ -36,6 +36,8 @@ var _ io.Closer = (*UpstreamConfig)(nil)
 // To exclude top level domain from reserved upstreams querying you could use the following: [/*.domain.com/]<upstreamString>
 // So the following config: ["[/*.domain.com/]1.2.3.4", "3.4.5.6"] will send queries for all subdomains *.domain.com to 1.2.3.4,
 // but domain.com query will be sent to default server 3.4.5.6 as every other query.
+//
+// TODO(e.burkov):  Refactor this mess.
 func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*UpstreamConfig, error) {
 	if options == nil {
 		options = &upstream.Options{}
@@ -127,6 +129,27 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 		SpecifiedDomainUpstreams: specifiedDomainUpstreams,
 		SubdomainExclusions:      subdomainsOnlyExclusions,
 	}, nil
+}
+
+// errNoDefaultUpstreams is returned when no default upstreams specified within
+// a [Config.UpstreamConfig].
+const errNoDefaultUpstreams errors.Error = "no default upstreams specified"
+
+// validate returns an error if the upstreams aren't configured properly.  c
+// considered valid if it contains at least a single default upstream.  Nil c,
+// as well as c with no default upstreams causes [ErrNoDefaultUpstreams].  Empty
+// c causes [upstream.ErrNoUpstreams].
+func (uc *UpstreamConfig) validate() (err error) {
+	switch {
+	case uc == nil:
+		return fmt.Errorf("%w; uc is nil", errNoDefaultUpstreams)
+	case len(uc.Upstreams) > 0:
+		return nil
+	case len(uc.DomainReservedUpstreams) == 0 && len(uc.SpecifiedDomainUpstreams) == 0:
+		return upstream.ErrNoUpstreams
+	default:
+		return errNoDefaultUpstreams
+	}
 }
 
 // parseUpstreamLine - parses upstream line and returns the following:

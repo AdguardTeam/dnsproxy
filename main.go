@@ -341,6 +341,17 @@ func createProxyConfig(options *Options) proxy.Config {
 	return config
 }
 
+// containsUpstreams returns true if uc contains at least a single upstream.
+// Otherwise it's considered nil.
+//
+// TODO(e.burkov):  Think of a better way to validate the config.  Perhaps,
+// return an error from [ParseUpstreamsConfig] if no upstreams were initialized.
+func containsUpstreams(uc *proxy.UpstreamConfig) (ok bool) {
+	return len(uc.Upstreams) > 0 ||
+		len(uc.DomainReservedUpstreams) > 0 ||
+		len(uc.SpecifiedDomainUpstreams) > 0
+}
+
 // initUpstreams inits upstream-related config
 func initUpstreams(config *proxy.Config, options *Options) {
 	// Init upstreams
@@ -357,48 +368,38 @@ func initUpstreams(config *proxy.Config, options *Options) {
 	var err error
 
 	timeout := options.Timeout.Duration
-	upstreams := loadServersList(options.Upstreams)
 	upsOpts := &upstream.Options{
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: options.Insecure,
 		Bootstrap:          options.BootstrapDNS,
 		Timeout:            timeout,
 	}
+	upstreams := loadServersList(options.Upstreams)
 	config.UpstreamConfig, err = proxy.ParseUpstreamsConfig(upstreams, upsOpts)
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
 	}
 
-	privUpstreams := loadServersList(options.PrivateRDNSUpstreams)
 	privUpsOpts := &upstream.Options{
 		HTTPVersions: httpVersions,
 		Bootstrap:    options.BootstrapDNS,
 		Timeout:      mathutil.Min(defaultLocalTimeout, timeout),
 	}
-	config.PrivateRDNSUpstreamConfig, err = proxy.ParseUpstreamsConfig(privUpstreams, privUpsOpts)
+	privUpstreams := loadServersList(options.PrivateRDNSUpstreams)
+	private, err := proxy.ParseUpstreamsConfig(privUpstreams, privUpsOpts)
 	if err != nil {
 		log.Fatalf("error while parsing private rdns upstreams configuration: %s", err)
 	}
+	if containsUpstreams(private) {
+		config.PrivateRDNSUpstreamConfig = private
+	}
 
-	if options.Fallbacks != nil {
-		fallbacks := []upstream.Upstream{}
-		for i, f := range loadServersList(options.Fallbacks) {
-			// Use the same options for fallback servers as for
-			// upstream servers until it is possible to configure it
-			// separately.
-			//
-			// See https://github.com/AdguardTeam/dnsproxy/issues/161.
-			var fallback upstream.Upstream
-			fallback, err = upstream.AddressToUpstream(f, upsOpts)
-			if err != nil {
-				log.Fatalf("cannot parse the fallback %s (%s): %s", f, options.BootstrapDNS, err)
-			}
-
-			log.Printf("fallback at index %d is %s", i, fallback.Address())
-
-			fallbacks = append(fallbacks, fallback)
-		}
-
+	fallbackUpstreams := loadServersList(options.Fallbacks)
+	fallbacks, err := proxy.ParseUpstreamsConfig(fallbackUpstreams, upsOpts)
+	if err != nil {
+		log.Fatalf("error while parsing fallback upstreams configuration: %s", err)
+	}
+	if containsUpstreams(fallbacks) {
 		config.Fallbacks = fallbacks
 	}
 

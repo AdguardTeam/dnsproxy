@@ -367,7 +367,9 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer, err 
 			return nil, fmt.Errorf("creating dial handler: %w", resolveErr)
 		}
 
-		dialHandler.Store(h)
+		if !dialHandler.CompareAndSwap(nil, h) {
+			return dialHandler.Load().(bootstrap.DialHandler), nil
+		}
 
 		return h, nil
 	}

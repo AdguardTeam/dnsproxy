@@ -67,6 +67,9 @@ func ResolveDialContext(
 
 // NewDialContext returns a DialHandler that dials addrs and returns the first
 // successful connection.  At least a single addr should be specified.
+//
+// TODO(e.burkov):  Consider using [Resolver] instead of
+// [upstream.Options.Bootstrap] and [upstream.Options.ServerIPAddrs].
 func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 	dialer := &net.Dialer{
 		Timeout: timeout,
@@ -80,6 +83,8 @@ func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 			return nil, errors.Error("no addresses")
 		}
 	}
+
+	// TODO(e.burkov):  Check IPv6 preference here.
 
 	return func(ctx context.Context, network, _ string) (conn net.Conn, err error) {
 		var errs []error

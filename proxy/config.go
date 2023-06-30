@@ -2,11 +2,11 @@ package proxy
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/netip"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -86,7 +86,7 @@ type Config struct {
 
 	// Fallbacks is a list of fallback resolvers.  Those will be used if the
 	// general set fails responding.
-	Fallbacks []upstream.Upstream
+	Fallbacks *UpstreamConfig
 
 	// UpstreamMode determines the logic through which upstreams will be used.
 	UpstreamMode UpstreamModeType
@@ -177,25 +177,28 @@ type Config struct {
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not
 func (p *Proxy) validateConfig() error {
-	if p.started {
-		return errors.Error("server has been already started")
-	}
-
 	err := p.validateListenAddrs()
 	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
 		return err
 	}
 
-	if p.UpstreamConfig == nil {
-		return errors.Error("no default upstreams specified")
+	err = p.UpstreamConfig.validate()
+	if err != nil {
+		return fmt.Errorf("validating general usptreams: %w", err)
 	}
 
-	if len(p.UpstreamConfig.Upstreams) == 0 {
-		if len(p.UpstreamConfig.DomainReservedUpstreams) == 0 {
-			return errors.Error("no upstreams specified")
-		}
+	// Allow both [Proxy.PrivateRDNSUpstreamConfig] and [Proxy.Fallbacks] to be
+	// nil, but not empty.
 
-		return errors.Error("no default upstreams specified")
+	err = p.PrivateRDNSUpstreamConfig.validate()
+	if err != nil && !errors.Is(err, errNoDefaultUpstreams) {
+		return fmt.Errorf("validating private RDNS upstreams: %w", err)
+	}
+
+	err = p.Fallbacks.validate()
+	if err != nil && !errors.Is(err, errNoDefaultUpstreams) {
+		return fmt.Errorf("validating fallbacks: %w", err)
 	}
 
 	if p.CacheMinTTL > 0 || p.CacheMaxTTL > 0 {

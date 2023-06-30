@@ -36,6 +36,48 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 	assertUpstreamsForDomain(t, config, "maps.google.com.", []string{})
 }
 
+func TestUpstreamConfig_Validate(t *testing.T) {
+	testCases := []struct {
+		name            string
+		wantValidateErr error
+		in              []string
+	}{{
+		name:            "empty",
+		wantValidateErr: upstream.ErrNoUpstreams,
+		in:              []string{},
+	}, {
+		name:            "nil",
+		wantValidateErr: upstream.ErrNoUpstreams,
+		in:              nil,
+	}, {
+		name:            "valid",
+		wantValidateErr: nil,
+		in: []string{
+			"udp://upstream.example:53",
+		},
+	}, {
+		name:            "no_default",
+		wantValidateErr: errNoDefaultUpstreams,
+		in: []string{
+			"[/domain.example/]udp://upstream.example:53",
+			"[/another.domain.example/]#",
+		},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := ParseUpstreamsConfig(tc.in, nil)
+			require.NoError(t, err)
+
+			assert.ErrorIs(t, c.validate(), tc.wantValidateErr)
+		})
+	}
+
+	t.Run("actual_nil", func(t *testing.T) {
+		assert.ErrorIs(t, (*UpstreamConfig)(nil).validate(), errNoDefaultUpstreams)
+	})
+}
+
 func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
 	config, err := ParseUpstreamsConfig(

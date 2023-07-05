@@ -1,88 +1,87 @@
 ---
-version: 2
 plan:
-  project-key: AGH
-  key: DNSPROXYSPECS
-  name: dnsproxy - Build and run tests
+    key: DNSPROXY
+    name: dnsproxy - Build and run tests
+    project-key: GO
 variables:
-  dockerGo: 'golang:1.19.7'
-  dockerLint: golangci/golangci-lint:v1.51
+    dockerGo: 'golang:1.19.10'
+    dockerLint: golangci/golangci-lint:v1.53
+version: 2
 
 stages:
   - Lint:
-      manual: false
-      final: false
-      jobs:
-        - Lint
+        final: false
+        jobs:
+          - Lint
+        manual: false
   - Tests:
-      manual: false
-      final: false
-      jobs:
-        - Test
+        final: false
+        jobs:
+          - Test
+        manual: false
 
 Lint:
-  docker:
-    image: ${bamboo.dockerLint}
-    volumes:
-      ${system.GO_CACHE_DIR}: "${bamboo.cacheGo}"
-      ${system.GO_PKG_CACHE_DIR}: "${bamboo.cacheGoPkg}"
-      ${bamboo.build.working.directory}: "/app"
-  key: LINT
-  other:
-    clean-working-dir: true
-  tasks:
-    - checkout:
-        force-clean-build: 'true'
-    - script:
-        interpreter: SHELL
-        scripts:
-          - |-
-            golangci-lint run -v
-  requirements:
-    - adg-docker: 'true'
+    docker:
+        image: ${bamboo.dockerLint}
+        volumes:
+            ${system.GO_CACHE_DIR}: "${bamboo.cacheGo}"
+            ${system.GO_PKG_CACHE_DIR}: "${bamboo.cacheGoPkg}"
+            ${bamboo.build.working.directory}: "/app"
+    key: LINT
+    other:
+        clean-working-dir: true
+    requirements:
+      - adg-docker: true
+    tasks:
+      - checkout:
+            force-clean-build: true
+      - script:
+            interpreter: SHELL
+            scripts:
+              - |
+                golangci-lint run -v
 
 Test:
-  docker:
-    image: ${bamboo.dockerGo}
-    volumes:
-      ${system.YARN_DIR}: ${bamboo.cacheYarn}
-      ${system.GO_CACHE_DIR}: ${bamboo.cacheGo}
-      ${system.GO_PKG_CACHE_DIR}: ${bamboo.cacheGoPkg}
-  key: TEST
-  tasks:
-    - checkout:
-        force-clean-build: 'true'
-    - script:
-        interpreter: SHELL
-        environment: GOFLAGS="-buildvcs=false" CI="1"
-        scripts:
-          - |-
-            set -e -f -u -x
+    docker:
+        image: ${bamboo.dockerGo}
+        volumes:
+            ${system.YARN_DIR}: ${bamboo.cacheYarn}
+            ${system.GO_CACHE_DIR}: ${bamboo.cacheGo}
+            ${system.GO_PKG_CACHE_DIR}: ${bamboo.cacheGoPkg}
+    final-tasks:
+      - clean
+    key: TEST
+    requirements:
+      - adg-docker: true
+    tasks:
+      - checkout:
+            force-clean-build: true
+      - script:
+            interpreter: SHELL
+            environment: GOFLAGS="-buildvcs=false" CI="1"
+            scripts:
+              - |
+                set -e -f -u -x
 
-            go version
+                go version
 
-            # Run tests.
-            make VERBOSE=1 test
-  final-tasks:
-    - clean
-  requirements:
-    - adg-docker: 'true'
+                make VERBOSE=1 test
 
 branches:
-  create: for-pull-request
-  delete:
-    after-deleted-days: 1
-    after-inactive-days: 5
-  link-to-jira: true
+    create: for-pull-request
+    delete:
+        after-deleted-days: 1
+        after-inactive-days: 5
+    link-to-jira: true
 
 notifications:
   - events:
       - plan-status-changed
     recipients:
       - webhook:
-          name: Build webhook
-          url: http://prod.jirahub.service.eu.consul/v1/webhook/bamboo
+            name: Build webhook
+            url: http://prod.jirahub.service.eu.consul/v1/webhook/bamboo
 
 labels: []
 other:
-  concurrent-build-plugin: system-default
+    concurrent-build-plugin: system-default

@@ -65,7 +65,6 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 
 	for {
 		clientConn, err := l.Accept()
-
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				log.Debug("dnsproxy: tcp connection %s closed", l.Addr())
@@ -74,13 +73,13 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, requestGoroutinesSema
 			}
 
 			break
-		} else {
-			requestGoroutinesSema.acquire()
-			go func() {
-				p.handleTCPConnection(clientConn, proto)
-				requestGoroutinesSema.release()
-			}()
 		}
+
+		requestGoroutinesSema.acquire()
+		go func() {
+			p.handleTCPConnection(clientConn, proto)
+			requestGoroutinesSema.release()
+		}()
 	}
 }
 

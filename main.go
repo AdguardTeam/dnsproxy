@@ -226,10 +226,11 @@ func main() {
 	if err != nil {
 		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
 			os.Exit(0)
-		} else {
-			os.Exit(1)
 		}
+
+		os.Exit(1)
 	}
+
 	run(options)
 }
 

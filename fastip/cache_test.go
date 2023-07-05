@@ -85,7 +85,8 @@ func TestCacheAddFailureNoOverwrite(t *testing.T) {
 	assert.Equal(t, uint(11), ent.latencyMsec)
 }
 
-func TestCache(t *testing.T) {
+// TODO(ameshkov): Actually test something.
+func TestCache(_ *testing.T) {
 	f := NewFastestAddr()
 	ent := cacheEntry{
 		status:      0,

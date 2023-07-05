@@ -27,7 +27,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - depguard
     - dupl
     - gocyclo
     - goimports

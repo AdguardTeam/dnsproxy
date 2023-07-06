@@ -173,6 +173,9 @@ type Config struct {
 	// PreferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
 	// upstreams that use hostnames.
 	PreferIPv6 bool
+
+	// HTTPSServerName sets the Server header of the HTTPS server responses.
+	HTTPSServerName string
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns an error if it's not

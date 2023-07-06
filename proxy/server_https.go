@@ -183,7 +183,7 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 		return fmt.Errorf("packing message: %w", err)
 	}
 
-	w.Header().Set("Server", "AdGuard DNS")
+	w.Header().Set("Server", p.Config.HTTPSServerName)
 	w.Header().Set("Content-Type", "application/dns-message")
 	_, err = w.Write(bytes)
 

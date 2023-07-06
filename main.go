@@ -166,6 +166,9 @@ type Options struct {
 	// Other settings and options
 	// --
 
+	// Set Server header for the HTTPS server
+	HTTPSServerName string `yaml:"https-server-name" long:"https-server-name" description:"Set the Server header for the responses from the HTTPS server. (default: \"AdGuard DNS\")"`
+
 	// If true, all AAAA requests will be replied with NoError RCode and empty answer
 	IPv6Disabled bool `yaml:"ipv6-disabled" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
@@ -311,6 +314,10 @@ func runPprof(options *Options) {
 
 // createProxyConfig creates proxy.Config from the command line arguments
 func createProxyConfig(options *Options) proxy.Config {
+	if options.HTTPSServerName == "" {
+		options.HTTPSServerName = "AdGuard DNS"
+	}
+
 	// Create the config
 	config := proxy.Config{
 		Ratelimit:       options.Ratelimit,
@@ -327,6 +334,7 @@ func createProxyConfig(options *Options) proxy.Config {
 		TrustedProxies:         []string{"0.0.0.0/0", "::0/0"},
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
 		UDPBufferSize:          options.UDPBufferSize,
+		HTTPSServerName:        options.HTTPSServerName,
 		MaxGoroutines:          options.MaxGoRoutines,
 	}
 

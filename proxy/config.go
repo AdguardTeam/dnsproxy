@@ -147,6 +147,10 @@ type Config struct {
 	// Other settings
 	// --
 
+	// HTTPSServerName sets the Server header of the HTTPS server responses, if
+	// not empty.
+	HTTPSServerName string
+
 	// MaxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.
 	//

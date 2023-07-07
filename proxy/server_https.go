@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/AdguardTeam/golibs/httphdr"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
@@ -183,8 +184,11 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 		return fmt.Errorf("packing message: %w", err)
 	}
 
-	w.Header().Set("Server", "AdGuard DNS")
-	w.Header().Set("Content-Type", "application/dns-message")
+	if srvName := p.Config.HTTPSServerName; srvName != "" {
+		w.Header().Set(httphdr.Server, srvName)
+	}
+
+	w.Header().Set(httphdr.ContentType, "application/dns-message")
 	_, err = w.Write(bytes)
 
 	return err

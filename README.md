@@ -78,6 +78,7 @@ Application Options:
       --dns64                  If specified, dnsproxy will act as a DNS64 server
       --dns64-prefix=          Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.
                                Can be specified multiple times
+      --https-server-name=     Set the Server header for the responses from the HTTPS server. (default: dnsproxy)
       --ipv6-disabled          If specified, all AAAA requests will be replied with NoError RCode and empty answer
       --bogus-nxdomain=        Transform the responses containing at least a single IP that matches specified addresses
                                and CIDRs into NXDOMAIN.  Can be specified multiple times.

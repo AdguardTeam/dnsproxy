@@ -1,6 +1,10 @@
 package stringutil
 
-import "fmt"
+import (
+	"fmt"
+
+	"golang.org/x/exp/maps"
+)
 
 // unit is a convenient alias for struct{}
 type unit = struct{}
@@ -27,6 +31,17 @@ func NewSet(strs ...string) (set *Set) {
 // map does.
 func (set *Set) Add(s string) {
 	set.m[s] = unit{}
+}
+
+// Clone returns a deep clone of set.  If set is nil, clone is nil.
+func (set *Set) Clone() (clone *Set) {
+	if set == nil {
+		return nil
+	}
+
+	return &Set{
+		m: maps.Clone(set.m),
+	}
 }
 
 // Del deletes s from the set.  Calling Del on a nil set has no effect, just

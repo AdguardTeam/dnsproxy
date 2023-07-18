@@ -15,6 +15,7 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
 
 const (
@@ -438,15 +439,16 @@ func newQUICTokenStore() (s quic.TokenStore) {
 // TODO(ameshkov): re-test when updating quic-go.
 func isQUICRetryError(err error) (ok bool) {
 	var qAppErr *quic.ApplicationError
-	if errors.As(err, &qAppErr) && qAppErr.ErrorCode == 0 {
-		// This error is often returned when the server has been restarted,
-		// and we try to use the same connection on the client-side. It seems,
-		// that the old connections aren't closed immediately on the server-side
-		// and that's why one can run into this.
-		// In addition to that, quic-go HTTP3 client implementation does not
-		// clean up dead connections (this one is specific to DoH3 upstream):
-		// https://github.com/quic-go/quic-go/issues/765
-		return true
+	if errors.As(err, &qAppErr) {
+		// Error code 0 is often returned when the server has been restarted,
+		// and we try to use the same connection on the client-side.
+		// http3.ErrCodeNoError may be used by an HTTP/3 server when closing
+		// an idle connection.  These connections are not immediately closed
+		// by the HTTP client so this case should be handled.
+		if qAppErr.ErrorCode == 0 ||
+			qAppErr.ErrorCode == quic.ApplicationErrorCode(http3.ErrCodeNoError) {
+			return true
+		}
 	}
 
 	var qIdleErr *quic.IdleTimeoutError

@@ -30,7 +30,7 @@ ARG TARGETOS
 ARG TARGETVARIANT
 
 COPY --chown=nobody:nogroup\
-	./${DIST_DIR}/docker/dnsproxy_${TARGETOS}_${TARGETARCH}_${TARGETVARIANT}\
+	./docker/dnsproxy_${TARGETOS}_${TARGETARCH}_${TARGETVARIANT}\
 	/opt/dnsproxy/dnsproxy
 COPY ./${DIST_DIR}/config.yaml.dist /opt/dnsproxy/config.yaml
 

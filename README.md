@@ -5,10 +5,11 @@
 
 # DNS Proxy <!-- omit in toc -->
 
-A simple DNS proxy server that supports all existing DNS protocols including `DNS-over-TLS`, `DNS-over-HTTPS`, `DNSCrypt`, and `DNS-over-QUIC`. Moreover, it can work as a `DNS-over-HTTPS`, `DNS-over-TLS` or `DNS-over-QUIC` server.
+A simple DNS proxy server that supports all existing DNS protocols including
+`DNS-over-TLS`, `DNS-over-HTTPS`, `DNSCrypt`, and `DNS-over-QUIC`. Moreover,
+it can work as a `DNS-over-HTTPS`, `DNS-over-TLS` or `DNS-over-QUIC` server.
 
-> Note that `DNS-over-QUIC` support is experimental, don't use it in production.
-
+- [How to install](#how-to-install)
 - [How to build](#how-to-build)
 - [Usage](#usage)
 - [Examples](#examples)
@@ -21,6 +22,17 @@ A simple DNS proxy server that supports all existing DNS protocols including `DN
   - [Specifying upstreams for domains](#specifying-upstreams-for-domains)
   - [EDNS Client Subnet](#edns-client-subnet)
   - [Bogus NXDomain](#bogus-nxdomain)
+
+## How to install
+
+There are several options how to install `dnsproxy`.
+
+1. Grab the binary for your device/OS from the [Releases][releases] page.
+2. Use the [official Docker image][docker].
+3. Build it yourself (see the instruction below).
+
+[releases]: https://github.com/AdguardTeam/dnsproxy/releases
+[docker]: https://hub.docker.com/r/adguard/dnsproxy
 
 ## How to build
 

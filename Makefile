@@ -12,6 +12,7 @@
 # See https://unix.stackexchange.com/q/646255/105635.
 GO.MACRO = $${GO:-go}
 GOPROXY = https://goproxy.cn|https://proxy.golang.org|direct
+COMMIT = $$( git rev-parse --short HEAD )
 DIST_DIR=build
 OUT = dnsproxy
 RACE = 0
@@ -19,6 +20,7 @@ VERBOSE = 0
 VERSION = dev
 
 ENV = env\
+	COMMIT='$(COMMIT)'\
 	DIST_DIR='$(DIST_DIR)'\
 	GO="$(GO.MACRO)"\
 	GOPROXY='$(GOPROXY)'\
@@ -38,6 +40,9 @@ test:    ; $(ENV) RACE='1' "$(SHELL)" ./scripts/make/test.sh
 
 release: clean
 	$(ENV) "$(SHELL)" ./scripts/make/release.sh
+
+docker: release
+	$(ENV) "$(SHELL)" ./scripts/make/build-docker.sh
 
 # A quick check to make sure that all supported operating systems can be
 # typechecked and built successfully.

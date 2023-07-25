@@ -27,3 +27,10 @@ docker run --name dnsproxy_google_dns \
   adguard/dnsproxy \
   -u 8.8.8.8:53
 ```
+or
+```shell
+docker run --name dnsproxy_google_dns \
+  -p 53:53/tcp -p 53:53/udp \ # expose DNS ports
+  -v $PWD/config.yaml:/opt/dnsproxy/config.yaml \ # mount your config.yaml
+  adguard/dnsproxy
+```

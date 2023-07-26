@@ -51,24 +51,6 @@ type QUICTraceFunc func(
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
 type Options struct {
-	// Bootstrap is a list of DNS servers to be used to resolve
-	// DNS-over-HTTPS/DNS-over-TLS hostnames.  Plain DNS, DNSCrypt, or
-	// DNS-over-HTTPS/DNS-over-TLS with IP addresses (not hostnames) could be
-	// used.
-	Bootstrap []string
-
-	// Timeout is the default upstream timeout.  It's also used as a timeout for
-	// bootstrap DNS requests.  Zero value disables the timeout.
-	Timeout time.Duration
-
-	// List of IP addresses of the upstream DNS server.  If not empty, bootstrap
-	// DNS servers won't be used at all.
-	ServerIPAddrs []net.IP
-
-	// HTTPVersions is a list of HTTP versions that should be supported by the
-	// DNS-over-HTTPS client.  If not set, HTTP/1.1 and HTTP/2 will be used.
-	HTTPVersions []HTTPVersion
-
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
 	// of the *tls.Config for DNS-over-HTTPS, DNS-over-QUIC, and DNS-over-TLS.
 	VerifyServerCertificate func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
@@ -85,6 +67,32 @@ type Options struct {
 	// QUICTracer is an optional callback that allows tracing every QUIC
 	// connection and logging every packet that goes through.
 	QUICTracer QUICTraceFunc
+
+	// RootCAs is the CertPool that must be used by all upstreams.  Redefining
+	// RootCAs makes sense on iOS to overcome the 15MB memory limit of the
+	// NEPacketTunnelProvider.
+	RootCAs *x509.CertPool
+
+	// CipherSuites is a custom list of TLSv1.2 ciphers.
+	CipherSuites []uint16
+
+	// Bootstrap is a list of DNS servers to be used to resolve
+	// DNS-over-HTTPS/DNS-over-TLS hostnames.  Plain DNS, DNSCrypt, or
+	// DNS-over-HTTPS/DNS-over-TLS with IP addresses (not hostnames) could be
+	// used.
+	Bootstrap []string
+
+	// List of IP addresses of the upstream DNS server.  If not empty, bootstrap
+	// DNS servers won't be used at all.
+	ServerIPAddrs []net.IP
+
+	// HTTPVersions is a list of HTTP versions that should be supported by the
+	// DNS-over-HTTPS client.  If not set, HTTP/1.1 and HTTP/2 will be used.
+	HTTPVersions []HTTPVersion
+
+	// Timeout is the default upstream timeout.  It's also used as a timeout for
+	// bootstrap DNS requests.  Zero value disables the timeout.
+	Timeout time.Duration
 
 	// InsecureSkipVerify disables verifying the server's certificate.
 	InsecureSkipVerify bool
@@ -106,6 +114,9 @@ func (o *Options) Clone() (clone *Options) {
 		VerifyDNSCryptCertificate: o.VerifyDNSCryptCertificate,
 		InsecureSkipVerify:        o.InsecureSkipVerify,
 		PreferIPv6:                o.PreferIPv6,
+		QUICTracer:                o.QUICTracer,
+		RootCAs:                   o.RootCAs,
+		CipherSuites:              o.CipherSuites,
 	}
 }
 
@@ -142,16 +153,6 @@ const (
 	// See https://www.rfc-editor.org/rfc/rfc9250.html#name-port-selection.
 	defaultPortDoQ = 853
 )
-
-// RootCAs is the CertPool that must be used by all upstreams.  Redefining
-// RootCAs makes sense on iOS to overcome the 15MB memory limit of the
-// NEPacketTunnelProvider.
-//
-// TODO(ameshkov): remove this and replace with an upstream option.
-var RootCAs *x509.CertPool
-
-// CipherSuites is a custom list of TLSv1.2 ciphers.
-var CipherSuites []uint16
 
 // AddressToUpstream converts addr to an Upstream using the specified options.
 // addr can be either a URL, or a plain address, either a domain name or an IP.

@@ -112,8 +112,8 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 		},
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
-			RootCAs:      RootCAs,
-			CipherSuites: CipherSuites,
+			RootCAs:      opts.RootCAs,
+			CipherSuites: opts.CipherSuites,
 			// Use the default capacity for the LRU cache.  It may be useful to
 			// store several caches since the user may be routed to different
 			// servers in case there's load balancing on the server-side.

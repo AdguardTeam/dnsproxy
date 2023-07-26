@@ -32,7 +32,9 @@ ARG TARGETVARIANT
 COPY --chown=nobody:nogroup\
 	./${DIST_DIR}/docker/dnsproxy_${TARGETOS}_${TARGETARCH}_${TARGETVARIANT}\
 	/opt/dnsproxy/dnsproxy
-COPY ./config.yaml.dist /opt/dnsproxy/config.yaml
+COPY --chown=nobody:nogroup\
+    ./${DIST_DIR}/docker/config.yaml\
+    /opt/dnsproxy/config.yaml
 
 RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
 

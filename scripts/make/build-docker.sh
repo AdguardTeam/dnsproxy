@@ -83,6 +83,9 @@ cp "${dist_dir}/linux-arm7/dnsproxy"\
 cp "${dist_dir}/linux-ppc64le/dnsproxy"\
 	"${dist_docker}/dnsproxy_linux_ppc64le_"
 
+# Prepare the default configuration for the Docker image.
+cp ./config.yaml.dist "${dist_docker}/config.yaml"
+
 # Don't use quotes with $docker_version_tag and $docker_channel_tag, because we
 # want word splitting and or an empty space if tags are empty.
 #

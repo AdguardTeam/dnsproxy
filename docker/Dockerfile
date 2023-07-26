@@ -32,6 +32,9 @@ ARG TARGETVARIANT
 COPY --chown=nobody:nogroup\
 	./${DIST_DIR}/docker/dnsproxy_${TARGETOS}_${TARGETARCH}_${TARGETVARIANT}\
 	/opt/dnsproxy/dnsproxy
+COPY --chown=nobody:nogroup\
+    ./${DIST_DIR}/docker/config.yaml\
+    /opt/dnsproxy/config.yaml
 
 RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
 
@@ -42,12 +45,13 @@ RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
 # 5443   : TCP, UDP : DNSCrypt (alt)
 # 6060   : TCP      : HTTP (pprof)
 EXPOSE 53/tcp 53/udp \
-    80/tcp \
-    443/tcp 443/udp \
-    853/tcp 853/udp \
-	5443/tcp 5443/udp \
-	6060/tcp
+       80/tcp \
+       443/tcp 443/udp \
+       853/tcp 853/udp \
+       5443/tcp 5443/udp \
+       6060/tcp
 
 WORKDIR /opt/dnsproxy
 
 ENTRYPOINT ["/opt/dnsproxy/dnsproxy"]
+CMD ["--config-path=/opt/dnsproxy/config.yaml"]

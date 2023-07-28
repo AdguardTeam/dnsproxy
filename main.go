@@ -171,7 +171,7 @@ type Options struct {
 
 	// If true, all AAAA requests will be replied with NoError RCode and empty answer
 	IPv6Disabled bool `yaml:"ipv6-disabled" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
-
+	IPv6BypassList []string `yaml:"ipv6-bypass-disabled" long:"ipv6-bypass-disabled" description:"Domain in ipv6-bypass-disabled will bypass ipv6-disabled"`
 	// Transform responses that contain at least one of the given IP addresses into NXDOMAIN
 	BogusNXDomain []string `yaml:"bogus-nxdomain" long:"bogus-nxdomain" description:"Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times."`
 
@@ -260,7 +260,7 @@ func run(options *Options) {
 
 	// Add extra handler if needed.
 	if options.IPv6Disabled {
-		ipv6Configuration := ipv6Configuration{ipv6Disabled: options.IPv6Disabled}
+		ipv6Configuration := ipv6Configuration{ipv6Disabled: options.IPv6Disabled,ipv6BypassList: parseIPv6BypassList(options)}
 		dnsProxy.RequestHandler = ipv6Configuration.handleDNSRequest
 	}
 
@@ -582,21 +582,39 @@ func initDNS64(conf *proxy.Config, options *Options) {
 
 	conf.DNS64Prefs = prefs
 }
-
+func parseIPv6BypassList(options *Options) []string{
+	whiteList := make([]string, len(options.IPv6BypassList))
+	for i,v := range options.IPv6BypassList {
+	    if strings.HasSuffix(v,".") {
+			whiteList[i] = v
+		}else{
+			whiteList[i] = v+"."
+		}
+	}
+	return whiteList
+}
 // IPv6 configuration
 type ipv6Configuration struct {
 	ipv6Disabled bool // If true, all AAAA requests will be replied with NoError RCode and empty answer
+	ipv6BypassList []string
 }
 
 // handleDNSRequest checks IPv6 configuration for current session before resolve
 func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error {
-	if proxy.CheckDisabledAAAARequest(ctx, c.ipv6Disabled) {
+	if proxy.CheckDisabledAAAARequest(ctx, c.ipv6Disabled) && !strHasSuffix(ctx.Req.Question[0].Name, c.ipv6BypassList){
 		return nil
 	}
 
 	return p.Resolve(ctx)
 }
-
+func strHasSuffix(name string, list []string) bool {
+	for _,v := range list {
+		if strings.HasSuffix(name, v) {
+			return true
+		}
+	}
+	return false
+}
 // NewTLSConfig returns a TLS config that includes a certificate
 // Use for server TLS config or when using a client certificate
 // If caPath is empty, system CAs will be used

@@ -24,30 +24,37 @@ func SortIPAddrs(addrs []net.IPAddr, preferIPv6 bool) {
 		return
 	}
 
-	slices.SortStableFunc(addrs, func(addrA, addrB net.IPAddr) (sortsBefore bool) {
+	slices.SortStableFunc(addrs, func(addrA, addrB net.IPAddr) (res int) {
 		// Assume that len(addrs) is mostly small, so these conversions aren't
 		// as expensive as they could have been.
 		a, err := glnetutil.IPToAddrNoMapped(addrA.IP)
 		if err != nil {
-			return false
+			return 1
 		}
 
 		b, err := glnetutil.IPToAddrNoMapped(addrB.IP)
 		if err != nil {
-			return false
+			return -1
 		}
 
-		aIs4 := a.Is4()
-		bIs4 := b.Is4()
-		if aIs4 != bIs4 {
-			if aIs4 {
-				return !preferIPv6
+		aIs4, bIs4 := a.Is4(), b.Is4()
+		if aIs4 == bIs4 {
+			return a.Compare(b)
+		}
+
+		if aIs4 {
+			if preferIPv6 {
+				return 1
 			}
 
-			return preferIPv6
+			return -1
 		}
 
-		return a.Less(b)
+		if preferIPv6 {
+			return -1
+		}
+
+		return 1
 	})
 }
 
@@ -59,21 +66,30 @@ func SortNetIPAddrs(addrs []netip.Addr, preferIPv6 bool) {
 		return
 	}
 
-	slices.SortStableFunc(addrs, func(addrA, addrB netip.Addr) (sortsBefore bool) {
+	slices.SortStableFunc(addrs, func(addrA, addrB netip.Addr) (res int) {
 		if !addrA.IsValid() {
-			return false
+			return 1
 		} else if !addrB.IsValid() {
-			return true
+			return -1
 		}
 
-		if aIs4, bIs4 := addrA.Is4(), addrB.Is4(); aIs4 != bIs4 {
-			if aIs4 {
-				return !preferIPv6
+		aIs4, bIs4 := addrA.Is4(), addrB.Is4()
+		if aIs4 != bIs4 {
+			return addrA.Compare(addrB)
+		}
+
+		if aIs4 {
+			if preferIPv6 {
+				return 1
 			}
 
-			return preferIPv6
+			return -1
 		}
 
-		return addrA.Less(addrB)
+		if preferIPv6 {
+			return -1
+		}
+
+		return 1
 	})
 }

@@ -6,7 +6,7 @@ import (
 	"unsafe"
 )
 
-type onDeleteType func(key []byte, val []byte)
+type onDeleteType func(key, val []byte)
 
 type cache struct {
 	items map[string]*item
@@ -66,7 +66,7 @@ func (c *cache) Clear() {
 }
 
 // Set value
-func (c *cache) Set(key []byte, val []byte) bool {
+func (c *cache) Set(key, val []byte) bool {
 	addSize := uint(len(key) + len(val))
 	if addSize > c.conf.MaxElementSize {
 		return false // too large data

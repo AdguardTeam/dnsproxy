@@ -153,13 +153,15 @@ const (
 	AdminToken   = "Admin-Token"
 	TrueClientIP = "True-Client-IP"
 
-	XError         = "X-Error"
-	XForwardedFor  = "X-Forwarded-For"
-	XProjectName   = "X-Project-Name"
-	XProxyTarget   = "X-Proxy-Target"
-	XRealIP        = "X-Real-Ip"
-	XRequestID     = "X-Request-Id"
-	XRequestedWith = "X-Requested-With"
+	XError          = "X-Error"
+	XForwardedFor   = "X-Forwarded-For"
+	XForwardedHost  = "X-Forwarded-Host"
+	XForwardedProto = "X-Forwarded-Proto"
+	XProjectName    = "X-Project-Name"
+	XProxyTarget    = "X-Proxy-Target"
+	XRealIP         = "X-Real-Ip"
+	XRequestID      = "X-Request-Id"
+	XRequestedWith  = "X-Requested-With"
 )
 
 // Common Cloudflare extension headers.

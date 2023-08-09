@@ -2,9 +2,10 @@ package testutil
 
 import (
 	"io"
-	"log"
 	"os"
 	"testing"
+
+	"github.com/AdguardTeam/golibs/log"
 )
 
 // DiscardLogOutput runs tests with discarded logger output.

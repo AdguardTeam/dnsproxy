@@ -27,7 +27,7 @@ func New(conf Config) Cache {
 type Cache interface {
 	// Set data
 	// Return FALSE if data was added;  TRUE if data was replaced
-	Set(key []byte, val []byte) bool
+	Set(key, val []byte) bool
 
 	// Get data
 	// Return nil if item with this key doesn't exist

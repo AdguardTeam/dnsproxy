@@ -74,7 +74,7 @@ func SortNetIPAddrs(addrs []netip.Addr, preferIPv6 bool) {
 		}
 
 		aIs4, bIs4 := addrA.Is4(), addrB.Is4()
-		if aIs4 != bIs4 {
+		if aIs4 == bIs4 {
 			return addrA.Compare(addrB)
 		}
 

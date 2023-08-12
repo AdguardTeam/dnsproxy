@@ -70,6 +70,11 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 
 					subdomainsOnlyExclusions.Add(host)
 					subdomainsOnlyUpstreams[host] = nil
+				} else if strings.HasPrefix(host, "*-") {
+					subdomainsOnlyUpstreams[host[len("*"):]] = nil
+
+					host = host[len("*-"):]
+					subdomainsOnlyExclusions.Add(host)
 				} else {
 					domainReservedUpstreams[host] = nil
 					specifiedDomainUpstreams[host] = nil
@@ -105,6 +110,12 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 					subdomainsOnlyExclusions.Add(host)
 					log.Debug("domain %s is added to exclusions list", host)
 
+					subdomainsOnlyUpstreams[host] = append(subdomainsOnlyUpstreams[host], dnsUpstream)
+				} else if strings.HasPrefix(host, "*-") {
+					subdomainsOnlyExclusions.Add(host[len("*-"):])
+					log.Debug("domain %s is added to exclusions list", host[len("*-"):])
+
+					host = host[len("*"):]
 					subdomainsOnlyUpstreams[host] = append(subdomainsOnlyUpstreams[host], dnsUpstream)
 				} else {
 					specifiedDomainUpstreams[host] = append(specifiedDomainUpstreams[host], dnsUpstream)
@@ -170,7 +181,9 @@ func parseUpstreamLine(l string) (string, []string, error) {
 		// split domains list
 		for _, confHost := range strings.Split(domainsAndUpstream[0], "/") {
 			if confHost != "" {
-				host := strings.TrimPrefix(confHost, "*.")
+				host := confHost
+				host = strings.TrimPrefix(host, "*.")
+				host = strings.TrimPrefix(host, "*-")
 				if err := netutil.ValidateDomainName(host); err != nil {
 					return "", nil, err
 				}
@@ -229,6 +242,14 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 		name := h[i-1]
 
 		var ok bool
+
+		if i := strings.Index(name, "-"); i >= 0 {
+			ups, ok = uc.DomainReservedUpstreams[name[i:]]
+			if ok && len(ups) > 0 {
+				return ups
+			}
+		}
+
 		ups, ok = uc.DomainReservedUpstreams[name]
 		if !ok {
 			continue

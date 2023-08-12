@@ -209,6 +209,8 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 		"[/*.example.org/]127.0.0.1:5303",
 		"[/www.example.org/]127.0.0.1:5304",
 		"[/*.www.example.org/]#",
+		"[/*-abc.example.org/]127.0.0.1:5305",
+		"[/*.abc.example.org/]127.0.0.1:5306",
 	}
 
 	uconf, err := ParseUpstreamsConfig(conf, nil)
@@ -234,6 +236,14 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 		name: "def_wildcard",
 		in:   "abc.www.example.org.",
 		want: []string{"127.0.0.1:5301"},
+	}, {
+		name: "hyphen_wildcard",
+		in:   "zxc-abc.example.org.",
+		want: []string{"127.0.0.1:5305"},
+	}, {
+		name: "sub_no_hyphen",
+		in:   "zxc.abc.example.org.",
+		want: []string{"127.0.0.1:5306"},
 	}}
 
 	for _, tc := range testCases {

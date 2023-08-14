@@ -11,7 +11,7 @@ require (
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/miekg/dns v1.1.50
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/quic-go/quic-go v0.36.1
+	github.com/quic-go/quic-go v0.37.4
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/exp v0.0.0-20230807204917-050eac23e9de
 	golang.org/x/net v0.12.0
@@ -31,8 +31,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
-	github.com/quic-go/qtls-go1-20 v0.2.2 // indirect
+	github.com/quic-go/qtls-go1-20 v0.3.1 // indirect
 	golang.org/x/crypto v0.11.0 // indirect
 	golang.org/x/mod v0.11.0 // indirect
 	golang.org/x/text v0.11.0 // indirect

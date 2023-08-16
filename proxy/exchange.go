@@ -69,7 +69,7 @@ func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, err
 	reply, err := u.Exchange(req)
 	elapsed := time.Since(startTime)
 	if err != nil {
-		log.Tracef(
+		log.Error(
 			"upstream %s failed to exchange %s in %s. Cause: %s",
 			u.Address(),
 			req.Question[0].String(),
@@ -84,6 +84,7 @@ func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, err
 			elapsed,
 		)
 	}
+
 	return reply, int(elapsed.Milliseconds()), err
 }
 

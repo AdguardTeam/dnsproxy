@@ -36,10 +36,10 @@ There are several options how to install `dnsproxy`.
 
 ## How to build
 
-You will need Go v1.19 or later.
+You will need Go v1.20 or later.
 
 ```shell
-$ go build -mod=vendor
+$ make build
 ```
 
 ## Usage

@@ -15,7 +15,7 @@ readonly debug_flags
 set -e -f -u
 
 # Require these to be set.
-commit="${COMMIT:?please set COMMIT}"
+commit="${REVISION:?please set REVISION}"
 dist_dir="${DIST_DIR:?please set DIST_DIR}"
 version="${VERSION:?please set VERSION}"
 readonly commit dist_dir version

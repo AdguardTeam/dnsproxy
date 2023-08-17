@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/version"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
@@ -189,9 +190,6 @@ type Options struct {
 	Version bool `yaml:"version" long:"version" description:"Prints the program version"`
 }
 
-// VersionString will be set through ldflags, contains current version
-var VersionString = "dev" // nolint:gochecknoglobals
-
 const (
 	defaultLocalTimeout = 1 * time.Second
 )
@@ -201,7 +199,8 @@ func main() {
 
 	for _, arg := range os.Args {
 		if arg == "--version" {
-			fmt.Printf("dnsproxy version: %s\n", VersionString)
+			fmt.Printf("dnsproxy version: %s\n", version.Version())
+
 			os.Exit(0)
 		}
 
@@ -252,7 +251,7 @@ func run(options *Options) {
 
 	runPprof(options)
 
-	log.Info("Starting dnsproxy %s", VersionString)
+	log.Info("Starting dnsproxy %s", version.Version())
 
 	// Prepare the proxy server and its configuration.
 	config := createProxyConfig(options)

@@ -1,11 +1,15 @@
 github.com/AdguardTeam/golibs v0.14.0 h1:/vfJshXBVaevMuBgzAIr+F64XdNqZL+j9F33GXJmgeQ=
 github.com/AdguardTeam/golibs v0.14.0/go.mod h1:hOtcb8dPfKcFjWTPA904hTA4dl1aWvzeebdJpE72IPk=
+github.com/AdguardTeam/golibs v0.15.0 h1:yOv/fdVkJIOWKr0NlUXAE9RA0DK9GKiBbiGzq47vY7o=
+github.com/AdguardTeam/golibs v0.15.0/go.mod h1:66ZLs8P7nk/3IfKroQ1rqtieLk+5eXYXMBKXlVL7KeI=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da h1:KjTM2ks9d14ZYCvmHS9iAKVt9AyzRSqNU1qabPih5BY=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da/go.mod h1:eHEWzANqSiWQsof+nXEI9bUVUyV6F53Fp89EuCh2EAA=
 github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635 h1:52m0LGchQBBVqJRyYYufQuIbVqRawmubW3OFGqK1ekw=
 github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635/go.mod h1:lmLxL+FV291OopO93Bwf9fQLQeLyt33VJRUg5VJ30us=
 github.com/ameshkov/dnscrypt/v2 v2.2.6 h1:rE7AFbPWebq7me7RVS66Cipd1m7ef1yf2+C8QzjQXXE=
 github.com/ameshkov/dnscrypt/v2 v2.2.6/go.mod h1:qPWhwz6FdSmuK7W4sMyvogrez4MWdtzosdqlr0Rg3ow=
+github.com/ameshkov/dnscrypt/v2 v2.2.7 h1:aEitLIR8HcxVodZ79mgRcCiC0A0I5kZPBuWGFwwulAw=
+github.com/ameshkov/dnscrypt/v2 v2.2.7/go.mod h1:qPWhwz6FdSmuK7W4sMyvogrez4MWdtzosdqlr0Rg3ow=
 github.com/ameshkov/dnsstamps v1.0.3 h1:Srzik+J9mivH1alRACTbys2xOxs0lRH9qnTA7Y1OYVo=
 github.com/ameshkov/dnsstamps v1.0.3/go.mod h1:Ii3eUu73dx4Vw5O4wjzmT5+lkCwovjzaEZZ4gKyIH5A=
 github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0 h1:0b2vaepXIfMsG++IsjHiI2p4bxALD1Y2nQKGMR5zDQM=

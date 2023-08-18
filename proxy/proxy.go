@@ -56,6 +56,8 @@ const (
 )
 
 // Proxy combines the proxy server state and configuration
+//
+// TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Proxy struct {
 	// counter is the counter of messages.  It must only be incremented
 	// atomically, so it must be the first member of the struct to make sure

@@ -24,14 +24,15 @@ const DefaultPingWaitTimeout = 1 * time.Second
 
 // FastestAddr provides methods to determine the fastest network addresses.
 type FastestAddr struct {
-	// ipCacheLock protects ipCache.
-	ipCacheLock sync.Mutex
-	// ipCache caches fastest IP addresses.
-	ipCache cache.Cache
-
 	// pinger is the dialer with predefined timeout for pinging TCP
 	// connections.
 	pinger *net.Dialer
+
+	// ipCacheLock protects ipCache.
+	ipCacheLock *sync.Mutex
+
+	// ipCache caches fastest IP addresses.
+	ipCache cache.Cache
 
 	// pingPorts are the ports to ping on.
 	pingPorts []uint
@@ -47,6 +48,7 @@ type FastestAddr struct {
 // NewFastestAddr initializes a new instance of the *FastestAddr.
 func NewFastestAddr() (f *FastestAddr) {
 	return &FastestAddr{
+		ipCacheLock: &sync.Mutex{},
 		ipCache: cache.New(cache.Config{
 			MaxSize:   64 * 1024,
 			EnableLRU: true,

@@ -236,8 +236,8 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 
 	// TODO(e.burkov):  Port?
 	if stamp.ServerAddrStr != "" {
-		host, _, err := netutil.SplitHostPort(stamp.ServerAddrStr)
-		if err != nil {
+		host, _, sErr := netutil.SplitHostPort(stamp.ServerAddrStr)
+		if sErr != nil {
 			host = stamp.ServerAddrStr
 		}
 
@@ -255,7 +255,7 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 	case dnsstamps.StampProtoTypePlain:
 		return newPlain(&url.URL{Scheme: "udp", Host: stamp.ServerAddrStr}, opts)
 	case dnsstamps.StampProtoTypeDNSCrypt:
-		return newDNSCrypt(upsURL, opts)
+		return newDNSCrypt(upsURL, opts), nil
 	case dnsstamps.StampProtoTypeDoH:
 		return newDoH(&url.URL{Scheme: "https", Host: stamp.ProviderName, Path: stamp.Path}, opts)
 	case dnsstamps.StampProtoTypeDoQ:
@@ -332,23 +332,10 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer, err 
 		return func() (bootstrap.DialHandler, error) { return handler, nil }, nil
 	}
 
-	bootstraps := opts.Bootstrap
-	if len(opts.Bootstrap) == 0 {
-		// Use the default resolver for bootstrapping.
-		bootstraps = []string{""}
-	}
-
-	// Prepare resolvers for bootstrapping.
-	resolvers := make([]Resolver, 0, len(bootstraps))
-	for _, boot := range bootstraps {
-		var r Resolver
-		r, err = NewResolver(boot, opts)
-		if err != nil {
-			// Don't wrap the error since it's informative enough as is.
-			return nil, err
-		}
-
-		resolvers = append(resolvers, r)
+	resolvers, err := newResolvers(opts)
+	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return nil, err
 	}
 
 	var dialHandler atomic.Value
@@ -376,4 +363,25 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer, err 
 	}
 
 	return di, nil
+}
+
+// newResolvers prepares resolvers for bootstrapping.
+func newResolvers(opts *Options) (resolvers []Resolver, err error) {
+	bootstraps := opts.Bootstrap
+	if len(bootstraps) == 0 {
+		// Use the default resolver for bootstrapping.
+		bootstraps = []string{""}
+	}
+
+	resolvers = make([]Resolver, 0, len(bootstraps))
+	for _, boot := range bootstraps {
+		r, rErr := NewResolver(boot, opts)
+		if rErr != nil {
+			return nil, fmt.Errorf("preparing bootstrap resolver: %w", rErr)
+		}
+
+		resolvers = append(resolvers, r)
+	}
+
+	return resolvers, nil
 }

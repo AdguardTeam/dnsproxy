@@ -2,7 +2,6 @@ package bootstrap_test
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/netip"
 	"net/url"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"

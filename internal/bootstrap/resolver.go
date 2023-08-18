@@ -12,9 +12,9 @@ import (
 
 // Resolver resolves the hostnames to IP addresses.
 type Resolver interface {
-	// LookupIPAddr looks up the IP addresses for the given host.  network must
+	// LookupNetIP looks up the IP addresses for the given host.  network must
 	// be one of "ip", "ip4" or "ip6".
-	LookupNetIP(ctx context.Context, network string, host string) (addrs []netip.Addr, err error)
+	LookupNetIP(ctx context.Context, network, host string) (addrs []netip.Addr, err error)
 }
 
 // type check

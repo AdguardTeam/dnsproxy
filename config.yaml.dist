@@ -4,15 +4,15 @@
 # option.  Any other command-line options specified will override the values
 # from the config file.
 ---
-bootstrap: 
+bootstrap:
   - "8.8.8.8:53"
-listen-addrs: 
+listen-addrs:
   - "0.0.0.0"
-listen-ports: 
+listen-ports:
   - 53
 max-go-routines: 0
 ratelimit: 0
 udp-buf-size: 0
-upstream: 
+upstream:
   - "1.1.1.1:53"
 timeout: '10s'

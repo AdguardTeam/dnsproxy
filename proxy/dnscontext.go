@@ -14,48 +14,57 @@ import (
 
 // DNSContext represents a DNS request message context
 type DNSContext struct {
-	Proto Proto
-	// Req is the request message.
-	Req *dns.Msg
-	// Res is the response message.
-	Res *dns.Msg
-	// Addr is the address of the client.
-	Addr net.Addr
 	// StartTime is the moment when request processing started.
 	StartTime time.Time
-	// Upstream is the upstream that resolved the request.  In case of cached
-	// response it's nil.
-	Upstream upstream.Upstream
-	// CachedUpstreamAddr is the address of the upstream which the answer was
-	// cached with.  It's empty for responses resolved by the upstream server.
-	CachedUpstreamAddr string
-
-	// CustomUpstreamConfig is only used for current request.  The Resolve
-	// method of Proxy uses it instead of the default servers if it's not nil.
-	CustomUpstreamConfig *UpstreamConfig
 
 	// Conn is the underlying client connection.  It is nil if Proto is
 	// ProtoDNSCrypt, ProtoHTTPS, or ProtoQUIC.
 	Conn net.Conn
 
-	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
-	localIP net.IP
-
-	// HTTPRequest - HTTP request (for DoH only)
-	HTTPRequest *http.Request
-	// HTTPResponseWriter - HTTP response writer (for DoH only)
-	HTTPResponseWriter http.ResponseWriter
-
-	// DNSCryptResponseWriter - necessary to respond to a DNSCrypt query
-	DNSCryptResponseWriter dnscrypt.ResponseWriter
+	// QUICConnection is the QUIC session from which we got the query.  For
+	// ProtoQUIC only.
+	QUICConnection quic.Connection
 
 	// QUICStream is the QUIC stream from which we got the query.  For
 	// ProtoQUIC only.
 	QUICStream quic.Stream
 
-	// QUICConnection is the QUIC session from which we got the query.  For
-	// ProtoQUIC only.
-	QUICConnection quic.Connection
+	// Addr is the address of the client.
+	Addr net.Addr
+
+	// Upstream is the upstream that resolved the request.  In case of cached
+	// response it's nil.
+	Upstream upstream.Upstream
+
+	// DNSCryptResponseWriter - necessary to respond to a DNSCrypt query
+	DNSCryptResponseWriter dnscrypt.ResponseWriter
+
+	// HTTPResponseWriter - HTTP response writer (for DoH only)
+	HTTPResponseWriter http.ResponseWriter
+
+	// HTTPRequest - HTTP request (for DoH only)
+	HTTPRequest *http.Request
+
+	// ReqECS is the EDNS Client Subnet used in the request.
+	ReqECS *net.IPNet
+
+	// CustomUpstreamConfig is only used for current request.  The Resolve
+	// method of Proxy uses it instead of the default servers if it's not nil.
+	CustomUpstreamConfig *UpstreamConfig
+
+	// Req is the request message.
+	Req *dns.Msg
+	// Res is the response message.
+	Res *dns.Msg
+
+	Proto Proto
+
+	// CachedUpstreamAddr is the address of the upstream which the answer was
+	// cached with.  It's empty for responses resolved by the upstream server.
+	CachedUpstreamAddr string
+
+	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
+	localIP net.IP
 
 	// DoQVersion is the DoQ protocol version. It can (and should) be read from
 	// ALPN, but in the current version we also use the way DNS messages are
@@ -67,8 +76,9 @@ type DNSContext struct {
 	// instance.
 	RequestID uint64
 
-	// ReqECS is the EDNS Client Subnet used in the request.
-	ReqECS *net.IPNet
+	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
+	// or default otherwise.
+	udpSize uint16
 
 	// adBit is the authenticated data flag from the request.
 	adBit bool
@@ -76,9 +86,6 @@ type DNSContext struct {
 	hasEDNS0 bool
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
-	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
-	// or default otherwise.
-	udpSize uint16
 }
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.

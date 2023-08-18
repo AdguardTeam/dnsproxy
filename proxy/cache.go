@@ -22,15 +22,17 @@ const defaultCacheSize = 64 * 1024
 
 // cache is used to cache requests and used upstreams.
 type cache struct {
+	// itemsLock protects requests cache.
+	itemsLock *sync.RWMutex
+
+	// itemsWithSubnetLock protects requests cache.
+	itemsWithSubnetLock *sync.RWMutex
+
 	// items is the requests cache.
 	items glcache.Cache
-	// itemsLock protects requests cache.
-	itemsLock sync.RWMutex
 
 	// itemsWithSubnet is the requests cache.
 	itemsWithSubnet glcache.Cache
-	// itemsWithSubnetLock protects requests cache.
-	itemsWithSubnetLock sync.RWMutex
 
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
@@ -177,8 +179,10 @@ func (p *Proxy) initCache() {
 // newCache returns a properly initialized cache.
 func newCache(size int, withECS, optimistic bool) (c *cache) {
 	c = &cache{
-		items:      createCache(size),
-		optimistic: optimistic,
+		itemsLock:           &sync.RWMutex{},
+		itemsWithSubnetLock: &sync.RWMutex{},
+		items:               createCache(size),
+		optimistic:          optimistic,
 	}
 
 	if withECS {

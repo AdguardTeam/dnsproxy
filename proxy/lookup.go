@@ -72,12 +72,15 @@ func (p *Proxy) LookupIPAddr(host string) ([]net.IPAddr, error) {
 
 func appendIPAddrs(ipAddrs *[]net.IPAddr, answers []dns.RR) {
 	for _, ans := range answers {
-		if a, ok := ans.(*dns.A); ok {
-			ip := net.IPAddr{IP: a.A}
+		switch ans := ans.(type) {
+		case *dns.A:
+			ip := net.IPAddr{IP: ans.A}
 			*ipAddrs = append(*ipAddrs, ip)
-		} else if a, ok := ans.(*dns.AAAA); ok {
-			ip := net.IPAddr{IP: a.AAAA}
+		case *dns.AAAA:
+			ip := net.IPAddr{IP: ans.AAAA}
 			*ipAddrs = append(*ipAddrs, ip)
+		default:
+			continue
 		}
 	}
 }

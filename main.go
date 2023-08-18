@@ -29,6 +29,8 @@ import (
 // Options represents console arguments.  For further additions, please do not
 // use the default option since it will cause some problems when config files
 // are used.
+//
+// TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Options struct {
 	// Configuration file path (yaml), the config path should be read without
 	// using goFlags in order not to have default values overriding yaml
@@ -241,11 +243,14 @@ func run(options *Options) {
 		log.SetLevel(log.DEBUG)
 	}
 	if options.LogOutput != "" {
+		// #nosec G302 -- Trust the file path that is given in the
+		// configuration.
 		file, err := os.OpenFile(options.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
 			log.Fatalf("cannot create a log file: %s", err)
 		}
-		defer file.Close() //nolint
+
+		defer func() { _ = file.Close() }()
 		log.SetOutput(file)
 	}
 
@@ -625,38 +630,48 @@ func newTLSConfig(options *Options) (*tls.Config, error) {
 		return nil, fmt.Errorf("could not load TLS cert: %s", err)
 	}
 
-	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: uint16(tlsMinVersion), MaxVersion: uint16(tlsMaxVersion)}, nil
+	// #nosec G402 -- TLS MinVersion is configured by user.
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   uint16(tlsMinVersion),
+		MaxVersion:   uint16(tlsMaxVersion),
+	}, nil
 }
 
-// loadX509KeyPair reads and parses a public/private key pair from a pair
-// of files. The files must contain PEM encoded data. The certificate file
-// may contain intermediate certificates following the leaf certificate to
-// form a certificate chain. On successful return, Certificate.Leaf will
-// be nil because the parsed form of the certificate is not retained.
-func loadX509KeyPair(certFile, keyFile string) (tls.Certificate, error) {
+// loadX509KeyPair reads and parses a public/private key pair from a pair of
+// files.  The files must contain PEM encoded data.  The certificate file may
+// contain intermediate certificates following the leaf certificate to form a
+// certificate chain.  On successful return, Certificate.Leaf will be nil
+// because the parsed form of the certificate is not retained.
+func loadX509KeyPair(certFile, keyFile string) (crt tls.Certificate, err error) {
+	// #nosec G304 -- Trust the file path that is given in the configuration.
 	certPEMBlock, err := os.ReadFile(certFile)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
+
+	// #nosec G304 -- Trust the file path that is given in the configuration.
 	keyPEMBlock, err := os.ReadFile(keyFile)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
+
 	return tls.X509KeyPair(certPEMBlock, keyPEMBlock)
 }
 
-// loadServersList loads a list of DNS servers from the specified list.
-// the thing is that the user may specify either a server address
-// or path to a file with a list of addresses. This method takes care of it,
-// reads the file, loads servers from it if needed.
+// loadServersList loads a list of DNS servers from the specified list.  The
+// thing is that the user may specify either a server address or the path to a
+// file with a list of addresses.  This method takes care of it, it reads the
+// file and loads servers from this file if needed.
 func loadServersList(sources []string) []string {
 	var servers []string
 
 	for _, source := range sources {
+		// #nosec G304 -- Trust the file path that is given in the
+		// configuration.
 		data, err := os.ReadFile(source)
 		if err != nil {
-			// Ignore errors, just consider it a server address
-			// and not a file
+			// Ignore errors, just consider it a server address and not a file.
 			servers = append(servers, source)
 		}
 
@@ -664,7 +679,7 @@ func loadServersList(sources []string) []string {
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 
-			// Ignore comments in the file
+			// Ignore comments in the file.
 			if line == "" ||
 				strings.HasPrefix(line, "!") ||
 				strings.HasPrefix(line, "#") {

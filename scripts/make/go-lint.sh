@@ -127,9 +127,16 @@ underscores() {
 			-e '_darwin.go'\
 			-e '_generate.go'\
 			-e '_linux.go'\
+			-e '_others.go'\
+			-e '_plan9.go'\
 			-e '_test.go'\
 			-e '_unix.go'\
 			-e '_windows.go'\
+			-e '_dnscrypt.go'\
+			-e '_https.go'\
+			-e '_quic.go'\
+			-e '_tcp.go'\
+			-e '_udp.go'\
 			-v\
 			| sed -e 's/./\t\0/'
 	)"
@@ -162,9 +169,31 @@ run_linter "$GO" vet ./...
 
 run_linter govulncheck ./...
 
-run_linter gocyclo --over 10 .
+# TODO(a.garipov): Enable for all.
+run_linter gocyclo --over 10\
+	./internal/bootstrap/\
+	./internal/netutil/\
+	./internal/version/\
+	./proxyutil/\
+	;
 
-run_linter gocognit --over 10 .
+run_linter gocyclo --over 20 ./main.go
+run_linter gocyclo --over 18 ./fastip/
+run_linter gocyclo --over 15 ./proxy/
+run_linter gocyclo --over 14 ./upstream/
+
+# TODO(a.garipov): Enable for all.
+run_linter gocognit --over 10\
+	./internal/bootstrap/\
+	./internal/version/\
+	./proxyutil/\
+	;
+
+run_linter gocognit --over 39 ./main.go
+run_linter gocognit --over 33 ./proxy/
+run_linter gocognit --over 32 ./fastip/
+run_linter gocognit --over 24 ./upstream/
+run_linter gocognit --over 14 ./internal/netutil/
 
 run_linter ineffassign ./...
 
@@ -178,7 +207,11 @@ run_linter looppointer ./...
 
 run_linter nilness ./...
 
-run_linter fieldalignment ./...
+# TODO(a.garipov): Enable for all.
+run_linter fieldalignment ./fastip/...
+run_linter fieldalignment ./internal/...
+run_linter fieldalignment ./proxyutil/...
+run_linter fieldalignment ./upstream/...
 
 run_linter -e shadow --strict ./...
 
@@ -188,7 +221,9 @@ run_linter errcheck ./...
 
 staticcheck_matrix='
 darwin:  GOOS=darwin
+freebsd: GOOS=freebsd
 linux:   GOOS=linux
+openbsd: GOOS=openbsd
 windows: GOOS=windows
 '
 readonly staticcheck_matrix

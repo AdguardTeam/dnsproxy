@@ -104,7 +104,7 @@ func TestFastestAddr_PingAll_cache(t *testing.T) {
 		require.NoError(t, err)
 		testutil.CleanupAndRequireSuccess(t, listener.Close)
 
-		ip := netutil.IPv4Localhost()
+		ip = netutil.IPv4Localhost()
 		f := NewFastestAddr()
 
 		f.pingPorts = []uint{uint(listener.Addr().(*net.TCPAddr).Port)}
@@ -113,7 +113,7 @@ func TestFastestAddr_PingAll_cache(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(len(ips) * len(f.pingPorts))
 
-		f.pinger.Control = func(_, address string, _ syscall.RawConn) error {
+		f.pinger.Control = func(_, address string, _ syscall.RawConn) (err error) {
 			hostport, err := netutil.ParseHostPort(address)
 			require.NoError(t, err)
 

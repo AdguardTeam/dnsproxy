@@ -67,8 +67,8 @@ func TestUpstream_dnsOverTLS_race(t *testing.T) {
 			pt := testutil.PanicT{}
 
 			req := createTestMessage()
-			resp, err := u.Exchange(req)
-			require.NoError(pt, err)
+			resp, uErr := u.Exchange(req)
+			require.NoError(pt, uErr)
 			requireResponse(pt, req, resp)
 		}()
 	}

@@ -23,11 +23,11 @@ import (
 func TestUpstreamDoH(t *testing.T) {
 	testCases := []struct {
 		name             string
-		http3Enabled     bool
+		expectedProtocol HTTPVersion
 		httpVersions     []HTTPVersion
 		delayHandshakeH3 time.Duration
 		delayHandshakeH2 time.Duration
-		expectedProtocol HTTPVersion
+		http3Enabled     bool
 	}{{
 		name:             "http1.1_h2",
 		http3Enabled:     false,
@@ -111,11 +111,11 @@ func TestUpstreamDoH(t *testing.T) {
 func TestUpstreamDoH_raceReconnect(t *testing.T) {
 	testCases := []struct {
 		name             string
-		http3Enabled     bool
+		expectedProtocol HTTPVersion
 		httpVersions     []HTTPVersion
 		delayHandshakeH3 time.Duration
 		delayHandshakeH2 time.Duration
-		expectedProtocol HTTPVersion
+		http3Enabled     bool
 	}{{
 		name:             "http1.1_h2",
 		http3Enabled:     false,
@@ -319,18 +319,15 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 
 // testDoHServerOptions allows customizing testDoHServer behavior.
 type testDoHServerOptions struct {
-	http3Enabled     bool
+	handler          http.Handler
 	delayHandshakeH2 time.Duration
 	delayHandshakeH3 time.Duration
 	port             int
-	handler          http.Handler
+	http3Enabled     bool
 }
 
 // testDoHServer is an instance of a test DNS-over-HTTPS server.
 type testDoHServer struct {
-	// addr is the address that this server listens to.
-	addr string
-
 	// tlsConfig is the TLS configuration that is used for this server.
 	tlsConfig *tls.Config
 
@@ -345,6 +342,9 @@ type testDoHServer struct {
 
 	// listenerH3 that's used to serve HTTP/3.
 	listenerH3 *quic.EarlyListener
+
+	// addr is the address that this server listens to.
+	addr string
 }
 
 // Shutdown stops the DoH server.
@@ -425,8 +425,8 @@ func startDoHServer(
 
 		// Listen UDP for the H3 server. Reuse the same port as was used for the
 		// TCP listener.
-		udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", tcpAddr.Port))
-		require.NoError(t, err)
+		udpAddr, uErr := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", tcpAddr.Port))
+		require.NoError(t, uErr)
 
 		// QUIC configuration with the 0-RTT support enabled by default.
 		quicConfig := &quic.Config{

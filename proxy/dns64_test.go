@@ -357,7 +357,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				Addr: cliIP,
 			}
 
-			err := p.Resolve(dctx)
+			err = p.Resolve(dctx)
 			require.NoError(t, err)
 
 			res := dctx.Res

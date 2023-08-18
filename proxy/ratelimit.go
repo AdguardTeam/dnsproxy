@@ -2,13 +2,13 @@ package proxy
 
 import (
 	"net"
-	"sort"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	rate "github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
+	"golang.org/x/exp/slices"
 )
 
 func (p *Proxy) limiterForIP(ip string) interface{} {
@@ -28,9 +28,10 @@ func (p *Proxy) limiterForIP(ip string) interface{} {
 	return value
 }
 
-// isRatelimited checks if the specified IP is ratelimited
-func (p *Proxy) isRatelimited(addr net.Addr) bool {
-	if p.Ratelimit <= 0 { // 0 -- disabled
+// isRatelimited checks if the specified IP is ratelimited.
+func (p *Proxy) isRatelimited(addr net.Addr) (ok bool) {
+	if p.Ratelimit <= 0 {
+		// The ratelimit is disabled.
 		return false
 	}
 
@@ -42,10 +43,12 @@ func (p *Proxy) isRatelimited(addr net.Addr) bool {
 	}
 
 	ipStr := ip.String()
+
 	if len(p.RatelimitWhitelist) > 0 {
-		i := sort.SearchStrings(p.RatelimitWhitelist, ipStr)
-		if i < len(p.RatelimitWhitelist) && p.RatelimitWhitelist[i] == ipStr {
-			// Don't ratelimit if the ip is allowlisted.
+		slices.Sort(p.RatelimitWhitelist)
+		_, ok = slices.BinarySearch(p.RatelimitWhitelist, ipStr)
+		if ok {
+			// Don't ratelimit if the IP is allowlisted.
 			return false
 		}
 	}
@@ -54,9 +57,11 @@ func (p *Proxy) isRatelimited(addr net.Addr) bool {
 	rl, ok := value.(*rate.RateLimiter)
 	if !ok {
 		log.Println("SHOULD NOT HAPPEN: non-bool entry found in safebrowsing lookup cache")
+
 		return false
 	}
 
 	allow, _ := rl.Try()
+
 	return !allow
 }

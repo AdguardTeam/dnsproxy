@@ -64,12 +64,12 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 			req := createTestMessage()
 
 			start := time.Now()
-			_, err := u.Exchange(req)
+			_, rErr := u.Exchange(req)
 			elapsed := time.Since(start)
 
-			if err == nil {
+			if rErr == nil {
 				// Must not happen since bootstrap server cannot work.
-				abort <- fmt.Sprintf("the upstream must have timed out: %v", err)
+				abort <- fmt.Sprintf("the upstream must have timed out: %v", rErr)
 			}
 
 			// Check that the test didn't take too much time compared to the
@@ -402,8 +402,8 @@ func TestUpstreamsWithServerIP(t *testing.T) {
 				ServerIPAddrs:      tc.serverIPs,
 				InsecureSkipVerify: true,
 			}
-			u, err := AddressToUpstream(tc.address, opts)
-			require.NoError(t, err)
+			u, uErr := AddressToUpstream(tc.address, opts)
+			require.NoError(t, uErr)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			checkUpstream(t, u, tc.address)

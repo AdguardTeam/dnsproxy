@@ -33,19 +33,20 @@ func (p *Proxy) createDNSCryptListeners() (err error) {
 
 	for _, a := range p.DNSCryptUDPListenAddr {
 		log.Info("Creating a DNSCrypt UDP listener")
-		udpListen, err := net.ListenUDP("udp", a)
-		if err != nil {
-			return err
+		udpListen, lErr := net.ListenUDP("udp", a)
+		if lErr != nil {
+			return fmt.Errorf("listening to dnscrypt udp socket: %w", lErr)
 		}
+
 		p.dnsCryptUDPListen = append(p.dnsCryptUDPListen, udpListen)
 		log.Info("Listening for DNSCrypt messages on udp://%s", udpListen.LocalAddr())
 	}
 
 	for _, a := range p.DNSCryptTCPListenAddr {
 		log.Info("Creating a DNSCrypt TCP listener")
-		tcpListen, err := net.ListenTCP("tcp", a)
-		if err != nil {
-			return fmt.Errorf("listening to dnscrypt tcp socket: %w", err)
+		tcpListen, lErr := net.ListenTCP("tcp", a)
+		if lErr != nil {
+			return fmt.Errorf("listening to dnscrypt tcp socket: %w", lErr)
 		}
 
 		p.dnsCryptTCPListen = append(p.dnsCryptTCPListen, tcpListen)

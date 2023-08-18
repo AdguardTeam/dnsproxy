@@ -71,9 +71,9 @@ func (p *Proxy) createHTTPSListeners() (err error) {
 	for _, addr := range p.HTTPSListenAddr {
 		log.Info("Creating an HTTPS server")
 
-		tcpAddr, err := p.listenHTTP(addr)
-		if err != nil {
-			return fmt.Errorf("failed to start HTTPS server on %s: %w", addr, err)
+		tcpAddr, lErr := p.listenHTTP(addr)
+		if lErr != nil {
+			return fmt.Errorf("failed to start HTTPS server on %s: %w", addr, lErr)
 		}
 
 		if p.HTTP3 {

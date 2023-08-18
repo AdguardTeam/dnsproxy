@@ -166,9 +166,6 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 
 // testDoHServer is an instance of a test DNS-over-QUIC server.
 type testDoQServer struct {
-	// addr is the address that this server listens to.
-	addr string
-
 	// tlsConfig is the TLS configuration that is used for this server.
 	tlsConfig *tls.Config
 
@@ -177,6 +174,9 @@ type testDoQServer struct {
 
 	// listener is the QUIC connections listener.
 	listener *quic.EarlyListener
+
+	// addr is the address that this server listens to.
+	addr string
 }
 
 // Shutdown stops the test server.
@@ -311,8 +311,8 @@ func (q *quicTracer) TracerForConnection(
 
 // connInfo contains information about packets that we've logged.
 type connInfo struct {
-	id      logging.ConnectionID
 	packets []logging.Header
+	id      logging.ConnectionID
 }
 
 // is0RTT returns true if this connection's packets contain 0-RTT packets.
@@ -345,11 +345,10 @@ func (q *quicTracer) getConnectionsInfo() (conns []connInfo) {
 
 // quicConnTracer implements the logging.ConnectionTracer interface.
 type quicConnTracer struct {
-	id      logging.ConnectionID
+	logging.NullConnectionTracer
 	parent  *quicTracer
 	packets []logging.Header
-
-	logging.NullConnectionTracer
+	id      logging.ConnectionID
 }
 
 // type check

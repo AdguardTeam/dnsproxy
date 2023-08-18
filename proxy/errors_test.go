@@ -14,8 +14,8 @@ import (
 
 func TestIsEPIPE(t *testing.T) {
 	type testCase struct {
-		name string
 		err  error
+		name string
 		want bool
 	}
 

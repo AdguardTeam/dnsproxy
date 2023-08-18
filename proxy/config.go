@@ -39,6 +39,8 @@ type RequestHandler func(p *Proxy, d *DNSContext) error
 type ResponseHandler func(d *DNSContext, err error)
 
 // Config contains all the fields necessary for proxy configuration
+//
+// TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Config struct {
 	// Listeners
 	// --

@@ -3,7 +3,6 @@ package proxy
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -11,14 +10,25 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/stringutil"
+	"golang.org/x/exp/slices"
 )
 
-// UpstreamConfig is a wrapper for list of default upstreams and map of reserved domains and corresponding upstreams
+// UpstreamConfig is a wrapper for a list of default upstreams, a map of
+// reserved domains and corresponding upstreams.
 type UpstreamConfig struct {
-	Upstreams                []upstream.Upstream            // list of default upstreams
-	DomainReservedUpstreams  map[string][]upstream.Upstream // map of reserved domains and lists of corresponding upstreams
-	SpecifiedDomainUpstreams map[string][]upstream.Upstream // map of excluded domains and lists of corresponding upstreams
-	SubdomainExclusions      *stringutil.Set                // set of domains with sub-domains exclusions
+	// DomainReservedUpstreams is a map of reserved domains and lists of
+	// corresponding upstreams.
+	DomainReservedUpstreams map[string][]upstream.Upstream
+
+	// SpecifiedDomainUpstreams is a map of excluded domains and lists of
+	// corresponding upstreams.
+	SpecifiedDomainUpstreams map[string][]upstream.Upstream
+
+	// SubdomainExclusions is set of domains with subdomains exclusions.
+	SubdomainExclusions *stringutil.Set
+
+	// Upstreams is a list of default upstreams.
+	Upstreams []upstream.Upstream
 }
 
 // type check
@@ -201,26 +211,15 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 		return uc.Upstreams
 	}
 
+	var ok bool
+
 	dotsCount := strings.Count(host, ".")
 	if dotsCount < 2 {
 		host = UnqualifiedNames
 	} else {
 		host = strings.ToLower(host)
-
 		if uc.SubdomainExclusions.Has(host) {
-			ups, ok := uc.SpecifiedDomainUpstreams[host]
-			if ok && len(ups) > 0 {
-				return ups
-			}
-
-			// Check if there is a spec for upper level domain.
-			h := strings.SplitAfterN(host, ".", 2)
-			ups, ok = uc.DomainReservedUpstreams[h[1]]
-			if ok && len(ups) > 0 {
-				return ups
-			}
-
-			return uc.Upstreams
+			return uc.lookupSubdomainExclusion(host)
 		}
 	}
 
@@ -228,22 +227,49 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 		h := strings.SplitAfterN(host, ".", i)
 		name := h[i-1]
 
-		var ok bool
-		ups, ok = uc.DomainReservedUpstreams[name]
+		ups, ok = uc.lookupUpstreams(name)
 		if !ok {
 			continue
-		}
-
-		if len(ups) == 0 {
-			// The domain has been excluded from reserved upstreams
-			// querying.
-			return uc.Upstreams
 		}
 
 		return ups
 	}
 
 	return uc.Upstreams
+}
+
+// lookupSubdomainExclusion returns upstreams for the host from subdomain
+// exclusions list.
+func (uc *UpstreamConfig) lookupSubdomainExclusion(host string) (u []upstream.Upstream) {
+	ups, ok := uc.SpecifiedDomainUpstreams[host]
+	if ok && len(ups) > 0 {
+		return ups
+	}
+
+	// Check if there is a spec for upper level domain.
+	h := strings.SplitAfterN(host, ".", 2)
+	ups, ok = uc.DomainReservedUpstreams[h[1]]
+	if ok && len(ups) > 0 {
+		return ups
+	}
+
+	return uc.Upstreams
+}
+
+// lookupUpstreams returns upstreams for a domain name.  Returns default
+// upstream list for domain name excluded by domain reserved upstreams.
+func (uc *UpstreamConfig) lookupUpstreams(name string) (ups []upstream.Upstream, ok bool) {
+	ups, ok = uc.DomainReservedUpstreams[name]
+	if !ok {
+		return ups, false
+	}
+
+	if len(ups) == 0 {
+		// The domain has been excluded from reserved upstreams querying.
+		return uc.Upstreams, true
+	}
+
+	return ups, true
 }
 
 // Close implements the io.Closer interface for *UpstreamConfig.
@@ -258,8 +284,8 @@ func (uc *UpstreamConfig) Close() (err error) {
 		for domain := range specUps {
 			domains = append(domains, domain)
 		}
-		// TODO(e.burkov):  Use functions from golang.org/x/exp.
-		sort.Stable(sort.StringSlice(domains))
+
+		slices.SortStableFunc(domains, strings.Compare)
 
 		for _, domain := range domains {
 			closeErrs = closeAll(closeErrs, specUps[domain]...)

@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/bluele/gcache"
 	"github.com/miekg/dns"
@@ -222,7 +222,7 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 		// If no response has been written, close the QUIC connection now.
 		closeQUICConn(d.QUICConnection, DoQCodeInternalError)
 
-		return errors.New("no response to write")
+		return errors.Error("no response to write")
 	}
 
 	bytes, err := resp.Pack()

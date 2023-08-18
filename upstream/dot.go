@@ -63,6 +63,8 @@ func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 	tlsUps := &dnsOverTLS{
 		addr:      addr,
 		getDialer: getDialer,
+		// #nosec G402 -- TLS certificate verification could be disabled by
+		// configuration.
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
 			RootCAs:      opts.RootCAs,

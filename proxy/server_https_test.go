@@ -188,7 +188,7 @@ func TestAddrsFromRequest(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
-		r, err := http.NewRequest("GET", "localhost", nil)
+		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
 		require.NoError(t, err)
 
 		for h, v := range tc.hdrs {
@@ -281,7 +281,7 @@ func TestRemoteAddr(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
-		r, err := http.NewRequest("GET", "localhost", nil)
+		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
 		require.NoError(t, err)
 
 		r.RemoteAddr = tc.remoteAddr
@@ -290,14 +290,14 @@ func TestRemoteAddr(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
-			addr, prx, err := remoteAddr(r)
+			addr, prx, aErr := remoteAddr(r)
 			if tc.wantErr != "" {
-				assert.Equal(t, tc.wantErr, err.Error())
+				assert.Equal(t, tc.wantErr, aErr.Error())
 
 				return
 			}
 
-			require.NoError(t, err)
+			require.NoError(t, aErr)
 
 			ip, _ := netutil.IPAndPortFromAddr(addr)
 			assert.True(t, ip.Equal(tc.wantIP))

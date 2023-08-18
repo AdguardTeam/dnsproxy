@@ -1,13 +1,13 @@
 package proxy
 
 import (
-	"sort"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
+	"golang.org/x/exp/slices"
 )
 
 // exchange -- sends DNS query to the upstream DNS server and returns the response
@@ -36,9 +36,11 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 
 	errs := []error{}
 	for _, dnsUpstream := range sortedUpstreams {
-		reply, elapsed, err := exchangeWithUpstream(dnsUpstream, req)
+		var elapsed int
+		reply, elapsed, err = exchangeWithUpstream(dnsUpstream, req)
 		if err == nil {
 			p.updateRtt(dnsUpstream.Address(), elapsed)
+
 			return reply, dnsUpstream, err
 		}
 		errs = append(errs, err)
@@ -50,14 +52,14 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 
 func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {
 	// clone upstreams list to avoid race conditions
-	clone := make([]upstream.Upstream, len(u))
-	copy(clone, u)
+	clone := slices.Clone(u)
 
 	p.rttLock.Lock()
 	defer p.rttLock.Unlock()
 
-	sort.Slice(clone, func(i, j int) bool {
-		return p.upstreamRttStats[clone[i].Address()] < p.upstreamRttStats[clone[j].Address()]
+	slices.SortFunc(clone, func(a, b upstream.Upstream) (res int) {
+		// TODO(d.kolyshev): Use upstreams for sort comparing.
+		return p.upstreamRttStats[a.Address()] - p.upstreamRttStats[b.Address()]
 	})
 
 	return clone

@@ -140,12 +140,11 @@ func TestUpstream_plainDNS_fallbackToTCP(t *testing.T) {
 
 // testDNSServer is a simple DNS server that can be used in unit-tests.
 type testDNSServer struct {
-	udpSrv *dns.Server
-	tcpSrv *dns.Server
-
-	port        int
 	udpListener net.PacketConn
 	tcpListener net.Listener
+	udpSrv      *dns.Server
+	tcpSrv      *dns.Server
+	port        int
 }
 
 // type check

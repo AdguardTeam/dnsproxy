@@ -1,91 +1,93 @@
 ---
-plan:
-    key: DNSPROXY
-    name: dnsproxy - Build and run tests
-    project-key: GO
-variables:
-    dockerGo: 'golang:1.20.7'
-    dockerLint: golangci/golangci-lint:v1.53
-version: 2
+'version': 2
+'plan':
+    'project-key': 'GO'
+    'key': 'DNSPROXY'
+    'name': 'dnsproxy - Build and run tests'
+'variables':
+    'dockerFpm': 'alanfranz/fpm-within-docker:ubuntu-bionic'
+    # When there is a patch release of Go available, set this property to an
+    # exact patch version as opposed to a minor one to make sure that this exact
+    # version is actually used and not whatever the docker daemon on the CI has
+    # cached a few months ago.
+    'dockerGo': 'golang:1.20.7'
+    'maintainer': 'Adguard Go Team'
+    'name': 'dnsproxy'
 
-stages:
-  - Lint:
-        final: false
-        jobs:
-          - Lint
-        manual: false
-  - Tests:
-        final: false
-        jobs:
-          - Test
-        manual: false
+'stages':
+  - 'Lint':
+      'manual': false
+      'final': false
+      'jobs':
+        - 'Lint'
+  - 'Test':
+      'manual': false
+      'final': false
+      'jobs':
+        - 'Test'
 
-Lint:
-    docker:
-        image: ${bamboo.dockerLint}
-        volumes:
-            ${system.GO_CACHE_DIR}: "${bamboo.cacheGo}"
-            ${system.GO_PKG_CACHE_DIR}: "${bamboo.cacheGoPkg}"
-            ${bamboo.build.working.directory}: "/app"
-    key: LINT
-    other:
-        clean-working-dir: true
-    requirements:
-      - adg-docker: true
-    tasks:
-      - checkout:
-            force-clean-build: true
-      - script:
-            interpreter: SHELL
-            scripts:
+'Lint':
+    'docker':
+        'image': '${bamboo.dockerGo}'
+        'volumes':
+            '${system.GO_CACHE_DIR}': '${bamboo.cacheGo}'
+            '${system.GO_PKG_CACHE_DIR}': '${bamboo.cacheGoPkg}'
+    'key': 'LINT'
+    'other':
+        'clean-working-dir': true
+    'requirements':
+      - 'adg-docker': true
+    'tasks':
+      - 'checkout':
+             'force-clean-build': true
+      - 'script':
+              'interpreter': 'SHELL'
+              'scripts':
+                - |
+                  set -e -f -u -x
+
+                  make VERBOSE=1 go-tools go-lint
+
+'Test':
+    'docker':
+        'image': '${bamboo.dockerGo}'
+        'volumes':
+            '${system.GO_CACHE_DIR}': '${bamboo.cacheGo}'
+            '${system.GO_PKG_CACHE_DIR}': '${bamboo.cacheGoPkg}'
+    'key': 'TEST'
+    'other':
+        'clean-working-dir': true
+    'requirements':
+      - 'adg-docker': true
+    'tasks':
+      - 'checkout':
+            'force-clean-build': true
+      - 'script':
+            'interpreter': 'SHELL'
+            # Projects that have go-bench and/or go-fuzz targets should add them
+            # here as well.
+            'scripts':
               - |
                 set -e -f -u -x
 
-                golangci-lint --version
-                golangci-lint run -v
+                make VERBOSE=1 go-deps go-test
 
-Test:
-    docker:
-        image: ${bamboo.dockerGo}
-        volumes:
-            ${system.YARN_DIR}: ${bamboo.cacheYarn}
-            ${system.GO_CACHE_DIR}: ${bamboo.cacheGo}
-            ${system.GO_PKG_CACHE_DIR}: ${bamboo.cacheGoPkg}
-    final-tasks:
-      - clean
-    key: TEST
-    requirements:
-      - adg-docker: true
-    tasks:
-      - checkout:
-            force-clean-build: true
-      - script:
-            interpreter: SHELL
-            environment: GOFLAGS="-buildvcs=false" CI="1"
-            scripts:
-              - |
-                set -e -f -u -x
+'branches':
+    'create': 'for-pull-request'
+    'delete':
+        'after-deleted-days': 1
+        'after-inactive-days': 5
+    'link-to-jira': true
 
-                go env
-                go version
+'notifications':
+  - 'events':
+      - 'plan-status-changed'
+    'recipients':
+      - 'webhook':
+            'name': 'Build webhook'
+            'url': 'http://prod.jirahub.service.eu.consul/v1/webhook/bamboo'
 
-                make VERBOSE=1 test
+'labels': []
 
-branches:
-    create: for-pull-request
-    delete:
-        after-deleted-days: 1
-        after-inactive-days: 5
-    link-to-jira: true
-
-notifications:
-  - events:
-      - plan-status-changed
-    recipients:
-      - webhook:
-            name: Build webhook
-            url: http://prod.jirahub.service.eu.consul/v1/webhook/bamboo
-
-labels: []
-other:
-    concurrent-build-plugin: system-default
+'other':
+    'concurrent-build-plugin': 'system-default'

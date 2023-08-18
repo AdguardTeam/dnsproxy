@@ -103,6 +103,8 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 			TokenStore:      newQUICTokenStore(),
 			Tracer:          opts.QUICTracer,
 		},
+		// #nosec G402 -- TLS certificate verification could be disabled by
+		// configuration.
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
 			RootCAs:      opts.RootCAs,
@@ -628,11 +630,11 @@ func (p *dnsOverHTTPS) probeH3(
 func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan error) {
 	startTime := time.Now()
 
-	timeout := p.timeout
-	if timeout == 0 {
-		timeout = dialTimeout
+	t := p.timeout
+	if t == 0 {
+		t = dialTimeout
 	}
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(t))
 	defer cancel()
 
 	conn, err := quic.DialAddrEarly(ctx, addr, tlsConfig, p.getQUICConfig())

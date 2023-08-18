@@ -14,9 +14,9 @@ import (
 func (p *Proxy) createUDPListeners(ctx context.Context) (err error) {
 	for _, a := range p.UDPListenAddr {
 		var pc *net.UDPConn
-		pc, err := p.udpCreate(ctx, a)
-		if err != nil {
-			return fmt.Errorf("listening on udp addr %s: %w", a, err)
+		pc, sErr := p.udpCreate(ctx, a)
+		if sErr != nil {
+			return fmt.Errorf("listening on udp addr %s: %w", a, sErr)
 		}
 
 		p.udpListen = append(p.udpListen, pc)

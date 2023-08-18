@@ -210,12 +210,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 			rrsig: rrsig,
 		}},
 	}
-	p.cache = &cache{
-		items: glcache.New(glcache.Config{
-			MaxSize:   defaultCacheSize,
-			EnableLRU: true,
-		}),
-	}
+	p.cache = newCache(defaultCacheSize, false, false)
 
 	testCases := []struct {
 		wantAns dns.RR
@@ -611,7 +606,7 @@ func TestFallback(t *testing.T) {
 				assert.Equal(t, req.Id, reqID)
 			}
 
-			_, err := conn.ReadMsg()
+			_, err = conn.ReadMsg()
 			require.NoError(t, err)
 		})
 	}

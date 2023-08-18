@@ -19,19 +19,19 @@ func (p *Proxy) createTCPListeners(ctx context.Context) (err error) {
 	for _, a := range p.TCPListenAddr {
 		log.Info("dnsproxy: creating tcp server socket %s", a)
 
-		lsnr, err := proxynetutil.ListenConfig().Listen(ctx, "tcp", a.String())
-		if err != nil {
-			return fmt.Errorf("listening to tcp socket: %w", err)
+		lsnr, lErr := proxynetutil.ListenConfig().Listen(ctx, "tcp", a.String())
+		if lErr != nil {
+			return fmt.Errorf("listening to tcp socket: %w", lErr)
 		}
 
-		tcpListen := lsnr.(*net.TCPListener)
-		if err != nil {
-			return fmt.Errorf("listening on tcp addr %s: %w", a, err)
+		tcpListener, ok := lsnr.(*net.TCPListener)
+		if !ok {
+			return fmt.Errorf("wrong listener type on tcp addr %s: %T", a, lsnr)
 		}
 
-		p.tcpListen = append(p.tcpListen, tcpListen)
+		p.tcpListen = append(p.tcpListen, tcpListener)
 
-		log.Info("dnsproxy: listening to tcp://%s", tcpListen.Addr())
+		log.Info("dnsproxy: listening to tcp://%s", tcpListener.Addr())
 	}
 
 	return nil

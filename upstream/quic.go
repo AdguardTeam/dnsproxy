@@ -110,6 +110,8 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 			TokenStore:      newQUICTokenStore(),
 			Tracer:          opts.QUICTracer,
 		},
+		// #nosec G402 -- TLS certificate verification could be disabled by
+		// configuration.
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
 			RootCAs:      opts.RootCAs,

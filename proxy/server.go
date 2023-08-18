@@ -148,7 +148,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 func (p *Proxy) respond(d *DNSContext) {
 	// d.Conn can be nil in the case of a DoH request.
 	if d.Conn != nil {
-		d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout)) //nolint
+		_ = d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
 	}
 
 	var err error

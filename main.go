@@ -570,7 +570,7 @@ func initDNS64(conf *proxy.Config, options *Options) {
 		return
 	}
 
-	if len(conf.PrivateRDNSUpstreamConfig.Upstreams) == 0 {
+	if conf.PrivateRDNSUpstreamConfig == nil || !containsUpstreams(conf.PrivateRDNSUpstreamConfig) {
 		log.Fatalf("at least one private upstream must be configured to use dns64")
 	}
 

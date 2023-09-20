@@ -416,7 +416,7 @@ func TestAddPort(t *testing.T) {
 		name string
 		want string
 		host string
-		port int
+		port uint16
 	}{{
 		name: "empty",
 		want: ":0",

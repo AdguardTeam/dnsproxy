@@ -1,0 +1,59 @@
+# IPv4
+
+# 1st host.
+0.0.0.1 Host.One
+
+# 2nd host.
+0.0.0.2 Host.Two
+
+# 1st host full duplicate.
+0.0.0.1 host.one
+
+# 2nd host duplicate with new name.
+0.0.0.2 host.two Host.New
+
+# 1st host with foreign name.
+0.0.0.1 host.new
+
+# 2nd host new name.
+0.0.0.2 Again.Host.Two
+
+# Mapped
+
+# 1st host.
+::ffff:0.0.0.1 Host.One
+
+# 2nd host.
+::ffff:0.0.0.2 Host.Two
+
+# 1st host full duplicate.
+::ffff:0.0.0.1 host.one
+
+# 2nd host duplicate with new name.
+::ffff:0.0.0.2 host.two Host.New
+
+# 1st host with foreign name.
+::ffff:0.0.0.1 host.new
+
+# 2nd host new name.
+::ffff:0.0.0.2 Again.Host.Two
+
+# IPv6
+
+# 1st host.
+::1 Host.One
+
+# 2nd host.
+::2 Host.Two
+
+# 1st host full duplicate.
+::1 host.one
+
+# 2nd host duplicate with new name.
+::2 host.two Host.New
+
+# 1st host with foreign name.
+::1 host.new
+
+# 2nd host new name.
+::2 Again.Host.Two

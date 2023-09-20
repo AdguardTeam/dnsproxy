@@ -1,0 +1,7 @@
+# comment about the following empty line
+
+# comment about the above empty line
+
+1.2.3.256 a.b # invalid address
+1.2.3.4 a.123 # invalid top-level domain
+1.2.3.4 .a.b  # empty domain

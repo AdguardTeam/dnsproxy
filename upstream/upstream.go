@@ -268,7 +268,7 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 }
 
 // addPort appends port to u if it's absent.
-func addPort(u *url.URL, port int) {
+func addPort(u *url.URL, port uint16) {
 	if u != nil {
 		_, _, err := net.SplitHostPort(u.Host)
 		if err != nil {
@@ -365,17 +365,24 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer, err 
 	return di, nil
 }
 
-// newResolvers prepares resolvers for bootstrapping.
+// newResolvers prepares resolvers for bootstrapping.  If opts.Bootstrap is
+// empty, the only new [net.Resolver] will be returned.  Otherwise, the it will
+// be added for each occurrence of an empty string in [Options.Bootstrap].
 func newResolvers(opts *Options) (resolvers []Resolver, err error) {
 	bootstraps := opts.Bootstrap
 	if len(bootstraps) == 0 {
-		// Use the default resolver for bootstrapping.
-		bootstraps = []string{""}
+		return []Resolver{&net.Resolver{}}, nil
 	}
 
 	resolvers = make([]Resolver, 0, len(bootstraps))
 	for _, boot := range bootstraps {
-		r, rErr := NewResolver(boot, opts)
+		if boot == "" {
+			resolvers = append(resolvers, &net.Resolver{})
+
+			continue
+		}
+
+		r, rErr := NewUpstreamResolver(boot, opts)
 		if rErr != nil {
 			return nil, fmt.Errorf("preparing bootstrap resolver: %w", rErr)
 		}

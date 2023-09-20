@@ -83,14 +83,12 @@ func (p *Proxy) checkDNS64(req, resp *dns.Msg) (dns64Req *dns.Msg) {
 		return nil
 	}
 
-	rcode := resp.Rcode
-	if rcode == dns.RcodeNameError {
+	switch resp.Rcode {
+	case dns.RcodeNameError:
 		// A result with RCODE=3 (Name Error) is handled according to normal DNS
 		// operation (which is normally to return the error to the client).
 		return nil
-	}
-
-	if rcode == dns.RcodeSuccess {
+	case dns.RcodeSuccess:
 		// If resolver receives an answer with at least one AAAA record
 		// containing an address outside any of the excluded range(s), then it
 		// by default SHOULD build an answer section for a response including
@@ -100,7 +98,7 @@ func (p *Proxy) checkDNS64(req, resp *dns.Msg) (dns64Req *dns.Msg) {
 		if resp.Answer, hasAnswers = p.filterNAT64Answers(resp.Answer); hasAnswers {
 			return nil
 		}
-
+	default:
 		// Any other RCODE is treated as though the RCODE were 0 and the answer
 		// section were empty.
 	}

@@ -3,7 +3,6 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
@@ -14,33 +13,26 @@ import (
 	"github.com/miekg/dns"
 )
 
-// Resolver is an alias for bootstrap.Resolver to avoid the import cycle.
+// Resolver is an alias for [bootstrap.Resolver] to avoid the import cycle.
 type Resolver = bootstrap.Resolver
 
-// NewResolver creates a Resolver.  resolverAddress should be either a plain IP
-// address or empty.  If it is empty, the default [net.Resolver] is used, and
-// sorting the resolved addresses is the caller's responsibility.  Otherwise, it
-// creates an Upstream using opts.
-//
-// TODO(e.burkov):  Require resolverAddress not being empty and rename into
-// NewUpstreamResolver.
-func NewResolver(resolverAddress string, opts *Options) (r Resolver, err error) {
-	if resolverAddress == "" {
-		return &net.Resolver{}, nil
-	}
-
-	upsOpts := &Options{
-		// Avoid recursion in case the bootstrap resolver is not valid.
-		Bootstrap: []string{""},
-	}
+// NewUpstreamResolver creates an upstream that can be used as [Resolver].
+// resolverAddress format is the same as in the [AddressToUpstream], except that
+// it also shouldn't need a bootstrap, i.e. have an IP address in hostname, or
+// be a DNSCrypt.  resolverAddress must not be empty, use another [Resolver]
+// instead, e.g.  [net.Resolver].
+func NewUpstreamResolver(resolverAddress string, opts *Options) (r Resolver, err error) {
+	upsOpts := &Options{}
 
 	// TODO(ameshkov):  Aren't other options needed here?
 	if opts != nil {
 		upsOpts.Timeout = opts.Timeout
 		upsOpts.VerifyServerCertificate = opts.VerifyServerCertificate
+		upsOpts.PreferIPv6 = opts.PreferIPv6
 	}
 
 	ur := upstreamResolver{}
+
 	ur.Upstream, err = AddressToUpstream(resolverAddress, upsOpts)
 	if err != nil {
 		err = fmt.Errorf("creating upstream: %w", err)

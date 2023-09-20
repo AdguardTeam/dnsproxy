@@ -110,6 +110,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if len(buf) == 0 || err != nil {
 			log.Tracef("Cannot parse DNS request from %s", dnsParam)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
 			return
 		}
 	case http.MethodPost:
@@ -117,6 +118,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if contentType != "application/dns-message" {
 			log.Tracef("Unsupported media type: %s", contentType)
 			http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
+
 			return
 		}
 
@@ -124,12 +126,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Tracef("Cannot read the request body: %s", err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
 			return
 		}
 		defer log.OnCloserError(r.Body, log.DEBUG)
 	default:
 		log.Tracef("Wrong HTTP method: %s", r.Method)
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+
 		return
 	}
 
@@ -137,6 +141,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err = req.Unpack(buf); err != nil {
 		log.Tracef("msg.Unpack: %s", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
 		return
 	}
 
@@ -166,19 +171,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Writes a response to the DoH client.
-func (p *Proxy) respondHTTPS(d *DNSContext) error {
+func (p *Proxy) respondHTTPS(d *DNSContext) (err error) {
 	resp := d.Res
 	w := d.HTTPResponseWriter
 
 	if resp == nil {
-		// If no response has been written, indicate it via a 500 error
+		// Indicate the response's absence via a http.StatusInternalServerError.
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+
 		return nil
 	}
 
 	bytes, err := resp.Pack()
 	if err != nil {
-
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 
 		return fmt.Errorf("packing message: %w", err)
@@ -198,17 +203,15 @@ func (p *Proxy) respondHTTPS(d *DNSContext) error {
 // suitable r's header.  It returns nil if r doesn't contain any information
 // about real client's IP address.  Current headers priority is:
 //
-//  1. CF-Connecting-IP
-//  2. True-Client-IP
-//  3. X-Real-IP
-//  4. X-Forwarded-For
+//  1. [httphdr.CFConnectingIP]
+//  2. [httphdr.TrueClientIP]
+//  3. [httphdr.XRealIP]
+//  4. [httphdr.XForwardedFor]
 func realIPFromHdrs(r *http.Request) (realIP net.IP) {
 	for _, h := range []string{
-		// Headers set by CloudFlare proxy servers.
-		"CF-Connecting-IP",
-		"True-Client-IP",
-		// Other proxying headers.
-		"X-Real-IP",
+		httphdr.CFConnectingIP,
+		httphdr.TrueClientIP,
+		httphdr.XRealIP,
 	} {
 		realIP = net.ParseIP(strings.TrimSpace(r.Header.Get(h)))
 		if realIP != nil {
@@ -216,7 +219,7 @@ func realIPFromHdrs(r *http.Request) (realIP net.IP) {
 		}
 	}
 
-	xff := r.Header.Get("X-Forwarded-For")
+	xff := r.Header.Get(httphdr.XForwardedFor)
 	firstComma := strings.IndexByte(xff, ',')
 	if firstComma == -1 {
 		return net.ParseIP(strings.TrimSpace(xff))

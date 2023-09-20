@@ -195,7 +195,7 @@ func (p *Proxy) validateConfig() error {
 	}
 
 	// Allow both [Proxy.PrivateRDNSUpstreamConfig] and [Proxy.Fallbacks] to be
-	// nil, but not empty.
+	// nil, but not empty.  nil means using the default values for those.
 
 	err = p.PrivateRDNSUpstreamConfig.validate()
 	if err != nil && !errors.Is(err, errNoDefaultUpstreams) {
@@ -257,15 +257,11 @@ func (p *Proxy) validateListenAddrs() error {
 
 // hasListenAddrs - is there any addresses to listen to?
 func (p *Proxy) hasListenAddrs() bool {
-	if p.UDPListenAddr == nil &&
-		p.TCPListenAddr == nil &&
-		p.TLSListenAddr == nil &&
-		p.HTTPSListenAddr == nil &&
-		p.QUICListenAddr == nil &&
-		p.DNSCryptUDPListenAddr == nil &&
-		p.DNSCryptTCPListenAddr == nil {
-		return false
-	}
-
-	return true
+	return p.UDPListenAddr != nil ||
+		p.TCPListenAddr != nil ||
+		p.TLSListenAddr != nil ||
+		p.HTTPSListenAddr != nil ||
+		p.QUICListenAddr != nil ||
+		p.DNSCryptUDPListenAddr != nil ||
+		p.DNSCryptTCPListenAddr != nil
 }

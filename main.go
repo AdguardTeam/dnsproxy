@@ -99,7 +99,7 @@ type Options struct {
 	Upstreams []string `yaml:"upstream" short:"u" long:"upstream" description:"An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers" optional:"false"`
 
 	// Bootstrap DNS
-	BootstrapDNS []string `yaml:"bootstrap" short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: 8.8.8.8:53)"`
+	BootstrapDNS []string `yaml:"bootstrap" short:"b" long:"bootstrap" description:"Bootstrap DNS for DoH and DoT, can be specified multiple times (default: use system-provided)"`
 
 	// Fallback DNS resolver
 	Fallbacks []string `yaml:"fallback" short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
@@ -350,15 +350,15 @@ func createProxyConfig(options *Options) proxy.Config {
 	return config
 }
 
-// containsUpstreams returns true if uc contains at least a single upstream.
-// Otherwise it's considered nil.
+// isEmpty returns false if uc contains at least a single upstream.  uc must not
+// be nil.
 //
 // TODO(e.burkov):  Think of a better way to validate the config.  Perhaps,
 // return an error from [ParseUpstreamsConfig] if no upstreams were initialized.
-func containsUpstreams(uc *proxy.UpstreamConfig) (ok bool) {
-	return len(uc.Upstreams) > 0 ||
-		len(uc.DomainReservedUpstreams) > 0 ||
-		len(uc.SpecifiedDomainUpstreams) > 0
+func isEmpty(uc *proxy.UpstreamConfig) (ok bool) {
+	return len(uc.Upstreams) == 0 &&
+		len(uc.DomainReservedUpstreams) == 0 &&
+		len(uc.SpecifiedDomainUpstreams) == 0
 }
 
 // initUpstreams inits upstream-related config
@@ -384,6 +384,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		Timeout:            timeout,
 	}
 	upstreams := loadServersList(options.Upstreams)
+
 	config.UpstreamConfig, err = proxy.ParseUpstreamsConfig(upstreams, upsOpts)
 	if err != nil {
 		log.Fatalf("error while parsing upstreams configuration: %s", err)
@@ -395,11 +396,12 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		Timeout:      mathutil.Min(defaultLocalTimeout, timeout),
 	}
 	privUpstreams := loadServersList(options.PrivateRDNSUpstreams)
+
 	private, err := proxy.ParseUpstreamsConfig(privUpstreams, privUpsOpts)
 	if err != nil {
 		log.Fatalf("error while parsing private rdns upstreams configuration: %s", err)
 	}
-	if containsUpstreams(private) {
+	if !isEmpty(private) {
 		config.PrivateRDNSUpstreamConfig = private
 	}
 
@@ -408,7 +410,8 @@ func initUpstreams(config *proxy.Config, options *Options) {
 	if err != nil {
 		log.Fatalf("error while parsing fallback upstreams configuration: %s", err)
 	}
-	if containsUpstreams(fallbacks) {
+
+	if !isEmpty(fallbacks) {
 		config.Fallbacks = fallbacks
 	}
 
@@ -570,7 +573,7 @@ func initDNS64(conf *proxy.Config, options *Options) {
 		return
 	}
 
-	if conf.PrivateRDNSUpstreamConfig == nil || !containsUpstreams(conf.PrivateRDNSUpstreamConfig) {
+	if conf.PrivateRDNSUpstreamConfig == nil || isEmpty(conf.PrivateRDNSUpstreamConfig) {
 		log.Fatalf("at least one private upstream must be configured to use dns64")
 	}
 

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewResolver(t *testing.T) {
-	r, err := NewResolver("1.1.1.1:53", &Options{Timeout: 3 * time.Second})
+func TestNewUpstreamResolver(t *testing.T) {
+	r, err := NewUpstreamResolver("1.1.1.1:53", &Options{Timeout: 3 * time.Second})
 	require.NoError(t, err)
 
 	ipAddrs, err := r.LookupNetIP(context.Background(), "ip", "cloudflare-dns.com")
@@ -19,7 +19,7 @@ func TestNewResolver(t *testing.T) {
 	assert.NotEmpty(t, ipAddrs)
 }
 
-func TestNewResolver_validity(t *testing.T) {
+func TestNewUpstreamResolver_validity(t *testing.T) {
 	withTimeoutOpt := &Options{Timeout: 3 * time.Second}
 
 	testCases := []struct {
@@ -64,13 +64,13 @@ func TestNewResolver_validity(t *testing.T) {
 	}, {
 		name: "invalid_no_scheme",
 		addr: "dns.adguard.com",
-		wantErrMsg: `bootstrap dns.adguard.com:53: ` +
-			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
+		wantErrMsg: `bootstrap dns.adguard.com:53: ParseAddr("dns.adguard.com"): ` +
+			`unexpected character (at "dns.adguard.com")`,
 	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := NewResolver(tc.addr, withTimeoutOpt)
+			r, err := NewUpstreamResolver(tc.addr, withTimeoutOpt)
 			if tc.wantErrMsg != "" {
 				assert.Equal(t, tc.wantErrMsg, err.Error())
 

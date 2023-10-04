@@ -283,7 +283,6 @@ func startDoQServer(t *testing.T, port int) (s *testDoQServer) {
 
 // quicTracer implements the logging.Tracer interface.
 type quicTracer struct {
-	logging.NullTracer
 	tracers []*quicConnTracer
 
 	// mu protects fields of *quicTracer and also protects fields of every
@@ -291,22 +290,21 @@ type quicTracer struct {
 	mu sync.Mutex
 }
 
-// type check
-var _ logging.Tracer = (*quicTracer)(nil)
-
 // TracerForConnection implements the logging.Tracer interface for *quicTracer.
 func (q *quicTracer) TracerForConnection(
 	_ context.Context,
 	_ logging.Perspective,
 	odcid logging.ConnectionID,
-) (connTracer logging.ConnectionTracer) {
+) (connTracer *logging.ConnectionTracer) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	tracer := &quicConnTracer{id: odcid, parent: q}
 	q.tracers = append(q.tracers, tracer)
 
-	return tracer
+	return &logging.ConnectionTracer{
+		SentLongHeaderPacket: tracer.SentLongHeaderPacket,
+	}
 }
 
 // connInfo contains information about packets that we've logged.
@@ -345,20 +343,17 @@ func (q *quicTracer) getConnectionsInfo() (conns []connInfo) {
 
 // quicConnTracer implements the logging.ConnectionTracer interface.
 type quicConnTracer struct {
-	logging.NullConnectionTracer
 	parent  *quicTracer
 	packets []logging.Header
 	id      logging.ConnectionID
 }
-
-// type check
-var _ logging.ConnectionTracer = (*quicConnTracer)(nil)
 
 // SentLongHeaderPacket implements the logging.ConnectionTracer interface for
 // *quicConnTracer.
 func (q *quicConnTracer) SentLongHeaderPacket(
 	hdr *logging.ExtendedHeader,
 	_ logging.ByteCount,
+	_ logging.ECN,
 	_ *logging.AckFrame,
 	_ []logging.Frame,
 ) {

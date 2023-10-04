@@ -46,7 +46,7 @@ type QUICTraceFunc func(
 	ctx context.Context,
 	role logging.Perspective,
 	connID quic.ConnectionID,
-) (tracer logging.ConnectionTracer)
+) (tracer *logging.ConnectionTracer)
 
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.

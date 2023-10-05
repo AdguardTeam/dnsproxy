@@ -458,18 +458,28 @@ func (p *Proxy) needsLocalUpstream(req *dns.Msg) (ok bool) {
 // firstly considers custom upstreams if those aren't empty and then the
 // configured ones.  The returned slice may be empty or nil.
 func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream) {
-	host := d.Req.Question[0].Name
+	q := d.Req.Question[0]
+	host := q.Name
+	qtype := q.Qtype
+
 	if !p.needsLocalUpstream(d.Req) {
+		// TODO(e.burkov):  Use the same logic for private upstreams as well,
+		// when those start supporting non-PTR requests.
+		getUpstreams := (*UpstreamConfig).getUpstreamsForDomain
+		if qtype == dns.TypeDS {
+			getUpstreams = (*UpstreamConfig).getUpstreamsForDS
+		}
+
 		if custom := d.CustomUpstreamConfig; custom != nil {
 			// Try to use custom.
-			upstreams = custom.getUpstreamsForDomain(host)
+			upstreams = getUpstreams(custom, host)
 			if len(upstreams) > 0 {
 				return upstreams
 			}
 		}
 
 		// Use configured.
-		return p.UpstreamConfig.getUpstreamsForDomain(host)
+		return getUpstreams(p.UpstreamConfig, host)
 	}
 
 	// Use private upstreams.

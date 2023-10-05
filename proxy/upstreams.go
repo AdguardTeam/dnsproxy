@@ -211,8 +211,6 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 		return uc.Upstreams
 	}
 
-	var ok bool
-
 	dotsCount := strings.Count(host, ".")
 	if dotsCount < 2 {
 		host = UnqualifiedNames
@@ -223,19 +221,34 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 		}
 	}
 
-	for i := 1; i <= dotsCount; i++ {
-		h := strings.SplitAfterN(host, ".", i)
-		name := h[i-1]
-
-		ups, ok = uc.lookupUpstreams(name)
-		if !ok {
-			continue
+	for host != "" {
+		var ok bool
+		if ups, ok = uc.lookupUpstreams(host); ok {
+			return ups
 		}
 
-		return ups
+		_, host, _ = strings.Cut(host, ".")
 	}
 
 	return uc.Upstreams
+}
+
+// getUpstreamsForDS is like [getUpstreamsForDomain], but intended for DS
+// queries only, so that it matches the host without the first label.
+//
+// A DS RRset SHOULD be present at a delegation point when the child zone is
+// signed.  The DS RRset MAY contain multiple records, each referencing a public
+// key in the child zone used to verify the RRSIGs in that zone.  All DS RRsets
+// in a zone MUST be signed, and DS RRsets MUST NOT appear at a zone's apex.
+//
+// See https://datatracker.ietf.org/doc/html/rfc4035#section-2.4
+func (uc *UpstreamConfig) getUpstreamsForDS(host string) (ups []upstream.Upstream) {
+	_, host, found := strings.Cut(host, ".")
+	if !found {
+		return uc.Upstreams
+	}
+
+	return uc.getUpstreamsForDomain(host)
 }
 
 // lookupSubdomainExclusion returns upstreams for the host from subdomain
@@ -266,7 +279,7 @@ func (uc *UpstreamConfig) lookupUpstreams(name string) (ups []upstream.Upstream,
 
 	if len(ups) == 0 {
 		// The domain has been excluded from reserved upstreams querying.
-		return uc.Upstreams, true
+		ups = uc.Upstreams
 	}
 
 	return ups, true

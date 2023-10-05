@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetUpstreamsForDomain(t *testing.T) {
+func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 	upstreams := []string{
 		"[/google.com/local/]4.3.2.1",
 		"[/www.google.com//]1.2.3.4",
@@ -28,12 +28,95 @@ func TestGetUpstreamsForDomain(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	assertUpstreamsForDomain(t, config, "www.google.com.", []string{"1.2.3.4:53", "tls://1.1.1.1:853"})
-	assertUpstreamsForDomain(t, config, "www2.google.com.", []string{"4.3.2.1:53"})
-	assertUpstreamsForDomain(t, config, "internal.local.", []string{"4.3.2.1:53"})
-	assertUpstreamsForDomain(t, config, "google.", []string{"1.2.3.4:53"})
-	assertUpstreamsForDomain(t, config, "_acme-challenge.example.org.", []string{})
-	assertUpstreamsForDomain(t, config, "maps.google.com.", []string{})
+	testCases := []struct {
+		name string
+		in   string
+		want []string
+	}{{
+		name: "direct_match",
+		in:   "www.google.com.",
+		want: []string{"1.2.3.4:53", "tls://1.1.1.1:853"},
+	}, {
+		name: "subdomain_match",
+		in:   "www2.google.com.",
+		want: []string{"4.3.2.1:53"},
+	}, {
+		name: "second_subdomain_match",
+		in:   "internal.local.",
+		want: []string{"4.3.2.1:53"},
+	}, {
+		name: "unqualified_match",
+		in:   "google.",
+		want: []string{"1.2.3.4:53"},
+	}, {
+		name: "default",
+		in:   "_acme-challenge.example.org.",
+		want: []string{},
+	}, {
+		name: "another_default",
+		in:   "maps.google.com.",
+		want: []string{},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ups := config.getUpstreamsForDomain(tc.in)
+			assertUpstreamsForDomain(t, ups, tc.want)
+		})
+	}
+}
+
+func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
+	upstreams := []string{
+		"[/google.com/local/]4.3.2.1",
+		"[/www.google.com//]1.2.3.4",
+		"[/maps.google.com/]#",
+		"[/www.google.com/]tls://1.1.1.1",
+		"[/_acme-challenge.example.org/]#",
+	}
+
+	config, err := ParseUpstreamsConfig(
+		upstreams,
+		&upstream.Options{
+			InsecureSkipVerify: false,
+			Bootstrap:          []string{},
+			Timeout:            1 * time.Second,
+		},
+	)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name string
+		in   string
+		want []string
+	}{{
+		name: "direct_match",
+		in:   "www.google.com.",
+		want: []string{"4.3.2.1:53"},
+	}, {
+		name: "subdomain_match",
+		in:   "abc.www.google.com.",
+		want: []string{"1.2.3.4:53", "tls://1.1.1.1:853"},
+	}, {
+		name: "unqualified_match",
+		in:   "internal.local.",
+		want: []string{"1.2.3.4:53"},
+	}, {
+		name: "more_unqualified_match",
+		in:   "google.",
+		want: []string{"1.2.3.4:53"},
+	}, {
+		name: "default",
+		in:   "_acme-challenge.example.org.",
+		want: []string{},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ups := config.getUpstreamsForDS(tc.in)
+			assertUpstreamsForDomain(t, ups, tc.want)
+		})
+	}
 }
 
 func TestUpstreamConfig_Validate(t *testing.T) {
@@ -157,7 +240,8 @@ func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertUpstreamsForDomain(t, uconf, tc.in, tc.want)
+			ups := uconf.getUpstreamsForDomain(tc.in)
+			assertUpstreamsForDomain(t, ups, tc.want)
 		})
 	}
 }
@@ -197,7 +281,8 @@ func TestGetUpstreamsForDomain_sub_wildcards(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertUpstreamsForDomain(t, uconf, tc.in, tc.want)
+			ups := uconf.getUpstreamsForDomain(tc.in)
+			assertUpstreamsForDomain(t, ups, tc.want)
 		})
 	}
 }
@@ -238,10 +323,14 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertUpstreamsForDomain(t, uconf, tc.in, tc.want)
+			ups := uconf.getUpstreamsForDomain(tc.in)
+			assertUpstreamsForDomain(t, ups, tc.want)
 		})
 	}
 }
+
+// upsSink is the typed sink variable for the result of benchmarked function.
+var upsSink []upstream.Upstream
 
 func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 	upstreams := []string{
@@ -260,24 +349,26 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		},
 	)
 
-	for i := 0; i < b.N; i++ {
-		assertUpstreamsForDomain(b, config, "www.google.com.", []string{"1.2.3.4:53", "tls://1.1.1.1:853"})
-		assertUpstreamsForDomain(b, config, "www2.google.com.", []string{"4.3.2.1:53"})
-		assertUpstreamsForDomain(b, config, "internal.local.", []string{"4.3.2.1:53"})
-		assertUpstreamsForDomain(b, config, "google.", []string{"1.2.3.4:53"})
-		assertUpstreamsForDomain(b, config, "maps.google.com.", []string{})
+	domains := []string{
+		"www.google.com.",
+		"www2.google.com.",
+		"internal.local.",
+		"google.",
+		"maps.google.com.",
+	}
+
+	for i, l := 0, len(domains); i < b.N; i++ {
+		upsSink = config.getUpstreamsForDomain(domains[i%l])
 	}
 }
 
 // assertUpstreamsForDomain checks the addresses of the specified domain
 // upstreams and their number.
-func assertUpstreamsForDomain(t testing.TB, config *UpstreamConfig, domain string, address []string) {
-	t.Helper()
+func assertUpstreamsForDomain(tb testing.TB, ups []upstream.Upstream, want []string) {
+	tb.Helper()
 
-	u := config.getUpstreamsForDomain(domain)
-	require.Len(t, u, len(address))
-
-	for i, up := range u {
-		assert.Equalf(t, address[i], up.Address(), "bad upstream at index %d", i)
+	require.Len(tb, ups, len(want))
+	for i, up := range ups {
+		assert.Equalf(tb, want[i], up.Address(), "bad upstream at index %d", i)
 	}
 }

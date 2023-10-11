@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -24,6 +25,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/logging"
+	"golang.org/x/exp/slices"
 )
 
 // Upstream is an interface for a DNS resolver.
@@ -76,10 +78,11 @@ type Options struct {
 	// CipherSuites is a custom list of TLSv1.2 ciphers.
 	CipherSuites []uint16
 
-	// Bootstrap is a list of DNS servers to be used to resolve
-	// DNS-over-HTTPS/DNS-over-TLS hostnames.  Plain DNS, DNSCrypt, or
-	// DNS-over-HTTPS/DNS-over-TLS with IP addresses (not hostnames) could be
-	// used.
+	// Bootstrap is a list of DNS servers to be used to resolve DoH/DoT/DoQ
+	// hostnames.  Plain DNS, DNSCrypt, or DoH/DoT/DoQ with IP addresses (not
+	// hostnames) could be used.  Those servers will be turned to upstream
+	// servers and will be closed as soon as the resolved upstream itself is
+	// closed.
 	Bootstrap []string
 
 	// List of IP addresses of the upstream DNS server.  If not empty, bootstrap
@@ -306,12 +309,26 @@ func logFinish(upstreamAddress string, n network, err error) {
 // resolving will be performed only once.
 type DialerInitializer func() (handler bootstrap.DialHandler, err error)
 
+// closeFunc is the signature of a function that closes an upstream.
+type closeFunc func() (err error)
+
+// nopClose is the [closeFunc] that does nothing.
+func nopClose() (err error) { return nil }
+
 // newDialerInitializer creates an initializer of the dialer that will dial the
 // addresses resolved from u using opts.
-func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer, err error) {
+//
+// TODO(e.burkov):  Returning closeFunc is a temporary solution.  It's needed
+// to close the bootstrap upstreams, which may require closing.  It should be
+// gone when the [Options.Bootstrap] will be turned into [Resolver] and it's
+// closing will be handled by the caller.
+func newDialerInitializer(
+	u *url.URL,
+	opts *Options,
+) (di DialerInitializer, closeBoot closeFunc, err error) {
 	host, port, err := netutil.SplitHostPort(u.Host)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address: %s: %w", u.Host, err)
+		return nil, nopClose, fmt.Errorf("invalid address: %s: %w", u.Host, err)
 	}
 
 	if addrsLen := len(opts.ServerIPAddrs); addrsLen > 0 {
@@ -324,58 +341,58 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer, err 
 
 		handler := bootstrap.NewDialContext(opts.Timeout, addrs...)
 
-		return func() (bootstrap.DialHandler, error) { return handler, nil }, nil
+		return func() (h bootstrap.DialHandler, err error) { return handler, nil }, nopClose, nil
 	} else if _, err = netip.ParseAddr(host); err == nil {
 		// Don't resolve the address of the server since it's already an IP.
 		handler := bootstrap.NewDialContext(opts.Timeout, u.Host)
 
-		return func() (bootstrap.DialHandler, error) { return handler, nil }, nil
+		return func() (h bootstrap.DialHandler, err error) { return handler, nil }, nopClose, nil
 	}
 
-	resolvers, err := newResolvers(opts)
+	resolvers, closeBoot, err := newResolvers(opts)
 	if err != nil {
-		// Don't wrap the error since it's informative enough as is.
-		return nil, err
+		return nil, nopClose, errors.Join(err, closeBoot())
 	}
 
-	var dialHandler atomic.Value
+	var dialHandler atomic.Pointer[bootstrap.DialHandler]
 	di = func() (h bootstrap.DialHandler, resErr error) {
 		// Check if the dial handler has already been created.
-		h, ok := dialHandler.Load().(bootstrap.DialHandler)
-		if ok {
-			return h, nil
+		if hPtr := dialHandler.Load(); hPtr != nil {
+			return *hPtr, nil
 		}
 
 		// TODO(e.burkov):  It may appear that several exchanges will try to
 		// resolve the upstream hostname at the same time.  Currently, the last
 		// successful value will be stored in dialHandler, but ideally we should
-		// resolve only once.
+		// resolve only once at a time.
 		h, resolveErr := bootstrap.ResolveDialContext(u, opts.Timeout, resolvers, opts.PreferIPv6)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("creating dial handler: %w", resolveErr)
 		}
 
-		if !dialHandler.CompareAndSwap(nil, h) {
-			return dialHandler.Load().(bootstrap.DialHandler), nil
+		if !dialHandler.CompareAndSwap(nil, &h) {
+			// The dial handler has just been created by another exchange.
+			return *dialHandler.Load(), nil
 		}
 
 		return h, nil
 	}
 
-	return di, nil
+	return di, closeBoot, nil
 }
 
 // newResolvers prepares resolvers for bootstrapping.  If opts.Bootstrap is
 // empty, the only new [net.Resolver] will be returned.  Otherwise, the it will
 // be added for each occurrence of an empty string in [Options.Bootstrap].
-func newResolvers(opts *Options) (resolvers []Resolver, err error) {
+func newResolvers(opts *Options) (resolvers []Resolver, closeBoot closeFunc, err error) {
 	bootstraps := opts.Bootstrap
-	if len(bootstraps) == 0 {
-		return []Resolver{&net.Resolver{}}, nil
+	l := len(bootstraps)
+	if l == 0 {
+		return []Resolver{&net.Resolver{}}, nopClose, nil
 	}
 
-	resolvers = make([]Resolver, 0, len(bootstraps))
-	for _, boot := range bootstraps {
+	resolvers, closeBoots := make([]Resolver, 0, l), make([]closeFunc, 0, l)
+	for i, boot := range bootstraps {
 		if boot == "" {
 			resolvers = append(resolvers, &net.Resolver{})
 
@@ -384,11 +401,24 @@ func newResolvers(opts *Options) (resolvers []Resolver, err error) {
 
 		r, rErr := NewUpstreamResolver(boot, opts)
 		if rErr != nil {
-			return nil, fmt.Errorf("preparing bootstrap resolver: %w", rErr)
+			resolvers = nil
+			err = fmt.Errorf("preparing bootstrap resolver at index %d: %w", i, rErr)
+
+			break
 		}
 
 		resolvers = append(resolvers, r)
+		closeBoots = append(closeBoots, r.(upstreamResolver).Close)
 	}
 
-	return resolvers, nil
+	closeBoots = slices.Clip(closeBoots)
+
+	return resolvers, func() (closeErr error) {
+		var errs []error
+		for _, cb := range closeBoots {
+			errs = append(errs, cb())
+		}
+
+		return errors.Join(errs...)
+	}, err
 }

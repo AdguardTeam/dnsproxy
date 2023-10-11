@@ -37,6 +37,9 @@ type plainDNS struct {
 	// one.
 	getDialer DialerInitializer
 
+	// closeBoot is the function to close the bootstrap upstreams.
+	closeBoot closeFunc
+
 	// net is the network of the connections.
 	net network
 
@@ -59,7 +62,7 @@ func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
 
 	addPort(addr, defaultPortPlain)
 
-	getDialer, err := newDialerInitializer(addr, opts)
+	getDialer, closeBoot, err := newDialerInitializer(addr, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +70,7 @@ func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
 	return &plainDNS{
 		addr:      addr,
 		getDialer: getDialer,
+		closeBoot: closeBoot,
 		net:       addr.Scheme,
 		timeout:   opts.Timeout,
 	}, nil
@@ -175,7 +179,7 @@ func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 // Close implements the [Upstream] interface for *plainDNS.
 func (p *plainDNS) Close() (err error) {
-	return nil
+	return errors.Annotate(p.closeBoot(), "closing bootstrap: %w")
 }
 
 // errQuestion is returned when a message has malformed question section.

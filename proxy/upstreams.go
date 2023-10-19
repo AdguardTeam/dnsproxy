@@ -34,111 +34,250 @@ type UpstreamConfig struct {
 // type check
 var _ io.Closer = (*UpstreamConfig)(nil)
 
-// ParseUpstreamsConfig returns UpstreamConfig and error if upstreams configuration is invalid
-// default upstream syntax: <upstreamString>
-// reserved upstream syntax: [/domain1/../domainN/]<upstreamString>
-// subdomains only upstream syntax: [/*.domain1/../*.domainN]<upstreamString>
-// More specific domains take priority over less specific domains,
-// To exclude more specific domains from reserved upstreams querying you should use the following syntax: [/domain1/../domainN/]#
-// So the following config: ["[/host.com/]1.2.3.4", "[/www.host.com/]2.3.4.5", "[/maps.host.com/]#", "3.4.5.6"]
-// will send queries for *.host.com to 1.2.3.4, except for *.www.host.com, which will go to 2.3.4.5 and *.maps.host.com,
-// which will go to default server 3.4.5.6 with all other domains.
-// To exclude top level domain from reserved upstreams querying you could use the following: [/*.domain.com/]<upstreamString>
-// So the following config: ["[/*.domain.com/]1.2.3.4", "3.4.5.6"] will send queries for all subdomains *.domain.com to 1.2.3.4,
-// but domain.com query will be sent to default server 3.4.5.6 as every other query.
+// ParseUpstreamsConfig returns UpstreamConfig and error if upstreams
+// configuration is invalid.
 //
-// TODO(e.burkov):  Refactor this mess.
+// # Simple upstreams
+//
+// Single upstream per line.  For example:
+//
+//	1.2.3.4
+//	3.4.5.6
+//
+// # Domain specific upstreams
+//
+//   - reserved upstreams: [/domain1/../domainN/]<upstreamString>
+//   - subdomains only upstreams: [/*.domain1/../*.domainN]<upstreamString>
+//
+// Where <upstreamString> is one or many upstreams separated by space (e.g.
+// `1.1.1.1` or `1.1.1.1 2.2.2.2`).
+//
+// More specific domains take priority over less specific domains.  To exclude
+// more specific domains from reserved upstreams querying you should use the
+// following syntax:
+//
+//	[/domain1/../domainN/]#
+//
+// So the following config:
+//
+//	[/host.com/]1.2.3.4
+//	[/www.host.com/]2.3.4.5"
+//	[/maps.host.com/news.host.com/]#
+//	3.4.5.6
+//
+// will send queries for *.host.com to 1.2.3.4.  Except for *.www.host.com,
+// which will go to 2.3.4.5.  And *.maps.host.com or *.news.host.com, which
+// will go to default server 3.4.5.6 with all other domains.
+//
+// To exclude top level domain from reserved upstreams querying you could use
+// the following:
+//
+//	'[/*.domain.com/]<upstreamString>'
+//
+// So the following config:
+//
+//	[/*.domain.com/]1.2.3.4
+//	3.4.5.6
+//
+// will send queries for all subdomains *.domain.com to 1.2.3.4, but domain.com
+// query will be sent to default server 3.4.5.6 as every other query.
+//
+// TODO(e.burkov):  Consider supporting multiple upstreams in a single line for
+// default upstream syntax.
 func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*UpstreamConfig, error) {
 	if options == nil {
 		options = &upstream.Options{}
 	}
 
-	if len(options.Bootstrap) > 0 {
-		log.Debug("Bootstraps: %v", options.Bootstrap)
+	log.Debug("Bootstraps: %s", options.Bootstrap)
+
+	p := &configParser{
+		options:                  options,
+		upstreamsIndex:           map[string]upstream.Upstream{},
+		domainReservedUpstreams:  map[string][]upstream.Upstream{},
+		specifiedDomainUpstreams: map[string][]upstream.Upstream{},
+		subdomainsOnlyUpstreams:  map[string][]upstream.Upstream{},
+		subdomainsOnlyExclusions: stringutil.NewSet(),
 	}
 
-	var upstreams []upstream.Upstream
-	// We use this index to avoid creating duplicates of upstreams
-	upstreamsIndex := map[string]upstream.Upstream{}
+	return p.parse(upstreamConfig)
+}
 
-	domainReservedUpstreams := map[string][]upstream.Upstream{}
-	specifiedDomainUpstreams := map[string][]upstream.Upstream{}
-	subdomainsOnlyUpstreams := map[string][]upstream.Upstream{}
-	subdomainsOnlyExclusions := stringutil.NewSet()
+// configParser collects the results of parsing an upstream config.
+type configParser struct {
+	// options contains upstream properties.
+	options *upstream.Options
 
-	for i, l := range upstreamConfig {
-		u, hosts, err := parseUpstreamLine(l)
-		if err != nil {
-			return &UpstreamConfig{}, err
-		}
+	// upstreamsIndex is used to avoid creating duplicates of upstreams.
+	upstreamsIndex map[string]upstream.Upstream
 
-		// # excludes more specific domain from reserved upstreams querying
-		if u == "#" && len(hosts) > 0 {
-			for _, host := range hosts {
-				if strings.HasPrefix(host, "*.") {
-					host = host[len("*."):]
+	// domainReservedUpstreams is a map of reserved domains and lists of
+	// corresponding upstreams.
+	domainReservedUpstreams map[string][]upstream.Upstream
 
-					subdomainsOnlyExclusions.Add(host)
-					subdomainsOnlyUpstreams[host] = nil
-				} else {
-					domainReservedUpstreams[host] = nil
-					specifiedDomainUpstreams[host] = nil
-				}
-			}
-		} else {
-			dnsUpstream, ok := upstreamsIndex[u]
-			if !ok {
-				// create an upstream
-				dnsUpstream, err = upstream.AddressToUpstream(u, options.Clone())
+	// specifiedDomainUpstreams is a map of excluded domains and lists of
+	// corresponding upstreams.
+	specifiedDomainUpstreams map[string][]upstream.Upstream
 
-				if err != nil {
-					err = fmt.Errorf("cannot prepare the upstream %s (%s): %s", l, options.Bootstrap, err)
+	// subdomainsOnlyUpstreams is a map of wildcard subdomains and lists of
+	// corresponding upstreams.
+	subdomainsOnlyUpstreams map[string][]upstream.Upstream
 
-					return &UpstreamConfig{}, err
-				}
+	// subdomainsOnlyExclusions is set of domains with subdomains exclusions.
+	subdomainsOnlyExclusions *stringutil.Set
 
-				// save to the index
-				upstreamsIndex[u] = dnsUpstream
-			}
+	// upstreams is a list of default upstreams.
+	upstreams []upstream.Upstream
+}
 
-			if len(hosts) == 0 {
-				log.Debug("Upstream %d: %s", i, dnsUpstream.Address())
-				upstreams = append(upstreams, dnsUpstream)
-
-				continue
-			}
-
-			for _, host := range hosts {
-				if strings.HasPrefix(host, "*.") {
-					host = host[len("*."):]
-
-					subdomainsOnlyExclusions.Add(host)
-					log.Debug("domain %s is added to exclusions list", host)
-
-					subdomainsOnlyUpstreams[host] = append(subdomainsOnlyUpstreams[host], dnsUpstream)
-				} else {
-					specifiedDomainUpstreams[host] = append(specifiedDomainUpstreams[host], dnsUpstream)
-				}
-
-				domainReservedUpstreams[host] = append(domainReservedUpstreams[host], dnsUpstream)
-			}
-
-			log.Debug("Upstream %d: %s is reserved for next domains: %s",
-				i, dnsUpstream.Address(), strings.Join(hosts, ", "))
+// parse returns UpstreamConfig and error if upstreams configuration is invalid.
+func (p *configParser) parse(conf []string) (c *UpstreamConfig, err error) {
+	for i, l := range conf {
+		if err = p.parseLine(i, l); err != nil {
+			return nil, err
 		}
 	}
 
-	for host, ups := range subdomainsOnlyUpstreams {
-		// Rewrite ups for wildcard subdomains to remove upper level domains specs.
-		domainReservedUpstreams[host] = ups
+	for host, ups := range p.subdomainsOnlyUpstreams {
+		// Rewrite ups for wildcard subdomains to remove upper level domains
+		// specs.
+		p.domainReservedUpstreams[host] = ups
 	}
 
 	return &UpstreamConfig{
-		Upstreams:                upstreams,
-		DomainReservedUpstreams:  domainReservedUpstreams,
-		SpecifiedDomainUpstreams: specifiedDomainUpstreams,
-		SubdomainExclusions:      subdomainsOnlyExclusions,
+		Upstreams:                p.upstreams,
+		DomainReservedUpstreams:  p.domainReservedUpstreams,
+		SpecifiedDomainUpstreams: p.specifiedDomainUpstreams,
+		SubdomainExclusions:      p.subdomainsOnlyExclusions,
 	}, nil
+}
+
+// parseLine returns an error if upstream configuration line is invalid.
+func (p *configParser) parseLine(idx int, confLine string) (err error) {
+	upstreams, domains, err := splitConfigLine(idx, confLine)
+	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return err
+	}
+
+	if upstreams[0] == "#" && len(domains) > 0 {
+		p.excludeFromReserved(domains)
+
+		return nil
+	}
+
+	for _, u := range upstreams {
+		err = p.specifyUpstream(domains, u, idx, confLine)
+		if err != nil {
+			// Don't wrap the error since it's informative enough as is.
+			return err
+		}
+	}
+
+	return nil
+}
+
+// splitConfigLine parses upstream configuration line and returns list upstream
+// addresses (one or many), list of domains for which this upstream is reserved
+// (may be nil) or error if something went wrong.
+func splitConfigLine(idx int, confLine string) (upstreams, domains []string, err error) {
+	if !strings.HasPrefix(confLine, "[/") {
+		return []string{confLine}, nil, nil
+	}
+
+	domainsLine, upstreamsLine, found := strings.Cut(confLine[len("[/"):], "/]")
+	if !found || upstreamsLine == "" {
+		return nil, nil, fmt.Errorf("wrong upstream specification %d %q", idx, confLine)
+	}
+
+	// split domains list
+	for _, confHost := range strings.Split(domainsLine, "/") {
+		if confHost == "" {
+			// empty domain specification means `unqualified names only`
+			domains = append(domains, UnqualifiedNames)
+
+			continue
+		}
+
+		host := strings.TrimPrefix(confHost, "*.")
+		if err = netutil.ValidateDomainName(host); err != nil {
+			return nil, nil, err
+		}
+
+		domains = append(domains, strings.ToLower(confHost+"."))
+	}
+
+	return strings.Fields(upstreamsLine), domains, nil
+}
+
+// specifyUpstream specifies the upstream for domains.
+func (p *configParser) specifyUpstream(
+	domains []string,
+	u string,
+	idx int,
+	confLine string,
+) (err error) {
+	dnsUpstream, ok := p.upstreamsIndex[u]
+	// TODO(e.burkov):  Improve identifying duplicate upstreams.
+	if !ok {
+		// create an upstream
+		dnsUpstream, err = upstream.AddressToUpstream(u, p.options.Clone())
+		if err != nil {
+			return fmt.Errorf("cannot prepare the upstream %d %q (%s): %s",
+				idx, confLine, p.options.Bootstrap, err)
+		}
+
+		// save to the index
+		p.upstreamsIndex[u] = dnsUpstream
+	}
+
+	if len(domains) == 0 {
+		log.Debug("Upstream %d: %s", idx, dnsUpstream.Address())
+		p.upstreams = append(p.upstreams, dnsUpstream)
+
+		return nil
+	}
+
+	p.includeToReserved(dnsUpstream, domains)
+
+	log.Debug("Upstream %d: %s is reserved for next domains: %s",
+		idx, dnsUpstream.Address(), domains)
+
+	return nil
+}
+
+// excludeFromReserved excludes more specific domains from reserved upstreams
+// querying.
+func (p *configParser) excludeFromReserved(domains []string) {
+	for _, host := range domains {
+		if trimmed := strings.TrimPrefix(host, "*."); trimmed != host {
+			p.subdomainsOnlyExclusions.Add(trimmed)
+			p.subdomainsOnlyUpstreams[trimmed] = nil
+
+			continue
+		}
+
+		p.domainReservedUpstreams[host] = nil
+		p.specifiedDomainUpstreams[host] = nil
+	}
+}
+
+// includeToReserved includes domains to reserved upstreams querying.
+func (p *configParser) includeToReserved(dnsUpstream upstream.Upstream, domains []string) {
+	for _, host := range domains {
+		if strings.HasPrefix(host, "*.") {
+			host = host[len("*."):]
+
+			p.subdomainsOnlyExclusions.Add(host)
+			log.Debug("domain %q is added to exclusions list", host)
+
+			p.subdomainsOnlyUpstreams[host] = append(p.subdomainsOnlyUpstreams[host], dnsUpstream)
+		} else {
+			p.specifiedDomainUpstreams[host] = append(p.specifiedDomainUpstreams[host], dnsUpstream)
+		}
+
+		p.domainReservedUpstreams[host] = append(p.domainReservedUpstreams[host], dnsUpstream)
+	}
 }
 
 // errNoDefaultUpstreams is returned when no default upstreams specified within
@@ -160,41 +299,6 @@ func (uc *UpstreamConfig) validate() (err error) {
 	default:
 		return errNoDefaultUpstreams
 	}
-}
-
-// parseUpstreamLine - parses upstream line and returns the following:
-// upstream address
-// list of domains for which this upstream is reserved (may be nil)
-// error if something went wrong
-func parseUpstreamLine(l string) (string, []string, error) {
-	var hosts []string
-	u := l
-
-	if strings.HasPrefix(l, "[/") {
-		// split domains and upstream string
-		domainsAndUpstream := strings.Split(strings.TrimPrefix(l, "[/"), "/]")
-		if len(domainsAndUpstream) != 2 {
-			return "", nil, fmt.Errorf("wrong upstream specification: %s", l)
-		}
-
-		// split domains list
-		for _, confHost := range strings.Split(domainsAndUpstream[0], "/") {
-			if confHost != "" {
-				host := strings.TrimPrefix(confHost, "*.")
-				if err := netutil.ValidateDomainName(host); err != nil {
-					return "", nil, err
-				}
-
-				hosts = append(hosts, strings.ToLower(confHost+"."))
-			} else {
-				// empty domain specification means `unqualified names only`
-				hosts = append(hosts, UnqualifiedNames)
-			}
-		}
-		u = domainsAndUpstream[1]
-	}
-
-	return u, hosts, nil
 }
 
 // getUpstreamsForDomain looks for a domain in the reserved domains map and

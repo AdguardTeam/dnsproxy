@@ -16,6 +16,7 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 		"[/maps.google.com/]#",
 		"[/www.google.com/]tls://1.1.1.1",
 		"[/_acme-challenge.example.org/]#",
+		"[/example.com/]1.1.1.1 2.2.2.2 3.3.3.3",
 	}
 
 	config, err := ParseUpstreamsConfig(
@@ -56,6 +57,10 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 		name: "another_default",
 		in:   "maps.google.com.",
 		want: []string{},
+	}, {
+		name: "multiple_reserved",
+		in:   "example.com.",
+		want: []string{"1.1.1.1:53", "2.2.2.2:53", "3.3.3.3:53"},
 	}}
 
 	for _, tc := range testCases {

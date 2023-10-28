@@ -18,44 +18,58 @@ const ErrNoUpstreams errors.Error = "no upstream specified"
 // ExchangeParallel returns the dirst successful response from one of u.  It
 // returns an error if all upstreams failed to exchange the request.
 func ExchangeParallel(u []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Upstream, err error) {
-	upsNum := len(u)
-	switch upsNum {
-	case 0:
-		return nil, nil, ErrNoUpstreams
-	case 1:
-		reply, err = exchangeAndLog(u[0], req)
+    upsNum := len(u)
+    switch upsNum {
+    case 0:
+        return nil, nil, ErrNoUpstreams
+    case 1:
+        reply, err = exchangeAndLog(u[0], req)
+        if reply != nil && reply.Rcode == dns.RcodeServerFailure {
+            err = errors.Errorf("upstream returned SERVFAIL")
+        }
+        return reply, u[0], err
+    default:
+        // Go on.
+    }
 
-		return reply, u[0], err
-	default:
-		// Go on.
-	}
+    ch := make(chan *exchangeResult, upsNum)
 
-	ch := make(chan *exchangeResult, upsNum)
+    for _, f := range u {
+        go exchangeAsync(f, req, ch)
+    }
 
-	for _, f := range u {
-		go exchangeAsync(f, req, ch)
-	}
+    errs := []error{}
+    servFailReceived := false
+    for range u {
+        rep := <-ch
+        if rep.err != nil {
+            errs = append(errs, rep.err)
+            continue
+        }
 
-	errs := []error{}
-	for range u {
-		rep := <-ch
-		if rep.err != nil {
-			errs = append(errs, rep.err)
+        // Return only if the DNS reply is not SERVFAIL.
+        if rep.reply != nil && rep.reply.Rcode != dns.RcodeServerFailure {
+            return rep.reply, rep.upstream, nil
+        }
 
-			continue
-		}
+        // Track if a SERVFAIL error is received.
+        if rep.reply != nil && rep.reply.Rcode == dns.RcodeServerFailure {
+            servFailReceived = true
+            errs = append(errs, errors.Errorf("upstream returned SERVFAIL"))
+        }
+    }
 
-		if rep.reply != nil {
-			return rep.reply, rep.upstream, nil
-		}
-	}
+    if len(errs) == 0 {
+        return nil, nil, errors.Error("none of upstream servers responded")
+    }
 
-	if len(errs) == 0 {
-		return nil, nil, errors.Error("none of upstream servers responded")
-	}
+    // If no valid response was received and at least one SERVFAIL was received, return SERVFAIL.
+    if servFailReceived {
+        return nil, nil, errors.Errorf("upstream returned SERVFAIL")
+    }
 
-	// TODO(e.burkov):  Use [errors.Join] in Go 1.20.
-	return nil, nil, errors.List("all upstreams failed to respond", errs...)
+    // TODO(e.burkov):  Use [errors.Join] in Go 1.20.
+    return nil, nil, errors.List("all upstreams failed to respond", errs...)
 }
 
 // ExchangeAllResult is the successful result of [ExchangeAll] for a single

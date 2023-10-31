@@ -508,6 +508,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	start := time.Now()
+	src := "upstream"
 
 	// Perform the DNS request.
 	resp, u, err := p.exchange(req, upstreams)
@@ -518,10 +519,12 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		resp = p.genWithRCode(req, dns.RcodeNameError)
 	}
 
-	log.Debug("proxy: replying from upstream: rtt is %s", time.Since(start))
-
 	if err != nil && p.Fallbacks != nil {
 		log.Debug("proxy: replying from upstream: using fallback due to %s", err)
+
+		// Reset the timer.
+		start = time.Now()
+		src = "fallback"
 
 		upstreams = p.Fallbacks.getUpstreamsForDomain(req.Question[0].Name)
 		if len(upstreams) == 0 {
@@ -529,6 +532,17 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		}
 
 		resp, u, err = upstream.ExchangeParallel(upstreams, req)
+	}
+
+	if err != nil {
+		log.Debug("proxy: replying from %s: %s", src, err)
+	}
+
+	if resp != nil {
+		rtt := time.Since(start)
+		log.Debug("proxy: replying from %s: rtt is %s", src, rtt)
+
+		d.QueryDuration = rtt
 	}
 
 	p.handleExchangeResult(d, req, resp, u)
@@ -686,9 +700,8 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 // newDNSContext returns a new properly initialized *DNSContext.
 func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
 	return &DNSContext{
-		Proto:     proto,
-		Req:       req,
-		StartTime: time.Now(),
+		Proto: proto,
+		Req:   req,
 
 		RequestID: atomic.AddUint64(&p.counter, 1),
 	}

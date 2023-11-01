@@ -9,6 +9,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 )
 
@@ -63,6 +64,14 @@ type Config struct {
 
 	// Rate-limiting and anti-DNS amplification measures
 	// --
+
+	// RatelimitSubnetMaskIPv4 is a subnet mask for IPv4 addresses used for
+	// rate limiting requests.
+	RatelimitSubnetMaskIPv4 net.IPMask
+
+	// RatelimitSubnetMaskIPv6 is a subnet mask for IPv6 addresses used for
+	// rate limiting requests.
+	RatelimitSubnetMaskIPv6 net.IPMask
 
 	Ratelimit          int      // max number of requests per second from a given IP (0 to disable)
 	RatelimitWhitelist []string // a list of whitelisted client IP addresses
@@ -181,7 +190,8 @@ type Config struct {
 	PreferIPv6 bool
 }
 
-// validateConfig verifies that the supplied configuration is valid and returns an error if it's not
+// validateConfig verifies that the supplied configuration is valid and returns
+// an error if it's not.
 func (p *Proxy) validateConfig() error {
 	err := p.validateListenAddrs()
 	if err != nil {
@@ -207,12 +217,60 @@ func (p *Proxy) validateConfig() error {
 		return fmt.Errorf("validating fallbacks: %w", err)
 	}
 
+	err = p.validateRatelimit()
+	if err != nil {
+		return fmt.Errorf("validating ratelimit: %w", err)
+	}
+
+	p.logConfigInfo()
+
+	return nil
+}
+
+// validateRatelimit validates ratelimit configuration and returns an error if
+// it's invalid.
+func (p *Proxy) validateRatelimit() (err error) {
+	if p.Ratelimit == 0 {
+		return nil
+	}
+
+	if p.RatelimitSubnetMaskIPv4 == nil {
+		return errors.Error("ipv4 subnet mask is nil")
+	}
+
+	_, bits := p.RatelimitSubnetMaskIPv4.Size()
+	if bits != netutil.IPv4BitLen {
+		return fmt.Errorf("ipv4 subnet mask must contain %d bits, got %d", netutil.IPv4BitLen, bits)
+	}
+
+	if p.RatelimitSubnetMaskIPv6 == nil {
+		return errors.Error("ipv6 subnet is nil")
+	}
+
+	_, bits = p.RatelimitSubnetMaskIPv6.Size()
+	if bits != netutil.IPv6BitLen {
+		return fmt.Errorf("ipv6 subnet mask must contain %d bits, got %d", netutil.IPv6BitLen, bits)
+	}
+
+	return nil
+}
+
+// logConfigInfo logs proxy configuration information.
+func (p *Proxy) logConfigInfo() {
 	if p.CacheMinTTL > 0 || p.CacheMaxTTL > 0 {
 		log.Info("Cache TTL override is enabled. Min=%d, Max=%d", p.CacheMinTTL, p.CacheMaxTTL)
 	}
 
 	if p.Ratelimit > 0 {
-		log.Info("Ratelimit is enabled and set to %d rps", p.Ratelimit)
+		sizeV4, _ := p.RatelimitSubnetMaskIPv4.Size()
+		sizeV6, _ := p.RatelimitSubnetMaskIPv6.Size()
+
+		log.Info(
+			"Ratelimit is enabled and set to %d rps, IPv4 subnet mask len %d, IPv6 subnet mask len %d",
+			p.Ratelimit,
+			sizeV4,
+			sizeV6,
+		)
 	}
 
 	if p.RefuseAny {
@@ -222,8 +280,6 @@ func (p *Proxy) validateConfig() error {
 	if len(p.BogusNXDomain) > 0 {
 		log.Info("%d bogus-nxdomain IP specified", len(p.BogusNXDomain))
 	}
-
-	return nil
 }
 
 // validateListenAddrs returns an error if the addresses are not configured

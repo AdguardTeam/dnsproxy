@@ -53,10 +53,19 @@ func (p *Proxy) isRatelimited(addr net.Addr) (ok bool) {
 		}
 	}
 
+	if len(ip) == net.IPv4len {
+		ip = ip.Mask(p.RatelimitSubnetMaskIPv4)
+	} else {
+		ip = ip.Mask(p.RatelimitSubnetMaskIPv6)
+	}
+
+	// TODO(s.chzhen):  Improve caching.  Decrease allocations.
+	ipStr = ip.String()
+
 	value := p.limiterForIP(ipStr)
 	rl, ok := value.(*rate.RateLimiter)
 	if !ok {
-		log.Println("SHOULD NOT HAPPEN: non-bool entry found in safebrowsing lookup cache")
+		log.Printf("SHOULD NOT HAPPEN: %T found in ratelimit cache", value)
 
 		return false
 	}

@@ -1151,6 +1151,9 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 
 	p.TrustedProxies = []string{"0.0.0.0/0", "::0/0"}
 
+	p.RatelimitSubnetMaskIPv4 = net.CIDRMask(24, 32)
+	p.RatelimitSubnetMaskIPv6 = net.CIDRMask(64, 128)
+
 	return &p
 }
 

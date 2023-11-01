@@ -27,6 +27,8 @@ type DNSContext struct {
 	QUICStream quic.Stream
 
 	// Addr is the address of the client.
+	//
+	// TODO(s.chzhen):  Use [netip.AddrPort].
 	Addr net.Addr
 
 	// Upstream is the upstream that resolved the request.  In case of cached

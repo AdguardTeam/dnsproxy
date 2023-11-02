@@ -323,12 +323,11 @@ func TestUpstreamsSort(t *testing.T) {
 		upstreams = append(upstreams, up)
 	}
 
-	// create upstreamRttStats for 3 upstreams
-	upstreamRttStats := map[string]int{}
-	upstreamRttStats["1.1.1.1:53"] = 10
-	upstreamRttStats["2.3.4.5:53"] = 20
-	upstreamRttStats["1.2.3.4:53"] = 30
-	testProxy.upstreamRttStats = upstreamRttStats
+	upstreamRTTStats := map[string]int{}
+	upstreamRTTStats["1.1.1.1:53"] = 10
+	upstreamRTTStats["2.3.4.5:53"] = 20
+	upstreamRTTStats["1.2.3.4:53"] = 30
+	testProxy.upstreamRTTStats = upstreamRTTStats
 
 	sortedUpstreams := testProxy.getSortedUpstreams(upstreams)
 

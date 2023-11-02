@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"net/netip"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -180,6 +181,11 @@ type Options struct {
 	// Set Server header for the HTTPS server
 	HTTPSServerName string `yaml:"https-server-name" long:"https-server-name" description:"Set the Server header for the responses from the HTTPS server." default:"dnsproxy"`
 
+	// HTTPSUserinfo is the sole permitted userinfo for the DoH basic
+	// authentication.  If it is set, all DoH queries are required to have this
+	// basic authentication information.
+	HTTPSUserinfo string `yaml:"https-userinfo" long:"https-userinfo" description:"If set, all DoH queries are required to have this basic authentication information."`
+
 	// If true, all AAAA requests will be replied with NoError RCode and empty answer
 	IPv6Disabled bool `yaml:"ipv6-disabled" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
@@ -267,8 +273,8 @@ func run(options *Options) {
 	log.Info("Starting dnsproxy %s", version.Version())
 
 	// Prepare the proxy server and its configuration.
-	config := createProxyConfig(options)
-	dnsProxy := &proxy.Proxy{Config: config}
+	conf := createProxyConfig(options)
+	dnsProxy := &proxy.Proxy{Config: conf}
 
 	// Add extra handler if needed.
 	if options.IPv6Disabled {
@@ -325,9 +331,8 @@ func runPprof(options *Options) {
 }
 
 // createProxyConfig creates proxy.Config from the command line arguments
-func createProxyConfig(options *Options) proxy.Config {
-	// Create the config
-	config := proxy.Config{
+func createProxyConfig(options *Options) (conf proxy.Config) {
+	conf = proxy.Config{
 		RatelimitSubnetMaskIPv4: net.CIDRMask(options.RatelimitSubnetLenIPv4, netutil.IPv4BitLen),
 		RatelimitSubnetMaskIPv6: net.CIDRMask(options.RatelimitSubnetLenIPv6, netutil.IPv6BitLen),
 
@@ -349,16 +354,25 @@ func createProxyConfig(options *Options) proxy.Config {
 		MaxGoroutines:          options.MaxGoRoutines,
 	}
 
-	// TODO(e.burkov):  Make these methods of [Options].
-	initUpstreams(&config, options)
-	initEDNS(&config, options)
-	initBogusNXDomain(&config, options)
-	initTLSConfig(&config, options)
-	initDNSCryptConfig(&config, options)
-	initListenAddrs(&config, options)
-	initDNS64(&config, options)
+	if uiStr := options.HTTPSUserinfo; uiStr != "" {
+		user, pass, ok := strings.Cut(uiStr, ":")
+		if ok {
+			conf.Userinfo = url.UserPassword(user, pass)
+		} else {
+			conf.Userinfo = url.User(user)
+		}
+	}
 
-	return config
+	// TODO(e.burkov):  Make these methods of [Options].
+	initUpstreams(&conf, options)
+	initEDNS(&conf, options)
+	initBogusNXDomain(&conf, options)
+	initTLSConfig(&conf, options)
+	initDNSCryptConfig(&conf, options)
+	initListenAddrs(&conf, options)
+	initDNS64(&conf, options)
+
+	return conf
 }
 
 // isEmpty returns false if uc contains at least a single upstream.  uc must not

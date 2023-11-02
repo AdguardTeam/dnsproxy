@@ -310,10 +310,10 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	conns := tracer.getConnectionsInfo()
 	require.Len(t, conns, 2)
 
-	// Examine the first connection (no 0-Rtt there).
+	// Examine the first connection (no 0-RTT there).
 	require.False(t, conns[0].is0RTT())
 
-	// Examine the second connection (the one that used 0-Rtt).
+	// Examine the second connection (the one that used 0-RTT).
 	require.True(t, conns[1].is0RTT())
 }
 

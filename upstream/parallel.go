@@ -68,7 +68,7 @@ type ExchangeAllResult struct {
 	Upstream Upstream
 }
 
-// ExchangeAll retunrs the responses from all of u.  It returns an error only if
+// ExchangeAll returns the responses from all of u.  It returns an error only if
 // all upstreams failed to exchange the request.
 func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err error) {
 	upsl := len(ups)
@@ -159,9 +159,9 @@ func exchangeAndLog(u Upstream, req *dns.Msg) (resp *dns.Msg, err error) {
 	elapsed := time.Since(start)
 
 	if q := &req.Question[0]; err == nil {
-		log.Debug("upstream %s exchanged %s successfully in %s", addr, q, elapsed)
+		log.Debug("dnsproxy: upstream %s exchanged %s successfully in %s", addr, q, elapsed)
 	} else {
-		log.Debug("upstream %s failed to exchange %s in %s: %s", addr, q, elapsed, err)
+		log.Debug("dnsproxy: upstream %s failed to exchange %s in %s: %s", addr, q, elapsed, err)
 	}
 
 	return reply, err

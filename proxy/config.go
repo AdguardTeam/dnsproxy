@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
@@ -162,6 +163,11 @@ type Config struct {
 	// not empty.
 	HTTPSServerName string
 
+	// Userinfo is the sole permitted userinfo for the DoH basic authentication.
+	// If Userinfo is set, all DoH queries are required to have this basic
+	// authentication information.
+	Userinfo *url.Userinfo
+
 	// MaxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.
 	//
@@ -201,7 +207,7 @@ func (p *Proxy) validateConfig() error {
 
 	err = p.UpstreamConfig.validate()
 	if err != nil {
-		return fmt.Errorf("validating general usptreams: %w", err)
+		return fmt.Errorf("validating general upstreams: %w", err)
 	}
 
 	// Allow both [Proxy.PrivateRDNSUpstreamConfig] and [Proxy.Fallbacks] to be

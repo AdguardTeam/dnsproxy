@@ -39,12 +39,13 @@ func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dn
 		var elapsed int
 		reply, elapsed, err = exchangeWithUpstream(dnsUpstream, req)
 		if err == nil {
-			p.updateRtt(dnsUpstream.Address(), elapsed)
+			p.updateRTT(dnsUpstream.Address(), elapsed)
 
 			return reply, dnsUpstream, err
 		}
+
 		errs = append(errs, err)
-		p.updateRtt(dnsUpstream.Address(), int(defaultTimeout/time.Millisecond))
+		p.updateRTT(dnsUpstream.Address(), int(defaultTimeout/time.Millisecond))
 	}
 
 	return nil, nil, errors.List("all upstreams failed to exchange request", errs...)
@@ -59,7 +60,7 @@ func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {
 
 	slices.SortFunc(clone, func(a, b upstream.Upstream) (res int) {
 		// TODO(d.kolyshev): Use upstreams for sort comparing.
-		return p.upstreamRttStats[a.Address()] - p.upstreamRttStats[b.Address()]
+		return p.upstreamRTTStats[a.Address()] - p.upstreamRTTStats[b.Address()]
 	})
 
 	return clone
@@ -70,18 +71,20 @@ func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, err
 	startTime := time.Now()
 	reply, err := u.Exchange(req)
 	elapsed := time.Since(startTime)
+
+	addr := u.Address()
 	if err != nil {
 		log.Error(
-			"upstream %s failed to exchange %s in %s. Cause: %s",
-			u.Address(),
+			"dnsproxy: upstream %s failed to exchange %s in %s: %s",
+			addr,
 			req.Question[0].String(),
 			elapsed,
 			err,
 		)
 	} else {
-		log.Tracef(
-			"upstream %s successfully finished exchange of %s. Elapsed %s.",
-			u.Address(),
+		log.Debug(
+			"dnsproxy: upstream %s successfully finished exchange of %s; elapsed %s",
+			addr,
 			req.Question[0].String(),
 			elapsed,
 		)
@@ -90,13 +93,14 @@ func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, err
 	return reply, int(elapsed.Milliseconds()), err
 }
 
-// updateRtt updates rtt in upstreamRttStats for given address
-func (p *Proxy) updateRtt(address string, rtt int) {
+// updateRTT updates the round-trip time in upstreamRTTStats for given address.
+func (p *Proxy) updateRTT(address string, rtt int) {
 	p.rttLock.Lock()
 	defer p.rttLock.Unlock()
 
-	if p.upstreamRttStats == nil {
-		p.upstreamRttStats = map[string]int{}
+	if p.upstreamRTTStats == nil {
+		p.upstreamRTTStats = map[string]int{}
 	}
-	p.upstreamRttStats[address] = (p.upstreamRttStats[address] + rtt) / 2
+
+	p.upstreamRTTStats[address] = (p.upstreamRTTStats[address] + rtt) / 2
 }

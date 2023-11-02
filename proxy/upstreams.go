@@ -231,17 +231,14 @@ func (p *configParser) specifyUpstream(
 		p.upstreamsIndex[u] = dnsUpstream
 	}
 
+	addr := dnsUpstream.Address()
 	if len(domains) == 0 {
-		log.Debug("Upstream %d: %s", idx, dnsUpstream.Address())
+		log.Debug("dnsproxy: upstream at index %d: %s", idx, addr)
 		p.upstreams = append(p.upstreams, dnsUpstream)
-
-		return nil
+	} else {
+		log.Debug("dnsproxy: upstream at index %d: %s is reserved for %s", idx, addr, domains)
+		p.includeToReserved(dnsUpstream, domains)
 	}
-
-	p.includeToReserved(dnsUpstream, domains)
-
-	log.Debug("Upstream %d: %s is reserved for next domains: %s",
-		idx, dnsUpstream.Address(), domains)
 
 	return nil
 }

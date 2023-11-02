@@ -63,22 +63,23 @@ type dnsOverHTTPS struct {
 	// Clients are safe for concurrent use by multiple goroutines.
 	client *http.Client
 
-	// quicConfig is the QUIC configuration that is used if HTTP/3 is enabled
-	// for this upstream.
-	quicConfig *quic.Config
-
 	// clientMu protects client.
-	clientMu sync.Mutex
+	clientMu *sync.Mutex
 
-	// quicConfMu protects quicConfig.
-	quicConfMu sync.Mutex
+	// quicConf is the QUIC configuration that is used if HTTP/3 is enabled
+	// for this upstream.
+	quicConf *quic.Config
+
+	// quicConfMu protects quicConf.
+	quicConfMu *sync.Mutex
+
+	// addrRedacted is the redacted string representation of addr.  It is saved
+	// separately to reduce allocations during logging and error reporting.
+	addrRedacted string
 
 	// timeout is used in HTTP client and for H3 probes.
 	timeout time.Duration
 }
-
-// type check
-var _ Upstream = (*dnsOverHTTPS)(nil)
 
 // newDoH returns the DNS-over-HTTPS Upstream.
 func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
@@ -102,11 +103,12 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 		getDialer: getDialer,
 		closeBoot: closeBoot,
 		addr:      addr,
-		quicConfig: &quic.Config{
+		quicConf: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
 			Tracer:          opts.QUICTracer,
 		},
+		quicConfMu: &sync.Mutex{},
 		// #nosec G402 -- TLS certificate verification could be disabled by
 		// configuration.
 		tlsConf: &tls.Config{
@@ -122,7 +124,9 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 			VerifyPeerCertificate: opts.VerifyServerCertificate,
 			VerifyConnection:      opts.VerifyConnection,
 		},
-		timeout: opts.Timeout,
+		clientMu:     &sync.Mutex{},
+		addrRedacted: addr.Redacted(),
+		timeout:      opts.Timeout,
 	}
 	for _, v := range httpVersions {
 		ups.tlsConf.NextProtos = append(ups.tlsConf.NextProtos, string(v))
@@ -133,8 +137,13 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 	return ups, nil
 }
 
-// Address implements the [Upstream] interface for *dnsOverHTTPS.
-func (p *dnsOverHTTPS) Address() string { return p.addr.String() }
+// type check
+var _ Upstream = (*dnsOverHTTPS)(nil)
+
+// Address implements the [Upstream] interface for *dnsOverHTTPS.  The address
+// is redacted: if the original URL of this upstream contains a userinfo with a
+// password, the password is replaced with "xxxxx".
+func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
 // Exchange implements the Upstream interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
@@ -215,16 +224,14 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
 
 // exchangeHTTPS logs the request and its result and calls exchangeHTTPSClient.
 func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *dns.Msg, err error) {
-	addr := p.Address()
-
 	n := networkTCP
 	if isHTTP3(client) {
 		n = networkUDP
 	}
 
-	logBegin(addr, n, req)
+	logBegin(p.addrRedacted, n, req)
 	resp, err = p.exchangeHTTPSClient(client, req)
-	logFinish(addr, n, err)
+	logFinish(p.addrRedacted, n, err)
 
 	return resp, err
 }
@@ -248,16 +255,21 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 		method = http3.MethodGet0RTT
 	}
 
+	q := url.Values{
+		"dns": []string{base64.RawURLEncoding.EncodeToString(buf)},
+	}
+
 	u := url.URL{
 		Scheme:   p.addr.Scheme,
+		User:     p.addr.User,
 		Host:     p.addr.Host,
 		Path:     p.addr.Path,
-		RawQuery: fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(buf)),
+		RawQuery: q.Encode(),
 	}
 
 	httpReq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating http request to %s: %w", p.addr, err)
+		return nil, fmt.Errorf("creating http request to %s: %w", p.addrRedacted, err)
 	}
 
 	httpReq.Header.Set("Accept", "application/dns-message")
@@ -265,13 +277,13 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("requesting %s: %w", p.addr, err)
+		return nil, fmt.Errorf("requesting %s: %w", p.addrRedacted, err)
 	}
 	defer log.OnCloserError(httpResp.Body, log.DEBUG)
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", p.addr, err)
+		return nil, fmt.Errorf("reading %s: %w", p.addrRedacted, err)
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
@@ -280,7 +292,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 				"expected status %d, got %d from %s",
 				http.StatusOK,
 				httpResp.StatusCode,
-				p.addr,
+				p.addrRedacted,
 			)
 	}
 
@@ -289,7 +301,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	if err != nil {
 		return nil, fmt.Errorf(
 			"unpacking response from %s: body is %s: %w",
-			p.addr,
+			p.addrRedacted,
 			body,
 			err,
 		)
@@ -358,7 +370,7 @@ func (p *dnsOverHTTPS) getQUICConfig() (c *quic.Config) {
 	p.quicConfMu.Lock()
 	defer p.quicConfMu.Unlock()
 
-	return p.quicConfig
+	return p.quicConf
 }
 
 // resetQUICConfig Re-create the token store to make sure we're not trying to
@@ -367,8 +379,8 @@ func (p *dnsOverHTTPS) resetQUICConfig() {
 	p.quicConfMu.Lock()
 	defer p.quicConfMu.Unlock()
 
-	p.quicConfig = p.quicConfig.Clone()
-	p.quicConfig.TokenStore = newQUICTokenStore()
+	p.quicConf = p.quicConf.Clone()
+	p.quicConf.TokenStore = newQUICTokenStore()
 }
 
 // getClient gets or lazily initializes an HTTP client (and transport) that will
@@ -428,7 +440,7 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
 func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 	dialContext, err := p.getDialer()
 	if err != nil {
-		return nil, fmt.Errorf("bootstrapping %s: %w", p.addr, err)
+		return nil, fmt.Errorf("bootstrapping %s: %w", p.addrRedacted, err)
 	}
 
 	// First, we attempt to create an HTTP3 transport.  If the probe QUIC
@@ -580,7 +592,7 @@ func (p *dnsOverHTTPS) probeH3(
 
 	udpConn, ok := rawConn.(*net.UDPConn)
 	if !ok {
-		return "", fmt.Errorf("not a UDP connection to %s", p.addr)
+		return "", fmt.Errorf("not a UDP connection to %s", p.addrRedacted)
 	}
 
 	addr = udpConn.RemoteAddr().String()
@@ -604,13 +616,13 @@ func (p *dnsOverHTTPS) probeH3(
 	probeTLSCfg.VerifyConnection = nil
 
 	// Run probeQUIC and probeTLS in parallel and see which one is faster.
-	chQuic := make(chan error, 1)
+	chQUIC := make(chan error, 1)
 	chTLS := make(chan error, 1)
-	go p.probeQUIC(addr, probeTLSCfg, chQuic)
+	go p.probeQUIC(addr, probeTLSCfg, chQUIC)
 	go p.probeTLS(dialContext, probeTLSCfg, chTLS)
 
 	select {
-	case quicErr := <-chQuic:
+	case quicErr := <-chQUIC:
 		if quicErr != nil {
 			// QUIC failed, return error since HTTP3 was not preferred.
 			return "", quicErr
@@ -643,7 +655,7 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
 
 	conn, err := quic.DialAddrEarly(ctx, addr, tlsConfig, p.getQUICConfig())
 	if err != nil {
-		ch <- fmt.Errorf("opening QUIC connection to %s: %w", p.addr, err)
+		ch <- fmt.Errorf("opening quic connection to %s: %w", p.addrRedacted, err)
 		return
 	}
 

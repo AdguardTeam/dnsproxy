@@ -32,10 +32,10 @@ import (
 type Upstream interface {
 	// Exchange sends the DNS query req to this upstream and returns the
 	// response that has been received or an error if something went wrong.
-	Exchange(req *dns.Msg) (*dns.Msg, error)
+	Exchange(req *dns.Msg) (resp *dns.Msg, err error)
 
 	// Address returns the address of the upstream DNS resolver.
-	Address() string
+	Address() (addr string)
 
 	// Closer used to close the upstreams properly.  Exchange shouldn't be
 	// called after calling Close.
@@ -285,23 +285,25 @@ func addPort(u *url.URL, port uint16) {
 // logBegin logs the start of DNS request resolution.  It should be called right
 // before dialing the connection to the upstream.  n is the [network] that will
 // be used to send the request.
-func logBegin(upstreamAddress string, n network, req *dns.Msg) {
+func logBegin(upsAddr string, n network, req *dns.Msg) {
 	qtype := ""
 	target := ""
 	if len(req.Question) != 0 {
 		qtype = dns.Type(req.Question[0].Qtype).String()
 		target = req.Question[0].Name
 	}
-	log.Debug("%s: sending request over %s: %s %s", upstreamAddress, n, qtype, target)
+
+	log.Debug("dnsproxy: %s: sending request over %s: %s %s", upsAddr, n, qtype, target)
 }
 
 // Write to log about the result of DNS request
-func logFinish(upstreamAddress string, n network, err error) {
+func logFinish(upsAddr string, n network, err error) {
 	status := "ok"
 	if err != nil {
 		status = err.Error()
 	}
-	log.Debug("%s: response received over %s: %s", upstreamAddress, n, status)
+
+	log.Debug("dnsproxy: %s: response received over %s: %q", upsAddr, n, status)
 }
 
 // DialerInitializer returns the handler that it creates.  All the subsequent

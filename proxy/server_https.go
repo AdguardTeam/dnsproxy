@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -98,17 +99,25 @@ func (p *Proxy) createHTTPSListeners() (err error) {
 //     "application/dns-message";
 //   - http.StatusMethodNotAllowed if request method is not GET or POST.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Tracef("Incoming HTTPS request on %s", r.URL)
+	log.Debug("dnsproxy: incoming https request on %s", r.URL)
+
+	raddr, prx, err := remoteAddr(r)
+	if err != nil {
+		log.Debug("dnsproxy: warning: getting real ip: %s", err)
+	}
+
+	if !p.checkBasicAuth(w, r, raddr) {
+		return
+	}
 
 	var buf []byte
-	var err error
 
 	switch r.Method {
 	case http.MethodGet:
 		dnsParam := r.URL.Query().Get("dns")
 		buf, err = base64.RawURLEncoding.DecodeString(dnsParam)
 		if len(buf) == 0 || err != nil {
-			log.Tracef("Cannot parse DNS request from %s", dnsParam)
+			log.Debug("dnsproxy: parsing dns request from get param %q: %v", dnsParam, err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 
 			return
@@ -116,7 +125,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		contentType := r.Header.Get("Content-Type")
 		if contentType != "application/dns-message" {
-			log.Tracef("Unsupported media type: %s", contentType)
+			log.Debug("dnsproxy: unsupported media type %q", contentType)
 			http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
 
 			return
@@ -124,14 +133,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		buf, err = io.ReadAll(r.Body)
 		if err != nil {
-			log.Tracef("Cannot read the request body: %s", err)
+			log.Debug("dnsproxy: reading http request body: %s", err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 
 			return
 		}
+
 		defer log.OnCloserError(r.Body, log.DEBUG)
 	default:
-		log.Tracef("Wrong HTTP method: %s", r.Method)
+		log.Debug("dnsproxy: bad http method %q", r.Method)
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 
 		return
@@ -139,35 +149,66 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	req := &dns.Msg{}
 	if err = req.Unpack(buf); err != nil {
-		log.Tracef("msg.Unpack: %s", err)
+		log.Debug("dnsproxy: unpacking http msg: %s", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 
 		return
 	}
 
-	addr, prx, err := remoteAddr(r)
-	if err != nil {
-		log.Debug("warning: getting real ip: %s", err)
-	}
-
 	d := p.newDNSContext(ProtoHTTPS, req)
-	d.Addr = addr
+	d.Addr = raddr
 	d.HTTPRequest = r
 	d.HTTPResponseWriter = w
 
 	if prx != nil {
 		ip, _ := netutil.IPAndPortFromAddr(prx)
-		log.Debug("request came from proxy server %s", prx)
+		log.Debug("dnsproxy: request came from proxy server %s", prx)
 		if !p.proxyVerifier.Contains(ip) {
-			log.Debug("proxy %s is not trusted, using original remote addr", ip)
+			log.Debug("dnsproxy: proxy %s is not trusted, using original remote addr", ip)
 			d.Addr = prx
 		}
 	}
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
-		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
+		log.Debug("dnsproxy: handling dns (%s) request: %s", d.Proto, err)
 	}
+}
+
+// checkBasicAuth checks the basic authorization data, if necessary, and if the
+// data isn't valid, it writes an error.  shouldHandle is false if the request
+// has been denied.
+func (p *Proxy) checkBasicAuth(
+	w http.ResponseWriter,
+	r *http.Request,
+	raddr net.Addr,
+) (shouldHandle bool) {
+	ui := p.Config.Userinfo
+	if ui == nil {
+		return true
+	}
+
+	user, pass, _ := r.BasicAuth()
+	if matchesUserinfo(ui, user, pass) {
+		return true
+	}
+
+	log.Error("dnsproxy: basic auth failed for user %q from raddr %s", user, raddr)
+
+	h := w.Header()
+	// TODO(a.garipov): Add to httphdr.
+	h.Set("Www-Authenticate", `Basic realm="DNS", charset="UTF-8"`)
+	http.Error(w, "Authorization required", http.StatusUnauthorized)
+
+	return false
+}
+
+// matchesUserinfo returns false if user and pass don't match userinfo.
+// userinfo must not be nil.
+func matchesUserinfo(userinfo *url.Userinfo, user, pass string) (ok bool) {
+	requiredPassword, _ := userinfo.Password()
+
+	return user == userinfo.Username() && pass == requiredPassword
 }
 
 // Writes a response to the DoH client.

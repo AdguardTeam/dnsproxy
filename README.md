@@ -86,6 +86,7 @@ Application Options:
       --dns64                      If specified, dnsproxy will act as a DNS64 server
       --dns64-prefix=              Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times
       --https-server-name=         Set the Server header for the responses from the HTTPS server. (default: dnsproxy)
+      --https-userinfo=            If set, all DoH queries are required to have this basic authentication information.
       --ipv6-disabled              If specified, all AAAA requests will be replied with NoError RCode and empty answer
       --bogus-nxdomain=            Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times.
       --udp-buf-size=              Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
@@ -349,3 +350,26 @@ instead of responses containing any IP from `192.168.0.0`-`192.168.255.255`:
 ```
 ./dnsproxy -u 192.168.0.15:53 --bogus-nxdomain=192.168.0.0/16
 ```
+
+### Basic Auth for DoH
+
+By setting the `--https-userinfo` option you can use `dnsproxy` as a DoH proxy
+with basic authentication requirements.
+
+For example:
+
+```sh
+./dnsproxy\
+    --https-port='443'\
+    --https-userinfo='user:p4ssw0rd'\
+    --tls-crt='…/my.crt'\
+    --tls-key='…/my.key'\
+    -u '94.140.14.14:53'
+```
+
+This configuration will only allow DoH queries that contain an `Authorization`
+header containing the BasicAuth credentials for user `user` with password
+`p4ssw0rd`.
+
+Add `-p 0` if you also want to disable plain-DNS handling and make `dnsproxy`
+only serve DoH with Basic Auth checking.

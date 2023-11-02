@@ -108,11 +108,11 @@ type Proxy struct {
 	// Upstream
 	// --
 
-	// upstreamRttStats is a map of upstream addresses and their rtt.  Used to
+	// upstreamRTTStats is a map of upstream addresses and their rtt.  Used to
 	// sort upstreams by their latency.
-	upstreamRttStats map[string]int
+	upstreamRTTStats map[string]int
 
-	// rttLock protects upstreamRttStats.
+	// rttLock protects upstreamRTTStats.
 	rttLock sync.Mutex
 
 	// DNS64 (in case dnsproxy works in a NAT64/DNS64 network)
@@ -174,11 +174,18 @@ type Proxy struct {
 	requestGoroutinesSema semaphore
 
 	// Config is the proxy configuration.
+	//
+	// TODO(a.garipov): Remove this embed and create a proper initializer.
 	Config
 }
 
 // Init populates fields of p but does not start listeners.
 func (p *Proxy) Init() (err error) {
+	err = p.validateBasicAuth()
+	if err != nil {
+		return fmt.Errorf("basic auth: %w", err)
+	}
+
 	p.initCache()
 
 	if p.MaxGoroutines > 0 {
@@ -222,6 +229,21 @@ func (p *Proxy) Init() (err error) {
 	err = p.setupDNS64()
 	if err != nil {
 		return fmt.Errorf("setting up DNS64: %w", err)
+	}
+
+	return nil
+}
+
+// validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
+// is set.
+func (p *Proxy) validateBasicAuth() (err error) {
+	conf := p.Config
+	if conf.Userinfo == nil {
+		return nil
+	}
+
+	if len(conf.HTTPSListenAddr) == 0 {
+		return errors.Error("no https addrs")
 	}
 
 	return nil

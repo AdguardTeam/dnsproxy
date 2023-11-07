@@ -146,11 +146,11 @@ type Options struct {
 
 	// RatelimitSubnetLenIPv4 is a subnet length for IPv4 addresses used for
 	// rate limiting requests
-	RatelimitSubnetLenIPv4 int `yaml:"ratelimit-subnet-len-v4" long:"ratelimit-subnet-len-ipv4" description:"Ratelimit subnet length for IPv4." default:"24"`
+	RatelimitSubnetLenIPv4 int `yaml:"ratelimit-subnet-len-ipv4" long:"ratelimit-subnet-len-ipv4" description:"Ratelimit subnet length for IPv4." default:"24"`
 
 	// RatelimitSubnetLenIPv6 is a subnet length for IPv6 addresses used for
 	// rate limiting requests
-	RatelimitSubnetLenIPv6 int `yaml:"ratelimit-subnet-len-v6" long:"ratelimit-subnet-len-ipv6" description:"Ratelimit subnet length for IPv6." default:"64"`
+	RatelimitSubnetLenIPv6 int `yaml:"ratelimit-subnet-len-ipv6" long:"ratelimit-subnet-len-ipv6" description:"Ratelimit subnet length for IPv6." default:"64"`
 
 	// If true, refuse ANY requests
 	RefuseAny bool `yaml:"refuse-any" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`

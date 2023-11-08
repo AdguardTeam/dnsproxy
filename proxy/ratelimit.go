@@ -53,7 +53,7 @@ func (p *Proxy) isRatelimited(addr net.Addr) (ok bool) {
 		}
 	}
 
-	if len(ip) == net.IPv4len {
+	if ip.To4() != nil {
 		ip = ip.Mask(p.RatelimitSubnetMaskIPv4)
 	} else {
 		ip = ip.Mask(p.RatelimitSubnetMaskIPv6)

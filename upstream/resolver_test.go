@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,22 +50,22 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 	}, {
 		name: "invalid_tls",
 		addr: "tls://dns.adguard.com",
-		wantErrMsg: `bootstrap tls://dns.adguard.com:853: ` +
-			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
+		wantErrMsg: `not a bootstrap: ParseAddr("dns.adguard.com"): ` +
+			`unexpected character (at "dns.adguard.com")`,
 	}, {
 		name: "invalid_https",
 		addr: "https://dns.adguard.com/dns-query",
-		wantErrMsg: `bootstrap https://dns.adguard.com:443/dns-query: ` +
-			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
+		wantErrMsg: `not a bootstrap: ParseAddr("dns.adguard.com"): ` +
+			`unexpected character (at "dns.adguard.com")`,
 	}, {
 		name: "invalid_tcp",
 		addr: "tcp://dns.adguard.com",
-		wantErrMsg: `bootstrap tcp://dns.adguard.com:53: ` +
-			`ParseAddr("dns.adguard.com"): unexpected character (at "dns.adguard.com")`,
+		wantErrMsg: `not a bootstrap: ParseAddr("dns.adguard.com"): ` +
+			`unexpected character (at "dns.adguard.com")`,
 	}, {
 		name: "invalid_no_scheme",
 		addr: "dns.adguard.com",
-		wantErrMsg: `bootstrap dns.adguard.com:53: ParseAddr("dns.adguard.com"): ` +
+		wantErrMsg: `not a bootstrap: ParseAddr("dns.adguard.com"): ` +
 			`unexpected character (at "dns.adguard.com")`,
 	}}
 
@@ -73,6 +74,9 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 			r, err := NewUpstreamResolver(tc.addr, withTimeoutOpt)
 			if tc.wantErrMsg != "" {
 				assert.Equal(t, tc.wantErrMsg, err.Error())
+				if nberr := (&NotBootstrapError{}); errors.As(err, &nberr) {
+					assert.NotNil(t, r)
+				}
 
 				return
 			}

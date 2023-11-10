@@ -2,10 +2,10 @@ package proxy
 
 import (
 	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -16,19 +16,12 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	prx := createTestProxy(t, nil)
 	prx.CacheEnabled = true
 
-	prx.BogusNXDomain = []*net.IPNet{{
-		IP:   net.IP{4, 3, 2, 1},
-		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-	}, {
-		IP:   net.IPv4(1, 2, 3, 4),
-		Mask: net.IPv4Mask(255, 0, 0, 0),
-	}, {
-		IP:   net.IP{10, 11, 12, 13},
-		Mask: net.CIDRMask(netutil.IPv4BitLen, netutil.IPv4BitLen),
-	}, {
-		IP:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-		Mask: net.CIDRMask(120, netutil.IPv6BitLen),
-	}}
+	prx.BogusNXDomain = []netip.Prefix{
+		netip.MustParsePrefix("4.3.2.1/24"),
+		netip.MustParsePrefix("1.2.3.4/8"),
+		netip.MustParsePrefix("10.11.12.13/32"),
+		netip.MustParsePrefix("102:304:506:708:90a:b0c:d0e:f10/120"),
+	}
 
 	testCases := []struct {
 		name      string
@@ -103,64 +96,52 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 }
 
 func TestContainsIP(t *testing.T) {
-	nets := []*net.IPNet{{
-		// IPv4.
-		IP:   net.IP{1, 2, 3, 0},
-		Mask: net.IPv4Mask(255, 255, 255, 0),
-	}, {
-		// IPv6 from IPv4.
-		IP:   net.IPv4(1, 2, 4, 0),
-		Mask: net.CIDRMask(16, 32),
-	}, {
-		// IPv6.
-		IP:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0},
-		Mask: net.CIDRMask(120, net.IPv6len*8),
-	}}
+	nets := []netip.Prefix{
+		netip.MustParsePrefix("1.2.3.0/24"),
+		netip.MustParsePrefix("ffff::1.2.4.0/112"),
+		netip.MustParsePrefix("102:304:506:708:90a:b0c:d0e:f00/120"),
+	}
 
 	testCases := []struct {
-		name string
 		want assert.BoolAssertionFunc
-		ip   net.IP
+		ip   netip.Addr
+		name string
 	}{{
 		name: "ipv4_yes",
 		want: assert.True,
-		ip:   net.IP{1, 2, 3, 255},
+		ip:   netip.MustParseAddr("1.2.3.255"),
 	}, {
 		name: "ipv4_6_yes",
 		want: assert.True,
-		ip:   net.IPv4(1, 2, 4, 254),
+		ip:   netip.MustParseAddr("ffff::1.2.4.254"),
 	}, {
 		name: "ipv6_yes",
 		want: assert.True,
-		ip:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		ip:   netip.MustParseAddr("102:304:506:708:90a:b0c:d0e:f0f"),
 	}, {
 		name: "ipv6_4_yes",
 		want: assert.True,
-		ip:   net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 1, 2, 3, 0},
+		ip:   netip.MustParseAddr("ffff::1.2.3.0"),
 	}, {
 		name: "ipv4_no",
 		want: assert.False,
-		ip:   net.IP{2, 1, 3, 255},
+		ip:   netip.MustParseAddr("2.1.3.255"),
 	}, {
 		name: "ipv4_6_no",
 		want: assert.False,
-		ip:   net.IPv4(2, 1, 4, 254),
+		ip:   netip.MustParseAddr("2.1.4.254"),
 	}, {
 		name: "ipv6_no",
 		want: assert.False,
-		ip:   net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 15},
+		ip:   netip.MustParseAddr("102:304:506:708:90a:b0c:d0e:10f"),
 	}, {
 		name: "ipv6_4_no",
 		want: assert.False,
-		ip:   net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 2, 1, 4, 0},
+		ip:   netip.MustParseAddr("ffff::2.1.4.0"),
 	}, {
-		name: "nil_no",
+		name: "invalid",
 		want: assert.False,
-		ip:   nil,
-	}, {
-		name: "bad_ip",
-		want: assert.False,
-		ip:   net.IP{42},
+		ip:   netip.Addr{},
 	}}
 
 	for _, tc := range testCases {

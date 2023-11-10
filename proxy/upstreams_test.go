@@ -23,7 +23,7 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 		upstreams,
 		&upstream.Options{
 			InsecureSkipVerify: false,
-			Bootstrap:          []string{},
+			Bootstrap:          nil,
 			Timeout:            1 * time.Second,
 		},
 	)
@@ -84,7 +84,6 @@ func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 		upstreams,
 		&upstream.Options{
 			InsecureSkipVerify: false,
-			Bootstrap:          []string{},
 			Timeout:            1 * time.Second,
 		},
 	)
@@ -172,7 +171,7 @@ func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 		upstreams,
 		&upstream.Options{
 			InsecureSkipVerify: false,
-			Bootstrap:          []string{},
+			Bootstrap:          nil,
 			Timeout:            1 * time.Second,
 		},
 	)
@@ -349,7 +348,7 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		upstreams,
 		&upstream.Options{
 			InsecureSkipVerify: false,
-			Bootstrap:          []string{},
+			Bootstrap:          nil,
 			Timeout:            1 * time.Second,
 		},
 	)

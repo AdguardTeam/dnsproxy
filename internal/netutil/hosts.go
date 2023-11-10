@@ -44,6 +44,9 @@ type (
 // It must be initialized with [NewHosts].
 //
 // TODO(e.burkov):  Think of storing only slices.
+//
+// TODO(e.burkov):  Move to netutil/hostsfile in module golibs as a default
+// implementation of some storage interface.
 type Hosts struct {
 	// names maps each address to its names in original case and in original
 	// adding order without duplicates.
@@ -53,9 +56,6 @@ type Hosts struct {
 	// duplicates.
 	addrs map[string]*addrsSet
 }
-
-// type check
-var _ hostsfile.HandleSet = (*Hosts)(nil)
 
 // NewHosts parses hosts files from r and returns a new Hosts set.  readers are
 // optional, the error is only returned in case of parsing error.

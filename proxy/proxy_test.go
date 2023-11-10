@@ -353,6 +353,11 @@ func TestUpstreamsSort(t *testing.T) {
 func TestExchangeWithReservedDomains(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
 
+	googleRslv, err := upstream.NewUpstreamResolver("8.8.8.8", &upstream.Options{
+		Timeout: 1 * time.Second,
+	})
+	require.NoError(t, err)
+
 	// Upstreams specification. Domains adguard.com and google.ru reserved
 	// with fake upstreams, maps.google.ru excluded from dnsmasq.
 	upstreams := []string{
@@ -365,7 +370,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 		upstreams,
 		&upstream.Options{
 			InsecureSkipVerify: false,
-			Bootstrap:          []string{"8.8.8.8"},
+			Bootstrap:          googleRslv,
 			Timeout:            1 * time.Second,
 		},
 	)
@@ -435,6 +440,11 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	googleRslv, err := upstream.NewUpstreamResolver("8.8.8.8:53", &upstream.Options{
+		Timeout: timeOut,
+	})
+	require.NoError(t, err)
+
 	// add one valid and two invalid upstreams
 	upstreams := []string{"https://fake-dns.com/fake-dns-query", "tls://fake-dns.com", "1.1.1.1"}
 	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{}
@@ -443,7 +453,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 		u, err = upstream.AddressToUpstream(
 			line,
 			&upstream.Options{
-				Bootstrap: []string{"8.8.8.8:53"},
+				Bootstrap: googleRslv,
 				Timeout:   timeOut,
 			},
 		)
@@ -624,11 +634,16 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	invalidRslv, err := upstream.NewUpstreamResolver("8.8.8.8:555", &upstream.Options{
+		Timeout: 1 * time.Second,
+	})
+	require.NoError(t, err)
+
 	// Using a DoT server with invalid bootstrap.
 	u, _ := upstream.AddressToUpstream(
 		"tls://dns.adguard.com",
 		&upstream.Options{
-			Bootstrap: []string{"8.8.8.8:555"},
+			Bootstrap: invalidRslv,
 			Timeout:   timeout,
 		},
 	)

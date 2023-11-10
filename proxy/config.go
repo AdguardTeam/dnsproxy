@@ -111,7 +111,7 @@ type Config struct {
 	// BogusNXDomain is the set of networks used to transform responses into
 	// NXDOMAIN ones if they contain at least a single IP address within these
 	// networks.  It's similar to dnsmasq's "bogus-nxdomain".
-	BogusNXDomain []*net.IPNet
+	BogusNXDomain []netip.Prefix
 
 	// Enable EDNS Client Subnet option DNS requests to the upstream server will
 	// contain an OPT record with Client Subnet option.  If the original request

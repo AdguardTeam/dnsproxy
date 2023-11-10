@@ -98,7 +98,7 @@ func TestResolveDialContext(t *testing.T) {
 			dialContext, err := bootstrap.ResolveDialContext(
 				&url.URL{Host: netutil.JoinHostPort(hostname, port)},
 				testTimeout,
-				[]bootstrap.Resolver{r},
+				bootstrap.ParallelResolver{r},
 				tc.preferIPv6,
 			)
 			require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestResolveDialContext(t *testing.T) {
 		dialContext, err := bootstrap.ResolveDialContext(
 			&url.URL{Host: netutil.JoinHostPort(hostname, port)},
 			testTimeout,
-			[]bootstrap.Resolver{r},
+			bootstrap.ParallelResolver{r},
 			false,
 		)
 		require.NoError(t, err)

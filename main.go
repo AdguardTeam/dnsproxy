@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
+	"github.com/AdguardTeam/dnsproxy/internal/osutil"
 	"github.com/AdguardTeam/dnsproxy/internal/version"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -399,13 +402,21 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		}
 	}
 
-	var err error
-
 	timeout := options.Timeout.Duration
+	bootOpts := &upstream.Options{
+		HTTPVersions:       httpVersions,
+		InsecureSkipVerify: options.Insecure,
+		Timeout:            timeout,
+	}
+	boot, err := initBootstrap(options.BootstrapDNS, bootOpts)
+	if err != nil {
+		log.Fatalf("error while initializing bootstrap: %s", err)
+	}
+
 	upsOpts := &upstream.Options{
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: options.Insecure,
-		Bootstrap:          options.BootstrapDNS,
+		Bootstrap:          boot,
 		Timeout:            timeout,
 	}
 	upstreams := loadServersList(options.Upstreams)
@@ -417,7 +428,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 
 	privUpsOpts := &upstream.Options{
 		HTTPVersions: httpVersions,
-		Bootstrap:    options.BootstrapDNS,
+		Bootstrap:    boot,
 		Timeout:      mathutil.Min(defaultLocalTimeout, timeout),
 	}
 	privUpstreams := loadServersList(options.PrivateRDNSUpstreams)
@@ -449,6 +460,39 @@ func initUpstreams(config *proxy.Config, options *Options) {
 	}
 }
 
+// initBootstrap initializes the [upstream.Resolver] for bootstrapping upstream
+// servers.  It returns the default resolver if no bootstraps were specified.
+// The returned resolver will also use system hosts files first.
+func initBootstrap(bootstraps []string, opts *upstream.Options) (r upstream.Resolver, err error) {
+	var resolvers []upstream.Resolver
+
+	for i, b := range bootstraps {
+		var resolver upstream.Resolver
+		resolver, err = upstream.NewUpstreamResolver(b, opts)
+		if err != nil {
+			return nil, fmt.Errorf("creating bootstrap resolver at index %d: %w", i, err)
+		}
+
+		resolvers = append(resolvers, resolver)
+	}
+
+	switch len(resolvers) {
+	case 0:
+		etcHosts, hostsErr := bootstrap.NewDefaultHostsResolver(osutil.RootDirFS())
+		if hostsErr != nil {
+			log.Error("creating default hosts resolver: %s", hostsErr)
+
+			return net.DefaultResolver, nil
+		}
+
+		return upstream.ConsequentResolver{etcHosts, net.DefaultResolver}, nil
+	case 1:
+		return resolvers[0], nil
+	default:
+		return upstream.ParallelResolver(resolvers), nil
+	}
+}
+
 // initEDNS inits EDNS-related config
 func initEDNS(config *proxy.Config, options *Options) {
 	if options.EDNSAddr != "" {
@@ -470,15 +514,13 @@ func initBogusNXDomain(config *proxy.Config, options *Options) {
 		return
 	}
 
-	for _, s := range options.BogusNXDomain {
-		subnet, err := netutil.ParseSubnet(s)
+	for i, s := range options.BogusNXDomain {
+		p, err := proxynetutil.ParseSubnet(s)
 		if err != nil {
-			log.Error("%s", err)
-
-			continue
+			log.Error("parsing bogus nxdomain subnet at index %d: %s", i, err)
+		} else {
+			config.BogusNXDomain = append(config.BogusNXDomain, p)
 		}
-
-		config.BogusNXDomain = append(config.BogusNXDomain, subnet)
 	}
 }
 

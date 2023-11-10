@@ -8,6 +8,7 @@ package netutil
 import (
 	"net"
 	"net/netip"
+	"strings"
 
 	glnetutil "github.com/AdguardTeam/golibs/netutil"
 	"golang.org/x/exp/slices"
@@ -92,4 +93,27 @@ func SortNetIPAddrs(addrs []netip.Addr, preferIPv6 bool) {
 
 		return 1
 	})
+}
+
+// ParseSubnet parses s either as a CIDR prefix itself, or as an IP address,
+// returning the corresponding single-IP CIDR prefix.
+//
+// TODO(e.burkov):  Move to golibs.
+func ParseSubnet(s string) (p netip.Prefix, err error) {
+	if strings.Contains(s, "/") {
+		p, err = netip.ParsePrefix(s)
+		if err != nil {
+			return netip.Prefix{}, err
+		}
+	} else {
+		var ip netip.Addr
+		ip, err = netip.ParseAddr(s)
+		if err != nil {
+			return netip.Prefix{}, err
+		}
+
+		p = netip.PrefixFrom(ip, ip.BitLen())
+	}
+
+	return p, nil
 }

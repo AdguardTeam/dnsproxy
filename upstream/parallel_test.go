@@ -75,8 +75,8 @@ func TestLookupParallelEmpty(t *testing.T) {
 	u2 := testUpstream{}
 
 	resolvers := []Resolver{}
-	resolvers = append(resolvers, &upstreamResolver{Upstream: &u1})
-	resolvers = append(resolvers, &upstreamResolver{Upstream: &u2})
+	resolvers = append(resolvers, &UpstreamResolver{Upstream: &u1})
+	resolvers = append(resolvers, &UpstreamResolver{Upstream: &u2})
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
 	defer cancel()

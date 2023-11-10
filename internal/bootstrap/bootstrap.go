@@ -21,12 +21,12 @@ import (
 // specified at initialization and ignores the addr.
 type DialHandler func(ctx context.Context, network, addr string) (conn net.Conn, err error)
 
-// ResolveDialContext returns a DialHandler that uses addresses resolved from
-// u using resolvers.  u must not be nil.
+// ResolveDialContext returns a DialHandler that uses addresses resolved from u
+// using resolver.  u must not be nil.
 func ResolveDialContext(
 	u *url.URL,
 	timeout time.Duration,
-	resolvers []Resolver,
+	resolver Resolver,
 	preferIPv6 bool,
 ) (h DialHandler, err error) {
 	defer func() { err = errors.Annotate(err, "dialing %q: %w", u.Host) }()
@@ -38,6 +38,10 @@ func ResolveDialContext(
 		return nil, err
 	}
 
+	if resolver == nil {
+		return nil, fmt.Errorf("resolver is nil: %w", ErrNoResolvers)
+	}
+
 	ctx := context.Background()
 	if timeout > 0 {
 		var cancel func()
@@ -45,7 +49,7 @@ func ResolveDialContext(
 		defer cancel()
 	}
 
-	ips, err := LookupParallel(ctx, resolvers, host)
+	ips, err := resolver.LookupNetIP(ctx, "ip", host)
 	if err != nil {
 		return nil, fmt.Errorf("resolving hostname: %w", err)
 	}

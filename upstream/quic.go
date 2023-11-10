@@ -57,9 +57,6 @@ type dnsOverQUIC struct {
 	// one.
 	getDialer DialerInitializer
 
-	// closeBoot is the function to close the bootstrap upstreams.
-	closeBoot closeFunc
-
 	// addr is the DNS-over-QUIC server URL.
 	addr *url.URL
 
@@ -93,21 +90,12 @@ type dnsOverQUIC struct {
 	timeout time.Duration
 }
 
-// type check
-var _ Upstream = (*dnsOverQUIC)(nil)
-
 // newDoQ returns the DNS-over-QUIC Upstream.
 func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 	addPort(addr, defaultPortDoQ)
 
-	getDialer, closeBoot, err := newDialerInitializer(addr, opts)
-	if err != nil {
-		return nil, err
-	}
-
 	u = &dnsOverQUIC{
-		getDialer: getDialer,
-		closeBoot: closeBoot,
+		getDialer: newDialerInitializer(addr, opts),
 		addr:      addr,
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
@@ -137,6 +125,9 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 
 	return u, nil
 }
+
+// type check
+var _ Upstream = (*dnsOverQUIC)(nil)
 
 // Address implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Address() string { return p.addr.String() }

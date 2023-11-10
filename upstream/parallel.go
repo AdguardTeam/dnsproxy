@@ -5,15 +5,19 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
 
-// ErrNoUpstreams is returned from the methods that expect at least a single
-// upstream to work with when no upstreams specified.
-const ErrNoUpstreams errors.Error = "no upstream specified"
+const (
+	// ErrNoUpstreams is returned from the methods that expect at least a single
+	// upstream to work with when no upstreams specified.
+	ErrNoUpstreams errors.Error = "no upstream specified"
+
+	// ErrNoReply is returned from [ExchangeAll] when no upstreams replied.
+	ErrNoReply errors.Error = "no reply"
+)
 
 // ExchangeParallel returns the dirst successful response from one of u.  It
 // returns an error if all upstreams failed to exchange the request.
@@ -30,23 +34,21 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Upst
 		// Go on.
 	}
 
-	ch := make(chan *exchangeResult, upsNum)
-
+	resCh := make(chan *ExchangeAllResult)
+	errCh := make(chan error)
 	for _, f := range u {
-		go exchangeAsync(f, req, ch)
+		go exchangeAsync(f, req, resCh, errCh)
 	}
 
 	errs := []error{}
 	for range u {
-		rep := <-ch
-		if rep.err != nil {
-			errs = append(errs, rep.err)
-
-			continue
-		}
-
-		if rep.reply != nil {
-			return rep.reply, rep.upstream, nil
+		select {
+		case excErr := <-errCh:
+			errs = append(errs, excErr)
+		case rep := <-resCh:
+			if rep.Resp != nil {
+				return rep.Resp, rep.Upstream, nil
+			}
 		}
 	}
 
@@ -54,8 +56,7 @@ func ExchangeParallel(u []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Upst
 		return nil, nil, errors.Error("none of upstream servers responded")
 	}
 
-	// TODO(e.burkov):  Use [errors.Join] in Go 1.20.
-	return nil, nil, errors.List("all upstreams failed to respond", errs...)
+	return nil, nil, errors.Join(errs...)
 }
 
 // ExchangeAllResult is the successful result of [ExchangeAll] for a single
@@ -81,7 +82,7 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 		if err != nil {
 			return nil, err
 		} else if reply == nil {
-			return nil, errors.Error("no reply")
+			return nil, ErrNoReply
 		}
 
 		return []ExchangeAllResult{{Upstream: ups[0], Resp: reply}}, nil
@@ -90,33 +91,25 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 	}
 
 	res = make([]ExchangeAllResult, 0, upsl)
-	errs := make([]error, 0, upsl)
-	resCh := make(chan *exchangeResult, upsl)
+	var errs []error
+
+	resCh := make(chan *ExchangeAllResult)
+	errCh := make(chan error)
 
 	// Start exchanging concurrently.
 	for _, u := range ups {
-		go exchangeAsync(u, req, resCh)
+		go exchangeAsync(u, req, resCh, errCh)
 	}
 
 	// Wait for all exchanges to finish.
 	for range ups {
-		rep := <-resCh
-		if rep.err != nil {
-			errs = append(errs, rep.err)
-
-			continue
+		var r *ExchangeAllResult
+		r, err = receiveAsyncResult(resCh, errCh)
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			res = append(res, *r)
 		}
-
-		if rep.reply == nil {
-			errs = append(errs, errors.Error("no reply"))
-
-			continue
-		}
-
-		res = append(res, ExchangeAllResult{
-			Resp:     rep.reply,
-			Upstream: rep.upstream,
-		})
 	}
 
 	if len(errs) == upsl {
@@ -127,26 +120,33 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 	return res, nil
 }
 
-// exchangeResult represents the result of DNS exchange.
-type exchangeResult = struct {
-	// upstream is the Upstream that successfully resolved the request.
-	upstream Upstream
+// receiveAsyncResult receives a single result from resCh or an error from
+// errCh.  It returns either a non-nil result or an error.
+func receiveAsyncResult(
+	resCh chan *ExchangeAllResult,
+	errCh chan error,
+) (res *ExchangeAllResult, err error) {
+	select {
+	case err = <-errCh:
+		return nil, err
+	case rep := <-resCh:
+		if rep.Resp == nil {
+			return nil, ErrNoReply
+		}
 
-	// reply is the response DNS request resolved into.
-	reply *dns.Msg
-
-	// err is the error that occurred while resolving the request.
-	err error
+		return rep, nil
+	}
 }
 
 // exchangeAsync tries to resolve DNS request with one upstream and sends the
 // result to respCh.
-func exchangeAsync(u Upstream, req *dns.Msg, respCh chan *exchangeResult) {
-	res := &exchangeResult{upstream: u}
-
-	res.reply, res.err = exchangeAndLog(u, req)
-
-	respCh <- res
+func exchangeAsync(u Upstream, req *dns.Msg, respCh chan *ExchangeAllResult, errCh chan error) {
+	reply, err := exchangeAndLog(u, req)
+	if err != nil {
+		errCh <- err
+	} else {
+		respCh <- &ExchangeAllResult{Resp: reply, Upstream: u}
+	}
 }
 
 // exchangeAndLog wraps the [Upstream.Exchange] method with logging.
@@ -169,6 +169,12 @@ func exchangeAndLog(u Upstream, req *dns.Msg) (resp *dns.Msg, err error) {
 
 // LookupParallel tries to lookup for ip of host with all resolvers
 // concurrently.
-func LookupParallel(ctx context.Context, resolvers []Resolver, host string) ([]netip.Addr, error) {
-	return bootstrap.LookupParallel(ctx, resolvers, host)
+//
+// Deprecated:  Use [ParallelResolver] instead.
+func LookupParallel(
+	ctx context.Context,
+	resolvers []Resolver,
+	host string,
+) (addrs []netip.Addr, err error) {
+	return ParallelResolver(resolvers).LookupNetIP(ctx, "ip", host)
 }

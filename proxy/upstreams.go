@@ -89,8 +89,6 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 		options = &upstream.Options{}
 	}
 
-	log.Debug("Bootstraps: %s", options.Bootstrap)
-
 	p := &configParser{
 		options:                  options,
 		upstreamsIndex:           map[string]upstream.Upstream{},

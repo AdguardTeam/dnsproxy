@@ -173,26 +173,28 @@ run_linter govulncheck ./...
 run_linter gocyclo --over 10\
 	./internal/bootstrap/\
 	./internal/netutil/\
+	./internal/osutil/\
 	./internal/version/\
 	./proxyutil/\
+	./upstream/\
 	;
 
 run_linter gocyclo --over 20 ./main.go
 run_linter gocyclo --over 18 ./fastip/
 run_linter gocyclo --over 15 ./proxy/
-run_linter gocyclo --over 14 ./upstream/
 
 # TODO(a.garipov): Enable for all.
 run_linter gocognit --over 10\
 	./internal/bootstrap/\
+	./internal/osutil/\
 	./internal/version/\
 	./proxyutil/\
+	./upstream/\
 	;
 
-run_linter gocognit --over 39 ./main.go
-run_linter gocognit --over 33 ./proxy/
-run_linter gocognit --over 32 ./fastip/
-run_linter gocognit --over 24 ./upstream/
+run_linter gocognit --over 35 ./main.go
+run_linter gocognit --over 31 ./proxy/
+run_linter gocognit --over 29 ./fastip/
 run_linter gocognit --over 14 ./internal/netutil/
 
 run_linter ineffassign ./...

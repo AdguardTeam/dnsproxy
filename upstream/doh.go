@@ -49,9 +49,6 @@ type dnsOverHTTPS struct {
 	// one.
 	getDialer DialerInitializer
 
-	// closeBoot is the function to close the bootstrap upstreams.
-	closeBoot closeFunc
-
 	// addr is the DNS-over-HTTPS server URL.
 	addr *url.URL
 
@@ -93,15 +90,8 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 		httpVersions = DefaultHTTPVersions
 	}
 
-	getDialer, closeBoot, err := newDialerInitializer(addr, opts)
-	if err != nil {
-		// Don't wrap the error since it's informative enough as is.
-		return nil, err
-	}
-
 	ups := &dnsOverHTTPS{
-		getDialer: getDialer,
-		closeBoot: closeBoot,
+		getDialer: newDialerInitializer(addr, opts),
 		addr:      addr,
 		quicConf: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
@@ -208,7 +198,7 @@ func (p *dnsOverHTTPS) Close() (err error) {
 		err = p.closeClient(p.client)
 	}
 
-	return errors.Join(err, errors.Annotate(p.closeBoot(), "closing bootstrap: %w"))
+	return err
 }
 
 // closeClient cleans up resources used by client if necessary.  Note, that at

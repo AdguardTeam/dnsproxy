@@ -1,10 +1,9 @@
 package proxy
 
 import (
-	"net"
+	"net/netip"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -27,8 +26,8 @@ func (p *Proxy) isBogusNXDomain(m *dns.Msg) (ok bool) {
 	return false
 }
 
-func containsIP(nets []*net.IPNet, ip net.IP) (ok bool) {
-	if netutil.ValidateIP(ip) != nil {
+func containsIP(nets []netip.Prefix, ip netip.Addr) (ok bool) {
+	if !ip.IsValid() {
 		return false
 	}
 

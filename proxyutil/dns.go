@@ -4,7 +4,7 @@ package proxyutil
 
 import (
 	"encoding/binary"
-	"net"
+	"net/netip"
 
 	"github.com/miekg/dns"
 )
@@ -19,15 +19,18 @@ func AddPrefix(b []byte) (m []byte) {
 }
 
 // IPFromRR returns the IP address from rr if any.
-func IPFromRR(rr dns.RR) (ip net.IP) {
+func IPFromRR(rr dns.RR) (ip netip.Addr) {
+	var data []byte
 	switch rr := rr.(type) {
 	case *dns.A:
-		ip = rr.A.To4()
+		data = rr.A.To4()
 	case *dns.AAAA:
-		ip = rr.AAAA
+		data = rr.AAAA
 	default:
-		// Go on.
+		return netip.Addr{}
 	}
+
+	ip, _ = netip.AddrFromSlice(data)
 
 	return ip
 }

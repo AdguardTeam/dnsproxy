@@ -31,9 +31,6 @@ type dnsOverTLS struct {
 	// new one.
 	getDialer DialerInitializer
 
-	// closeBoot is the function to close the bootstrap upstreams.
-	closeBoot closeFunc
-
 	// tlsConf is the configuration of TLS.
 	tlsConf *tls.Config
 
@@ -50,23 +47,13 @@ type dnsOverTLS struct {
 	conns []net.Conn
 }
 
-// type check
-var _ Upstream = (*dnsOverTLS)(nil)
-
 // newDoT returns the DNS-over-TLS Upstream.
 func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 	addPort(addr, defaultPortDoT)
 
-	getDialer, closeBoot, err := newDialerInitializer(addr, opts)
-	if err != nil {
-		// Don't wrap the error since it's informative enough as is.
-		return nil, err
-	}
-
 	tlsUps := &dnsOverTLS{
 		addr:      addr,
-		getDialer: getDialer,
-		closeBoot: closeBoot,
+		getDialer: newDialerInitializer(addr, opts),
 		// #nosec G402 -- TLS certificate verification could be disabled by
 		// configuration.
 		tlsConf: &tls.Config{
@@ -89,6 +76,9 @@ func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 
 	return tlsUps, nil
 }
+
+// type check
+var _ Upstream = (*dnsOverTLS)(nil)
 
 // Address implements the [Upstream] interface for *dnsOverTLS.
 func (p *dnsOverTLS) Address() string { return p.addr.String() }
@@ -150,8 +140,6 @@ func (p *dnsOverTLS) Close() (err error) {
 			closeErrs = append(closeErrs, closeErr)
 		}
 	}
-
-	closeErrs = append(closeErrs, errors.Annotate(p.closeBoot(), "closing bootstrap: %w"))
 
 	return errors.Join(closeErrs...)
 }

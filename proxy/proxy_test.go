@@ -846,8 +846,13 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 	}
 
 	d := &DNSContext{
-		CustomUpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-		Req:                  createHostTestMessage("host"),
+		CustomUpstreamConfig: NewCustomUpstreamConfig(
+			&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+			false,
+			0,
+			false,
+		),
+		Req: createHostTestMessage("host"),
 		Addr: &net.TCPAddr{
 			IP: net.IP{1, 2, 3, 0},
 		},
@@ -869,7 +874,7 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, prx.Stop)
 
 	ansIP := net.IP{4, 3, 2, 1}
-	u := testUpstream{
+	u := &testUpstream{
 		ans: []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
 				Rrtype: dns.TypeA,
@@ -881,7 +886,64 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 	}
 
 	d := DNSContext{
-		CustomUpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{&u}},
+		CustomUpstreamConfig: NewCustomUpstreamConfig(
+			&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+			false,
+			0,
+			false,
+		),
+		Req:  createHostTestMessage("host"),
+		Addr: &net.TCPAddr{IP: net.IP{1, 2, 3, 0}},
+	}
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
+	assert.Equal(t, ansIP, getIPFromResponse(d.Res))
+}
+
+func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
+	prx := createTestProxy(t, nil)
+	prx.CacheEnabled = true
+	prx.initCache()
+
+	err := prx.Start()
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, prx.Stop)
+
+	var count int
+
+	ansIP := net.IP{4, 3, 2, 1}
+	exchangeFunc := func(m *dns.Msg) (resp *dns.Msg, err error) {
+		resp = &dns.Msg{}
+		resp.SetReply(m)
+		resp.Answer = append(resp.Answer, &dns.A{
+			Hdr: dns.RR_Header{
+				Name:   m.Question[0].Name,
+				Class:  dns.ClassINET,
+				Rrtype: dns.TypeA,
+				Ttl:    defaultTestTTL,
+			},
+			A: ansIP,
+		})
+
+		count++
+
+		return resp, nil
+	}
+	u := &funcUpstream{
+		exchangeFunc: exchangeFunc,
+	}
+
+	customUpstreamConfig := NewCustomUpstreamConfig(
+		&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+		true,
+		defaultCacheSize,
+		prx.EnableEDNSClientSubnet,
+	)
+
+	d := DNSContext{
+		CustomUpstreamConfig: customUpstreamConfig,
 		Req:                  createHostTestMessage("host"),
 		Addr:                 &net.TCPAddr{IP: net.IP{1, 2, 3, 0}},
 	}
@@ -889,6 +951,21 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 	err = prx.Resolve(&d)
 	require.NoError(t, err)
 
+	assert.Equal(t, 1, count)
+	assert.Equal(t, ansIP, getIPFromResponse(d.Res))
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, count)
+	assert.Equal(t, ansIP, getIPFromResponse(d.Res))
+
+	customUpstreamConfig.ClearCache()
+
+	err = prx.Resolve(&d)
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, count)
 	assert.Equal(t, ansIP, getIPFromResponse(d.Res))
 }
 

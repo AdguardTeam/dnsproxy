@@ -139,6 +139,8 @@ type Proxy struct {
 	// --
 
 	// cache is used to cache requests.  It is disabled if nil.
+	//
+	// TODO(d.kolyshev): Move this cache to [Proxy.UpstreamConfig] field.
 	cache *cache
 
 	// shortFlighter is used to resolve the expired cached requests without
@@ -494,7 +496,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream) {
 
 		if custom := d.CustomUpstreamConfig; custom != nil {
 			// Try to use custom.
-			upstreams = getUpstreams(custom, host)
+			upstreams = getUpstreams(custom.upstream, host)
 			if len(upstreams) > 0 {
 				return upstreams
 			}
@@ -622,7 +624,6 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 
 	dctx.calcFlagsAndSize()
 
-	// Use cache only if it's enabled and the query doesn't use custom upstream.
 	// Also don't lookup the cache for responses with DNSSEC checking disabled
 	// since only validated responses are cached and those may be not the
 	// desired result for user specifying CD flag.
@@ -676,9 +677,12 @@ func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 	switch {
 	case p.cache == nil:
 		reason = "disabled"
-	case dctx.CustomUpstreamConfig != nil:
+	case dctx.CustomUpstreamConfig != nil && dctx.CustomUpstreamConfig.cache == nil:
+		// In case of custom upstream cache is not configured, the global proxy
+		// cache cannot be used because different upstreams can return different
+		// results.
 		// See https://github.com/AdguardTeam/dnsproxy/issues/169.
-		reason = "custom upstreams used"
+		reason = "custom upstreams cache is not configured"
 	case dctx.Req.CheckingDisabled:
 		reason = "dnssec check disabled"
 	default:

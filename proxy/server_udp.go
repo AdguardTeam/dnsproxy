@@ -8,6 +8,7 @@ import (
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -108,7 +109,7 @@ func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.U
 	}
 
 	d := p.newDNSContext(ProtoUDP, req)
-	d.Addr = remoteAddr
+	d.Addr = netutil.NetAddrToAddrPort(remoteAddr)
 	d.Conn = conn
 	d.localIP = localIP
 
@@ -133,7 +134,7 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 	}
 
 	conn := d.Conn.(*net.UDPConn)
-	rAddr := d.Addr.(*net.UDPAddr)
+	rAddr := net.UDPAddrFromAddrPort(d.Addr)
 	n, err := proxynetutil.UDPWrite(bytes, conn, rAddr, d.localIP)
 	if err != nil {
 		if errors.Is(err, net.ErrClosed) {

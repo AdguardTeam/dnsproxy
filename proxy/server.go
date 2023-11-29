@@ -101,7 +101,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	}
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
-	if d.Proto == ProtoUDP && p.isRatelimited(d.Addr) {
+	if d.Proto == ProtoUDP && p.isRatelimited(d.Addr.Addr()) {
 		log.Tracef("Ratelimiting %v based on IP only", d.Addr)
 		return nil // do nothing, don't reply, we got ratelimited
 	}

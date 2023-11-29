@@ -12,6 +12,7 @@ import (
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -126,7 +127,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		}
 
 		d := p.newDNSContext(proto, req)
-		d.Addr = conn.RemoteAddr()
+		d.Addr = netutil.NetAddrToAddrPort(conn.RemoteAddr())
 		d.Conn = conn
 
 		err = p.handleDNSRequest(d)

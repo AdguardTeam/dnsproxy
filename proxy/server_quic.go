@@ -12,6 +12,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/bluele/gcache"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -203,7 +204,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 	}
 
 	d := p.newDNSContext(ProtoQUIC, req)
-	d.Addr = conn.RemoteAddr()
+	d.Addr = netutil.NetAddrToAddrPort(conn.RemoteAddr())
 	d.QUICStream = stream
 	d.QUICConnection = conn
 	d.DoQVersion = doqVersion

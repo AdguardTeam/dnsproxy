@@ -16,6 +16,8 @@ func UDPSetOptions(c *net.UDPConn) (err error) {
 // UDPRead reads the message from conn using buf and receives a control-message
 // payload of size udpOOBSize from it.  It returns the number of bytes copied
 // into buf and the source address of the message.
+//
+// TODO(s.chzhen):  Consider using netip.Addr.
 func UDPRead(
 	conn *net.UDPConn,
 	buf []byte,
@@ -25,6 +27,8 @@ func UDPRead(
 }
 
 // UDPWrite writes the data to the remoteAddr using conn.
+//
+// TODO(s.chzhen):  Consider using netip.Addr.
 func UDPWrite(
 	data []byte,
 	conn *net.UDPConn,

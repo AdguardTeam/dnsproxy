@@ -6,6 +6,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 )
@@ -69,7 +70,7 @@ var _ dnscrypt.Handler = &dnsCryptHandler{}
 // ServeDNS - processes the DNS query
 func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) error {
 	d := h.proxy.newDNSContext(ProtoDNSCrypt, req)
-	d.Addr = rw.RemoteAddr()
+	d.Addr = netutil.NetAddrToAddrPort(rw.RemoteAddr())
 	d.DNSCryptResponseWriter = rw
 
 	h.requestGoroutinesSema.acquire()

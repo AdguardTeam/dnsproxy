@@ -23,7 +23,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/mathutil"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	goFlags "github.com/jessevdk/go-flags"
@@ -153,7 +152,7 @@ type Options struct {
 
 	// RatelimitSubnetLenIPv6 is a subnet length for IPv6 addresses used for
 	// rate limiting requests
-	RatelimitSubnetLenIPv6 int `yaml:"ratelimit-subnet-len-ipv6" long:"ratelimit-subnet-len-ipv6" description:"Ratelimit subnet length for IPv6." default:"64"`
+	RatelimitSubnetLenIPv6 int `yaml:"ratelimit-subnet-len-ipv6" long:"ratelimit-subnet-len-ipv6" description:"Ratelimit subnet length for IPv6." default:"56"`
 
 	// If true, refuse ANY requests
 	RefuseAny bool `yaml:"refuse-any" long:"refuse-any" description:"If specified, refuse ANY requests" optional:"yes" optional-value:"true"`
@@ -336,8 +335,8 @@ func runPprof(options *Options) {
 // createProxyConfig creates proxy.Config from the command line arguments
 func createProxyConfig(options *Options) (conf proxy.Config) {
 	conf = proxy.Config{
-		RatelimitSubnetMaskIPv4: net.CIDRMask(options.RatelimitSubnetLenIPv4, netutil.IPv4BitLen),
-		RatelimitSubnetMaskIPv6: net.CIDRMask(options.RatelimitSubnetLenIPv6, netutil.IPv6BitLen),
+		RatelimitSubnetLenIPv4: options.RatelimitSubnetLenIPv4,
+		RatelimitSubnetLenIPv6: options.RatelimitSubnetLenIPv6,
 
 		Ratelimit:       options.Ratelimit,
 		CacheEnabled:    options.Cache,

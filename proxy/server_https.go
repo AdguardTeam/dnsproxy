@@ -7,13 +7,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/AdguardTeam/golibs/httphdr"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -160,11 +159,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.HTTPRequest = r
 	d.HTTPResponseWriter = w
 
-	if prx != nil {
-		ip, _ := netutil.IPAndPortFromAddr(prx)
+	if prx.IsValid() {
 		log.Debug("dnsproxy: request came from proxy server %s", prx)
-		if !p.proxyVerifier.Contains(ip) {
-			log.Debug("dnsproxy: proxy %s is not trusted, using original remote addr", ip)
+
+		// TODO(s.chzhen):  Consider using []netip.Prefix.
+		if !p.proxyVerifier.Contains(prx.Addr().AsSlice()) {
+			log.Debug("dnsproxy: proxy %s is not trusted, using original remote addr", prx)
 			d.Addr = prx
 		}
 	}
@@ -181,7 +181,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) checkBasicAuth(
 	w http.ResponseWriter,
 	r *http.Request,
-	raddr net.Addr,
+	raddr netip.AddrPort,
 ) (shouldHandle bool) {
 	ui := p.Config.Userinfo
 	if ui == nil {
@@ -241,73 +241,54 @@ func (p *Proxy) respondHTTPS(d *DNSContext) (err error) {
 }
 
 // realIPFromHdrs extracts the actual client's IP address from the first
-// suitable r's header.  It returns nil if r doesn't contain any information
-// about real client's IP address.  Current headers priority is:
+// suitable r's header.  It returns an error if r doesn't contain any
+// information about real client's IP address.  Current headers priority is:
 //
 //  1. [httphdr.CFConnectingIP]
 //  2. [httphdr.TrueClientIP]
 //  3. [httphdr.XRealIP]
 //  4. [httphdr.XForwardedFor]
-func realIPFromHdrs(r *http.Request) (realIP net.IP) {
+func realIPFromHdrs(r *http.Request) (realIP netip.Addr, err error) {
 	for _, h := range []string{
 		httphdr.CFConnectingIP,
 		httphdr.TrueClientIP,
 		httphdr.XRealIP,
 	} {
-		realIP = net.ParseIP(strings.TrimSpace(r.Header.Get(h)))
-		if realIP != nil {
-			return realIP
+		realIP, err = netip.ParseAddr(strings.TrimSpace(r.Header.Get(h)))
+		if err == nil {
+			return realIP, nil
 		}
 	}
 
 	xff := r.Header.Get(httphdr.XForwardedFor)
 	firstComma := strings.IndexByte(xff, ',')
-	if firstComma == -1 {
-		return net.ParseIP(strings.TrimSpace(xff))
+	if firstComma > 0 {
+		xff = xff[:firstComma]
 	}
 
-	return net.ParseIP(strings.TrimSpace(xff[:firstComma]))
+	return netip.ParseAddr(strings.TrimSpace(xff))
 }
 
 // remoteAddr returns the real client's address and the IP address of the latest
 // proxy server if any.
-func remoteAddr(r *http.Request) (addr, prx net.Addr, err error) {
-	var hostStr, portStr string
-	if hostStr, portStr, err = net.SplitHostPort(r.RemoteAddr); err != nil {
-		return nil, nil, err
+func remoteAddr(r *http.Request) (addr, prx netip.AddrPort, err error) {
+	host, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		return netip.AddrPort{}, netip.AddrPort{}, err
 	}
 
-	var port int
-	if port, err = strconv.Atoi(portStr); err != nil {
-		return nil, nil, err
+	realIP, err := realIPFromHdrs(r)
+	if err != nil {
+		log.Debug("dnsproxy: getting ip address from http request: %s", err)
+
+		return host, netip.AddrPort{}, nil
 	}
 
-	host := net.ParseIP(hostStr)
-	if host == nil {
-		return nil, nil, fmt.Errorf("invalid ip: %s", hostStr)
-	}
+	log.Debug("dnsproxy: using ip address from http request: %s", realIP)
 
-	h3 := r.Context().Value(http3.ServerContextKey) != nil
+	// TODO(a.garipov): Add port if we can get it from headers like X-Real-Port,
+	// X-Forwarded-Port, etc.
+	addr = netip.AddrPortFrom(realIP, 0)
 
-	if realIP := realIPFromHdrs(r); realIP != nil {
-		log.Tracef("Using IP address from HTTP request: %s", realIP)
-
-		// TODO(a.garipov): Add port if we can get it from headers like
-		// X-Real-Port, X-Forwarded-Port, etc.
-		if h3 {
-			addr = &net.UDPAddr{IP: realIP, Port: 0}
-			prx = &net.UDPAddr{IP: host, Port: port}
-		} else {
-			addr = &net.TCPAddr{IP: realIP, Port: 0}
-			prx = &net.TCPAddr{IP: host, Port: port}
-		}
-
-		return addr, prx, nil
-	}
-
-	if h3 {
-		return &net.UDPAddr{IP: host, Port: port}, nil, nil
-	}
-
-	return &net.TCPAddr{IP: host, Port: port}, nil, nil
+	return addr, host, nil
 }

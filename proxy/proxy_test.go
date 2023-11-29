@@ -852,10 +852,8 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 			0,
 			false,
 		),
-		Req: createHostTestMessage("host"),
-		Addr: &net.TCPAddr{
-			IP: net.IP{1, 2, 3, 0},
-		},
+		Req:  createHostTestMessage("host"),
+		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 
 	var err error
@@ -893,7 +891,7 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 			false,
 		),
 		Req:  createHostTestMessage("host"),
-		Addr: &net.TCPAddr{IP: net.IP{1, 2, 3, 0}},
+		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 
 	err = prx.Resolve(&d)
@@ -945,7 +943,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 	d := DNSContext{
 		CustomUpstreamConfig: customUpstreamConfig,
 		Req:                  createHostTestMessage("host"),
-		Addr:                 &net.TCPAddr{IP: net.IP{1, 2, 3, 0}},
+		Addr:                 netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 
 	err = prx.Resolve(&d)
@@ -1036,7 +1034,7 @@ func TestECSProxy(t *testing.T) {
 	t.Run("cache_subnet", func(t *testing.T) {
 		d := DNSContext{
 			Req:  createHostTestMessage("host"),
-			Addr: &net.TCPAddr{IP: ip1230},
+			Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 		}
 
 		err = prx.Resolve(&d)
@@ -1049,7 +1047,7 @@ func TestECSProxy(t *testing.T) {
 	t.Run("serve_subnet_cache", func(t *testing.T) {
 		d := DNSContext{
 			Req:  createHostTestMessage("host"),
-			Addr: &net.TCPAddr{IP: net.IP{1, 2, 3, 1}},
+			Addr: netip.MustParseAddrPort("1.2.3.1:1234"),
 		}
 		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
 
@@ -1063,7 +1061,7 @@ func TestECSProxy(t *testing.T) {
 	t.Run("another_subnet", func(t *testing.T) {
 		d := DNSContext{
 			Req:  createHostTestMessage("host"),
-			Addr: &net.TCPAddr{IP: ip2230},
+			Addr: netip.MustParseAddrPort("2.2.3.0:1234"),
 		}
 		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
@@ -1081,7 +1079,7 @@ func TestECSProxy(t *testing.T) {
 	t.Run("cache_general", func(t *testing.T) {
 		d := DNSContext{
 			Req:  createHostTestMessage("host"),
-			Addr: &net.TCPAddr{IP: net.IP{127, 0, 0, 1}},
+			Addr: netip.MustParseAddrPort("127.0.0.1:1234"),
 		}
 		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
@@ -1099,7 +1097,7 @@ func TestECSProxy(t *testing.T) {
 	t.Run("serve_general_cache", func(t *testing.T) {
 		d := DNSContext{
 			Req:  createHostTestMessage("host"),
-			Addr: &net.TCPAddr{IP: net.IP{127, 0, 0, 2}},
+			Addr: netip.MustParseAddrPort("127.0.0.2:1234"),
 		}
 		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
 
@@ -1138,7 +1136,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	// first request
 	d := DNSContext{
 		Req:  createHostTestMessage("host"),
-		Addr: &net.TCPAddr{IP: clientIP},
+		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 	err = prx.Resolve(&d)
 	require.NoError(t, err)
@@ -1156,9 +1154,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	// 2nd request
 	clientIP = net.IP{1, 2, 4, 0}
 	d.Req = createHostTestMessage("host")
-	d.Addr = &net.TCPAddr{
-		IP: clientIP,
-	}
+	d.Addr = netip.MustParseAddrPort("1.2.4.0:1234")
 	u.ans = []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{
 			Rrtype: dns.TypeA,
@@ -1242,8 +1238,8 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 
 	p.TrustedProxies = []string{"0.0.0.0/0", "::0/0"}
 
-	p.RatelimitSubnetMaskIPv4 = net.CIDRMask(24, 32)
-	p.RatelimitSubnetMaskIPv6 = net.CIDRMask(64, 128)
+	p.RatelimitSubnetLenIPv4 = 24
+	p.RatelimitSubnetLenIPv6 = 64
 
 	return &p
 }

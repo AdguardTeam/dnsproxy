@@ -156,10 +156,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	require.NoError(t, err)
 	ptrGlobDomain = dns.Fqdn(ptrGlobDomain)
 
-	cliIP := &net.TCPAddr{
-		IP:   net.IP{192, 168, 1, 1},
-		Port: 1234,
-	}
+	cliAddrPort := netip.MustParseAddrPort("192.168.1.1:1234")
 
 	const (
 		sectionAnswer = iota
@@ -354,7 +351,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 			req := (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype)
 			dctx := &DNSContext{
 				Req:  req,
-				Addr: cliIP,
+				Addr: cliAddrPort,
 			}
 
 			err = p.Resolve(dctx)

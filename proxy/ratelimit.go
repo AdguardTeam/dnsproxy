@@ -1,11 +1,10 @@
 package proxy
 
 import (
-	"net"
+	"net/netip"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/netutil"
 	rate "github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
 	"golang.org/x/exp/slices"
@@ -28,44 +27,33 @@ func (p *Proxy) limiterForIP(ip string) interface{} {
 	return value
 }
 
-// isRatelimited checks if the specified IP is ratelimited.
-func (p *Proxy) isRatelimited(addr net.Addr) (ok bool) {
+func (p *Proxy) isRatelimited(addr netip.Addr) (ok bool) {
 	if p.Ratelimit <= 0 {
 		// The ratelimit is disabled.
 		return false
 	}
 
-	ip, _ := netutil.IPAndPortFromAddr(addr)
-	if ip == nil {
-		log.Printf("failed to split %v into host/port", addr)
-
+	addr = addr.Unmap()
+	// Already sorted by [Proxy.Init].
+	_, ok = slices.BinarySearchFunc(p.RatelimitWhitelist, addr, netip.Addr.Compare)
+	if ok {
 		return false
 	}
 
-	ipStr := ip.String()
-
-	if len(p.RatelimitWhitelist) > 0 {
-		slices.Sort(p.RatelimitWhitelist)
-		_, ok = slices.BinarySearch(p.RatelimitWhitelist, ipStr)
-		if ok {
-			// Don't ratelimit if the IP is allowlisted.
-			return false
-		}
-	}
-
-	if ip.To4() != nil {
-		ip = ip.Mask(p.RatelimitSubnetMaskIPv4)
+	var pref netip.Prefix
+	if addr.Is4() {
+		pref = netip.PrefixFrom(addr, p.RatelimitSubnetLenIPv4)
 	} else {
-		ip = ip.Mask(p.RatelimitSubnetMaskIPv6)
+		pref = netip.PrefixFrom(addr, p.RatelimitSubnetLenIPv6)
 	}
+	pref = pref.Masked()
 
 	// TODO(s.chzhen):  Improve caching.  Decrease allocations.
-	ipStr = ip.String()
-
+	ipStr := pref.Addr().String()
 	value := p.limiterForIP(ipStr)
 	rl, ok := value.(*rate.RateLimiter)
 	if !ok {
-		log.Printf("SHOULD NOT HAPPEN: %T found in ratelimit cache", value)
+		log.Error("dnsproxy: %T found in ratelimit cache", value)
 
 		return false
 	}

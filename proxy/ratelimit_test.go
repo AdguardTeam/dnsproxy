@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -52,7 +52,7 @@ func TestRatelimiting(t *testing.T) {
 	p := Proxy{}
 	p.Ratelimit = 1
 
-	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1232}
+	addr := netip.MustParseAddr("127.0.0.1")
 
 	limited := p.isRatelimited(addr)
 
@@ -71,9 +71,13 @@ func TestWhitelist(t *testing.T) {
 	// rate limit is 1 per sec with whitelist
 	p := Proxy{}
 	p.Ratelimit = 1
-	p.RatelimitWhitelist = []string{"127.0.0.1", "127.0.0.2", "127.0.0.125"}
+	p.RatelimitWhitelist = []netip.Addr{
+		netip.MustParseAddr("127.0.0.1"),
+		netip.MustParseAddr("127.0.0.2"),
+		netip.MustParseAddr("127.0.0.125"),
+	}
 
-	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1232}
+	addr := netip.MustParseAddr("127.0.0.1")
 
 	limited := p.isRatelimited(addr)
 

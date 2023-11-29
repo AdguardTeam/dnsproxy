@@ -3,6 +3,7 @@ package proxy
 import (
 	"net"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -27,9 +28,7 @@ type DNSContext struct {
 	QUICStream quic.Stream
 
 	// Addr is the address of the client.
-	//
-	// TODO(s.chzhen):  Use [netip.AddrPort].
-	Addr net.Addr
+	Addr netip.AddrPort
 
 	// Upstream is the upstream that resolved the request.  In case of cached
 	// response it's nil.

@@ -24,6 +24,7 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -183,6 +184,7 @@ type Proxy struct {
 
 // Init populates fields of p but does not start listeners.
 func (p *Proxy) Init() (err error) {
+	// TODO(s.chzhen):  Consider moving to [Proxy.validateConfig].
 	err = p.validateBasicAuth()
 	if err != nil {
 		return fmt.Errorf("basic auth: %w", err)
@@ -232,6 +234,9 @@ func (p *Proxy) Init() (err error) {
 	if err != nil {
 		return fmt.Errorf("setting up DNS64: %w", err)
 	}
+
+	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
+	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
 
 	return nil
 }
@@ -512,10 +517,9 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream) {
 		return nil
 	}
 
-	ip, _ := netutil.IPAndPortFromAddr(d.Addr)
 	// TODO(e.burkov):  Detect against the actual configured subnet set.
 	// Perhaps, even much earlier.
-	if !netutil.IsLocallyServed(ip) {
+	if !netutil.IsLocallyServedAddr(d.Addr.Addr()) {
 		return nil
 	}
 
@@ -708,10 +712,7 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 
 	// Set ECS.
 	if cliIP == nil {
-		cliIP, _ = netutil.IPAndPortFromAddr(dctx.Addr)
-		if cliIP == nil {
-			return
-		}
+		cliIP = dctx.Addr.Addr().AsSlice()
 	}
 
 	if !netutil.IsSpecialPurpose(cliIP) {

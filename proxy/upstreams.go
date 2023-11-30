@@ -27,6 +27,18 @@ type UpstreamConfig struct {
 	// SpecifiedDomainUpstreams maps the specific domain names to the upstreams.
 	SpecifiedDomainUpstreams map[string][]upstream.Upstream
 
+	// SkippedDomains is a set of domains which will never be proxied to any
+	// upstream server. The dnsproxy will return NXDOMAIN for any of these
+	// domains or their subdomains.
+	SkippedDomains *container.MapSet[string]
+
+	// SkippedDomainsExclusions is a set of domains which will be proxied to an
+	// upstream server, regardless of a match in SkippedDomains.  This is mainly
+	// used when a wildcard subdomain is used in the upstream definition (e.g.
+	// *.my.domain), where my.domain would be proxied to an upstream, but any
+	// subdomain of it would be skipped.
+	SkippedDomainsExclusions *container.MapSet[string]
+
 	// SubdomainExclusions is set of domains with subdomains exclusions.
 	SubdomainExclusions *container.MapSet[string]
 
@@ -63,16 +75,24 @@ var _ io.Closer = (*UpstreamConfig)(nil)
 //
 //	[/domain1/../domainN/]#
 //
+// Using a hyphen "-" as the <upstreamString> will ensure that the matched
+// domain(s) will never be recursed to upstream nameservers. The dnsproxy will
+// respond with NXDOMAIN for any matched domain or subdomain. For example:
+//
+//	[/domain1/../domainN/]-
+//
 // So the following config:
 //
 //	[/host.com/]1.2.3.4
 //	[/www.host.com/]2.3.4.5"
+//	[/domain.local/]-
 //	[/maps.host.com/news.host.com/]#
 //	3.4.5.6
 //
 // will send queries for *.host.com to 1.2.3.4.  Except for *.www.host.com,
-// which will go to 2.3.4.5.  And *.maps.host.com or *.news.host.com, which
-// will go to default server 3.4.5.6 with all other domains.
+// which will go to 2.3.4.5.  Any requests to *.domain.local or domain.local
+// will be answered with NXDOMAIN.  And *.maps.host.com or *.news.host.com,
+// which will go to default server 3.4.5.6 with all other domains.
 //
 // To exclude top level domain from reserved upstreams querying you could use
 // the following:
@@ -108,6 +128,8 @@ func ParseUpstreamsConfig(
 		domainReservedUpstreams:  map[string][]upstream.Upstream{},
 		specifiedDomainUpstreams: map[string][]upstream.Upstream{},
 		subdomainsOnlyUpstreams:  map[string][]upstream.Upstream{},
+		skippedDomains:           container.NewMapSet[string](),
+		skippedDomainsExclusions: container.NewMapSet[string](),
 		subdomainsOnlyExclusions: container.NewMapSet[string](),
 	}
 
@@ -161,6 +183,17 @@ type configParser struct {
 	// corresponding upstreams.
 	subdomainsOnlyUpstreams map[string][]upstream.Upstream
 
+	// skippedDomains is a set of domains which should never be looked up on
+	// any upstream server.
+	skippedDomains *container.MapSet[string]
+
+	// skippedDomainsExclusions is a set of domains which should be looked up on
+	// any upstream server, even though it matches an entry in skippedDomains.
+	// This is mainly used when a wildcard subdomain is used in the upstream
+	// definition (e.g. *.my.domain), where my.domain would be proxied to an
+	// upstream, but any subdomain of it would be skipped.
+	skippedDomainsExclusions *container.MapSet[string]
+
 	// subdomainsOnlyExclusions is set of domains with subdomains exclusions.
 	subdomainsOnlyExclusions *container.MapSet[string]
 
@@ -188,6 +221,8 @@ func (p *configParser) parse(lines []string) (c *UpstreamConfig, err error) {
 		DomainReservedUpstreams:  p.domainReservedUpstreams,
 		SpecifiedDomainUpstreams: p.specifiedDomainUpstreams,
 		SubdomainExclusions:      p.subdomainsOnlyExclusions,
+		SkippedDomains:           p.skippedDomains,
+		SkippedDomainsExclusions: p.skippedDomainsExclusions,
 	}, errors.Join(errs...)
 }
 
@@ -201,6 +236,12 @@ func (p *configParser) parseLine(idx int, confLine string) (err error) {
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.
 		return err
+	}
+
+	if upstreams[0] == "-" && len(domains) > 0 {
+		p.specifySkipped(domains)
+
+		return nil
 	}
 
 	if upstreams[0] == "#" && len(domains) > 0 {
@@ -251,6 +292,16 @@ func splitConfigLine(confLine string) (upstreams, domains []string, err error) {
 	}
 
 	return strings.Fields(upstreamsLine), domains, nil
+}
+
+func (p *configParser) specifySkipped(domains []string) {
+	for _, domain := range domains {
+		if strings.HasPrefix(domain, "*.") {
+			domain = strings.TrimPrefix(domain, "*.")
+			p.skippedDomainsExclusions.Add(domain)
+		}
+		p.skippedDomains.Add(domain)
+	}
 }
 
 // specifyUpstream specifies the upstream for domains.
@@ -373,7 +424,7 @@ func ValidatePrivateConfig(uc *UpstreamConfig, privateSubnets netutil.SubnetSet)
 
 // getUpstreamsForDomain returns the upstreams specified for resolving fqdn.  It
 // always returns the default set of upstreams if the domain is not reserved for
-// any other upstreams.
+// any other upstreams. If the domain is skipped, it returns nil.
 //
 // More specific domains take priority over less specific ones.  For example, if
 // the upstreams specified for the following domains:
@@ -384,6 +435,10 @@ func ValidatePrivateConfig(uc *UpstreamConfig, privateSubnets netutil.SubnetSet)
 // The request for mail.host.com will be resolved using the upstreams specified
 // for host.com.
 func (uc *UpstreamConfig) getUpstreamsForDomain(fqdn string) (ups []upstream.Upstream) {
+	if uc.checkSkipped(fqdn) {
+		return nil
+	}
+
 	if len(uc.DomainReservedUpstreams) == 0 {
 		return uc.Upstreams
 	}
@@ -411,6 +466,19 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(fqdn string) (ups []upstream.Ups
 	}
 
 	return uc.Upstreams
+}
+
+func (uc *UpstreamConfig) checkSkipped(host string) bool {
+	if uc.SkippedDomainsExclusions.Has(host) {
+		return false
+	}
+	for host != "" {
+		if uc.SkippedDomains.Has(host) {
+			return true
+		}
+		_, host, _ = strings.Cut(host, ".")
+	}
+	return false
 }
 
 // getUpstreamsForDS is like [getUpstreamsForDomain], but intended for DS

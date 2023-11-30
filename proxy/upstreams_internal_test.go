@@ -34,6 +34,9 @@ const (
 
 	wildcardDomain = "*." + firstLevelDomain
 	anotherSubFQDN = "another." + firstLevelDomain + "."
+
+	skippedDomain = "skipped.domain"
+	skippedFQDN   = skippedDomain + "."
 )
 
 // Upstream URLs used in tests of [UpstreamConfig].
@@ -57,6 +60,7 @@ var testUpstreamConfigLines = []string{
 	"[/" + wildcardDomain + "/]" + wildcardUpstream,
 	"[/" + generalDomain + "/]#",
 	"[/" + subDomain + "/]" + subdomainUpstream,
+	"[/" + skippedDomain + "/]-",
 }
 
 func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
@@ -101,6 +105,10 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 		name: "subdomain",
 		in:   subFQDN,
 		want: []string{subdomainUpstream},
+	}, {
+		name: "skipped",
+		in:   skippedFQDN,
+		want: nil,
 	}}
 
 	for _, tc := range testCases {
@@ -155,6 +163,10 @@ func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 		name: "subdomain",
 		in:   "label." + subFQDN,
 		want: []string{subdomainUpstream},
+	}, {
+		name: "skipped",
+		in:   "label." + skippedFQDN,
+		want: nil,
 	}}
 
 	for _, tc := range testCases {
@@ -298,6 +310,7 @@ func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
 		"[/b.a.x/]0.0.0.4",
 		"[/*.b.a.x/]0.0.0.5",
 		"[/*.x.z/]0.0.0.6",
+		"[/*.w.x.z/]-",
 		"[/c.b.a.x/]#",
 	}
 
@@ -344,6 +357,14 @@ func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
 		name: "unspecified_wildcard_sub",
 		in:   "a.x.z.",
 		want: []string{"0.0.0.6:53"},
+	}, {
+		name: "skipped",
+		in:   "a.w.x.z.",
+		want: nil,
+	}, {
+		name: "skipped_sub",
+		in:   "a.b.w.x.z.",
+		want: nil,
 	}}
 
 	for _, tc := range testCases {
@@ -402,6 +423,8 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 		"[/*.example.org/]127.0.0.1:5303",
 		"[/www.example.org/]127.0.0.1:5304",
 		"[/*.www.example.org/]#",
+		"[/skipped.www.example.org/]-",
+		"[/*.skipped.example.org/]-",
 	}
 
 	uconf, err := ParseUpstreamsConfig(conf, nil)
@@ -427,6 +450,22 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 		name: "def_wildcard",
 		in:   "abc.www.example.org.",
 		want: []string{"127.0.0.1:5301"},
+	}, {
+		name: "skipped",
+		in:   "skipped.www.example.org.",
+		want: nil,
+	}, {
+		name: "skipped_sub",
+		in:   "sub.skipped.www.example.org.",
+		want: nil,
+	}, {
+		name: "skipped_wildcard",
+		in:   "sub.skipped.example.org.",
+		want: nil,
+	}, {
+		name: "skipped_wildcard_parent",
+		in:   "skipped.example.org.",
+		want: []string{"127.0.0.1:5303"},
 	}}
 
 	for _, tc := range testCases {
@@ -442,6 +481,7 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		"[/google.com/local/]4.3.2.1",
 		"[/www.google.com//]1.2.3.4",
 		"[/maps.google.com/]#",
+		"[/skipped.google.com/]-",
 		"[/www.google.com/]tls://1.1.1.1",
 		"192.0.2.1",
 	}
@@ -459,6 +499,7 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		"internal.local.",
 		"google.",
 		"maps.google.com.",
+		"skipped.google.com.",
 	}
 
 	var upstreams []upstream.Upstream

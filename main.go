@@ -562,7 +562,7 @@ func initDNSCryptConfig(config *proxy.Config, options *Options) {
 
 // initListenAddrs inits listen addrs
 func initListenAddrs(config *proxy.Config, options *Options) {
-	listenIPs := []net.IP{}
+	listenIPs := []netip.Addr{}
 
 	if len(options.ListenAddrs) == 0 {
 		// If ListenAddrs has not been parsed through config file nor command
@@ -576,22 +576,24 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 		options.ListenPorts = []int{53}
 	}
 
-	for _, a := range options.ListenAddrs {
-		ip := net.ParseIP(a)
-		if ip == nil {
-			log.Fatalf("cannot parse %s", a)
+	for i, a := range options.ListenAddrs {
+		ip, err := netip.ParseAddr(a)
+		if err != nil {
+			log.Fatalf("parsing listen address at index %d: %s", i, a)
 		}
+
 		listenIPs = append(listenIPs, ip)
 	}
 
 	if len(options.ListenPorts) != 0 && options.ListenPorts[0] != 0 {
 		for _, port := range options.ListenPorts {
 			for _, ip := range listenIPs {
+				p := uint16(port)
 
-				ua := &net.UDPAddr{Port: port, IP: ip}
+				ua := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, p))
 				config.UDPListenAddr = append(config.UDPListenAddr, ua)
 
-				ta := &net.TCPAddr{Port: port, IP: ip}
+				ta := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, p))
 				config.TCPListenAddr = append(config.TCPListenAddr, ta)
 			}
 		}
@@ -600,21 +602,21 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 	if config.TLSConfig != nil {
 		for _, port := range options.TLSListenPorts {
 			for _, ip := range listenIPs {
-				a := &net.TCPAddr{Port: port, IP: ip}
+				a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
 				config.TLSListenAddr = append(config.TLSListenAddr, a)
 			}
 		}
 
 		for _, port := range options.HTTPSListenPorts {
 			for _, ip := range listenIPs {
-				a := &net.TCPAddr{Port: port, IP: ip}
+				a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
 				config.HTTPSListenAddr = append(config.HTTPSListenAddr, a)
 			}
 		}
 
 		for _, port := range options.QUICListenPorts {
 			for _, ip := range listenIPs {
-				a := &net.UDPAddr{Port: port, IP: ip}
+				a := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
 				config.QUICListenAddr = append(config.QUICListenAddr, a)
 			}
 		}
@@ -623,10 +625,10 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 	if config.DNSCryptResolverCert != nil && config.DNSCryptProviderName != "" {
 		for _, port := range options.DNSCryptListenPorts {
 			for _, ip := range listenIPs {
-				tcp := &net.TCPAddr{Port: port, IP: ip}
+				tcp := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
 				config.DNSCryptTCPListenAddr = append(config.DNSCryptTCPListenAddr, tcp)
 
-				udp := &net.UDPAddr{Port: port, IP: ip}
+				udp := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
 				config.DNSCryptUDPListenAddr = append(config.DNSCryptUDPListenAddr, udp)
 			}
 		}

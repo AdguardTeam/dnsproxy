@@ -63,7 +63,7 @@ type DNSContext struct {
 	CachedUpstreamAddr string
 
 	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
-	localIP net.IP
+	localIP netip.Addr
 
 	// QueryDuration is the duration of a successful query to an upstream
 	// server or, if the upstream server is unavailable, to a fallback server.

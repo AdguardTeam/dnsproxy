@@ -1,7 +1,6 @@
 package fastip
 
 import (
-	"net"
 	"net/netip"
 	"testing"
 
@@ -21,7 +20,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		}
 		f := NewFastestAddr()
 
-		resp, up, err := f.ExchangeFastest(testARequest(t), []upstream.Upstream{u})
+		resp, up, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{u})
 		require.Error(t, err)
 
 		assert.ErrorIs(t, err, errDesired)
@@ -38,34 +37,42 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		// The alive IP is the just created local listener's address.  The dead
 		// one is known as TEST-NET-1 which shouldn't be routed at all.  See
 		// RFC-5737 (https://datatracker.ietf.org/doc/html/rfc5737).
-		aliveIP, deadIP := net.IP{127, 0, 0, 1}, net.IP{192, 0, 2, 1}
-		alive := new(testAUpstream).add(t.Name(), aliveIP)
-		dead := new(testAUpstream).add(t.Name(), deadIP)
+		aliveAddr := netip.MustParseAddr("127.0.0.1")
 
-		rep, up, err := f.ExchangeFastest(testARequest(t), []upstream.Upstream{dead, alive})
+		alive := &testAUpstream{
+			recs: []*dns.A{newTestRec(t, aliveAddr)},
+		}
+		dead := &testAUpstream{
+			recs: []*dns.A{newTestRec(t, netip.MustParseAddr("192.0.2.1"))},
+		}
+
+		rep, ups, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{dead, alive})
 		require.NoError(t, err)
 
-		assert.Equal(t, up, alive)
+		assert.Equal(t, ups, alive)
 
 		require.NotNil(t, rep)
 		require.NotEmpty(t, rep.Answer)
 		require.IsType(t, new(dns.A), rep.Answer[0])
 
 		ip := rep.Answer[0].(*dns.A).A
-		assert.True(t, aliveIP.Equal(ip))
+		assert.Equal(t, aliveAddr.AsSlice(), []byte(ip))
 	})
 
 	t.Run("all_dead", func(t *testing.T) {
 		f := NewFastestAddr()
 		f.pingPorts = []uint{getFreePort(t)}
 
-		firstIP := net.IP{127, 0, 0, 1}
-		up1 := new(testAUpstream).
-			add(t.Name(), firstIP).
-			add(t.Name(), net.IP{127, 0, 0, 2}).
-			add(t.Name(), net.IP{127, 0, 0, 3})
+		firstIP := netip.MustParseAddr("127.0.0.1")
+		ups := &testAUpstream{
+			recs: []*dns.A{
+				newTestRec(t, firstIP),
+				newTestRec(t, netip.MustParseAddr("127.0.0.2")),
+				newTestRec(t, netip.MustParseAddr("127.0.0.3")),
+			},
+		}
 
-		resp, _, err := f.ExchangeFastest(testARequest(t), []upstream.Upstream{up1})
+		resp, _, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{ups})
 		require.NoError(t, err)
 
 		require.NotNil(t, resp)
@@ -73,30 +80,32 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		require.IsType(t, new(dns.A), resp.Answer[0])
 
 		ip := resp.Answer[0].(*dns.A).A
-		assert.True(t, firstIP.Equal(ip))
+		assert.Equal(t, firstIP.AsSlice(), []byte(ip))
 	})
 }
 
+// testAUpstream is a mock err upstream structure for tests.
 type errUpstream struct {
 	err      error
 	closeErr error
 }
 
-// Address implements the [upstream.Upstream] interface for errUpstream.
+// Address implements the [upstream.Upstream] interface for *errUpstream.
 func (u *errUpstream) Address() string {
 	return "bad_upstream"
 }
 
-// Exchange implements the [upstream.Upstream] interface for errUpstream.
+// Exchange implements the [upstream.Upstream] interface for *errUpstream.
 func (u *errUpstream) Exchange(_ *dns.Msg) (*dns.Msg, error) {
 	return nil, u.err
 }
 
-// Close implements the [upstream.Upstream] interface for errUpstream.
+// Close implements the [upstream.Upstream] interface for *errUpstream.
 func (u *errUpstream) Close() error {
 	return u.closeErr
 }
 
+// testAUpstream is a mock A upstream structure for tests.
 type testAUpstream struct {
 	recs []*dns.A
 }
@@ -104,7 +113,7 @@ type testAUpstream struct {
 // type check
 var _ upstream.Upstream = (*testAUpstream)(nil)
 
-// Exchange implements the upstream.Upstream interface for *testAUpstream.
+// Exchange implements the [upstream.Upstream] interface for *testAUpstream.
 func (u *testAUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	resp = &dns.Msg{}
 	resp.SetReply(m)
@@ -116,30 +125,30 @@ func (u *testAUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	return resp, nil
 }
 
-// Address implements the upstream.Upstream interface for *testAUpstream.
+// Address implements the [upstream.Upstream] interface for *testAUpstream.
 func (u *testAUpstream) Address() (addr string) {
 	return ""
 }
 
-// Close implements the upstream.Upstream interface for *testAUpstream.
+// Close implements the [upstream.Upstream] interface for *testAUpstream.
 func (u *testAUpstream) Close() (err error) {
 	return nil
 }
 
-func (u *testAUpstream) add(host string, ip net.IP) (chain *testAUpstream) {
-	u.recs = append(u.recs, &dns.A{
+// newTestRec returns a new test A record.
+func newTestRec(t *testing.T, addr netip.Addr) (rr *dns.A) {
+	return &dns.A{
 		Hdr: dns.RR_Header{
 			Rrtype: dns.TypeA,
-			Name:   dns.Fqdn(host),
+			Name:   dns.Fqdn(t.Name()),
 			Ttl:    60,
 		},
-		A: ip,
-	})
-
-	return u
+		A: addr.AsSlice(),
+	}
 }
 
-func testARequest(t *testing.T) (req *dns.Msg) {
+// newTestReq returns a new test A request.
+func newTestReq(t *testing.T) (req *dns.Msg) {
 	return &dns.Msg{
 		MsgHdr: dns.MsgHdr{
 			Id:               dns.Id(),

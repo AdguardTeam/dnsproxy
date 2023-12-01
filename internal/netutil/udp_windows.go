@@ -4,6 +4,7 @@ package netutil
 
 import (
 	"net"
+	"net/netip"
 )
 
 func udpGetOOBSize() int {
@@ -14,16 +15,16 @@ func udpSetOptions(c *net.UDPConn) error {
 	return nil
 }
 
-func udpRead(c *net.UDPConn, buf []byte, _ int) (int, net.IP, *net.UDPAddr, error) {
+func udpRead(c *net.UDPConn, buf []byte, _ int) (int, netip.Addr, *net.UDPAddr, error) {
 	n, addr, err := c.ReadFrom(buf)
 	var udpAddr *net.UDPAddr
 	if addr != nil {
 		udpAddr = addr.(*net.UDPAddr)
 	}
 
-	return n, nil, udpAddr, err
+	return n, netip.Addr{}, udpAddr, err
 }
 
-func udpWrite(bytes []byte, conn *net.UDPConn, remoteAddr *net.UDPAddr, _ net.IP) (int, error) {
+func udpWrite(bytes []byte, conn *net.UDPConn, remoteAddr *net.UDPAddr, _ netip.Addr) (int, error) {
 	return conn.WriteTo(bytes, remoteAddr)
 }

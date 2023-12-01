@@ -3,14 +3,14 @@
 package netutil
 
 import (
-	"net"
+	"net/netip"
 
 	"golang.org/x/net/ipv6"
 )
 
 // udpMakeOOBWithSrc makes the OOB data with the specified source IP.
-func udpMakeOOBWithSrc(ip net.IP) (b []byte) {
-	if ip4 := ip.To4(); ip4 != nil {
+func udpMakeOOBWithSrc(ip netip.Addr) (b []byte) {
+	if ip.Is4() {
 		// Do not set the IPv4 source address via OOB, because it can cause the
 		// address to become unspecified on darwin.
 		//
@@ -22,6 +22,6 @@ func udpMakeOOBWithSrc(ip net.IP) (b []byte) {
 	}
 
 	return (&ipv6.ControlMessage{
-		Src: ip,
+		Src: ip.AsSlice(),
 	}).Marshal()
 }

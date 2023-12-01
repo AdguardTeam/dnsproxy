@@ -1,6 +1,9 @@
 package netutil
 
-import "net"
+import (
+	"net"
+	"net/netip"
+)
 
 // UDPGetOOBSize returns maximum size of the received OOB data.
 func UDPGetOOBSize() (oobSize int) {
@@ -22,7 +25,7 @@ func UDPRead(
 	conn *net.UDPConn,
 	buf []byte,
 	udpOOBSize int,
-) (n int, localIP net.IP, remoteAddr *net.UDPAddr, err error) {
+) (n int, localIP netip.Addr, remoteAddr *net.UDPAddr, err error) {
 	return udpRead(conn, buf, udpOOBSize)
 }
 
@@ -33,7 +36,7 @@ func UDPWrite(
 	data []byte,
 	conn *net.UDPConn,
 	remoteAddr *net.UDPAddr,
-	localIP net.IP,
+	localIP netip.Addr,
 ) (n int, err error) {
 	return udpWrite(data, conn, remoteAddr, localIP)
 }

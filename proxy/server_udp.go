@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
@@ -97,7 +98,12 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, requestGoroutinesSema semaphore
 }
 
 // udpHandlePacket processes the incoming UDP packet and sends a DNS response
-func (p *Proxy) udpHandlePacket(packet []byte, localIP net.IP, remoteAddr *net.UDPAddr, conn *net.UDPConn) {
+func (p *Proxy) udpHandlePacket(
+	packet []byte,
+	localIP netip.Addr,
+	remoteAddr *net.UDPAddr,
+	conn *net.UDPConn,
+) {
 	log.Debug("dnsproxy: handling new udp packet from %s", remoteAddr)
 
 	req := &dns.Msg{}

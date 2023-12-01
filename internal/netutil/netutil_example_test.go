@@ -2,36 +2,32 @@ package netutil_test
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 
 	"github.com/AdguardTeam/dnsproxy/internal/netutil"
 )
 
-func ExampleSortIPAddrs() {
-	printAddrs := func(header string, addrs []net.IPAddr) {
+func ExampleSortNetIPAddrs() {
+	printAddrs := func(header string, addrs []netip.Addr) {
 		fmt.Printf("%s:\n", header)
 		for i, a := range addrs {
-			fmt.Printf("%d: %s\n", i+1, a.IP)
+			fmt.Printf("%d: %s\n", i+1, a)
 		}
 
 		fmt.Println()
 	}
 
-	addrs := []net.IPAddr{{
-		IP: net.ParseIP("1.2.3.4"),
-	}, {
-		IP: net.ParseIP("1.2.3.5"),
-	}, {
-		IP: net.ParseIP("2a00::1234"),
-	}, {
-		IP: net.ParseIP("2a00::1235"),
-	}, {
-		IP: nil,
-	}}
-	netutil.SortIPAddrs(addrs, false)
+	addrs := []netip.Addr{
+		netip.MustParseAddr("1.2.3.4"),
+		netip.MustParseAddr("1.2.3.5"),
+		netip.MustParseAddr("2a00::1234"),
+		netip.MustParseAddr("2a00::1235"),
+		{},
+	}
+	netutil.SortNetIPAddrs(addrs, false)
 	printAddrs("IPv4 preferred", addrs)
 
-	netutil.SortIPAddrs(addrs, true)
+	netutil.SortNetIPAddrs(addrs, true)
 	printAddrs("IPv6 preferred", addrs)
 
 	// Output:
@@ -41,12 +37,12 @@ func ExampleSortIPAddrs() {
 	// 2: 1.2.3.5
 	// 3: 2a00::1234
 	// 4: 2a00::1235
-	// 5: <nil>
+	// 5: invalid IP
 	//
 	// IPv6 preferred:
 	// 1: 2a00::1234
 	// 2: 2a00::1235
 	// 3: 1.2.3.4
 	// 4: 1.2.3.5
-	// 5: <nil>
+	// 5: invalid IP
 }

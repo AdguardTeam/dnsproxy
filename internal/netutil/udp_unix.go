@@ -5,8 +5,10 @@ package netutil
 import (
 	"fmt"
 	"net"
+	"net/netip"
 
 	"github.com/AdguardTeam/golibs/mathutil"
+	"github.com/AdguardTeam/golibs/netutil"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
@@ -39,33 +41,36 @@ func udpSetOptions(c *net.UDPConn) (err error) {
 	return nil
 }
 
-func udpGetDstFromOOB(oob []byte) (dst net.IP) {
+func udpGetDstFromOOB(oob []byte) (dst netip.Addr, err error) {
 	cm6 := &ipv6.ControlMessage{}
 	if cm6.Parse(oob) == nil && cm6.Dst != nil {
-		return cm6.Dst
+		return netutil.IPToAddr(cm6.Dst, netutil.AddrFamilyIPv6)
 	}
 
 	cm4 := &ipv4.ControlMessage{}
 	if cm4.Parse(oob) == nil && cm4.Dst != nil {
-		return cm4.Dst
+		return netutil.IPToAddr(cm4.Dst, netutil.AddrFamilyIPv4)
 	}
 
-	return nil
+	return netip.Addr{}, nil
 }
 
 func udpRead(
 	c *net.UDPConn,
 	buf []byte,
 	udpOOBSize int,
-) (n int, localIP net.IP, remoteAddr *net.UDPAddr, err error) {
+) (n int, localIP netip.Addr, remoteAddr *net.UDPAddr, err error) {
 	var oobn int
 	oob := make([]byte, udpOOBSize)
 	n, oobn, _, remoteAddr, err = c.ReadMsgUDP(buf, oob)
 	if err != nil {
-		return -1, nil, nil, err
+		return -1, netip.Addr{}, nil, err
 	}
 
-	localIP = udpGetDstFromOOB(oob[:oobn])
+	localIP, err = udpGetDstFromOOB(oob[:oobn])
+	if err != nil {
+		return -1, netip.Addr{}, nil, err
+	}
 
 	return n, localIP, remoteAddr, nil
 }
@@ -74,7 +79,7 @@ func udpWrite(
 	data []byte,
 	conn *net.UDPConn,
 	remoteAddr *net.UDPAddr,
-	localIP net.IP,
+	localIP netip.Addr,
 ) (n int, err error) {
 	n, _, err = conn.WriteMsgUDP(data, udpMakeOOBWithSrc(localIP), remoteAddr)
 

@@ -3,21 +3,21 @@
 package netutil
 
 import (
-	"net"
+	"net/netip"
 
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
 
 // udpMakeOOBWithSrc makes the OOB data with the specified source IP.
-func udpMakeOOBWithSrc(ip net.IP) (b []byte) {
-	if ip4 := ip.To4(); ip4 != nil {
+func udpMakeOOBWithSrc(ip netip.Addr) (b []byte) {
+	if ip.Is4() {
 		return (&ipv4.ControlMessage{
-			Src: ip,
+			Src: ip.AsSlice(),
 		}).Marshal()
 	}
 
 	return (&ipv6.ControlMessage{
-		Src: ip,
+		Src: ip.AsSlice(),
 	}).Marshal()
 }

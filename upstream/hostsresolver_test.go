@@ -1,13 +1,13 @@
-package bootstrap_test
+package upstream_test
 
 import (
 	"context"
 	"net/netip"
-	"strings"
 	"testing"
+	"testing/fstest"
 
-	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
-	"github.com/AdguardTeam/dnsproxy/internal/netutil"
+	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/hostsfile"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,10 +24,18 @@ func TestHostsResolver_LookupNetIP(t *testing.T) {
 		v6Addr = netip.MustParseAddr("::1")
 	)
 
-	hosts, err := netutil.NewHosts(strings.NewReader(hostsData))
+	paths, err := hostsfile.DefaultHostsPaths()
 	require.NoError(t, err)
+	require.NotEmpty(t, paths)
 
-	hr := bootstrap.NewHostsResolver(hosts)
+	fsys := fstest.MapFS{
+		paths[0]: {
+			Data: []byte(hostsData),
+		},
+	}
+
+	hr, err := upstream.NewDefaultHostsResolver(fsys)
+	require.NoError(t, err)
 
 	testCases := []struct {
 		name      string
@@ -73,12 +81,12 @@ func TestHostsResolver_LookupNetIP(t *testing.T) {
 		name:      "family_mismatch_v4",
 		host:      "ipv6.only",
 		net:       "ip4",
-		wantAddrs: []netip.Addr{},
+		wantAddrs: nil,
 	}, {
 		name:      "family_mismatch_v6",
 		host:      "ipv4.only",
 		net:       "ip6",
-		wantAddrs: []netip.Addr{},
+		wantAddrs: nil,
 	}}
 
 	for _, tc := range testCases {

@@ -15,14 +15,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
-	"github.com/AdguardTeam/dnsproxy/internal/osutil"
 	"github.com/AdguardTeam/dnsproxy/internal/version"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/mathutil"
+	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	goFlags "github.com/jessevdk/go-flags"
@@ -477,7 +476,7 @@ func initBootstrap(bootstraps []string, opts *upstream.Options) (r upstream.Reso
 
 	switch len(resolvers) {
 	case 0:
-		etcHosts, hostsErr := bootstrap.NewDefaultHostsResolver(osutil.RootDirFS())
+		etcHosts, hostsErr := upstream.NewDefaultHostsResolver(osutil.RootDirFS())
 		if hostsErr != nil {
 			log.Error("creating default hosts resolver: %s", hostsErr)
 

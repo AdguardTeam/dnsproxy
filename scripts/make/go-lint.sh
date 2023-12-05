@@ -173,7 +173,6 @@ run_linter govulncheck ./...
 run_linter gocyclo --over 10\
 	./internal/bootstrap/\
 	./internal/netutil/\
-	./internal/osutil/\
 	./internal/version/\
 	./proxyutil/\
 	./upstream/\
@@ -186,7 +185,6 @@ run_linter gocyclo --over 15 ./proxy/
 # TODO(a.garipov): Enable for all.
 run_linter gocognit --over 10\
 	./internal/bootstrap/\
-	./internal/osutil/\
 	./internal/version/\
 	./proxyutil/\
 	./upstream/\

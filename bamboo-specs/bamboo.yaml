@@ -10,7 +10,7 @@
     # exact patch version as opposed to a minor one to make sure that this exact
     # version is actually used and not whatever the docker daemon on the CI has
     # cached a few months ago.
-    'dockerGo': 'golang:1.20.11'
+    'dockerGo': 'golang:1.20.12'
     'maintainer': 'Adguard Go Team'
     'name': 'dnsproxy'
 

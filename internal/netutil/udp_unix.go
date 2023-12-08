@@ -44,7 +44,9 @@ func udpSetOptions(c *net.UDPConn) (err error) {
 func udpGetDstFromOOB(oob []byte) (dst netip.Addr, err error) {
 	cm6 := &ipv6.ControlMessage{}
 	if cm6.Parse(oob) == nil && cm6.Dst != nil {
-		return netutil.IPToAddr(cm6.Dst, netutil.AddrFamilyIPv6)
+		// Linux maps IPv4 addresses to IPv6 ones by default, so we can get an
+		// IPv4 dst from an IPv6 control-message.
+		return netutil.IPToAddrNoMapped(cm6.Dst)
 	}
 
 	cm4 := &ipv4.ControlMessage{}

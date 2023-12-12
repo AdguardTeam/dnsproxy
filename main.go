@@ -196,8 +196,8 @@ type Options struct {
 	// UDP buffer size value
 	UDPBufferSize int `yaml:"udp-buf-size" long:"udp-buf-size" description:"Set the size of the UDP buffer in bytes. A value <= 0 will use the system default."`
 
-	// The maximum number of go routines
-	MaxGoRoutines int `yaml:"max-go-routines" long:"max-go-routines" description:"Set the maximum number of go routines. A value <= 0 will not not set a maximum."`
+	// MaxGoRoutines is the maximum number of goroutines.
+	MaxGoRoutines uint `yaml:"max-go-routines" long:"max-go-routines" description:"Set the maximum number of go routines. A zero value will not not set a maximum."`
 
 	// Pprof defines whether the pprof information needs to be exposed via
 	// localhost:6060 or not.

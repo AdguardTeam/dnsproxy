@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net"
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 )
@@ -28,7 +30,7 @@ func (p *Proxy) createDNSCryptListeners() (err error) {
 		Handler: &dnsCryptHandler{
 			proxy: p,
 
-			requestGoroutinesSema: p.requestGoroutinesSema,
+			reqSema: p.requestsSema,
 		},
 	}
 
@@ -61,20 +63,24 @@ func (p *Proxy) createDNSCryptListeners() (err error) {
 type dnsCryptHandler struct {
 	proxy *Proxy
 
-	requestGoroutinesSema semaphore
+	reqSema syncutil.Semaphore
 }
 
 // compile-time type check
 var _ dnscrypt.Handler = &dnsCryptHandler{}
 
 // ServeDNS - processes the DNS query
-func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) error {
+func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) (err error) {
 	d := h.proxy.newDNSContext(ProtoDNSCrypt, req)
 	d.Addr = netutil.NetAddrToAddrPort(rw.RemoteAddr())
 	d.DNSCryptResponseWriter = rw
 
-	h.requestGoroutinesSema.acquire()
-	defer h.requestGoroutinesSema.release()
+	// TODO(d.kolyshev): Pass and use context from above.
+	err = h.reqSema.Acquire(context.Background())
+	if err != nil {
+		return fmt.Errorf("dnsproxy: dnscrypt: acquiring semaphore: %w", err)
+	}
+	defer h.reqSema.Release()
 
 	return h.proxy.handleDNSRequest(d)
 }

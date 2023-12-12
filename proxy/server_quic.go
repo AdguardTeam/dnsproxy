@@ -13,6 +13,7 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/bluele/gcache"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -82,11 +83,12 @@ func (p *Proxy) createQUICListeners() error {
 
 // quicPacketLoop listens for incoming QUIC packets.
 //
-// See also the comment on Proxy.requestGoroutinesSema.
-func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, requestGoroutinesSema semaphore) {
+// See also the comment on Proxy.requestsSema.
+func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, reqSema syncutil.Semaphore) {
 	log.Info("Entering the DNS-over-QUIC listener loop on %s", l.Addr())
 	for {
-		conn, err := l.Accept(context.Background())
+		ctx := context.Background()
+		conn, err := l.Accept(ctx)
 		if err != nil {
 			if isQUICErrorForDebugLog(err) {
 				log.Debug("accepting quic conn: closed or timed out: %s", err)
@@ -97,10 +99,16 @@ func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, requestGoroutinesSema sema
 			break
 		}
 
-		requestGoroutinesSema.acquire()
+		err = reqSema.Acquire(ctx)
+		if err != nil {
+			log.Error("dnsproxy: quic: acquiring semaphore: %s", err)
+
+			break
+		}
 		go func() {
-			p.handleQUICConnection(conn, requestGoroutinesSema)
-			requestGoroutinesSema.release()
+			defer reqSema.Release()
+
+			p.handleQUICConnection(conn, reqSema)
 		}()
 	}
 }
@@ -108,15 +116,17 @@ func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, requestGoroutinesSema sema
 // handleQUICConnection handles a new QUIC connection.  It waits for new streams
 // and passes them to handleQUICStream.
 //
-// See also the comment on Proxy.requestGoroutinesSema.
-func (p *Proxy) handleQUICConnection(conn quic.Connection, requestGoroutinesSema semaphore) {
+// See also the comment on Proxy.requestsSema.
+func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Semaphore) {
 	for {
+		ctx := context.Background()
+
 		// The stub to resolver DNS traffic follows a simple pattern in which
 		// the client sends a query, and the server provides a response.  This
 		// design specifies that for each subsequent query on a QUIC connection
 		// the client MUST select the next available client-initiated
 		// bidirectional stream.
-		stream, err := conn.AcceptStream(context.Background())
+		stream, err := conn.AcceptStream(ctx)
 		if err != nil {
 			if isQUICErrorForDebugLog(err) {
 				log.Debug("accepting quic stream: closed or timed out: %s", err)
@@ -130,16 +140,24 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, requestGoroutinesSema
 			return
 		}
 
-		requestGoroutinesSema.acquire()
+		err = reqSema.Acquire(ctx)
+		if err != nil {
+			log.Error("dnsproxy: quic: acquiring semaphore: %s", err)
+
+			// Close the connection to make sure resources are freed.
+			closeQUICConn(conn, DoQCodeNoError)
+
+			return
+		}
 		go func() {
+			defer reqSema.Release()
+
 			p.handleQUICStream(stream, conn)
 
 			// The server MUST send the response(s) on the same stream and MUST
 			// indicate, after the last response, through the STREAM FIN
 			// mechanism that no further data will be sent on that stream.
 			_ = stream.Close()
-
-			requestGoroutinesSema.release()
 		}()
 	}
 }

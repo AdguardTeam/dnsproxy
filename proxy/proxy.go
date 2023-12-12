@@ -19,6 +19,7 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
@@ -166,7 +167,7 @@ type Proxy struct {
 	// RWMutex protects the whole proxy.
 	sync.RWMutex
 
-	// requestGoroutinesSema limits the number of simultaneous requests.
+	// requestsSema limits the number of simultaneous requests.
 	//
 	// TODO(a.garipov): Currently we have to pass this exact semaphore to
 	// the workers, to prevent races on restart.  In the future we will need
@@ -174,7 +175,7 @@ type Proxy struct {
 	// states.
 	//
 	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
-	requestGoroutinesSema semaphore
+	requestsSema syncutil.Semaphore
 
 	// Config is the proxy configuration.
 	//
@@ -195,12 +196,9 @@ func (p *Proxy) Init() (err error) {
 	if p.MaxGoroutines > 0 {
 		log.Info("dnsproxy: max goroutines is set to %d", p.MaxGoroutines)
 
-		p.requestGoroutinesSema, err = newChanSemaphore(p.MaxGoroutines)
-		if err != nil {
-			return fmt.Errorf("can't init semaphore: %w", err)
-		}
+		p.requestsSema = syncutil.NewChanSemaphore(p.MaxGoroutines)
 	} else {
-		p.requestGoroutinesSema = newNoopSemaphore()
+		p.requestsSema = syncutil.EmptySemaphore{}
 	}
 
 	p.udpOOBSize = proxynetutil.UDPGetOOBSize()

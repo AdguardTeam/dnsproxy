@@ -10,6 +10,7 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/miekg/dns"
 )
 
@@ -60,8 +61,8 @@ func (p *Proxy) udpCreate(ctx context.Context, udpAddr *net.UDPAddr) (*net.UDPCo
 
 // udpPacketLoop listens for incoming UDP packets.
 //
-// See also the comment on Proxy.requestGoroutinesSema.
-func (p *Proxy) udpPacketLoop(conn *net.UDPConn, requestGoroutinesSema semaphore) {
+// See also the comment on Proxy.requestsSema.
+func (p *Proxy) udpPacketLoop(conn *net.UDPConn, reqSema syncutil.Semaphore) {
 	log.Info("dnsproxy: entering udp listener loop on %s", conn.LocalAddr())
 
 	b := make([]byte, dns.MaxMsgSize)
@@ -79,10 +80,18 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, requestGoroutinesSema semaphore
 			// we need the contents to survive the call because we're handling them in goroutine
 			packet := make([]byte, n)
 			copy(packet, b)
-			requestGoroutinesSema.acquire()
+
+			// TODO(d.kolyshev): Pass and use context from above.
+			sErr := reqSema.Acquire(context.Background())
+			if sErr != nil {
+				log.Error("dnsproxy: udp: acquiring semaphore: %s", sErr)
+
+				break
+			}
 			go func() {
+				defer reqSema.Release()
+
 				p.udpHandlePacket(packet, localIP, remoteAddr, conn)
-				requestGoroutinesSema.release()
 			}()
 		}
 		if err != nil {

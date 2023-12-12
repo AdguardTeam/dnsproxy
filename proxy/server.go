@@ -44,15 +44,15 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 	}
 
 	for _, l := range p.udpListen {
-		go p.udpPacketLoop(l, p.requestGoroutinesSema)
+		go p.udpPacketLoop(l, p.requestsSema)
 	}
 
 	for _, l := range p.tcpListen {
-		go p.tcpPacketLoop(l, ProtoTCP, p.requestGoroutinesSema)
+		go p.tcpPacketLoop(l, ProtoTCP, p.requestsSema)
 	}
 
 	for _, l := range p.tlsListen {
-		go p.tcpPacketLoop(l, ProtoTLS, p.requestGoroutinesSema)
+		go p.tcpPacketLoop(l, ProtoTLS, p.requestsSema)
 	}
 
 	for _, l := range p.httpsListen {
@@ -64,7 +64,7 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 	}
 
 	for _, l := range p.quicListen {
-		go p.quicPacketLoop(l, p.requestGoroutinesSema)
+		go p.quicPacketLoop(l, p.requestsSema)
 	}
 
 	for _, l := range p.dnsCryptUDPListen {

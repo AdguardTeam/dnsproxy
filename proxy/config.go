@@ -182,7 +182,7 @@ type Config struct {
 	// TODO(a.garipov): Rename this to something like
 	// “MaxDNSRequestGoroutines” in a later major version, as it doesn't
 	// actually limit all goroutines.
-	MaxGoroutines int
+	MaxGoroutines uint
 
 	// The size of the read buffer on the underlying socket. Larger read buffers can handle
 	// larger bursts of requests before packets get dropped.

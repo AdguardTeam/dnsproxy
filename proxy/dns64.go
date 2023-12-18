@@ -312,7 +312,7 @@ func (p *Proxy) performDNS64(
 	host := origReq.Question[0].Name
 	log.Debug("proxy: received an empty aaaa response for %q, checking dns64", host)
 
-	dns64Resp, u, err := p.exchange(dns64Req, upstreams)
+	dns64Resp, u, err := p.exchangeUpstreams(dns64Req, upstreams)
 	if err != nil {
 		log.Error("proxy: dns64 request failed: %s", err)
 

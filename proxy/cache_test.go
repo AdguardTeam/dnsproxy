@@ -22,9 +22,10 @@ const testCacheSize = 4096
 
 const testUpsAddr = "https://upstream.address"
 
-var upstreamWithAddr = &funcUpstream{
-	exchangeFunc: func(m *dns.Msg) (resp *dns.Msg, err error) { panic("not implemented") },
-	addressFunc:  func() (addr string) { return testUpsAddr },
+var upstreamWithAddr = &fakeUpstream{
+	onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) { panic("not implemented") },
+	onClose:    func() (err error) { panic("not implemented") },
+	onAddress:  func() (addr string) { return testUpsAddr },
 }
 
 func TestServeCached(t *testing.T) {

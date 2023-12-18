@@ -201,7 +201,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		Signature:   "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm",
 	}
 
-	p := &Proxy{}
+	p := createTestProxy(t, nil)
 	p.UpstreamConfig = &UpstreamConfig{
 		Upstreams: []upstream.Upstream{&testDNSSECUpstream{
 			a:     a,
@@ -306,47 +306,6 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 			assert.Equal(t, rrsig.String(), cached.m.Answer[1].String())
 		})
 
-	}
-}
-
-func TestUpstreamsSort(t *testing.T) {
-	testProxy := createTestProxy(t, nil)
-	upstreams := []upstream.Upstream{}
-
-	// there are 4 upstreams in configuration
-	config := []string{"1.2.3.4", "1.1.1.1", "2.3.4.5", "8.8.8.8"}
-	for _, u := range config {
-		up, err := upstream.AddressToUpstream(u, &upstream.Options{Timeout: 1 * time.Second})
-		if err != nil {
-			t.Fatalf("Failed to create %s upstream: %s", u, err)
-		}
-		upstreams = append(upstreams, up)
-	}
-
-	upstreamRTTStats := map[string]int{}
-	upstreamRTTStats["1.1.1.1:53"] = 10
-	upstreamRTTStats["2.3.4.5:53"] = 20
-	upstreamRTTStats["1.2.3.4:53"] = 30
-	testProxy.upstreamRTTStats = upstreamRTTStats
-
-	sortedUpstreams := testProxy.getSortedUpstreams(upstreams)
-
-	// upstream without rtt stats means `zero rtt`; this upstream should be the first one after sorting
-	if sortedUpstreams[0].Address() != "8.8.8.8:53" {
-		t.Fatalf("wrong sort algorithm!")
-	}
-
-	// upstreams with rtt stats should be sorted from fast to slow
-	if sortedUpstreams[1].Address() != "1.1.1.1:53" {
-		t.Fatalf("wrong sort algorithm!")
-	}
-
-	if sortedUpstreams[2].Address() != "2.3.4.5:53" {
-		t.Fatalf("wrong sort algorithm!")
-	}
-
-	if sortedUpstreams[3].Address() != "1.2.3.4:53" {
-		t.Fatalf("wrong sort algorithm!")
 	}
 }
 
@@ -786,38 +745,25 @@ func TestNoQuestion(t *testing.T) {
 	assert.Equal(t, dns.RcodeServerFailure, r.Rcode)
 }
 
-// funcUpstream is a mock upstream implementation to simplify testing.  It
+// fakeUpstream is a mock upstream implementation to simplify testing.  It
 // allows assigning custom Exchange and Address methods.
-type funcUpstream struct {
-	exchangeFunc func(m *dns.Msg) (resp *dns.Msg, err error)
-	addressFunc  func() (addr string)
+type fakeUpstream struct {
+	onExchange func(m *dns.Msg) (resp *dns.Msg, err error)
+	onAddress  func() (addr string)
+	onClose    func() (err error)
 }
 
 // type check
-var _ upstream.Upstream = (*funcUpstream)(nil)
+var _ upstream.Upstream = (*fakeUpstream)(nil)
 
 // Exchange implements upstream.Upstream interface for *funcUpstream.
-func (wu *funcUpstream) Exchange(m *dns.Msg) (*dns.Msg, error) {
-	if wu.exchangeFunc == nil {
-		return nil, nil
-	}
-
-	return wu.exchangeFunc(m)
-}
+func (u *fakeUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) { return u.onExchange(m) }
 
 // Address implements upstream.Upstream interface for *funcUpstream.
-func (wu *funcUpstream) Address() (addr string) {
-	if wu.addressFunc == nil {
-		return "stub"
-	}
-
-	return wu.addressFunc()
-}
+func (u *fakeUpstream) Address() (addr string) { return u.onAddress() }
 
 // Close implements upstream.Upstream interface for *funcUpstream.
-func (wu *funcUpstream) Close() (err error) {
-	return nil
-}
+func (u *fakeUpstream) Close() (err error) { return u.onClose() }
 
 func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 	dnsProxy := createTestProxy(t, nil)
@@ -841,8 +787,10 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 
 		return resp, nil
 	}
-	u := &funcUpstream{
-		exchangeFunc: exchangeFunc,
+	u := &fakeUpstream{
+		onExchange: exchangeFunc,
+		onAddress:  func() (addr string) { return "stub" },
+		onClose:    func() error { panic("not implemented") },
 	}
 
 	d := &DNSContext{
@@ -929,8 +877,10 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 
 		return resp, nil
 	}
-	u := &funcUpstream{
-		exchangeFunc: exchangeFunc,
+	u := &fakeUpstream{
+		onExchange: exchangeFunc,
+		onAddress:  func() (addr string) { return "stub" },
+		onClose:    func() error { panic("not implemented") },
 	}
 
 	customUpstreamConfig := NewCustomUpstreamConfig(
@@ -1212,10 +1162,12 @@ func getFreePort() uint {
 	return port
 }
 
-func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
+func createTestProxy(t *testing.T, tlsConfig *tls.Config) (p *Proxy) {
 	t.Helper()
 
-	p := Proxy{}
+	p = &Proxy{
+		time: realClock{},
+	}
 
 	if ip := net.ParseIP(listenIP); tlsConfig != nil {
 		p.TLSListenAddr = []*net.TCPAddr{{IP: ip, Port: 0}}
@@ -1241,7 +1193,7 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) *Proxy {
 	p.RatelimitSubnetLenIPv4 = 24
 	p.RatelimitSubnetLenIPv6 = 64
 
-	return &p
+	return p
 }
 
 func sendTestMessageAsync(t *testing.T, conn *dns.Conn, g *sync.WaitGroup) {

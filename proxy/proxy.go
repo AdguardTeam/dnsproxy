@@ -25,6 +25,7 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"golang.org/x/exp/rand"
 	"golang.org/x/exp/slices"
 )
 
@@ -57,7 +58,8 @@ const (
 	UnqualifiedNames = "unqualified_names"
 )
 
-// Proxy combines the proxy server state and configuration
+// Proxy combines the proxy server state and configuration.  It must not be used
+// until initialized with [Proxy.Init].
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Proxy struct {
@@ -110,9 +112,10 @@ type Proxy struct {
 	// Upstream
 	// --
 
-	// upstreamRTTStats is a map of upstream addresses and their rtt.  Used to
-	// sort upstreams by their latency.
-	upstreamRTTStats map[string]int
+	// upstreamRTTStats maps the upstream address to its round-trip time
+	// statistics.  It's holds the statistics for all upstreams to perform a
+	// weighted random selection when using the load balancing mode.
+	upstreamRTTStats map[string]upstreamRTTStats
 
 	// rttLock protects upstreamRTTStats.
 	rttLock sync.Mutex
@@ -177,6 +180,12 @@ type Proxy struct {
 	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
 	requestsSema syncutil.Semaphore
 
+	// time provides the current time.
+	time clock
+
+	// randSrc provides the source of randomness.
+	randSrc rand.Source
+
 	// Config is the proxy configuration.
 	//
 	// TODO(a.garipov): Remove this embed and create a proper initializer.
@@ -235,6 +244,8 @@ func (p *Proxy) Init() (err error) {
 
 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
 	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
+
+	p.time = realClock{}
 
 	return nil
 }
@@ -537,7 +548,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	src := "upstream"
 
 	// Perform the DNS request.
-	resp, u, err := p.exchange(req, upstreams)
+	resp, u, err := p.exchangeUpstreams(req, upstreams)
 	if dns64Ups := p.performDNS64(req, resp, upstreams); dns64Ups != nil {
 		u = dns64Ups
 	} else if p.isBogusNXDomain(resp) {

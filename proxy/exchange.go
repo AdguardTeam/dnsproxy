@@ -7,70 +7,72 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
-	"golang.org/x/exp/slices"
+	"gonum.org/v1/gonum/stat/sampleuv"
 )
 
-// exchange -- sends DNS query to the upstream DNS server and returns the response
-func (p *Proxy) exchange(req *dns.Msg, upstreams []upstream.Upstream) (reply *dns.Msg, u upstream.Upstream, err error) {
-	qtype := req.Question[0].Qtype
-	if p.UpstreamMode == UModeFastestAddr && (qtype == dns.TypeA || qtype == dns.TypeAAAA) {
-		reply, u, err = p.fastestAddr.ExchangeFastest(req, upstreams)
-		return
+// exchangeUpstreams resolves req using the given upstreams.  It returns the DNS
+// response, the upstream that successfully resolved the request, and the error
+// if any.
+func (p *Proxy) exchangeUpstreams(
+	req *dns.Msg,
+	ups []upstream.Upstream,
+) (resp *dns.Msg, u upstream.Upstream, err error) {
+	switch p.UpstreamMode {
+	case UModeParallel:
+		return upstream.ExchangeParallel(ups, req)
+	case UModeFastestAddr:
+		switch req.Question[0].Qtype {
+		case dns.TypeA, dns.TypeAAAA:
+			return p.fastestAddr.ExchangeFastest(req, ups)
+		default:
+			// Go on to the load-balancing mode.
+		}
+	default:
+		// Go on to the load-balancing mode.
 	}
 
-	if p.UpstreamMode == UModeParallel {
-		reply, u, err = upstream.ExchangeParallel(upstreams, req)
-		return
+	if len(ups) == 1 {
+		u = ups[0]
+		resp, _, err = exchange(u, req, p.time)
+		// TODO(e.burkov):  p.updateRTT(u.Address(), elapsed)
+
+		return resp, u, err
 	}
 
-	// UModeLoadBalance goes below
+	w := sampleuv.NewWeighted(p.calcWeights(ups), p.randSrc)
+	var errs []error
+	for i, ok := w.Take(); ok; i, ok = w.Take() {
+		u = ups[i]
 
-	if len(upstreams) == 1 {
-		u = upstreams[0]
-		reply, _, err = exchangeWithUpstream(u, req)
-		return
-	}
-
-	// sort upstreams by rtt from fast to slow
-	sortedUpstreams := p.getSortedUpstreams(upstreams)
-
-	errs := []error{}
-	for _, dnsUpstream := range sortedUpstreams {
-		var elapsed int
-		reply, elapsed, err = exchangeWithUpstream(dnsUpstream, req)
+		var elapsed time.Duration
+		resp, elapsed, err = exchange(u, req, p.time)
 		if err == nil {
-			p.updateRTT(dnsUpstream.Address(), elapsed)
+			p.updateRTT(u.Address(), elapsed)
 
-			return reply, dnsUpstream, err
+			return resp, u, nil
 		}
 
 		errs = append(errs, err)
-		p.updateRTT(dnsUpstream.Address(), int(defaultTimeout/time.Millisecond))
+
+		// TODO(e.burkov):  Use the actual configured timeout or, perhaps, the
+		// actual measured elapsed time.
+		p.updateRTT(u.Address(), defaultTimeout)
 	}
 
+	// TODO(e.burkov):  Use [errors.Join].
 	return nil, nil, errors.List("all upstreams failed to exchange request", errs...)
 }
 
-func (p *Proxy) getSortedUpstreams(u []upstream.Upstream) []upstream.Upstream {
-	// clone upstreams list to avoid race conditions
-	clone := slices.Clone(u)
+// exchange returns the result of the DNS request exchange with the given
+// upstream and the elapsed time in milliseconds.  It uses the given clock to
+// measure the request duration.
+func exchange(u upstream.Upstream, req *dns.Msg, c clock) (resp *dns.Msg, dur time.Duration, err error) {
+	startTime := c.Now()
 
-	p.rttLock.Lock()
-	defer p.rttLock.Unlock()
-
-	slices.SortFunc(clone, func(a, b upstream.Upstream) (res int) {
-		// TODO(d.kolyshev): Use upstreams for sort comparing.
-		return p.upstreamRTTStats[a.Address()] - p.upstreamRTTStats[b.Address()]
-	})
-
-	return clone
-}
-
-// exchangeWithUpstream returns result of Exchange with elapsed time
-func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, error) {
-	startTime := time.Now()
 	reply, err := u.Exchange(req)
-	elapsed := time.Since(startTime)
+
+	// Don't use [time.Since] because it uses [time.Now].
+	dur = c.Now().Sub(startTime)
 
 	addr := u.Address()
 	if err != nil {
@@ -78,7 +80,7 @@ func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, err
 			"dnsproxy: upstream %s failed to exchange %s in %s: %s",
 			addr,
 			req.Question[0].String(),
-			elapsed,
+			dur,
 			err,
 		)
 	} else {
@@ -86,21 +88,63 @@ func exchangeWithUpstream(u upstream.Upstream, req *dns.Msg) (*dns.Msg, int, err
 			"dnsproxy: upstream %s successfully finished exchange of %s; elapsed %s",
 			addr,
 			req.Question[0].String(),
-			elapsed,
+			dur,
 		)
 	}
 
-	return reply, int(elapsed.Milliseconds()), err
+	return reply, dur, err
 }
 
-// updateRTT updates the round-trip time in upstreamRTTStats for given address.
-func (p *Proxy) updateRTT(address string, rtt int) {
+// upstreamRTTStats is the statistics for a single upstream's round-trip time.
+type upstreamRTTStats struct {
+	// rttSum is the sum of all the round-trip times in microseconds.  The
+	// float64 type is used since it's capable of representing about 285 years
+	// in microseconds.
+	rttSum float64
+
+	// reqNum is the number of requests to the upstream.  The float64 type is
+	// used since to avoid unnecessary type conversions.
+	reqNum float64
+}
+
+// update returns updated stats after adding given RTT.
+func (stats upstreamRTTStats) update(rtt time.Duration) (updated upstreamRTTStats) {
+	return upstreamRTTStats{
+		rttSum: stats.rttSum + float64(rtt.Microseconds()),
+		reqNum: stats.reqNum + 1,
+	}
+}
+
+// calcWeights returns the slice of weights, each corresponding to the upstream
+// with the same index in the given slice.
+func (p *Proxy) calcWeights(ups []upstream.Upstream) (weights []float64) {
+	weights = make([]float64, 0, len(ups))
+
+	p.rttLock.Lock()
+	defer p.rttLock.Unlock()
+
+	for _, u := range ups {
+		stat := p.upstreamRTTStats[u.Address()]
+		if stat.rttSum == 0 || stat.reqNum == 0 {
+			// Use 1 as the default weight.
+			weights = append(weights, 1)
+		} else {
+			weights = append(weights, 1/(stat.rttSum/stat.reqNum))
+		}
+	}
+
+	return weights
+}
+
+// updateRTT updates the round-trip time in [upstreamRTTStats] for given
+// address.
+func (p *Proxy) updateRTT(address string, rtt time.Duration) {
 	p.rttLock.Lock()
 	defer p.rttLock.Unlock()
 
 	if p.upstreamRTTStats == nil {
-		p.upstreamRTTStats = map[string]int{}
+		p.upstreamRTTStats = map[string]upstreamRTTStats{}
 	}
 
-	p.upstreamRTTStats[address] = (p.upstreamRTTStats[address] + rtt) / 2
+	p.upstreamRTTStats[address] = p.upstreamRTTStats[address].update(rtt)
 }

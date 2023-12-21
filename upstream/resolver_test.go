@@ -117,8 +117,10 @@ func TestCachingResolver_cache(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, ur.Close)
 
 	cr := NewCachingResolver(ur)
+
 	t.Run("first_request", func(t *testing.T) {
-		addrs, err := cr.LookupNetIP(context.Background(), "ip4", "dns.google.com")
+		var addrs []netip.Addr
+		addrs, err = cr.LookupNetIP(context.Background(), "ip4", "dns.google.com")
 		require.NoError(t, err)
 
 		assert.Equal(t, wantAddrs, addrs)
@@ -126,7 +128,8 @@ func TestCachingResolver_cache(t *testing.T) {
 	})
 
 	t.Run("second_request", func(t *testing.T) {
-		addrs, err := cr.LookupNetIP(context.Background(), "ip4", "dns.google.com")
+		var addrs []netip.Addr
+		addrs, err = cr.LookupNetIP(context.Background(), "ip4", "dns.google.com")
 		require.NoError(t, err)
 
 		assert.Equal(t, wantAddrs, addrs)

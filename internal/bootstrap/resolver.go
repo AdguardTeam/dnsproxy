@@ -8,6 +8,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"golang.org/x/exp/slices"
 )
 
 // Resolver resolves the hostnames to IP addresses.
@@ -96,4 +97,51 @@ func lookup(ctx context.Context, r Resolver, network, host string) (addrs []neti
 	}
 
 	return addrs, err
+}
+
+// StaticResolver is a resolver which always responds with an underlying slice
+// of IP addresses.
+type StaticResolver []netip.Addr
+
+// type check
+var _ Resolver = StaticResolver(nil)
+
+// LookupNetIP implements the [Resolver] interface for StaticResolver.
+func (r StaticResolver) LookupNetIP(
+	ctx context.Context,
+	network string,
+	host string,
+) (addrs []netip.Addr, err error) {
+	return slices.Clone(r), nil
+}
+
+// ConsequentResolver is a slice of resolvers that are queried in order until
+// the first successful non-empty response, as opposed to just successful
+// response requirement in [ParallelResolver].
+type ConsequentResolver []Resolver
+
+// type check
+var _ Resolver = ConsequentResolver(nil)
+
+// LookupNetIP implements the [Resolver] interface for ConsequentResolver.
+func (resolvers ConsequentResolver) LookupNetIP(
+	ctx context.Context,
+	network string,
+	host string,
+) (addrs []netip.Addr, err error) {
+	if len(resolvers) == 0 {
+		return nil, ErrNoResolvers
+	}
+
+	var errs []error
+	for _, r := range resolvers {
+		addrs, err = r.LookupNetIP(ctx, network, host)
+		if err == nil && len(addrs) > 0 {
+			return addrs, nil
+		}
+
+		errs = append(errs, err)
+	}
+
+	return nil, errors.Join(errs...)
 }

@@ -2,10 +2,15 @@ package upstream
 
 import (
 	"context"
+	"fmt"
+	"net/netip"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -89,4 +94,42 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 			assert.NotEmpty(t, addrs)
 		})
 	}
+}
+
+func TestCachingResolver_cache(t *testing.T) {
+	wantAddrs := []netip.Addr{
+		netip.MustParseAddr("8.8.8.8"),
+	}
+
+	reqNum := &atomic.Uint32{}
+	srv := startDNSServer(t, func(w dns.ResponseWriter, req *dns.Msg) {
+		reqNum.Add(1)
+		resp := respondToTestMessage(req)
+
+		pt := testutil.PanicT{}
+		require.NoError(pt, w.WriteMsg(resp))
+	})
+	testutil.CleanupAndRequireSuccess(t, srv.Close)
+
+	addr := fmt.Sprintf("127.0.0.1:%d", srv.port)
+	ur, err := NewUpstreamResolver(addr, &Options{Timeout: 1 * time.Second})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, ur.Close)
+
+	cr := NewCachingResolver(ur)
+	t.Run("first_request", func(t *testing.T) {
+		addrs, err := cr.LookupNetIP(context.Background(), "ip4", "dns.google.com")
+		require.NoError(t, err)
+
+		assert.Equal(t, wantAddrs, addrs)
+		assert.Equal(t, uint32(1), reqNum.Load())
+	})
+
+	t.Run("second_request", func(t *testing.T) {
+		addrs, err := cr.LookupNetIP(context.Background(), "ip4", "dns.google.com")
+		require.NoError(t, err)
+
+		assert.Equal(t, wantAddrs, addrs)
+		assert.Equal(t, uint32(1), reqNum.Load())
+	})
 }

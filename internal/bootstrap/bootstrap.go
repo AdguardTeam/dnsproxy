@@ -19,7 +19,22 @@ import (
 // DialHandler is a dial function for creating unencrypted network connections
 // to the upstream server.  It establishes the connection to the server
 // specified at initialization and ignores the addr.
+//
+// TODO(e.burkov):  !! remove
 type DialHandler func(ctx context.Context, network, addr string) (conn net.Conn, err error)
+
+type Dialer interface {
+	// DialContext connects to the address on the named network using the
+	// provided context.
+	DialContext(ctx context.Context, network, addr string) (conn net.Conn, err error)
+}
+
+// NewDialer returns a Dialer that uses timeout for establishing connections.
+func NewDialer(timeout time.Duration) (d Dialer) {
+	return &net.Dialer{
+		Timeout: timeout,
+	}
+}
 
 // ResolveDialContext returns a DialHandler that uses addresses resolved from u
 // using resolver.  u must not be nil.

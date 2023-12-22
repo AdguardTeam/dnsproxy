@@ -23,18 +23,25 @@ const (
 
 	// NetworkIP6 is a network type for IPv6 address family.
 	NetworkIP6 Network = "ip6"
+
+	// NetworkTCP is a network type for TCP connections.
+	NetworkTCP Network = "tcp"
+
+	// NetworkUDP is a network type for UDP connections.
+	NetworkUDP Network = "udp"
 )
 
-// Resolver resolves the hostnames to IP addresses.
+// Resolver resolves the hostnames to IP addresses.  Note, that the
+// [net.Resolver] from standard library also implements this interface.
 type Resolver interface {
-	// LookupNetIP looks up the IP addresses for the given host.  network must
-	// be one of "ip", "ip4" or "ip6".  The response may be empty even if err is
-	// nil.
+	// LookupNetIP looks up the IP addresses for the given host.  network should
+	// be one of [NetworkIP], [NetworkIP4] or [NetworkIP6].  The response may be
+	// empty even if err is nil.
 	LookupNetIP(ctx context.Context, network Network, host string) (addrs []netip.Addr, err error)
 }
 
 // type check
-var _ Resolver = &net.Resolver{}
+var _ Resolver = (*net.Resolver)(nil)
 
 // ParallelResolver is a slice of resolvers that are queried concurrently until
 // the first successful response is returned, as opposed to all resolvers being

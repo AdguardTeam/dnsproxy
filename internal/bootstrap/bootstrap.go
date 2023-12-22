@@ -23,21 +23,10 @@ import (
 // TODO(e.burkov):  !! remove
 type DialHandler func(ctx context.Context, network, addr string) (conn net.Conn, err error)
 
-type Dialer interface {
-	// DialContext connects to the address on the named network using the
-	// provided context.
-	DialContext(ctx context.Context, network, addr string) (conn net.Conn, err error)
-}
-
-// NewDialer returns a Dialer that uses timeout for establishing connections.
-func NewDialer(timeout time.Duration) (d Dialer) {
-	return &net.Dialer{
-		Timeout: timeout,
-	}
-}
-
 // ResolveDialContext returns a DialHandler that uses addresses resolved from u
 // using resolver.  u must not be nil.
+//
+// TODO(e.burkov):  !! remove
 func ResolveDialContext(
 	u *url.URL,
 	timeout time.Duration,
@@ -87,8 +76,7 @@ func ResolveDialContext(
 // NewDialContext returns a DialHandler that dials addrs and returns the first
 // successful connection.  At least a single addr should be specified.
 //
-// TODO(e.burkov):  Consider using [Resolver] instead of
-// [upstream.Options.Bootstrap] and [upstream.Options.ServerIPAddrs].
+// TODO(e.burkov):  !! remove
 func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 	dialer := &net.Dialer{
 		Timeout: timeout,

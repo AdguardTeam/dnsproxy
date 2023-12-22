@@ -19,9 +19,8 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// Resolver is an alias for the internal [bootstrap.Resolver] to allow custom
-// implementations.  Note, that the [net.Resolver] from standard library also
-// implements this interface.
+// Resolver resolves the hostnames to IP addresses.  Note, that the
+// [net.Resolver] from standard library also implements this interface.
 type Resolver = bootstrap.Resolver
 
 // StaticResolver is a resolver which always responds with an underlying slice
@@ -201,7 +200,7 @@ func (r *UpstreamResolver) resolveIP(
 		case *resolveResult:
 			rr.addrs = append(rr.addrs, res.addrs...)
 			rr.name = res.name
-			if (rr.expire == time.Time{}) || res.expire.Before(rr.expire) {
+			if rr.expire.IsZero() || res.expire.Before(rr.expire) {
 				rr.expire = res.expire
 			}
 		}
@@ -337,9 +336,7 @@ func (r *CachingResolver) LookupNetIP(
 // findCached returns the cached addresses for host if it's not expired yet, and
 // the corresponding cached result, if any.
 func (r *CachingResolver) findCached(host string) (addrs []netip.Addr, res *resolveResult) {
-	target := &resolveResult{
-		name: dns.Fqdn(strings.ToLower(host)),
-	}
+	target := &resolveResult{name: host}
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()

@@ -28,16 +28,17 @@ type Resolver = bootstrap.Resolver
 // of IP addresses.
 type StaticResolver = bootstrap.StaticResolver
 
+// ParallelResolver is a slice of resolvers that are queried concurrently until
+// the first successful response is returned, as opposed to all resolvers being
+// queried in order in [ConsequentResolver].
+type ParallelResolver = bootstrap.ParallelResolver
+
 // ConsequentResolver is a slice of resolvers that are queried in order until
 // the first successful non-empty response, as opposed to just successful
 // response requirement in [ParallelResolver].
 type ConsequentResolver = bootstrap.ConsequentResolver
 
-// ParallelResolver is an alias for the internal [bootstrap.ParallelResolver] to
-// allow it's usage outside of the module.
-type ParallelResolver = bootstrap.ParallelResolver
-
-// UpstreamResolver is a wrapper around Upstream that implements the
+// UpstreamResolver is a wrapper around [Upstream] that implements the
 // [bootstrap.Resolver] interface.
 type UpstreamResolver struct {
 	// Upstream is used for lookups.  It must not be nil.
@@ -45,11 +46,12 @@ type UpstreamResolver struct {
 }
 
 // NewUpstreamResolver creates an upstream that can be used as bootstrap
-// [Resolver].  resolverAddress format is the same as in the
-// [AddressToUpstream].  If the upstream can't be used as a bootstrap, the
-// returned error will have the underlying type of [NotBootstrapError], and r
-// itself will be fully usable.  Closing r.Upstream is caller's responsibility.
-func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
+// [Resolver].  addr format is the same as in the [AddressToUpstream].  If the
+// upstream can't be used as a bootstrap, the returned error will have the
+// underlying type of [NotBootstrapError], but r won't be bootstrapped and
+// therefore be usable anyway.  Closing the underlying [Upstream] is caller's
+// responsibility.
+func NewUpstreamResolver(addr string, opts *Options) (r *UpstreamResolver, err error) {
 	upsOpts := &Options{}
 
 	// TODO(ameshkov):  Aren't other options needed here?
@@ -59,7 +61,7 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 		upsOpts.PreferIPv6 = opts.PreferIPv6
 	}
 
-	ups, err := AddressToUpstream(resolverAddress, upsOpts)
+	ups, err := AddressToUpstream(addr, upsOpts)
 	if err != nil {
 		err = fmt.Errorf("creating upstream: %w", err)
 		log.Error("upstream bootstrap: %s", err)
@@ -70,8 +72,9 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 	return &UpstreamResolver{Upstream: ups}, validateBootstrap(ups)
 }
 
-// NotBootstrapError is returned by [AddressToUpstream] when the parsed upstream
-// can't be used as a bootstrap and wraps the actual reason.
+// NotBootstrapError is returned by [NewUpstreamResolver] when the parsed
+// [Upstream] can't be used as a bootstrap and wraps the actual reason, which is
+// usually a [netip.ParseAddr] error.
 type NotBootstrapError struct {
 	// err is the actual reason why the upstream can't be used as a bootstrap.
 	err error
@@ -128,61 +131,83 @@ var _ Resolver = &UpstreamResolver{}
 // TODO(e.burkov):  Investigate why the empty slice is returned instead of nil.
 func (r *UpstreamResolver) LookupNetIP(
 	ctx context.Context,
-	network string,
+	network bootstrap.Network,
 	host string,
 ) (ips []netip.Addr, err error) {
 	if host == "" {
 		return nil, nil
 	}
 
-	rrs, err := r.lookupIPRecords(ctx, network, host)
+	host = dns.Fqdn(strings.ToLower(host))
+
+	rr, err := r.resolveIP(ctx, network, host)
 	if err != nil {
 		return []netip.Addr{}, err
 	}
 
-	ips = make([]netip.Addr, 0, len(rrs))
-	for _, rr := range rrs {
-		if ip := proxyutil.IPFromRR(rr); ip.IsValid() {
-			ips = append(ips, ip)
-		}
-	}
-
-	return slices.Clip(ips), err
+	return rr.addrs, err
 }
 
-// lookupIPRecords performs a DNS lookup of host and returns all the retrieved
-// resource records.  network must be either "ip4", "ip6" or "ip".
+// resolveResult is the result of a single DNS lookup for IP addresses.
+type resolveResult struct {
+	// name is the hostname in a lower-case form.
+	name string
+
+	// expire is the time when the result should not be considered usable
+	// anymore.  It's essentially the minimum of all the TTL values of the
+	// resource records in the answer section of the response.
+	expire time.Time
+
+	// addrs is the resolved set of addresses.
+	addrs []netip.Addr
+}
+
+// compareNames is used to sort [resolveResult]s by [resolveResult.name].  It
+// doesn't require other fields to be valid.
+func (rr *resolveResult) compareNames(other *resolveResult) (res int) {
+	return strings.Compare(rr.name, other.name)
+}
+
+// resolveIP performs a DNS lookup of host and returns the result.  network must
+// be either [bootstrap.NetworkIP4], [bootstrap.NetworkIP6] or
+// [bootstrap.NetworkIP].  host must be in a lower-case FQDN form.
 //
 // TODO(e.burkov):  Use context.
-func (r *UpstreamResolver) lookupIPRecords(
+func (r *UpstreamResolver) resolveIP(
 	_ context.Context,
-	network string,
+	network bootstrap.Network,
 	host string,
-) (rrs []dns.RR, err error) {
+) (rr *resolveResult, err error) {
 	switch network {
-	case "ip4", "ip6":
-		rrs, err = r.resolve(host, network)
-	case "ip":
-		resCh := make(chan any, 2)
-		go r.resolveAsync(resCh, host, "ip4")
-		go r.resolveAsync(resCh, host, "ip6")
-
-		var errs []error
-		for i := 0; i < 2; i++ {
-			switch res := <-resCh; res := res.(type) {
-			case error:
-				errs = append(errs, res)
-			case []dns.RR:
-				rrs = append(rrs, res...)
-			}
-		}
-
-		err = errors.Join(errs...)
+	case bootstrap.NetworkIP4, bootstrap.NetworkIP6:
+		return r.resolve(host, network)
+	case bootstrap.NetworkIP:
+		// Go on.
 	default:
 		return nil, fmt.Errorf("unsupported network %s", network)
 	}
 
-	return rrs, err
+	resCh := make(chan any, 2)
+	go r.resolveAsync(resCh, host, bootstrap.NetworkIP4)
+	go r.resolveAsync(resCh, host, bootstrap.NetworkIP6)
+
+	var errs []error
+	rr = &resolveResult{}
+
+	for i := 0; i < 2; i++ {
+		switch res := <-resCh; res := res.(type) {
+		case error:
+			errs = append(errs, res)
+		case *resolveResult:
+			rr.addrs = append(rr.addrs, res.addrs...)
+			rr.name = res.name
+			if (rr.expire == time.Time{}) || res.expire.Before(rr.expire) {
+				rr.expire = res.expire
+			}
+		}
+	}
+
+	return rr, errors.Join(errs...)
 }
 
 // resolve performs a single DNS lookup of host and returns all the valid
@@ -191,10 +216,15 @@ func (r *UpstreamResolver) lookupIPRecords(
 //
 // TODO(e.burkov):  Consider returning NS and Extra sections for setting TTL
 // properly.
-func (r *UpstreamResolver) resolve(host, network string) (ans []dns.RR, err error) {
-	qtype := dns.TypeA
-	if network == "ip6" {
+func (r *UpstreamResolver) resolve(host, n bootstrap.Network) (res *resolveResult, err error) {
+	var qtype uint16
+	switch n {
+	case bootstrap.NetworkIP4:
+		qtype = dns.TypeA
+	case bootstrap.NetworkIP6:
 		qtype = dns.TypeAAAA
+	default:
+		panic(fmt.Sprintf("unsupported network %q", n))
 	}
 
 	req := &dns.Msg{
@@ -203,7 +233,7 @@ func (r *UpstreamResolver) resolve(host, network string) (ans []dns.RR, err erro
 			RecursionDesired: true,
 		},
 		Question: []dns.Question{{
-			Name:   dns.Fqdn(host),
+			Name:   host,
 			Qtype:  qtype,
 			Qclass: dns.ClassINET,
 		}},
@@ -214,7 +244,22 @@ func (r *UpstreamResolver) resolve(host, network string) (ans []dns.RR, err erro
 		return nil, err
 	}
 
-	return resp.Answer, nil
+	res = &resolveResult{
+		name:   host,
+		expire: time.Now(),
+	}
+
+	var ttl uint32 = math.MaxUint32
+	for _, rr := range resp.Answer {
+		if ip := proxyutil.IPFromRR(rr); ip.IsValid() {
+			res.addrs = append(res.addrs, ip)
+			ttl = mathutil.Min(ttl, rr.Header().Ttl)
+		}
+	}
+
+	res.expire = res.expire.Add(time.Duration(ttl) * time.Second)
+
+	return res, nil
 }
 
 // resolveAsync performs a single DNS lookup and sends the result to ch.  It's
@@ -258,58 +303,42 @@ func (r *CachingResolver) LookupNetIP(
 	network string,
 	host string,
 ) (addrs []netip.Addr, err error) {
-	host = strings.ToLower(host)
-	now := time.Now()
+	host = dns.Fqdn(strings.ToLower(host))
 
-	addrs, res := r.findCached(host, now)
+	addrs, res := r.findCached(host)
 	if addrs != nil {
-		return addrs, nil
+		return slices.Clone(addrs), nil
 	}
 
-	rrs, err := r.resolver.lookupIPRecords(ctx, network, host)
+	newRes, err := r.resolver.resolveIP(ctx, network, host)
 	if err != nil {
 		return []netip.Addr{}, err
 	}
 
-	var ttl uint32 = math.MaxUint32
-	addrs = make([]netip.Addr, 0, len(rrs))
-	for _, rr := range rrs {
-		if ip := proxyutil.IPFromRR(rr); ip.IsValid() {
-			addrs = append(addrs, ip)
-			ttl = mathutil.Min(ttl, rr.Header().Ttl)
-		}
-	}
-
-	if len(addrs) == 0 {
+	if len(newRes.addrs) == 0 {
 		return []netip.Addr{}, nil
+	} else {
+		addrs = slices.Clone(newRes.addrs)
 	}
-
-	expire := now.Add(time.Duration(ttl) * time.Second)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if res == nil {
-		res = &resolveResult{name: host}
-
-		i, _ := slices.BinarySearchFunc(r.cached, res, (*resolveResult).compareNames)
-		r.cached = slices.Insert(r.cached, i, res)
+		i, _ := slices.BinarySearchFunc(r.cached, newRes, (*resolveResult).compareNames)
+		r.cached = slices.Insert(r.cached, i, newRes)
+	} else {
+		*res = *newRes
 	}
-
-	res.expire = expire
-	res.addrs = slices.Clone(addrs)
 
 	return addrs, nil
 }
 
-// findCached returns the index of the cached result for host, or false if it's
-// not found or expired.  The returned index is suitable for insertion anyway.
-func (r *CachingResolver) findCached(
-	host string,
-	now time.Time,
-) (addrs []netip.Addr, res *resolveResult) {
+// findCached returns the cached addresses for host if it's not expired yet, and
+// the corresponding cached result, if any.
+func (r *CachingResolver) findCached(host string) (addrs []netip.Addr, res *resolveResult) {
 	target := &resolveResult{
-		name: host,
+		name: dns.Fqdn(strings.ToLower(host)),
 	}
 
 	r.mu.RLock()
@@ -318,31 +347,12 @@ func (r *CachingResolver) findCached(
 	i, ok := slices.BinarySearchFunc(r.cached, target, (*resolveResult).compareNames)
 	if ok {
 		res = r.cached[i]
-		if res.expire.After(now) {
-			return slices.Clone(res.addrs), nil
+		if res.expire.After(time.Now()) {
+			return res.addrs, res
 		}
 
 		return nil, res
 	}
 
 	return nil, nil
-}
-
-// resolveResult is the result of a single DNS lookup for IP addresses.
-type resolveResult struct {
-	// name is the name of the host in a lower-case form.
-	name string
-
-	// expire is the time when the result should not be considered usable
-	// anymore.  It's essentially the minimum of all the TTL values of the
-	// resource records in the answer section of the response.
-	expire time.Time
-
-	// addrs is the resolved addresses set.
-	addrs []netip.Addr
-}
-
-// compareNames compares the names of rr and other.
-func (rr *resolveResult) compareNames(other *resolveResult) (res int) {
-	return strings.Compare(rr.name, other.name)
 }

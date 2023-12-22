@@ -11,22 +11,34 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// Network is a network type for use in [Resolver]'s methods.
+type Network = string
+
+const (
+	// NetworkIP is a network type for both address families.
+	NetworkIP Network = "ip"
+
+	// NetworkIP4 is a network type for IPv4 address family.
+	NetworkIP4 Network = "ip4"
+
+	// NetworkIP6 is a network type for IPv6 address family.
+	NetworkIP6 Network = "ip6"
+)
+
 // Resolver resolves the hostnames to IP addresses.
 type Resolver interface {
 	// LookupNetIP looks up the IP addresses for the given host.  network must
 	// be one of "ip", "ip4" or "ip6".  The response may be empty even if err is
 	// nil.
-	LookupNetIP(ctx context.Context, network, host string) (addrs []netip.Addr, err error)
+	LookupNetIP(ctx context.Context, network Network, host string) (addrs []netip.Addr, err error)
 }
 
 // type check
 var _ Resolver = &net.Resolver{}
 
-// ErrNoResolvers is returned when zero resolvers specified.
-const ErrNoResolvers errors.Error = "no resolvers specified"
-
-// ParallelResolver is a slice of resolvers that are queried concurrently.  The
-// first successful response is returned.
+// ParallelResolver is a slice of resolvers that are queried concurrently until
+// the first successful response is returned, as opposed to all resolvers being
+// queried in order in [ConsequentResolver].
 type ParallelResolver []Resolver
 
 // type check
@@ -35,7 +47,7 @@ var _ Resolver = ParallelResolver(nil)
 // LookupNetIP implements the [Resolver] interface for ParallelResolver.
 func (r ParallelResolver) LookupNetIP(
 	ctx context.Context,
-	network string,
+	network Network,
 	host string,
 ) (addrs []netip.Addr, err error) {
 	resolversNum := len(r)

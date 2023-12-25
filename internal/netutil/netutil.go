@@ -12,6 +12,42 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// PreferIPv4 compares two addresses, preferring IPv4 addresses over IPv6 ones.
+// Invalid addresses are sorted near the end.
+func PreferIPv4(a, b netip.Addr) (res int) {
+	if !a.IsValid() {
+		return 1
+	} else if !b.IsValid() {
+		return -1
+	}
+
+	if aIs4 := a.Is4(); aIs4 == b.Is4() {
+		return a.Compare(b)
+	} else if aIs4 {
+		return -1
+	}
+
+	return 1
+}
+
+// PreferIPv6 compares two addresses, preferring IPv6 addresses over IPv4 ones.
+// Invalid addresses are sorted near the end.
+func PreferIPv6(a, b netip.Addr) (res int) {
+	if !a.IsValid() {
+		return 1
+	} else if !b.IsValid() {
+		return -1
+	}
+
+	if aIs6 := a.Is6(); aIs6 == b.Is6() {
+		return a.Compare(b)
+	} else if aIs6 {
+		return -1
+	}
+
+	return 1
+}
+
 // SortNetIPAddrs sorts addrs in accordance with the protocol preferences.
 // Invalid addresses are sorted near the end.  Zones are ignored.
 func SortNetIPAddrs(addrs []netip.Addr, preferIPv6 bool) {

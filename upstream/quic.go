@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
@@ -53,12 +54,11 @@ var compatProtoDQ = []string{NextProtoDQ, "doq-i00", "dq", "doq-i02"}
 // dnsOverQUIC implements the [Upstream] interface for the DNS-over-QUIC
 // protocol (spec: https://www.rfc-editor.org/rfc/rfc9250.html).
 type dnsOverQUIC struct {
-	// getDialer either returns an initialized dial handler or creates a new
-	// one.
-	getDialer DialerInitializer
-
 	// addr is the DNS-over-QUIC server URL.
 	addr *url.URL
+
+	// boot dials the address of the upstream DNS server.
+	boot bootstrap.Dialer
 
 	// tlsConf is the configuration of TLS.
 	tlsConf *tls.Config
@@ -94,9 +94,14 @@ type dnsOverQUIC struct {
 func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 	addPort(addr, defaultPortDoQ)
 
+	boot, err := opts.bootstrap(addr)
+	if err != nil {
+		return nil, fmt.Errorf("creating bootstrap dialer: %w", err)
+	}
+
 	u = &dnsOverQUIC{
-		getDialer: newDialerInitializer(addr, opts),
-		addr:      addr,
+		boot: boot,
+		addr: addr,
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
@@ -331,22 +336,18 @@ func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
 
 // openConnection opens a new QUIC connection.
 func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
-	dialContext, err := p.getDialer()
-	if err != nil {
-		return nil, fmt.Errorf("failed to bootstrap QUIC connection: %w", err)
-	}
-
-	// we're using bootstrapped address instead of what's passed to the function
+	// We're using bootstrapped address instead of what's passed to the function
 	// it does not create an actual connection, but it helps us determine
 	// what IP is actually reachable (when there're v4/v6 addresses).
-	rawConn, err := dialContext(context.Background(), "udp", "")
+	c, err := p.boot.DialContext(context.Background(), bootstrap.NetworkUDP, p.addr.Hostname())
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a QUIC connection: %w", err)
 	}
-	// It's never actually used
-	_ = rawConn.Close()
 
-	udpConn, ok := rawConn.(*net.UDPConn)
+	// It's never actually used.
+	_ = c.Close()
+
+	udpConn, ok := c.(*net.UDPConn)
 	if !ok {
 		return nil, fmt.Errorf("failed to open connection to %s", p.addr)
 	}

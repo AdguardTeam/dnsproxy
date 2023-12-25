@@ -11,26 +11,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// Network is a network type for use in [Resolver]'s methods.
-type Network = string
-
-const (
-	// NetworkIP is a network type for both address families.
-	NetworkIP Network = "ip"
-
-	// NetworkIP4 is a network type for IPv4 address family.
-	NetworkIP4 Network = "ip4"
-
-	// NetworkIP6 is a network type for IPv6 address family.
-	NetworkIP6 Network = "ip6"
-
-	// NetworkTCP is a network type for TCP connections.
-	NetworkTCP Network = "tcp"
-
-	// NetworkUDP is a network type for UDP connections.
-	NetworkUDP Network = "udp"
-)
-
 // Resolver resolves the hostnames to IP addresses.  Note, that the
 // [net.Resolver] from standard library also implements this interface.
 type Resolver interface {
@@ -118,22 +98,6 @@ func lookup(ctx context.Context, r Resolver, network, host string) (addrs []neti
 	return addrs, err
 }
 
-// StaticResolver is a resolver which always responds with an underlying slice
-// of IP addresses.
-type StaticResolver []netip.Addr
-
-// type check
-var _ Resolver = StaticResolver(nil)
-
-// LookupNetIP implements the [Resolver] interface for StaticResolver.
-func (r StaticResolver) LookupNetIP(
-	ctx context.Context,
-	network string,
-	host string,
-) (addrs []netip.Addr, err error) {
-	return slices.Clone(r), nil
-}
-
 // ConsequentResolver is a slice of resolvers that are queried in order until
 // the first successful non-empty response, as opposed to just successful
 // response requirement in [ParallelResolver].
@@ -145,7 +109,7 @@ var _ Resolver = ConsequentResolver(nil)
 // LookupNetIP implements the [Resolver] interface for ConsequentResolver.
 func (resolvers ConsequentResolver) LookupNetIP(
 	ctx context.Context,
-	network string,
+	network Network,
 	host string,
 ) (addrs []netip.Addr, err error) {
 	if len(resolvers) == 0 {
@@ -163,4 +127,44 @@ func (resolvers ConsequentResolver) LookupNetIP(
 	}
 
 	return nil, errors.Join(errs...)
+}
+
+// StaticResolver is a resolver which always responds with an underlying slice
+// of IP addresses.
+type StaticResolver []netip.Addr
+
+// type check
+var _ Resolver = StaticResolver(nil)
+
+// LookupNetIP implements the [Resolver] interface for StaticResolver.
+func (r StaticResolver) LookupNetIP(
+	ctx context.Context,
+	network Network,
+	host string,
+) (addrs []netip.Addr, err error) {
+	return slices.Clone(r), nil
+}
+
+// SortResolver sorts resolved addresses according to the preferred family.
+type SortResolver struct {
+	// Resolver is the underlying resolver that retrieves the actual addresses.
+	Resolver
+
+	// SortFunc is the function that sorts the addresses.  It must not be nil.
+	SortFunc func(a, b netip.Addr) (res int)
+}
+
+// type check
+var _ Resolver = (*SortResolver)(nil)
+
+// LookupNetIP implements the [Resolver] interface for *FamilyResolver.
+func (r *SortResolver) LookupNetIP(
+	ctx context.Context,
+	network Network,
+	host string,
+) (addrs []netip.Addr, err error) {
+	addrs, err = r.Resolver.LookupNetIP(ctx, network, host)
+	slices.SortFunc(addrs, r.SortFunc)
+
+	return addrs, err
 }

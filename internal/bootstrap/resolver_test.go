@@ -13,18 +13,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testResolver is the [Resolver] interface implementation for testing purposes.
-type testResolver struct {
-	onLookupNetIP func(ctx context.Context, network, host string) (addrs []netip.Addr, err error)
-}
-
-// LookupNetIP implements the [Resolver] interface for *testResolver.
-func (r *testResolver) LookupNetIP(
+// funcResolver is a function that implements the single-method [Resolver]
+// interface.  It's used in testing purposes.
+type funcResolver func(
 	ctx context.Context,
-	network string,
+	network bootstrap.Network,
+	host string,
+) (addrs []netip.Addr, err error)
+
+// type check
+var _ bootstrap.Resolver = funcResolver(nil)
+
+// LookupNetIP implements the [Resolver] interface for funcResolver.
+func (f funcResolver) LookupNetIP(
+	ctx context.Context,
+	network bootstrap.Network,
 	host string,
 ) (addrs []netip.Addr, err error) {
-	return r.onLookupNetIP(ctx, network, host)
+	return f(ctx, network, host)
 }
 
 func TestLookupParallel(t *testing.T) {
@@ -39,14 +45,16 @@ func TestLookupParallel(t *testing.T) {
 	pt := testutil.PanicT{}
 	hostAddrs := []netip.Addr{netutil.IPv4Localhost()}
 
-	immediate := &testResolver{
-		onLookupNetIP: func(_ context.Context, network, host string) ([]netip.Addr, error) {
-			require.Equal(pt, hostname, host)
-			require.Equal(pt, "ip", network)
+	immediate := funcResolver(func(
+		_ context.Context,
+		network bootstrap.Network,
+		host string,
+	) ([]netip.Addr, error) {
+		require.Equal(pt, hostname, host)
+		require.Equal(pt, "ip", network)
 
-			return hostAddrs, nil
-		},
-	}
+		return hostAddrs, nil
+	})
 
 	t.Run("one_resolver", func(t *testing.T) {
 		addrs, err := bootstrap.ParallelResolver{immediate}.LookupNetIP(
@@ -61,20 +69,22 @@ func TestLookupParallel(t *testing.T) {
 
 	t.Run("two_resolvers", func(t *testing.T) {
 		delayCh := make(chan struct{}, 1)
-		delayed := &testResolver{
-			onLookupNetIP: func(_ context.Context, network, host string) ([]netip.Addr, error) {
-				require.Equal(pt, hostname, host)
-				require.Equal(pt, "ip", network)
+		delayed := funcResolver(func(
+			_ context.Context,
+			network bootstrap.Network,
+			host string,
+		) ([]netip.Addr, error) {
+			require.Equal(pt, hostname, host)
+			require.Equal(pt, "ip", network)
 
-				testutil.RequireReceive(pt, delayCh, testTimeout)
+			testutil.RequireReceive(pt, delayCh, testTimeout)
 
-				return []netip.Addr{netutil.IPv6Localhost()}, nil
-			},
-		}
+			return []netip.Addr{netutil.IPv6Localhost()}, nil
+		})
 
 		addrs, err := bootstrap.ParallelResolver{immediate, delayed}.LookupNetIP(
 			context.Background(),
-			"ip",
+			bootstrap.NetworkIP,
 			hostname,
 		)
 		require.NoError(t, err)
@@ -88,15 +98,17 @@ func TestLookupParallel(t *testing.T) {
 		errStr := err.Error()
 		wantErrMsg := strings.Join([]string{errStr, errStr, errStr}, "\n")
 
-		r := &testResolver{
-			onLookupNetIP: func(_ context.Context, network, host string) ([]netip.Addr, error) {
-				return nil, assert.AnError
-			},
-		}
+		r := funcResolver(func(
+			_ context.Context,
+			network bootstrap.Network,
+			host string,
+		) ([]netip.Addr, error) {
+			return nil, assert.AnError
+		})
 
 		addrs, err := bootstrap.ParallelResolver{r, r, r}.LookupNetIP(
 			context.Background(),
-			"ip",
+			bootstrap.NetworkIP,
 			hostname,
 		)
 		testutil.AssertErrorMsg(t, wantErrMsg, err)

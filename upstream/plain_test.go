@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -108,7 +109,7 @@ func TestUpstream_plainDNS_fallbackToTCP(t *testing.T) {
 			var udpReqNum, tcpReqNum atomic.Uint32
 			srv := startDNSServer(t, func(w dns.ResponseWriter, _ *dns.Msg) {
 				var resp *dns.Msg
-				if w.RemoteAddr().Network() == networkUDP {
+				if w.RemoteAddr().Network() == bootstrap.NetworkUDP {
 					udpReqNum.Add(1)
 					resp = tc.udpResp
 				} else {

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -109,7 +110,10 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (resp *dns.Msg, err error) {
 		q := &m.Question[0]
 		log.Debug("dnscrypt %s: received truncated, falling back to tcp with %s", p.addr, q)
 
-		tcpClient := &dnscrypt.Client{Timeout: p.timeout, Net: networkTCP}
+		tcpClient := &dnscrypt.Client{
+			Timeout: p.timeout,
+			Net:     bootstrap.NetworkTCP,
+		}
 		resp, err = tcpClient.Exchange(m, resolverInfo)
 	}
 	if err == nil && resp != nil && resp.Id != m.Id {
@@ -132,7 +136,7 @@ func (p *dnsCrypt) resetClient() (client *dnscrypt.Client, ri *dnscrypt.Resolver
 	}()
 
 	// Use UDP for DNSCrypt upstreams by default.
-	client = &dnscrypt.Client{Timeout: p.timeout, Net: networkUDP}
+	client = &dnscrypt.Client{Timeout: p.timeout, Net: bootstrap.NetworkUDP}
 	ri, err = client.Dial(addr)
 	if err != nil {
 		// Trigger client and server info renewal on the next request.

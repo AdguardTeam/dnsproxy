@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -111,7 +112,7 @@ func TestDNSCrypt_Exchange_truncated(t *testing.T) {
 
 	var udpNum, tcpNum atomic.Uint32
 	h := dnsCryptHandlerFunc(func(w dnscrypt.ResponseWriter, r *dns.Msg) (err error) {
-		if w.RemoteAddr().Network() == networkUDP {
+		if w.RemoteAddr().Network() == bootstrap.NetworkUDP {
 			udpNum.Add(1)
 		} else {
 			tcpNum.Add(1)

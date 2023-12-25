@@ -27,9 +27,8 @@ type dnsOverTLS struct {
 	// addr is the DNS-over-TLS server URL.
 	addr *url.URL
 
-	// getDialer either returns an initialized dial handler or creates a
-	// new one.
-	getDialer DialerInitializer
+	// boot dials the address of the upstream DNS server.
+	boot bootstrap.Dialer
 
 	// tlsConf is the configuration of TLS.
 	tlsConf *tls.Config
@@ -51,9 +50,14 @@ type dnsOverTLS struct {
 func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 	addPort(addr, defaultPortDoT)
 
+	boot, err := opts.bootstrap(addr)
+	if err != nil {
+		return nil, fmt.Errorf("creating bootstrap dialer: %w", err)
+	}
+
 	tlsUps := &dnsOverTLS{
-		addr:      addr,
-		getDialer: newDialerInitializer(addr, opts),
+		addr: addr,
+		boot: boot,
 		// #nosec G402 -- TLS certificate verification could be disabled by
 		// configuration.
 		tlsConf: &tls.Config{
@@ -85,12 +89,7 @@ func (p *dnsOverTLS) Address() string { return p.addr.String() }
 
 // Exchange implements the [Upstream] interface for *dnsOverTLS.
 func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
-	h, err := p.getDialer()
-	if err != nil {
-		return nil, fmt.Errorf("getting conn to %s: %w", p.addr, err)
-	}
-
-	conn, err := p.conn(h)
+	conn, err := p.conn()
 	if err != nil {
 		return nil, fmt.Errorf("getting conn to %s: %w", p.addr, err)
 	}
@@ -100,12 +99,11 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 		// The pooled connection might have been closed already, see
 		// https://github.com/AdguardTeam/dnsproxy/issues/3.  The following
 		// connection from pool may also be malformed, so dial a new one.
-
 		err = errors.WithDeferred(err, conn.Close())
 		log.Debug("dot %s: bad conn from pool: %s", p.addr, err)
 
 		// Retry.
-		conn, err = tlsDial(h, p.tlsConf.Clone())
+		conn, err = tlsDial(p.boot, p.addr.Hostname(), p.tlsConf.Clone())
 		if err != nil {
 			return nil, fmt.Errorf(
 				"dialing %s: connecting to %s: %w",
@@ -146,11 +144,11 @@ func (p *dnsOverTLS) Close() (err error) {
 
 // conn returns the first available connection from the pool if there is any, or
 // dials a new one otherwise.
-func (p *dnsOverTLS) conn(h bootstrap.DialHandler) (conn net.Conn, err error) {
+func (p *dnsOverTLS) conn() (conn net.Conn, err error) {
 	// Dial a new connection outside the lock, if needed.
 	defer func() {
 		if conn == nil {
-			conn, err = tlsDial(h, p.tlsConf.Clone())
+			conn, err = tlsDial(p.boot, p.addr.Hostname(), p.tlsConf.Clone())
 			err = errors.Annotate(err, "connecting to %s: %w", p.tlsConf.ServerName)
 		}
 	}()
@@ -190,8 +188,8 @@ func (p *dnsOverTLS) putBack(conn net.Conn) {
 func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg, err error) {
 	addr := p.Address()
 
-	logBegin(addr, networkTCP, m)
-	defer func() { logFinish(addr, networkTCP, err) }()
+	logBegin(addr, bootstrap.NetworkTCP, m)
+	defer func() { logFinish(addr, bootstrap.NetworkTCP, err) }()
 
 	dnsConn := dns.Conn{Conn: conn}
 
@@ -212,10 +210,8 @@ func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg
 
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own
 // dialContext function to get connection.
-func tlsDial(dialContext bootstrap.DialHandler, conf *tls.Config) (c *tls.Conn, err error) {
-	// We're using bootstrapped address instead of what's passed to the
-	// function.
-	rawConn, err := dialContext(context.Background(), networkTCP, "")
+func tlsDial(boot bootstrap.Dialer, hostname string, conf *tls.Config) (c *tls.Conn, err error) {
+	rawConn, err := boot.DialContext(context.Background(), bootstrap.NetworkTCP, hostname)
 	if err != nil {
 		return nil, err
 	}

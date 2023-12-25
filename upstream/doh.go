@@ -45,12 +45,11 @@ const (
 // dnsOverHTTPS is a struct that implements the Upstream interface for the
 // DNS-over-HTTPS protocol.
 type dnsOverHTTPS struct {
-	// getDialer either returns an initialized dial handler or creates a new
-	// one.
-	getDialer DialerInitializer
-
 	// addr is the DNS-over-HTTPS server URL.
 	addr *url.URL
+
+	// boot dials the address of the upstream DNS server.
+	boot bootstrap.Dialer
 
 	// tlsConf is the configuration of TLS.
 	tlsConf *tls.Config
@@ -90,9 +89,14 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 		httpVersions = DefaultHTTPVersions
 	}
 
+	boot, err := opts.bootstrap(addr)
+	if err != nil {
+		return nil, fmt.Errorf("creating bootstrap dialer: %w", err)
+	}
+
 	ups := &dnsOverHTTPS{
-		getDialer: newDialerInitializer(addr, opts),
-		addr:      addr,
+		boot: boot,
+		addr: addr,
 		quicConf: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
@@ -214,9 +218,9 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
 
 // exchangeHTTPS logs the request and its result and calls exchangeHTTPSClient.
 func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *dns.Msg, err error) {
-	n := networkTCP
+	n := bootstrap.NetworkTCP
 	if isHTTP3(client) {
-		n = networkUDP
+		n = bootstrap.NetworkUDP
 	}
 
 	logBegin(p.addrRedacted, n, req)
@@ -428,18 +432,16 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
 // HTTP3 is enabled in the upstream options).  If this attempt is successful,
 // it returns an HTTP3 transport, otherwise it returns the H1/H2 transport.
 func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
-	dialContext, err := p.getDialer()
-	if err != nil {
-		return nil, fmt.Errorf("bootstrapping %s: %w", p.addrRedacted, err)
-	}
+	host := p.addr.Hostname()
 
 	// First, we attempt to create an HTTP3 transport.  If the probe QUIC
 	// connection is established successfully, we'll be using HTTP3 for this
 	// upstream.
 	tlsConf := p.tlsConf.Clone()
-	transportH3, err := p.createTransportH3(tlsConf, dialContext)
+	transportH3, err := p.createTransportH3(tlsConf, host)
 	if err == nil {
 		log.Debug("using HTTP/3 for this upstream: QUIC was faster")
+
 		return transportH3, nil
 	}
 
@@ -452,10 +454,12 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 	transport := &http.Transport{
 		TLSClientConfig:    tlsConf,
 		DisableCompression: true,
-		DialContext:        dialContext,
-		IdleConnTimeout:    transportDefaultIdleConnTimeout,
-		MaxConnsPerHost:    dohMaxConnsPerHost,
-		MaxIdleConns:       dohMaxIdleConns,
+		DialContext: func(ctx context.Context, network, _ string) (conn net.Conn, err error) {
+			return p.boot.DialContext(ctx, network, host)
+		},
+		IdleConnTimeout: transportDefaultIdleConnTimeout,
+		MaxConnsPerHost: dohMaxConnsPerHost,
+		MaxIdleConns:    dohMaxIdleConns,
 		// Since we have a custom DialContext, we need to use this field to make
 		// golang http.Client attempt to use HTTP/2. Otherwise, it would only be
 		// used when negotiated on the TLS level.
@@ -530,59 +534,51 @@ func (h *http3Transport) Close() (err error) {
 // in parallel (one for TLS, the other one for QUIC) and if QUIC is faster it
 // will create the *http3.RoundTripper instance.
 func (p *dnsOverHTTPS) createTransportH3(
-	tlsConfig *tls.Config,
-	dialContext bootstrap.DialHandler,
-) (roundTripper http.RoundTripper, err error) {
+	tlsConf *tls.Config,
+	host string,
+) (rt http.RoundTripper, err error) {
 	if !p.supportsH3() {
 		return nil, errors.Error("HTTP3 support is not enabled")
 	}
 
-	addr, err := p.probeH3(tlsConfig, dialContext)
+	addr, err := p.probeH3(tlsConf, host)
 	if err != nil {
 		return nil, err
 	}
 
-	rt := &http3.RoundTripper{
-		Dial: func(
-			ctx context.Context,
+	return &http3Transport{
+		baseTransport: &http3.RoundTripper{
+			Dial: func(
+				ctx context.Context,
+				_ string,
+				tlsCfg *tls.Config,
+				cfg *quic.Config,
+			) (c quic.EarlyConnection, err error) {
+				c, err = quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
 
-			// Ignore the address and always connect to the one that we got
-			// from the bootstrapper.
-			_ string,
-			tlsCfg *tls.Config,
-			cfg *quic.Config,
-		) (c quic.EarlyConnection, err error) {
-			c, err = quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
-			return c, err
+				return c, err
+			},
+			DisableCompression: true,
+			TLSClientConfig:    tlsConf,
+			QuicConfig:         p.getQUICConfig(),
 		},
-		DisableCompression: true,
-		TLSClientConfig:    tlsConfig,
-		QuicConfig:         p.getQUICConfig(),
-	}
-
-	return &http3Transport{baseTransport: rt}, nil
+	}, nil
 }
 
 // probeH3 runs a test to check whether QUIC is faster than TLS for this
 // upstream.  If the test is successful it will return the address that we
 // should use to establish the QUIC connections.
-func (p *dnsOverHTTPS) probeH3(
-	tlsConfig *tls.Config,
-	dialContext bootstrap.DialHandler,
-) (addr string, err error) {
-	// We're using bootstrapped address instead of what's passed to the function
-	// it does not create an actual connection, but it helps us determine
-	// what IP is actually reachable (when there are v4/v6 addresses).
-	rawConn, err := dialContext(context.Background(), "udp", "")
+func (p *dnsOverHTTPS) probeH3(tlsConf *tls.Config, host string) (addr string, err error) {
+	conn, err := p.boot.DialContext(context.Background(), bootstrap.NetworkUDP, host)
 	if err != nil {
 		return "", fmt.Errorf("failed to dial: %w", err)
 	}
 	// It's never actually used.
-	_ = rawConn.Close()
+	_ = conn.Close()
 
-	udpConn, ok := rawConn.(*net.UDPConn)
+	udpConn, ok := conn.(*net.UDPConn)
 	if !ok {
-		return "", fmt.Errorf("not a UDP connection to %s", p.addrRedacted)
+		return "", fmt.Errorf("not a %T connection to %s", udpConn, p.addrRedacted)
 	}
 
 	addr = udpConn.RemoteAddr().String()
@@ -596,7 +592,7 @@ func (p *dnsOverHTTPS) probeH3(
 	// Surprisingly, this is really important since otherwise it invalidates
 	// the existing cache.
 	// TODO(ameshkov): figure out why the sessions cache invalidates here.
-	probeTLSCfg := tlsConfig.Clone()
+	probeTLSCfg := tlsConf.Clone()
 	probeTLSCfg.ClientSessionCache = nil
 
 	// Do not expose probe connections to the callbacks that are passed to
@@ -609,7 +605,7 @@ func (p *dnsOverHTTPS) probeH3(
 	chQUIC := make(chan error, 1)
 	chTLS := make(chan error, 1)
 	go p.probeQUIC(addr, probeTLSCfg, chQUIC)
-	go p.probeTLS(dialContext, probeTLSCfg, chTLS)
+	go p.probeTLS(probeTLSCfg, host, chTLS)
 
 	select {
 	case quicErr := <-chQUIC:
@@ -660,10 +656,10 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
 
 // probeTLS attempts to establish a TLS connection to the specified address. We
 // run probeQUIC and probeTLS in parallel and see which one is faster.
-func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tls.Config, ch chan error) {
+func (p *dnsOverHTTPS) probeTLS(tlsConf *tls.Config, addr string, ch chan error) {
 	startTime := time.Now()
 
-	conn, err := tlsDial(dialContext, tlsConfig)
+	conn, err := tlsDial(p.boot, addr, tlsConf)
 	if err != nil {
 		ch <- fmt.Errorf("opening TLS connection: %w", err)
 		return

@@ -13,10 +13,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -262,11 +262,10 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 // addPort appends port to u if it's absent.
 func addPort(u *url.URL, port uint16) {
 	if u != nil {
-		_, _, err := net.SplitHostPort(u.Host)
+		var err error
+		_, _, err = netutil.SplitHostPort(u.Host)
 		if err != nil {
 			u.Host = netutil.JoinHostPort(u.Host, port)
-
-			return
 		}
 	}
 }
@@ -274,7 +273,7 @@ func addPort(u *url.URL, port uint16) {
 // logBegin logs the start of DNS request resolution.  It should be called right
 // before dialing the connection to the upstream.  n is the [network] that will
 // be used to send the request.
-func logBegin(upsAddr string, n network, req *dns.Msg) {
+func logBegin(upsAddr string, network bootstrap.Network, req *dns.Msg) {
 	qtype := ""
 	target := ""
 	if len(req.Question) != 0 {
@@ -282,61 +281,64 @@ func logBegin(upsAddr string, n network, req *dns.Msg) {
 		target = req.Question[0].Name
 	}
 
-	log.Debug("dnsproxy: %s: sending request over %s: %s %s", upsAddr, n, qtype, target)
+	log.Debug("dnsproxy: %s: sending request over %s: %s %s", upsAddr, network, qtype, target)
 }
 
 // Write to log about the result of DNS request
-func logFinish(upsAddr string, n network, err error) {
+func logFinish(upsAddr string, network bootstrap.Network, err error) {
 	status := "ok"
 	if err != nil {
 		status = err.Error()
 	}
 
-	log.Debug("dnsproxy: %s: response received over %s: %q", upsAddr, n, status)
+	log.Debug("dnsproxy: %s: response received over %s: %q", upsAddr, network, status)
 }
 
-// DialerInitializer returns the handler that it creates.  All the subsequent
-// calls to it, except the first one, will return the same handler so that
-// resolving will be performed only once.
-type DialerInitializer func() (handler bootstrap.DialHandler, err error)
+// bootstrap returns the bootstrap resolver for u according to o.  u should be a
+// valid URL with a host and a port.
+func (o *Options) bootstrap(u *url.URL) (boot bootstrap.Dialer, err error) {
+	host, port, err := netutil.SplitHostPort(u.Host)
+	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return nil, err
+	}
 
-// newDialerInitializer creates an initializer of the dialer that will dial the
-// addresses resolved from u using opts.
-func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
-	if _, err := netip.ParseAddrPort(u.Host); err == nil {
+	if _, err = netip.ParseAddr(host); err == nil {
 		// Don't resolve the address of the server since it's already an IP.
-		handler := bootstrap.NewDialContext(opts.Timeout, u.Host)
-
-		return func() (bootstrap.DialHandler, error) { return handler, nil }
+		return &bootstrap.StaticDialer{
+			Dialer: &net.Dialer{
+				Timeout: o.Timeout,
+			},
+			Addresses: []string{u.Host},
+		}, nil
 	}
 
-	boot := opts.Bootstrap
-	if boot == nil {
-		// Use the default resolver for bootstrapping.
-		boot = net.DefaultResolver
+	r := o.Bootstrap
+	if r == nil {
+		r = &net.Resolver{}
 	}
 
-	var dialHandler atomic.Pointer[bootstrap.DialHandler]
-
-	return func() (h bootstrap.DialHandler, err error) {
-		// Check if the dial handler has already been created.
-		if hPtr := dialHandler.Load(); hPtr != nil {
-			return *hPtr, nil
+	if o.PreferIPv6 {
+		r = &bootstrap.SortResolver{
+			Resolver: r,
+			SortFunc: proxynetutil.PreferIPv6,
 		}
-
-		// TODO(e.burkov):  It may appear that several exchanges will try to
-		// resolve the upstream hostname at the same time.  Currently, the last
-		// successful value will be stored in dialHandler, but ideally we should
-		// resolve only once.
-		h, err = bootstrap.ResolveDialContext(u, opts.Timeout, boot, opts.PreferIPv6)
-		if err != nil {
-			return nil, fmt.Errorf("creating dial handler: %w", err)
+	} else {
+		r = &bootstrap.SortResolver{
+			Resolver: r,
+			SortFunc: proxynetutil.PreferIPv4,
 		}
-
-		if !dialHandler.CompareAndSwap(nil, &h) {
-			return *dialHandler.Load(), nil
-		}
-
-		return h, nil
 	}
+
+	d := &bootstrap.PortDialer{
+		Dialer: &net.Dialer{
+			Timeout: o.Timeout,
+		},
+		Port: port,
+	}
+
+	return &bootstrap.ResolvingDialer{
+		Resolver: r,
+		Dialer:   d,
+	}, nil
 }

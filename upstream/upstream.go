@@ -11,12 +11,14 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -274,25 +276,51 @@ func addPort(u *url.URL, port uint16) {
 // logBegin logs the start of DNS request resolution.  It should be called right
 // before dialing the connection to the upstream.  n is the [network] that will
 // be used to send the request.
-func logBegin(upsAddr string, n network, req *dns.Msg) {
-	qtype := ""
-	target := ""
+func logBegin(addr string, n network, req *dns.Msg) {
+	var qtype dns.Type
+	var qname string
 	if len(req.Question) != 0 {
-		qtype = dns.Type(req.Question[0].Qtype).String()
-		target = req.Question[0].Name
+		qtype = dns.Type(req.Question[0].Qtype)
+		qname = req.Question[0].Name
 	}
 
-	log.Debug("dnsproxy: %s: sending request over %s: %s %s", upsAddr, n, qtype, target)
+	log.Debug("dnsproxy: sending request to %s over %s: %s %q", addr, n, qtype, qname)
 }
 
-// Write to log about the result of DNS request
-func logFinish(upsAddr string, n network, err error) {
+// logFinish logs the end of DNS request resolution.  It should be called right
+// after receiving the response from the upstream or the failing action.  n is
+// the [network] that was used to send the request.
+func logFinish(addr string, n network, err error) {
+	logRoutine := log.Debug
+
 	status := "ok"
 	if err != nil {
 		status = err.Error()
+		if isTimeout(err) {
+			// Notify user about the timeout.
+			logRoutine = log.Error
+		}
 	}
 
-	log.Debug("dnsproxy: %s: response received over %s: %q", upsAddr, n, status)
+	logRoutine("dnsproxy: %s: response received over %s: %q", addr, n, status)
+}
+
+// isTimeout returns true if err is a timeout error.
+//
+// TODO(e.burkov):  Move to golibs.
+func isTimeout(err error) (ok bool) {
+	var netErr net.Error
+	switch {
+	case
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded),
+		errors.Is(err, os.ErrDeadlineExceeded):
+		return true
+	case errors.As(err, &netErr):
+		return netErr.Timeout()
+	default:
+		return false
+	}
 }
 
 // DialerInitializer returns the handler that it creates.  All the subsequent

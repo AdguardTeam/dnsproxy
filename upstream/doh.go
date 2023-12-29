@@ -220,10 +220,9 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 	}
 
 	logBegin(p.addrRedacted, n, req)
-	resp, err = p.exchangeHTTPSClient(client, req)
-	logFinish(p.addrRedacted, n, err)
+	defer func() { logFinish(p.addrRedacted, n, err) }()
 
-	return resp, err
+	return p.exchangeHTTPSClient(client, req)
 }
 
 // exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
@@ -277,13 +276,12 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil,
-			fmt.Errorf(
-				"expected status %d, got %d from %s",
-				http.StatusOK,
-				httpResp.StatusCode,
-				p.addrRedacted,
-			)
+		return nil, fmt.Errorf(
+			"expected status %d, got %d from %s",
+			http.StatusOK,
+			httpResp.StatusCode,
+			p.addrRedacted,
+		)
 	}
 
 	resp = &dns.Msg{}

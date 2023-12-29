@@ -193,7 +193,12 @@ func (p *dnsOverQUIC) Close() (err error) {
 
 // exchangeQUIC attempts to open a QUIC connection, send the DNS message
 // through it and return the response it got from the server.
-func (p *dnsOverQUIC) exchangeQUIC(m *dns.Msg) (resp *dns.Msg, err error) {
+func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg) (resp *dns.Msg, err error) {
+	addr := p.Address()
+
+	logBegin(addr, networkUDP, req)
+	defer func() { logFinish(addr, networkUDP, err) }()
+
 	var conn quic.Connection
 	conn, err = p.getConnection(true)
 	if err != nil {
@@ -201,7 +206,7 @@ func (p *dnsOverQUIC) exchangeQUIC(m *dns.Msg) (resp *dns.Msg, err error) {
 	}
 
 	var buf []byte
-	buf, err = m.Pack()
+	buf, err = req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack DNS message for DoQ: %w", err)
 	}

@@ -11,7 +11,7 @@ require (
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/miekg/dns v1.1.56
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/quic-go/quic-go v0.39.1
+	github.com/quic-go/quic-go v0.39.4
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/net v0.17.0

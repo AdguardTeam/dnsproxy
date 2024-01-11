@@ -55,7 +55,7 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 
 	// Create an upstream that uses this faulty bootstrap.
 	u, err := AddressToUpstream("tls://random-domain-name", &Options{
-		Bootstrap: rslv,
+		Bootstrap: NewCachingResolver(rslv),
 		Timeout:   timeout,
 	})
 	require.NoError(t, err)
@@ -114,17 +114,20 @@ func TestUpstreams(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	googleBoot := NewCachingResolver(googleRslv)
+	cloudflareBoot := NewCachingResolver(cloudflareRslv)
+
 	upstreams := []struct {
 		bootstrap Resolver
 		address   string
 	}{{
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "8.8.8.8:53",
 	}, {
 		bootstrap: nil,
 		address:   "1.1.1.1",
 	}, {
-		bootstrap: cloudflareRslv,
+		bootstrap: cloudflareBoot,
 		address:   "1.1.1.1",
 	}, {
 		bootstrap: nil,
@@ -139,19 +142,19 @@ func TestUpstreams(t *testing.T) {
 		bootstrap: nil,
 		address:   "tls://9.9.9.9:853",
 	}, {
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "tls://dns.adguard.com",
 	}, {
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "tls://dns.adguard.com:853",
 	}, {
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "tls://dns.adguard.com:853",
 	}, {
 		bootstrap: nil,
 		address:   "tls://one.one.one.one",
 	}, {
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "https://1dot1dot1dot1.cloudflare-dns.com/dns-query",
 	}, {
 		bootstrap: nil,
@@ -165,11 +168,11 @@ func TestUpstreams(t *testing.T) {
 		address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
 	}, {
 		// AdGuard Family (DNSCrypt)
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "sdns://AQIAAAAAAAAAFDE3Ni4xMDMuMTMwLjEzMjo1NDQzILgxXdexS27jIKRw3C7Wsao5jMnlhvhdRUXWuMm1AFq6ITIuZG5zY3J5cHQuZmFtaWx5Lm5zMS5hZGd1YXJkLmNvbQ",
 	}, {
 		// Cloudflare DNS (DNS-over-HTTPS)
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
 	}, {
 		// Google (Plain)
@@ -177,11 +180,11 @@ func TestUpstreams(t *testing.T) {
 		address:   "sdns://AAcAAAAAAAAABzguOC44Ljg",
 	}, {
 		// AdGuard DNS (DNS-over-TLS)
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "sdns://AwAAAAAAAAAAAAAPZG5zLmFkZ3VhcmQuY29t",
 	}, {
 		// AdGuard DNS (DNS-over-QUIC)
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "sdns://BAcAAAAAAAAAAAAXZG5zLmFkZ3VhcmQtZG5zLmNvbTo3ODQ",
 	}, {
 		// Cloudflare DNS (DNS-over-HTTPS)
@@ -189,7 +192,7 @@ func TestUpstreams(t *testing.T) {
 		address:   "https://1.1.1.1/dns-query",
 	}, {
 		// AdGuard DNS (DNS-over-QUIC)
-		bootstrap: googleRslv,
+		bootstrap: googleBoot,
 		address:   "quic://dns.adguard-dns.com",
 	}, {
 		// Google DNS (HTTP3)
@@ -215,7 +218,7 @@ func TestAddressToUpstream(t *testing.T) {
 	cloudflareRslv, err := NewUpstreamResolver("1.1.1.1", nil)
 	require.NoError(t, err)
 
-	opt := &Options{Bootstrap: cloudflareRslv}
+	opt := &Options{Bootstrap: NewCachingResolver(cloudflareRslv)}
 
 	testCases := []struct {
 		addr string
@@ -314,7 +317,7 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 			require.NoError(t, err)
 
 			u, err := AddressToUpstream(tc.address, &Options{
-				Bootstrap: rslv,
+				Bootstrap: NewCachingResolver(rslv),
 				Timeout:   timeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
@@ -361,7 +364,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				rslv = append(rslv, r)
+				rslv = append(rslv, NewCachingResolver(r))
 			}
 
 			u, err := AddressToUpstream(tc.address, &Options{

@@ -14,20 +14,42 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
+	"golang.org/x/exp/slices"
+)
+
+// Network is a network type for use in [Resolver]'s methods.
+type Network = string
+
+const (
+	// NetworkIP is a network type for both address families.
+	NetworkIP Network = "ip"
+
+	// NetworkIP4 is a network type for IPv4 address family.
+	NetworkIP4 Network = "ip4"
+
+	// NetworkIP6 is a network type for IPv6 address family.
+	NetworkIP6 Network = "ip6"
+
+	// NetworkTCP is a network type for TCP connections.
+	NetworkTCP Network = "tcp"
+
+	// NetworkUDP is a network type for UDP connections.
+	NetworkUDP Network = "udp"
 )
 
 // DialHandler is a dial function for creating unencrypted network connections
 // to the upstream server.  It establishes the connection to the server
-// specified at initialization and ignores the addr.
-type DialHandler func(ctx context.Context, network, addr string) (conn net.Conn, err error)
+// specified at initialization and ignores the addr.  network must be one of
+// [NetworkTCP] or [NetworkUDP].
+type DialHandler func(ctx context.Context, network Network, addr string) (conn net.Conn, err error)
 
 // ResolveDialContext returns a DialHandler that uses addresses resolved from u
 // using resolver.  u must not be nil.
 func ResolveDialContext(
 	u *url.URL,
 	timeout time.Duration,
-	resolver Resolver,
-	preferIPv6 bool,
+	r Resolver,
+	preferV6 bool,
 ) (h DialHandler, err error) {
 	defer func() { err = errors.Annotate(err, "dialing %q: %w", u.Host) }()
 
@@ -38,7 +60,7 @@ func ResolveDialContext(
 		return nil, err
 	}
 
-	if resolver == nil {
+	if r == nil {
 		return nil, fmt.Errorf("resolver is nil: %w", ErrNoResolvers)
 	}
 
@@ -49,21 +71,20 @@ func ResolveDialContext(
 		defer cancel()
 	}
 
-	ips, err := resolver.LookupNetIP(ctx, "ip", host)
+	ips, err := r.LookupNetIP(ctx, NetworkIP, host)
 	if err != nil {
 		return nil, fmt.Errorf("resolving hostname: %w", err)
 	}
 
-	proxynetutil.SortNetIPAddrs(ips, preferIPv6)
+	if preferV6 {
+		slices.SortStableFunc(ips, proxynetutil.PreferIPv6)
+	} else {
+		slices.SortStableFunc(ips, proxynetutil.PreferIPv4)
+	}
 
 	addrs := make([]string, 0, len(ips))
 	for _, ip := range ips {
-		if !ip.IsValid() {
-			// All invalid addresses should be in the tail after sorting.
-			break
-		}
-
-		addrs = append(addrs, netip.AddrPortFrom(ip, uint16(port)).String())
+		addrs = append(addrs, netip.AddrPortFrom(ip, port).String())
 	}
 
 	return NewDialContext(timeout, addrs...), nil
@@ -71,14 +92,7 @@ func ResolveDialContext(
 
 // NewDialContext returns a DialHandler that dials addrs and returns the first
 // successful connection.  At least a single addr should be specified.
-//
-// TODO(e.burkov):  Consider using [Resolver] instead of
-// [upstream.Options.Bootstrap] and [upstream.Options.ServerIPAddrs].
 func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
-	dialer := &net.Dialer{
-		Timeout: timeout,
-	}
-
 	l := len(addrs)
 	if l == 0 {
 		log.Debug("bootstrap: no addresses to dial")
@@ -88,9 +102,11 @@ func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 		}
 	}
 
-	// TODO(e.burkov):  Check IPv6 preference here.
+	dialer := &net.Dialer{
+		Timeout: timeout,
+	}
 
-	return func(ctx context.Context, network, _ string) (conn net.Conn, err error) {
+	return func(ctx context.Context, network Network, _ string) (conn net.Conn, err error) {
 		var errs []error
 
 		// Return first succeeded connection.  Note that we're using addrs
@@ -101,17 +117,18 @@ func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 			start := time.Now()
 			conn, err = dialer.DialContext(ctx, network, addr)
 			elapsed := time.Since(start)
-			if err == nil {
-				log.Debug("bootstrap: connection to %s succeeded in %s", addr, elapsed)
+			if err != nil {
+				log.Debug("bootstrap: connection to %s failed in %s: %s", addr, elapsed, err)
+				errs = append(errs, err)
 
-				return conn, nil
+				continue
 			}
 
-			log.Debug("bootstrap: connection to %s failed in %s: %s", addr, elapsed, err)
-			errs = append(errs, err)
+			log.Debug("bootstrap: connection to %s succeeded in %s", addr, elapsed)
+
+			return conn, nil
 		}
 
-		// TODO(e.burkov):  Use errors.Join in Go 1.20.
-		return nil, errors.List("all dialers failed", errs...)
+		return nil, errors.Join(errs...)
 	}
 }

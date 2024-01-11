@@ -329,7 +329,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 		upstreams,
 		&upstream.Options{
 			InsecureSkipVerify: false,
-			Bootstrap:          googleRslv,
+			Bootstrap:          upstream.NewCachingResolver(googleRslv),
 			Timeout:            1 * time.Second,
 		},
 	)
@@ -412,7 +412,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 		u, err = upstream.AddressToUpstream(
 			line,
 			&upstream.Options{
-				Bootstrap: googleRslv,
+				Bootstrap: upstream.NewCachingResolver(googleRslv),
 				Timeout:   timeOut,
 			},
 		)

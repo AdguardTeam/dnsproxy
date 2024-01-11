@@ -14,7 +14,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
@@ -323,9 +322,7 @@ func isTimeout(err error) (ok bool) {
 	}
 }
 
-// DialerInitializer returns the handler that it creates.  All the subsequent
-// calls to it, except the first one, will return the same handler so that
-// resolving will be performed only once.
+// DialerInitializer returns the handler that it creates.
 type DialerInitializer func() (handler bootstrap.DialHandler, err error)
 
 // newDialerInitializer creates an initializer of the dialer that will dial the
@@ -335,7 +332,9 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
 		// Don't resolve the address of the server since it's already an IP.
 		handler := bootstrap.NewDialContext(opts.Timeout, u.Host)
 
-		return func() (bootstrap.DialHandler, error) { return handler, nil }
+		return func() (h bootstrap.DialHandler, dialerErr error) {
+			return handler, nil
+		}
 	}
 
 	boot := opts.Bootstrap
@@ -344,27 +343,7 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
 		boot = net.DefaultResolver
 	}
 
-	var dialHandler atomic.Pointer[bootstrap.DialHandler]
-
 	return func() (h bootstrap.DialHandler, err error) {
-		// Check if the dial handler has already been created.
-		if hPtr := dialHandler.Load(); hPtr != nil {
-			return *hPtr, nil
-		}
-
-		// TODO(e.burkov):  It may appear that several exchanges will try to
-		// resolve the upstream hostname at the same time.  Currently, the last
-		// successful value will be stored in dialHandler, but ideally we should
-		// resolve only once.
-		h, err = bootstrap.ResolveDialContext(u, opts.Timeout, boot, opts.PreferIPv6)
-		if err != nil {
-			return nil, fmt.Errorf("creating dial handler: %w", err)
-		}
-
-		if !dialHandler.CompareAndSwap(nil, &h) {
-			return *dialHandler.Load(), nil
-		}
-
-		return h, nil
+		return bootstrap.ResolveDialContext(u, opts.Timeout, boot, opts.PreferIPv6)
 	}
 }

@@ -8,21 +8,20 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"golang.org/x/exp/slices"
 )
 
-// Resolver resolves the hostnames to IP addresses.
+// Resolver resolves the hostnames to IP addresses.  Note, that [net.Resolver]
+// from standard library also implements this interface.
 type Resolver interface {
-	// LookupNetIP looks up the IP addresses for the given host.  network must
-	// be one of "ip", "ip4" or "ip6".  The response may be empty even if err is
-	// nil.
-	LookupNetIP(ctx context.Context, network, host string) (addrs []netip.Addr, err error)
+	// LookupNetIP looks up the IP addresses for the given host.  network should
+	// be one of [NetworkIP], [NetworkIP4] or [NetworkIP6].  The response may be
+	// empty even if err is nil.  All the addrs must be valid.
+	LookupNetIP(ctx context.Context, network Network, host string) (addrs []netip.Addr, err error)
 }
 
 // type check
 var _ Resolver = &net.Resolver{}
-
-// ErrNoResolvers is returned when zero resolvers specified.
-const ErrNoResolvers errors.Error = "no resolvers specified"
 
 // ParallelResolver is a slice of resolvers that are queried concurrently.  The
 // first successful response is returned.
@@ -34,7 +33,7 @@ var _ Resolver = ParallelResolver(nil)
 // LookupNetIP implements the [Resolver] interface for ParallelResolver.
 func (r ParallelResolver) LookupNetIP(
 	ctx context.Context,
-	network string,
+	network Network,
 	host string,
 ) (addrs []netip.Addr, err error) {
 	resolversNum := len(r)
@@ -48,7 +47,7 @@ func (r ParallelResolver) LookupNetIP(
 	}
 
 	// Size of channel must accommodate results of lookups from all resolvers,
-	// sending into channel will be block otherwise.
+	// sending into channel will block otherwise.
 	ch := make(chan any, resolversNum)
 	for _, rslv := range r {
 		go lookupAsync(ctx, rslv, network, host, ch)
@@ -96,4 +95,51 @@ func lookup(ctx context.Context, r Resolver, network, host string) (addrs []neti
 	}
 
 	return addrs, err
+}
+
+// ConsequentResolver is a slice of resolvers that are queried in order until
+// the first successful non-empty response, as opposed to just successful
+// response requirement in [ParallelResolver].
+type ConsequentResolver []Resolver
+
+// type check
+var _ Resolver = ConsequentResolver(nil)
+
+// LookupNetIP implements the [Resolver] interface for ConsequentResolver.
+func (resolvers ConsequentResolver) LookupNetIP(
+	ctx context.Context,
+	network Network,
+	host string,
+) (addrs []netip.Addr, err error) {
+	if len(resolvers) == 0 {
+		return nil, ErrNoResolvers
+	}
+
+	var errs []error
+	for _, r := range resolvers {
+		addrs, err = r.LookupNetIP(ctx, network, host)
+		if err == nil && len(addrs) > 0 {
+			return addrs, nil
+		}
+
+		errs = append(errs, err)
+	}
+
+	return nil, errors.Join(errs...)
+}
+
+// StaticResolver is a resolver which always responds with an underlying slice
+// of IP addresses regardless of host and network.
+type StaticResolver []netip.Addr
+
+// type check
+var _ Resolver = StaticResolver(nil)
+
+// LookupNetIP implements the [Resolver] interface for StaticResolver.
+func (r StaticResolver) LookupNetIP(
+	_ context.Context,
+	_ Network,
+	_ string,
+) (addrs []netip.Addr, err error) {
+	return slices.Clone(r), nil
 }

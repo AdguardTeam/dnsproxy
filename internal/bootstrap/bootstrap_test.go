@@ -87,7 +87,7 @@ func TestResolveDialContext(t *testing.T) {
 				network string,
 				host string,
 			) (addrs []netip.Addr, err error) {
-				require.Equal(pt, "ip", network)
+				require.Equal(pt, bootstrap.NetworkIP, network)
 				require.Equal(pt, hostname, host)
 
 				return tc.addresses, nil
@@ -103,7 +103,7 @@ func TestResolveDialContext(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			conn, err := dialContext(context.Background(), "tcp", "")
+			conn, err := dialContext(context.Background(), bootstrap.NetworkTCP, "")
 			require.NoError(t, err)
 
 			expected, ok := testutil.RequireReceive(t, sig, testTimeout)
@@ -120,7 +120,7 @@ func TestResolveDialContext(t *testing.T) {
 				network string,
 				host string,
 			) (addrs []netip.Addr, err error) {
-				require.Equal(pt, "ip", network)
+				require.Equal(pt, bootstrap.NetworkIP, network)
 				require.Equal(pt, hostname, host)
 
 				return nil, nil
@@ -135,7 +135,7 @@ func TestResolveDialContext(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = dialContext(context.Background(), "tcp", "")
+		_, err = dialContext(context.Background(), bootstrap.NetworkTCP, "")
 		testutil.AssertErrorMsg(t, "no addresses", err)
 	})
 

@@ -465,13 +465,13 @@ func initBootstrap(bootstraps []string, opts *upstream.Options) (r upstream.Reso
 	var resolvers []upstream.Resolver
 
 	for i, b := range bootstraps {
-		var resolver upstream.Resolver
-		resolver, err = upstream.NewUpstreamResolver(b, opts)
+		var ur *upstream.UpstreamResolver
+		ur, err = upstream.NewUpstreamResolver(b, opts)
 		if err != nil {
 			return nil, fmt.Errorf("creating bootstrap resolver at index %d: %w", i, err)
 		}
 
-		resolvers = append(resolvers, resolver)
+		resolvers = append(resolvers, upstream.NewCachingResolver(ur))
 	}
 
 	switch len(resolvers) {

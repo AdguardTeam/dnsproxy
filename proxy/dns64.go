@@ -213,7 +213,7 @@ func (p *Proxy) withinDNS64(ip netip.Addr) (ok bool) {
 	return false
 }
 
-// shouldStripDNS64 returns true if DNS64 is enabled and ip has either one of
+// shouldStripDNS64 returns true if DNS64 is enabled and addr has either one of
 // custom DNS64 prefixes or the Well-Known one.  This is intended to be used
 // with PTR requests.
 //
@@ -223,21 +223,16 @@ func (p *Proxy) withinDNS64(ip netip.Addr) (ok bool) {
 // DNS64.
 //
 // See https://datatracker.ietf.org/doc/html/rfc6147#section-5.3.1.
-func (p *Proxy) shouldStripDNS64(ip net.IP) (ok bool) {
+func (p *Proxy) shouldStripDNS64(addr netip.Addr) (ok bool) {
 	if len(p.dns64Prefs) == 0 {
-		return false
-	}
-
-	addr, err := netutil.IPToAddr(ip, netutil.AddrFamilyIPv6)
-	if err != nil {
 		return false
 	}
 
 	switch {
 	case p.withinDNS64(addr):
-		log.Debug("proxy: %s is within DNS64 custom prefix set", ip)
+		log.Debug("proxy: %s is within DNS64 custom prefix set", addr)
 	case dns64WellKnownPref.Contains(addr):
-		log.Debug("proxy: %s is within DNS64 well-known prefix", ip)
+		log.Debug("proxy: %s is within DNS64 well-known prefix", addr)
 	default:
 		return false
 	}

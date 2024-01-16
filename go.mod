@@ -3,7 +3,7 @@ module github.com/AdguardTeam/dnsproxy
 go 1.20
 
 require (
-	github.com/AdguardTeam/golibs v0.18.1
+	github.com/AdguardTeam/golibs v0.19.0
 	github.com/ameshkov/dnscrypt/v2 v2.2.7
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
@@ -13,9 +13,9 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/quic-go/quic-go v0.39.1
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
-	golang.org/x/net v0.17.0
-	golang.org/x/sys v0.13.0
+	golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
+	golang.org/x/net v0.19.0
+	golang.org/x/sys v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -32,10 +32,10 @@ require (
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/qtls-go1-20 v0.3.4 // indirect
 	go.uber.org/mock v0.3.0 // indirect
-	golang.org/x/crypto v0.14.0 // indirect
-	golang.org/x/mod v0.12.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
-	golang.org/x/tools v0.13.0 // indirect
+	golang.org/x/crypto v0.16.0 // indirect
+	golang.org/x/mod v0.14.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/tools v0.16.0 // indirect
 	gonum.org/v1/gonum v0.14.0
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )

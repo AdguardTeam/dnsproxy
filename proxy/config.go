@@ -86,11 +86,10 @@ type Config struct {
 	// RefuseAny makes proxy refuse the requests of type ANY.
 	RefuseAny bool
 
-	// TrustedProxies is the list of IP addresses and CIDR networks to
-	// detect proxy servers addresses the DoH requests from which should be
-	// handled.  The value of nil or an empty slice for this field makes
-	// Proxy not trust any address.
-	TrustedProxies []string
+	// TrustedProxies is the trusted list of CIDR networks to detect proxy
+	// servers addresses from where the DoH requests should be handled.  The
+	// value of nil makes Proxy not trust any address.
+	TrustedProxies netutil.SubnetSet
 
 	// Upstream DNS servers and their settings
 	// --

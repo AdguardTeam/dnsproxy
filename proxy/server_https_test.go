@@ -66,7 +66,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 		proxyAddr  = netip.MustParseAddr("127.0.0.1")
 	)
 
-	doRequest := func(t *testing.T, addr string, expectedClientIP netip.Addr) {
+	doRequest := func(t *testing.T, addr, expectedClientIP netip.Addr) {
 		// Prepare the proxy server.
 		tlsConf, caPem := createServerTLSConfig(t)
 		dnsProxy := createTestProxy(t, tlsConf)
@@ -82,7 +82,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 		msg := createTestMessage()
 
-		dnsProxy.TrustedProxies = []string{addr}
+		dnsProxy.TrustedProxies = netip.PrefixFrom(addr, addr.BitLen())
 
 		// Start listening.
 		serr := dnsProxy.Start()
@@ -100,11 +100,11 @@ func TestProxy_trustedProxies(t *testing.T) {
 	}
 
 	t.Run("success", func(t *testing.T) {
-		doRequest(t, proxyAddr.String(), clientAddr)
+		doRequest(t, proxyAddr, clientAddr)
 	})
 
 	t.Run("not_in_trusted", func(t *testing.T) {
-		doRequest(t, "127.0.0.2", proxyAddr)
+		doRequest(t, netip.MustParseAddr("127.0.0.2"), proxyAddr)
 	})
 }
 

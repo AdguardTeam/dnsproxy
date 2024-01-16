@@ -137,9 +137,6 @@ type Proxy struct {
 	// ratelimitLock protects ratelimitBuckets.
 	ratelimitLock sync.Mutex
 
-	// proxyVerifier checks if the proxy is in the trusted list.
-	proxyVerifier netutil.SubnetSet
-
 	// DNS cache
 	// --
 
@@ -228,14 +225,6 @@ func (p *Proxy) Init() (err error) {
 			p.fastestAddr.PingWaitTimeout = timeout
 		}
 	}
-
-	var trusted []*net.IPNet
-	trusted, err = netutil.ParseSubnets(p.TrustedProxies...)
-	if err != nil {
-		return fmt.Errorf("initializing subnet detector for proxies verifying: %w", err)
-	}
-
-	p.proxyVerifier = netutil.SliceSubnetSet(trusted)
 
 	err = p.setupDNS64()
 	if err != nil {
@@ -528,7 +517,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream) {
 
 	// TODO(e.burkov):  Detect against the actual configured subnet set.
 	// Perhaps, even much earlier.
-	if !netutil.IsLocallyServedAddr(d.Addr.Addr()) {
+	if !netutil.IsLocallyServed(d.Addr.Addr()) {
 		return nil
 	}
 
@@ -719,12 +708,15 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 		}
 	}
 
-	// Set ECS.
+	var cliAddr netip.Addr
 	if cliIP == nil {
-		cliIP = dctx.Addr.Addr().AsSlice()
+		cliAddr = dctx.Addr.Addr()
+		cliIP = cliAddr.AsSlice()
+	} else {
+		cliAddr, _ = netip.AddrFromSlice(cliIP)
 	}
 
-	if !netutil.IsSpecialPurpose(cliIP) {
+	if !netutil.IsSpecialPurpose(cliAddr) {
 		// A Stub Resolver MUST set SCOPE PREFIX-LENGTH to 0.  See RFC 7871
 		// Section 6.
 		dctx.ReqECS = setECS(dctx.Req, cliIP, 0)

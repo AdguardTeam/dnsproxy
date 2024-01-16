@@ -21,6 +21,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/mathutil"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -345,10 +346,13 @@ func createProxyConfig(options *Options) (conf proxy.Config) {
 		CacheOptimistic: options.CacheOptimistic,
 		RefuseAny:       options.RefuseAny,
 		HTTP3:           options.HTTP3,
-		// TODO(e.burkov):  The following CIDRs are aimed to match any
-		// address.  This is not quite proper approach to be used by
-		// default so think about configuring it.
-		TrustedProxies:         []string{"0.0.0.0/0", "::0/0"},
+		// TODO(e.burkov):  The following CIDRs are aimed to match any address.
+		// This is not quite proper approach to be used by default so think
+		// about configuring it.
+		TrustedProxies: netutil.SliceSubnetSet{
+			netip.MustParsePrefix("0.0.0.0/0"),
+			netip.MustParsePrefix("::0/0"),
+		},
 		EnableEDNSClientSubnet: options.EnableEDNSSubnet,
 		UDPBufferSize:          options.UDPBufferSize,
 		HTTPSServerName:        options.HTTPSServerName,

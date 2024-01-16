@@ -4,7 +4,7 @@ import (
 	"net"
 
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/netutil"
+	"golang.org/x/exp/slices"
 )
 
 // cacheForContext returns cache object for the given context.
@@ -52,7 +52,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 		minCtxClone := &DNSContext{
 			// It is only read inside the optimistic resolver.
 			CustomUpstreamConfig: d.CustomUpstreamConfig,
-			ReqECS:               netutil.CloneIPNet(d.ReqECS),
+			ReqECS:               cloneIPNet(d.ReqECS),
 		}
 		if d.Req != nil {
 			minCtxClone.Req = d.Req.Copy()
@@ -63,6 +63,18 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	}
 
 	return hit
+}
+
+// cloneIPNet returns a deep clone of n.
+func cloneIPNet(n *net.IPNet) (clone *net.IPNet) {
+	if n == nil {
+		return nil
+	}
+
+	return &net.IPNet{
+		IP:   slices.Clone(n.IP),
+		Mask: slices.Clone(n.Mask),
+	}
 }
 
 // cacheResp stores the response from d in general or subnet cache.  In case the

@@ -1188,7 +1188,10 @@ func createTestProxy(t *testing.T, tlsConfig *tls.Config) (p *Proxy) {
 	p.UpstreamConfig = &UpstreamConfig{}
 	p.UpstreamConfig.Upstreams = append(upstreams, dnsUpstream)
 
-	p.TrustedProxies = []string{"0.0.0.0/0", "::0/0"}
+	p.TrustedProxies = netutil.SliceSubnetSet{
+		netip.MustParsePrefix("0.0.0.0/0"),
+		netip.MustParsePrefix("::0/0"),
+	}
 
 	p.RatelimitSubnetLenIPv4 = 24
 	p.RatelimitSubnetLenIPv6 = 64

@@ -162,8 +162,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if prx.IsValid() {
 		log.Debug("dnsproxy: request came from proxy server %s", prx)
 
-		// TODO(s.chzhen):  Consider using []netip.Prefix.
-		if !p.proxyVerifier.Contains(prx.Addr().AsSlice()) {
+		if !p.TrustedProxies.Contains(prx.Addr()) {
 			log.Debug("dnsproxy: proxy %s is not trusted, using original remote addr", prx)
 			d.Addr = prx
 		}

@@ -528,6 +528,12 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream) {
 func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	req := d.Req
 
+	if p.UpstreamConfig.checkLocalOnly(req.Question[0].Name) {
+		resp := p.genWithRCode(req, dns.RcodeNameError)
+		p.handleExchangeResult(d, req, resp, nil)
+		return true, nil
+	}
+
 	upstreams := p.selectUpstreams(d)
 	if len(upstreams) == 0 {
 		return false, fmt.Errorf("selecting general upstream: %w", upstream.ErrNoUpstreams)

@@ -24,6 +24,12 @@ type UpstreamConfig struct {
 	// corresponding upstreams.
 	SpecifiedDomainUpstreams map[string][]upstream.Upstream
 
+	// LocalOnlyDomains is a set of domains which should never be looked up on
+	// any upstream server. The value of the boolean doesn't matter, this is only
+	// a map to make lookups quicker than if it was a slice. If the key exists,
+	// it is treated as local only.
+	LocalOnlyDomains map[string]bool
+
 	// SubdomainExclusions is set of domains with subdomains exclusions.
 	SubdomainExclusions *stringutil.Set
 
@@ -58,16 +64,23 @@ var _ io.Closer = (*UpstreamConfig)(nil)
 //
 //	[/domain1/../domainN/]#
 //
+// To ensure domains will never be looked up on any upstream servers, and will
+// respond with NXDOMAIN if not resolved locally, use the following syntax:
+//
+//	[/domain1/../domainN/]-
+//
 // So the following config:
 //
 //	[/host.com/]1.2.3.4
 //	[/www.host.com/]2.3.4.5"
+//	[/domain.local/]-
 //	[/maps.host.com/news.host.com/]#
 //	3.4.5.6
 //
 // will send queries for *.host.com to 1.2.3.4.  Except for *.www.host.com,
-// which will go to 2.3.4.5.  And *.maps.host.com or *.news.host.com, which
-// will go to default server 3.4.5.6 with all other domains.
+// which will go to 2.3.4.5.  Any requests to *.domain.local or domain.local
+// will only be resolved locally.  And *.maps.host.com or *.news.host.com,
+// which will go to default server 3.4.5.6 with all other domains.
 //
 // To exclude top level domain from reserved upstreams querying you could use
 // the following:
@@ -95,6 +108,7 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 		domainReservedUpstreams:  map[string][]upstream.Upstream{},
 		specifiedDomainUpstreams: map[string][]upstream.Upstream{},
 		subdomainsOnlyUpstreams:  map[string][]upstream.Upstream{},
+		localOnlyDomains:         map[string]bool{},
 		subdomainsOnlyExclusions: stringutil.NewSet(),
 	}
 
@@ -120,6 +134,12 @@ type configParser struct {
 	// subdomainsOnlyUpstreams is a map of wildcard subdomains and lists of
 	// corresponding upstreams.
 	subdomainsOnlyUpstreams map[string][]upstream.Upstream
+
+	// localOnlyDomains is a set of domains which should never be looked up on
+	// any upstream server. The value of the boolean doesn't matter, this is only
+	// a map to make lookups quicker than if it was a slice. If the key exists,
+	// it is treated as local only.
+	localOnlyDomains map[string]bool
 
 	// subdomainsOnlyExclusions is set of domains with subdomains exclusions.
 	subdomainsOnlyExclusions *stringutil.Set
@@ -147,6 +167,7 @@ func (p *configParser) parse(conf []string) (c *UpstreamConfig, err error) {
 		DomainReservedUpstreams:  p.domainReservedUpstreams,
 		SpecifiedDomainUpstreams: p.specifiedDomainUpstreams,
 		SubdomainExclusions:      p.subdomainsOnlyExclusions,
+		LocalOnlyDomains:         p.localOnlyDomains,
 	}, nil
 }
 
@@ -156,6 +177,12 @@ func (p *configParser) parseLine(idx int, confLine string) (err error) {
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.
 		return err
+	}
+
+	if upstreams[0] == "-" && len(domains) > 0 {
+		p.specifyLocalOnly(domains)
+
+		return nil
 	}
 
 	if upstreams[0] == "#" && len(domains) > 0 {
@@ -206,6 +233,12 @@ func splitConfigLine(idx int, confLine string) (upstreams, domains []string, err
 	}
 
 	return strings.Fields(upstreamsLine), domains, nil
+}
+
+func (p *configParser) specifyLocalOnly(domains []string) {
+	for _, domain := range domains {
+		p.localOnlyDomains[domain] = true
+	}
 }
 
 // specifyUpstream specifies the upstream for domains.
@@ -294,6 +327,17 @@ func (uc *UpstreamConfig) validate() (err error) {
 	default:
 		return errNoDefaultUpstreams
 	}
+}
+
+func (uc *UpstreamConfig) checkLocalOnly(host string) bool {
+	for host != "" {
+		var ok bool
+		if _, ok = uc.LocalOnlyDomains[host]; ok {
+			return true
+		}
+		_, host, _ = strings.Cut(host, ".")
+	}
+	return false
 }
 
 // getUpstreamsForDomain looks for a domain in the reserved domains map and

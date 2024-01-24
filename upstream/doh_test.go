@@ -184,7 +184,7 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 			require.NoError(t, err)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
-			checkRaceCondition(u)
+			checkRaceCondition(u, 3, 10)
 		})
 	}
 }

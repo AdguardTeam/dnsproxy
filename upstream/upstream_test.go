@@ -508,6 +508,8 @@ func TestAddPort(t *testing.T) {
 }
 
 // checkUpstream sends a test message to the upstream and checks the result.
+//
+// TODO(e.burkov):  addr only used for logging, remove it.
 func checkUpstream(t *testing.T, u Upstream, addr string) {
 	t.Helper()
 
@@ -518,27 +520,22 @@ func checkUpstream(t *testing.T, u Upstream, addr string) {
 	requireResponse(t, req, reply)
 }
 
-// checkRaceCondition runs several goroutines in parallel and each of them calls
-// checkUpstream several times.
-func checkRaceCondition(u Upstream) {
+// checkRaceCondition runs routinesNum goroutines in parallel and each of them
+// calls checkUpstream reqNum times.
+func checkRaceCondition(u Upstream, routinesNum, reqNum int) {
 	wg := sync.WaitGroup{}
-
-	// The number of requests to run in every goroutine.
-	reqCount := 10
-	// The overall number of goroutines to run.
-	goroutinesCount := 3
 
 	makeRequests := func() {
 		defer wg.Done()
-		for i := 0; i < reqCount; i++ {
+		for i := 0; i < reqNum; i++ {
 			req := createTestMessage()
 			// Ignore exchange errors here, the point is to check for races.
 			_, _ = u.Exchange(req)
 		}
 	}
 
-	wg.Add(goroutinesCount)
-	for i := 0; i < goroutinesCount; i++ {
+	wg.Add(routinesNum)
+	for i := 0; i < routinesNum; i++ {
 		go makeRequests()
 	}
 

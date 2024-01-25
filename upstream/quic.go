@@ -265,9 +265,7 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 // argument controls whether we should try to use the existing cached
 // connection.  If it is false, we will forcibly create a new connection and
 // close the existing one if needed.
-func (p *dnsOverQUIC) getConnection(useCached bool) (c quic.Connection, err error) {
-	var conn quic.Connection
-
+func (p *dnsOverQUIC) getConnection(useCached bool) (conn quic.Connection, err error) {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
 

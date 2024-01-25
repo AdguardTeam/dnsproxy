@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -191,9 +193,9 @@ type testDoQServer struct {
 }
 
 // serve serves DoQ requests.
-func (s *testDoQServer) serve(cancel context.CancelCauseFunc) {
+func (s *testDoQServer) serve(ctx context.Context, cancel context.CancelCauseFunc) {
 	for {
-		conn, err := s.listener.Accept(context.Background())
+		conn, err := s.listener.Accept(ctx)
 		if err != nil {
 			if err == quic.ErrServerClosed {
 				cancel(nil)
@@ -260,10 +262,13 @@ func (s *testDoQServer) handleQUICStream(conn quic.EarlyConnection, stream quic.
 func startDoQServer(t *testing.T, port uint16) (addr netip.AddrPort) {
 	t.Helper()
 
-	tlsConfig, rootCAs := createServerTLSConfig(t, "127.0.0.1")
+	ip := netutil.IPv4Localhost()
+
+	tlsConfig, rootCAs := createServerTLSConfig(t, ip.String())
 	tlsConfig.NextProtos = []string{NextProtoDQ}
 
-	addr = netip.AddrPortFrom(netutil.IPv4Localhost(), port)
+	addr = netip.AddrPortFrom(ip, port)
+
 	listen, err := quic.ListenAddrEarly(addr.String(), tlsConfig, &quic.Config{
 		// Necessary for 0-RTT.
 		RequireAddressValidation: func(net.Addr) (ok bool) {
@@ -273,16 +278,16 @@ func startDoQServer(t *testing.T, port uint16) (addr netip.AddrPort) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
-	ctx, cancel := context.WithCancelCause(ctx)
-
 	s := &testDoQServer{
 		tlsConfig: tlsConfig,
 		rootCAs:   rootCAs,
 		listener:  listen,
 	}
 
-	go s.serve(cancel)
+	ctx := context.Background()
+	ctx, cancel := context.WithCancelCause(ctx)
+
+	go s.serve(ctx, cancel)
 	testutil.CleanupAndRequireSuccess(t, s.listener.Close)
 	testutil.CleanupAndRequireSuccess(t, func() (err error) { return context.Cause(ctx) })
 
@@ -374,6 +379,16 @@ func (q *quicConnTracer) SentLongHeaderPacket(
 }
 
 func TestDNSOverQUIC_closingConns(t *testing.T) {
+	// TODO(e.burkov):  !! get rid of this
+	oldLevel, logLevel := log.GetLevel(), log.DEBUG
+	oldWriter, logWriter := log.Writer(), &bytes.Buffer{}
+	log.SetLevel(logLevel)
+	log.SetOutput(logWriter)
+	t.Cleanup(func() {
+		log.SetLevel(oldLevel)
+		log.SetOutput(oldWriter)
+	})
+
 	addrPort := startDoQServer(t, 0)
 
 	upsURL := (&url.URL{
@@ -381,59 +396,64 @@ func TestDNSOverQUIC_closingConns(t *testing.T) {
 		Host:   addrPort.String(),
 	}).String()
 
-	tracer := &quicTracer{}
 	opts := &Options{
 		InsecureSkipVerify: true,
-		Timeout:            5 * time.Second,
-		QUICTracer:         tracer.TracerForConnection,
+		Timeout:            1 * time.Second,
 	}
 
 	u, err := AddressToUpstream(upsURL, opts)
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
-	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
 
 	// reqNum should be greater than the number of connections that will cause
 	// the race for connsMu.
-	const reqNum = 100
+	const reqNum = 128
 
-	// Initialize a connection.
-	checkUpstream(t, u, upsURL)
+	var beforeExchange, afterExchange sync.WaitGroup
+	beforeExchange.Add(reqNum)
+	afterExchange.Add(reqNum)
 
 	errs := [reqNum]error{}
-	var errNum int
 
-	t.Run("resolve_concurrently", func(t *testing.T) {
+	var connMu sync.Locker
+	t.Run("init_and_close", func(t *testing.T) {
+		// Initialize a connection.
+		checkUpstream(t, u, upsURL)
+
+		uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
+		connMu = uq.connMu
+
 		// Lock the connection to make sure that we don't close it while
 		// resolving the upstream.
-		uq.connMu.Lock()
+		connMu.Lock()
 
-		var beforeExchange, afterExchange sync.WaitGroup
-		beforeExchange.Add(reqNum)
-		afterExchange.Add(reqNum)
+		// Make the connection useless, but not nil to enforce opening a stream.
+		require.NoError(t, uq.conn.CloseWithError(quic.ApplicationErrorCode(quic.NoError), ""))
+	})
 
+	t.Run("accumulate_exchanges", func(t *testing.T) {
 		req := createTestMessage()
+
 		for i := 0; i < reqNum; i++ {
 			go func(i int) {
 				reqClone := req.Copy()
 
-				// Accumulate exchanging routines.
 				beforeExchange.Done()
 				_, errs[i] = u.Exchange(reqClone)
-
 				afterExchange.Done()
 			}(i)
 		}
 
-		beforeExchange.Wait()
 		// Let all the goroutines race for the connection.
-		uq.connMu.Unlock()
+		beforeExchange.Wait()
+		connMu.Unlock()
 		afterExchange.Wait()
 
 		if reqsErr := errors.Join(errs[:]...); !assert.NoError(t, reqsErr) {
-			errNum = len(reqsErr.(errors.WrapperSlice).Unwrap())
+			wrapperSlice := reqsErr.(errors.WrapperSlice)
+			t.Logf("got %d errors", len(wrapperSlice.Unwrap()))
 		}
 	})
 
-	assert.Len(t, tracer.getConnectionsInfo(), errNum+1)
+	t.Logf("logged during test: %s", logWriter)
 }

@@ -377,8 +377,6 @@ func (q *quicConnTracer) SentLongHeaderPacket(
 }
 
 func TestDNSOverQUIC_closingConns(t *testing.T) {
-	t.Skip("TODO(e.burkov): !! remove skip")
-
 	addrPort := startDoQServer(t, 0)
 
 	upsURL := (&url.URL{

@@ -49,20 +49,17 @@ func (qc *quicConnector) reset() {
 // get returns the connection.  If the connection is not established yet, it
 // will be established.  If the connection establishment fails, the next call
 // to get will try to establish the connection again.
-func (qc *quicConnector) get() (c quic.Connection, err error) {
+func (qc *quicConnector) get() (conn quic.Connection, err error) {
 	select {
 	case <-qc.openCh:
 		qc.mu.Lock()
 		defer qc.mu.Unlock()
 
-		if qc.res != nil {
-			qc.connHandler.closeConn(qc.res, qc.err)
-		}
-
-		qc.res, qc.err = qc.connHandler.openConnection()
-		qc.resetCh <- struct{}{}
+		qc.reopen()
 		if qc.err != nil {
-			qc.reset()
+			qc.openCh <- struct{}{}
+		} else {
+			qc.resetCh <- struct{}{}
 		}
 	default:
 		qc.mu.RLock()
@@ -70,4 +67,12 @@ func (qc *quicConnector) get() (c quic.Connection, err error) {
 	}
 
 	return qc.res, qc.err
+}
+
+func (qc *quicConnector) reopen() {
+	if qc.res != nil {
+		qc.connHandler.closeConn(qc.res, qc.err)
+	}
+
+	qc.res, qc.err = qc.connHandler.openConnection()
 }

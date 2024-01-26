@@ -60,6 +60,9 @@ type dnsOverQUIC struct {
 	// addr is the DNS-over-QUIC server URL.
 	addr *url.URL
 
+	// connector is used to establish a single connection on several demands.
+	connector *quicConnector
+
 	// tlsConf is the configuration of TLS.
 	tlsConf *tls.Config
 
@@ -69,19 +72,12 @@ type dnsOverQUIC struct {
 	// re-create the connection.
 	quicConfig *quic.Config
 
-	// conn is the current active QUIC connection.  It can be closed and
-	// re-opened when needed.
-	conn quic.Connection
-
 	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
 	// buffers are used to read responses from the upstream.
 	bytesPool *sync.Pool
 
 	// quicConfigMu protects quicConfig.
 	quicConfigMu *sync.Mutex
-
-	// connMu protects conn.
-	connMu *sync.Mutex
 
 	// bytesPoolGuard protects bytesPool.
 	bytesPoolMu *sync.Mutex
@@ -94,7 +90,7 @@ type dnsOverQUIC struct {
 func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 	addPort(addr, defaultPortDoQ)
 
-	u = &dnsOverQUIC{
+	uu := &dnsOverQUIC{
 		getDialer: newDialerInitializer(addr, opts),
 		addr:      addr,
 		quicConfig: &quic.Config{
@@ -119,10 +115,12 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 			NextProtos:            compatProtoDQ,
 		},
 		quicConfigMu: &sync.Mutex{},
-		connMu:       &sync.Mutex{},
 		bytesPoolMu:  &sync.Mutex{},
 		timeout:      opts.Timeout,
 	}
+	uu.connector = newQUICConnector(uu)
+
+	u = uu
 
 	runtime.SetFinalizer(u, (*dnsOverQUIC).Close)
 
@@ -149,10 +147,6 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 		}
 	}()
 
-	// Check if there was already an active conn before sending the request.
-	// We'll only attempt to re-connect if there was one.
-	hasConnection := p.hasConnection()
-
 	// Make the first attempt to send the DNS query.
 	resp, err = p.exchangeQUIC(m)
 
@@ -161,20 +155,11 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	// make DoQ usable.  We need to make 2 attempts in the case when the
 	// connection was closed (due to inactivity for example) AND the server
 	// refuses to open a 0-RTT connection.
-	for i := 0; hasConnection && p.shouldRetry(err) && i < 2; i++ {
+	for i := 0; p.shouldRetry(err) && i < 2; i++ {
 		log.Debug("dnsproxy: re-creating the QUIC connection and retrying due to %v", err)
-
-		// Close the active connection to make sure we'll try to re-connect.
-		p.closeConnWithError(err)
 
 		// Retry sending the request.
 		resp, err = p.exchangeQUIC(m)
-	}
-
-	if err != nil {
-		// If we're unable to exchange messages, make sure the connection is
-		// closed and signal about an internal error.
-		p.closeConnWithError(err)
 	}
 
 	return resp, err
@@ -182,14 +167,8 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 
 // Close implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Close() (err error) {
-	p.connMu.Lock()
-	defer p.connMu.Unlock()
-
 	runtime.SetFinalizer(p, nil)
-
-	if p.conn != nil {
-		err = p.conn.CloseWithError(QUICCodeNoError, "")
-	}
+	p.connector.close()
 
 	return err
 }
@@ -203,7 +182,7 @@ func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg) (resp *dns.Msg, err error) {
 	defer func() { logFinish(addr, networkUDP, err) }()
 
 	var conn quic.Connection
-	conn, err = p.getConnection(true)
+	conn, err = p.connector.get()
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +196,8 @@ func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg) (resp *dns.Msg, err error) {
 	var stream quic.Stream
 	stream, err = p.openStream(conn)
 	if err != nil {
+		p.connector.reset()
+
 		return nil, fmt.Errorf("opening stream: %w", err)
 	}
 
@@ -261,45 +242,6 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 	return p.bytesPool
 }
 
-// getConnection opens or returns an existing quic.Connection. useCached
-// argument controls whether we should try to use the existing cached
-// connection.  If it is false, we will forcibly create a new connection and
-// close the existing one if needed.
-func (p *dnsOverQUIC) getConnection(useCached bool) (conn quic.Connection, err error) {
-	p.connMu.Lock()
-	defer p.connMu.Unlock()
-
-	conn = p.conn
-	if conn != nil {
-		if useCached {
-			return conn, nil
-		}
-
-		// We're recreating the connection, let's create a new one.
-		err = conn.CloseWithError(QUICCodeNoError, "")
-		if err != nil {
-			log.Debug("dnsproxy: closing stale connection: %s", err)
-		}
-	}
-
-	conn, err = p.openConnection()
-	if err != nil {
-		return nil, err
-	}
-
-	p.conn = conn
-
-	return conn, nil
-}
-
-// hasConnection returns true if there's an active QUIC connection.
-func (p *dnsOverQUIC) hasConnection() (ok bool) {
-	p.connMu.Lock()
-	defer p.connMu.Unlock()
-
-	return p.conn != nil
-}
-
 // getQUICConfig returns the QUIC config in a thread-safe manner.  Note, that
 // this method returns a pointer, it is forbidden to change its properties.
 func (p *dnsOverQUIC) getQUICConfig() (c *quic.Config) {
@@ -320,27 +262,24 @@ func (p *dnsOverQUIC) resetQUICConfig() {
 }
 
 // openStream opens a new QUIC stream for the specified connection.
-func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
+func (p *dnsOverQUIC) openStream(conn quic.Connection) (stream quic.Stream, err error) {
 	ctx, cancel := p.withDeadline(context.Background())
 	defer cancel()
 
-	stream, err := conn.OpenStreamSync(ctx)
+	stream, err = conn.OpenStreamSync(ctx)
 	if err != nil {
+		// We can get here if the old QUIC connection is not valid anymore.  We
+		// should try to re-create the connection again in this case.
 		log.Debug("dnsproxy: opening quic stream: %s", err)
-	} else {
-		return stream, nil
-	}
 
-	// We can get here if the old QUIC connection is not valid anymore.  We
-	// should try to re-create the connection again in this case.
-	newConn, err := p.getConnection(false)
-	if err != nil {
 		return nil, err
 	}
 
-	// Open a new stream.
-	return newConn.OpenStreamSync(ctx)
+	return stream, nil
 }
+
+// type check
+var _ quicConnHandler = (*dnsOverQUIC)(nil)
 
 // openConnection dials a new QUIC connection.
 func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
@@ -384,11 +323,8 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 // closeConnWithError closes the active connection with error to make sure that
 // new queries were processed in another connection.  We can do that in the case
 // of a fatal error.
-func (p *dnsOverQUIC) closeConnWithError(err error) {
-	p.connMu.Lock()
-	defer p.connMu.Unlock()
-
-	if p.conn == nil {
+func (p *dnsOverQUIC) closeConnWithError(conn quic.Connection, err error) {
+	if conn == nil {
 		// Do nothing, there's no active conn anyways.
 		return
 	}
@@ -403,11 +339,10 @@ func (p *dnsOverQUIC) closeConnWithError(err error) {
 		p.resetQUICConfig()
 	}
 
-	err = p.conn.CloseWithError(code, "")
+	err = conn.CloseWithError(code, "")
 	if err != nil {
 		log.Error("dnsproxy: failed to close the conn: %v", err)
 	}
-	p.conn = nil
 }
 
 // readMsg reads the incoming DNS message from the QUIC stream.

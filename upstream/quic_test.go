@@ -46,14 +46,19 @@ func TestUpstreamDoQ(t *testing.T) {
 	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
 	t.Run("initial_resolve", func(t *testing.T) {
 		checkUpstream(t, u, address)
-		conn := uq.conn
+		conn, currErr := uq.connector.current()
+		require.NoError(t, currErr)
 
 		// Test that it responds properly
 		for i := 0; i < 10; i++ {
 			checkUpstream(t, u, address)
 
+			var sameConn quic.Connection
+			sameConn, currErr = uq.connector.current()
+			require.NoError(t, currErr)
+
 			// This way we test that the conn is properly reused.
-			require.Equal(t, conn, uq.conn)
+			require.Same(t, conn, sameConn)
 		}
 
 		// Close the connection (make sure that we re-establish the connection).
@@ -88,7 +93,6 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 	var upsURL string
 	var u Upstream
 
-	tt := t
 	t.Run("first", func(t *testing.T) {
 		// Run the first server instance.
 		addr = startDoQServer(t, 0)
@@ -99,11 +103,11 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 		var err error
 		u, err = AddressToUpstream(upsURL, &Options{InsecureSkipVerify: true, Timeout: time.Second})
 		require.NoError(t, err)
-		testutil.CleanupAndRequireSuccess(tt, u.Close)
 
 		// Test that the upstream works properly.
 		checkUpstream(t, u, upsURL)
 	})
+	testutil.CleanupAndRequireSuccess(t, u.Close)
 	require.False(t, t.Failed())
 
 	t.Run("rerun", func(t *testing.T) {
@@ -152,15 +156,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	requireResponse(t, req, resp)
 
 	// Close the active connection to make sure we'll reconnect.
-	func() {
-		uq.connMu.Lock()
-		defer uq.connMu.Unlock()
-
-		err = uq.conn.CloseWithError(QUICCodeNoError, "")
-		require.NoError(t, err)
-
-		uq.conn = nil
-	}()
+	uq.connector.reset()
 
 	// Trigger second connection.
 	resp, err = uq.Exchange(req)
@@ -273,6 +269,8 @@ func startDoQServer(t *testing.T, port uint16) (addr netip.AddrPort) {
 			return false
 		},
 		Allow0RTT: true,
+		// TODO(e.burkov):  Make configurable.
+		MaxIncomingStreams: 256,
 	})
 	require.NoError(t, err)
 
@@ -395,7 +393,7 @@ func TestDNSOverQUIC_closingConns(t *testing.T) {
 
 	// reqNum should be greater than the number of connections that will cause
 	// the race for connsMu.
-	const reqNum = 128
+	const reqNum = 256
 
 	var beforeExchange, afterExchange sync.WaitGroup
 	beforeExchange.Add(reqNum)
@@ -403,20 +401,22 @@ func TestDNSOverQUIC_closingConns(t *testing.T) {
 
 	errs := [reqNum]error{}
 
-	var connMu sync.Locker
 	t.Run("init_and_close", func(t *testing.T) {
 		// Initialize a connection.
 		checkUpstream(t, u, upsURL)
 
 		uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
-		connMu = uq.connMu
+		hdlr := uq.connector.connHandler
+		uq.connector.connHandler = &testConnHandler{
+			OnOpenConnection: func() (quic.Connection, error) {
+				beforeExchange.Wait()
 
-		// Lock the connection to make sure that we don't close it while
-		// resolving the upstream.
-		connMu.Lock()
+				return hdlr.openConnection()
+			},
+			OnCloseConn: hdlr.closeConnWithError,
+		}
 
-		// Make the connection useless, but not nil to enforce opening a stream.
-		require.NoError(t, uq.conn.CloseWithError(quic.ApplicationErrorCode(quic.NoError), ""))
+		uq.connector.reset()
 	})
 
 	t.Run("accumulate_exchanges", func(t *testing.T) {
@@ -432,9 +432,7 @@ func TestDNSOverQUIC_closingConns(t *testing.T) {
 			}(i)
 		}
 
-		// Let all the goroutines race for the connection.
-		beforeExchange.Wait()
-		connMu.Unlock()
+		// Let all the goroutines
 		afterExchange.Wait()
 
 		if reqsErr := errors.Join(errs[:]...); !assert.NoError(t, reqsErr) {

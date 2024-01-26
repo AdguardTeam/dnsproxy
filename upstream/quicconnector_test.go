@@ -26,14 +26,14 @@ func (tco *testConnHandler) openConnection() (conn quic.Connection, err error) {
 }
 
 // closeConn implements quicConnOpener.
-func (tco *testConnHandler) closeConn(conn quic.Connection, err error) {
+func (tco *testConnHandler) closeConnWithError(conn quic.Connection, err error) {
 	tco.OnCloseConn(conn, err)
 }
 
 func TestQUICConnector(t *testing.T) {
 	const (
 		routineNum = 100
-		triesNum   = 4
+		triesNum   = 10
 	)
 
 	type testConn struct {

@@ -1,7 +1,6 @@
 package upstream
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -379,16 +377,6 @@ func (q *quicConnTracer) SentLongHeaderPacket(
 }
 
 func TestDNSOverQUIC_closingConns(t *testing.T) {
-	// TODO(e.burkov):  !! get rid of this
-	oldLevel, logLevel := log.GetLevel(), log.DEBUG
-	oldWriter, logWriter := log.Writer(), &bytes.Buffer{}
-	log.SetLevel(logLevel)
-	log.SetOutput(logWriter)
-	t.Cleanup(func() {
-		log.SetLevel(oldLevel)
-		log.SetOutput(oldWriter)
-	})
-
 	addrPort := startDoQServer(t, 0)
 
 	upsURL := (&url.URL{
@@ -454,6 +442,4 @@ func TestDNSOverQUIC_closingConns(t *testing.T) {
 			t.Logf("got %d errors", len(wrapperSlice.Unwrap()))
 		}
 	})
-
-	t.Logf("logged during test: %s", logWriter)
 }

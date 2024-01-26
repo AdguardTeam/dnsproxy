@@ -11,7 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShortFlighter(t *testing.T) {
+// testConnHandler is used to mock the connection establishment.
+type testConnHandler struct {
+	OnOpenConnection func() (conn quic.Connection, err error)
+	OnCloseConn      func(conn quic.Connection, err error)
+}
+
+// type check
+var _ quicConnHandler = (*testConnHandler)(nil)
+
+// openConnection implements quicConnOpener.
+func (tco *testConnHandler) openConnection() (conn quic.Connection, err error) {
+	return tco.OnOpenConnection()
+}
+
+// closeConn implements quicConnOpener.
+func (tco *testConnHandler) closeConn(conn quic.Connection, err error) {
+	tco.OnCloseConn(conn, err)
+}
+
+func TestQUICConnector(t *testing.T) {
 	const (
 		routineNum = 100
 		triesNum   = 4
@@ -23,6 +42,12 @@ func TestShortFlighter(t *testing.T) {
 
 	var connTriesNum atomic.Int32
 	var beforeGet, afterGet sync.WaitGroup
+
+	hdlr := &testConnHandler{
+		OnCloseConn: func(conn quic.Connection, err error) {
+			// do nothing
+		},
+	}
 	pt := testutil.PanicT{}
 
 	t.Run("success", func(t *testing.T) {
@@ -30,7 +55,7 @@ func TestShortFlighter(t *testing.T) {
 
 		emptyConn := &testConn{}
 
-		open := func() (conn quic.Connection, err error) {
+		hdlr.OnOpenConnection = func() (conn quic.Connection, err error) {
 			beforeGet.Wait()
 
 			connTriesNum.Add(1)
@@ -38,7 +63,7 @@ func TestShortFlighter(t *testing.T) {
 			return emptyConn, nil
 		}
 
-		sf := newQUICConnector(open)
+		sf := newQUICConnector(hdlr)
 
 		for i := 0; i < triesNum; i++ {
 			sf.reset()
@@ -64,7 +89,7 @@ func TestShortFlighter(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		t.Cleanup(func() { connTriesNum.Store(0) })
 
-		open := func() (conn quic.Connection, err error) {
+		hdlr.OnOpenConnection = func() (conn quic.Connection, err error) {
 			beforeGet.Wait()
 
 			connTriesNum.Add(1)
@@ -72,7 +97,7 @@ func TestShortFlighter(t *testing.T) {
 			return nil, assert.AnError
 		}
 
-		sf := newQUICConnector(open)
+		sf := newQUICConnector(hdlr)
 
 		for i := 0; i < triesNum; i++ {
 			beforeGet.Add(routineNum)

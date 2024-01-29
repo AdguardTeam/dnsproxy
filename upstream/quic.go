@@ -157,7 +157,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 // Close implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Close() (err error) {
 	runtime.SetFinalizer(p, nil)
-	p.connector.closeConn()
+	p.connector.close()
 
 	return err
 }
@@ -170,24 +170,16 @@ func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg) (resp *dns.Msg, err error) {
 	logBegin(addr, networkUDP, req)
 	defer func() { logFinish(addr, networkUDP, err) }()
 
-	var conn quic.Connection
-	conn, err = p.connector.get()
+	var stream quic.Stream
+	stream, err = p.connector.get()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening stream: %w", err)
 	}
 
 	var buf []byte
 	buf, err = req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack DNS message for DoQ: %w", err)
-	}
-
-	var stream quic.Stream
-	stream, err = p.openStream(conn)
-	if err != nil {
-		p.connector.reset()
-
-		return nil, fmt.Errorf("opening stream: %w", err)
 	}
 
 	_, err = stream.Write(proxyutil.AddPrefix(buf))
@@ -236,16 +228,7 @@ func (p *dnsOverQUIC) openStream(conn quic.Connection) (stream quic.Stream, err 
 	ctx, cancel := p.withDeadline(context.Background())
 	defer cancel()
 
-	stream, err = conn.OpenStreamSync(ctx)
-	if err != nil {
-		// We can get here if the old QUIC connection is not valid anymore.  We
-		// should try to re-create the connection again in this case.
-		log.Debug("dnsproxy: opening quic stream: %s", err)
-
-		return nil, err
-	}
-
-	return stream, nil
+	return conn.OpenStreamSync(ctx)
 }
 
 // type check

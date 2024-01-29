@@ -46,23 +46,20 @@ func TestUpstreamDoQ(t *testing.T) {
 	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
 	t.Run("initial_resolve", func(t *testing.T) {
 		checkUpstream(t, u, address)
-		conn, currErr := uq.connector.current()
-		require.NoError(t, currErr)
+		connector := uq.connector
+		conn := connector.conn
 
 		// Test that it responds properly
 		for i := 0; i < 10; i++ {
 			checkUpstream(t, u, address)
 
-			var sameConn quic.Connection
-			sameConn, currErr = uq.connector.current()
-			require.NoError(t, currErr)
-
 			// This way we test that the conn is properly reused.
-			require.Same(t, conn, sameConn)
+			require.Same(t, conn, connector.conn)
 		}
 
+		connector.closeConnWithErr(nil)
 		// Close the connection (make sure that we re-establish the connection).
-		require.NoError(t, conn.CloseWithError(quic.ApplicationErrorCode(0), ""))
+		require.NoError(t, err)
 	})
 	require.False(t, t.Failed())
 
@@ -155,8 +152,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	require.NoError(t, err)
 	requireResponse(t, req, resp)
 
-	// Close the active connection to make sure we'll reconnect.
-	uq.connector.reset()
+	uq.connector.close()
 
 	// Trigger second connection.
 	resp, err = uq.Exchange(req)
@@ -406,16 +402,17 @@ func TestDNSOverQUIC_closingConns(t *testing.T) {
 		checkUpstream(t, u, upsURL)
 
 		uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
-		hdlr := uq.connector.opener
+		opener := uq.connector.opener
 		uq.connector.opener = &testConnOpener{
 			OnOpenConnection: func(conf *quic.Config) (quic.Connection, error) {
 				beforeExchange.Wait()
 
-				return hdlr.openConnection(conf)
+				return opener.openConnection(conf)
 			},
+			OnOpenStream: opener.openStream,
 		}
 
-		uq.connector.reset()
+		uq.connector.close()
 	})
 
 	t.Run("accumulate_exchanges", func(t *testing.T) {

@@ -151,6 +151,7 @@ const (
 // AddressToUpstream converts addr to an Upstream using the specified options.
 // addr can be either a URL, or a plain address, either a domain name or an IP.
 //
+//   - 1.2.3.4 or 1.2.3.4:4321 for plain DNS using IP address;
 //   - udp://5.3.5.3:53 or 5.3.5.3:53 for plain DNS using IP address;
 //   - udp://name.server:53 or name.server:53 for plain DNS using domain name;
 //   - tcp://5.3.5.3:53 for plain DNS-over-TCP using IP address;
@@ -178,29 +179,55 @@ func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 
 	var uu *url.URL
 	if strings.Contains(addr, "://") {
-		// Parse as URL.
 		uu, err = url.Parse(addr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s: %w", addr, err)
 		}
 	} else {
-		// Probably, plain UDP upstream defined by address or address:port.
-		_, port, splitErr := net.SplitHostPort(addr)
-		if splitErr == nil {
-			// Validate port.
-			_, err = strconv.ParseUint(port, 10, 16)
-			if err != nil {
-				return nil, fmt.Errorf("invalid address %s: %w", addr, err)
-			}
-		}
-
 		uu = &url.URL{
 			Scheme: "udp",
 			Host:   addr,
 		}
 	}
 
+	err = validateUpstreamURL(uu)
+	if err != nil {
+		// Don't wrap the error, because it's informative enough as is.
+		return nil, err
+	}
+
 	return urlToUpstream(uu, opts)
+}
+
+// validateUpstreamURL returns an error if the upstream URL is not valid.
+func validateUpstreamURL(u *url.URL) (err error) {
+	if u.Scheme == "sdns" {
+		return nil
+	}
+
+	host := u.Host
+	h, port, splitErr := net.SplitHostPort(host)
+	if splitErr == nil {
+		// Validate port.
+		_, err = strconv.ParseUint(port, 10, 16)
+		if err != nil {
+			return fmt.Errorf("invalid port %s: %w", port, err)
+		}
+
+		host = h
+	}
+
+	_, err = netip.ParseAddr(host)
+	if err == nil {
+		return nil
+	}
+
+	err = netutil.ValidateHostname(host)
+	if err != nil {
+		return fmt.Errorf("invalid address %s: %w", host, err)
+	}
+
+	return nil
 }
 
 // urlToUpstream converts uu to an Upstream using opts.

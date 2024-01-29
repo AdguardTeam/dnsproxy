@@ -229,6 +229,14 @@ func TestAddressToUpstream(t *testing.T) {
 		opt:  nil,
 		want: "1.1.1.1:53",
 	}, {
+		addr: "1.1.1.1:5353",
+		opt:  nil,
+		want: "1.1.1.1:5353",
+	}, {
+		addr: "one:5353",
+		opt:  nil,
+		want: "one:5353",
+	}, {
 		addr: "one.one.one.one",
 		opt:  nil,
 		want: "one.one.one.one:53",
@@ -274,15 +282,48 @@ func TestAddressToUpstream_bads(t *testing.T) {
 		wantErrMsg: "unsupported url scheme: asdf",
 	}, {
 		addr: "12345.1.1.1:1234567",
-		wantErrMsg: `invalid address 12345.1.1.1:1234567: ` +
-			`strconv.ParseUint: parsing "1234567": value out of range`,
+		wantErrMsg: `invalid port 1234567: strconv.ParseUint: parsing "1234567": ` +
+			`value out of range`,
 	}, {
 		addr: ":1234567",
-		wantErrMsg: `invalid address :1234567: ` +
-			`strconv.ParseUint: parsing "1234567": value out of range`,
+		wantErrMsg: `invalid port 1234567: strconv.ParseUint: parsing "1234567": ` +
+			`value out of range`,
 	}, {
 		addr:       "host:",
-		wantErrMsg: `invalid address host:: strconv.ParseUint: parsing "": invalid syntax`,
+		wantErrMsg: `invalid port : strconv.ParseUint: parsing "": invalid syntax`,
+	}, {
+		addr:       ":53",
+		wantErrMsg: `invalid address : bad hostname "": hostname is empty`,
+	}, {
+		addr: "!!!",
+		wantErrMsg: `invalid address !!!: bad hostname "!!!": bad top-level domain name ` +
+			`label "!!!": bad top-level domain name label rune '!'`,
+	}, {
+		addr: "123",
+		wantErrMsg: `invalid address 123: bad hostname "123": bad top-level domain name ` +
+			`label "123": all octets are numeric`,
+	}, {
+		addr: "tcp://12345.1.1.1:1234567",
+		wantErrMsg: `invalid port 1234567: strconv.ParseUint: parsing "1234567": ` +
+			`value out of range`,
+	}, {
+		addr: "tcp://:1234567",
+		wantErrMsg: `invalid port 1234567: strconv.ParseUint: parsing "1234567": ` +
+			`value out of range`,
+	}, {
+		addr:       "tcp://host:",
+		wantErrMsg: `invalid port : strconv.ParseUint: parsing "": invalid syntax`,
+	}, {
+		addr:       "tcp://:53",
+		wantErrMsg: `invalid address : bad hostname "": hostname is empty`,
+	}, {
+		addr: "tcp://!!!",
+		wantErrMsg: `invalid address !!!: bad hostname "!!!": bad top-level domain name ` +
+			`label "!!!": bad top-level domain name label rune '!'`,
+	}, {
+		addr: "tcp://123",
+		wantErrMsg: `invalid address 123: bad hostname "123": bad top-level domain name ` +
+			`label "123": all octets are numeric`,
 	}}
 
 	for _, tc := range testCases {

@@ -34,8 +34,10 @@ type UpstreamConfig struct {
 // type check
 var _ io.Closer = (*UpstreamConfig)(nil)
 
-// ParseUpstreamsConfig returns UpstreamConfig and error if upstreams
-// configuration is invalid.
+// ParseUpstreamsConfig returns an UpstreamConfig and nil error if the upstream
+// configuration is valid.  Otherwise returns a partially filled UpstreamConfig
+// and wrapped error containing lines with errors.  It also skips empty lines
+// and comments (lines starting with "#").
 //
 // # Simple upstreams
 //
@@ -84,13 +86,16 @@ var _ io.Closer = (*UpstreamConfig)(nil)
 //
 // TODO(e.burkov):  Consider supporting multiple upstreams in a single line for
 // default upstream syntax.
-func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*UpstreamConfig, error) {
-	if options == nil {
-		options = &upstream.Options{}
+func ParseUpstreamsConfig(
+	lines []string,
+	opts *upstream.Options,
+) (conf *UpstreamConfig, err error) {
+	if opts == nil {
+		opts = &upstream.Options{}
 	}
 
 	p := &configParser{
-		options:                  options,
+		options:                  opts,
 		upstreamsIndex:           map[string]upstream.Upstream{},
 		domainReservedUpstreams:  map[string][]upstream.Upstream{},
 		specifiedDomainUpstreams: map[string][]upstream.Upstream{},
@@ -98,8 +103,32 @@ func ParseUpstreamsConfig(upstreamConfig []string, options *upstream.Options) (*
 		subdomainsOnlyExclusions: stringutil.NewSet(),
 	}
 
-	return p.parse(upstreamConfig)
+	return p.parse(lines)
 }
+
+// ParseError is an error which contains an index of the line of the upstream
+// list.
+type ParseError struct {
+	// err is the original error.
+	err error
+
+	// Idx is an index of the lines.  See [ParseUpstreamsConfig].
+	Idx int
+}
+
+// type check
+var _ error = (*ParseError)(nil)
+
+// Error implements the [error] interface for *ParseError.
+func (e *ParseError) Error() (msg string) {
+	return fmt.Sprintf("parsing error at index %d: %s", e.Idx, e.err)
+}
+
+// type check
+var _ errors.Wrapper = (*ParseError)(nil)
+
+// Unwrap implements the [errors.Wrapper] interface for *ParseError.
+func (e *ParseError) Unwrap() (unwrapped error) { return e.err }
 
 // configParser collects the results of parsing an upstream config.
 type configParser struct {
@@ -129,10 +158,11 @@ type configParser struct {
 }
 
 // parse returns UpstreamConfig and error if upstreams configuration is invalid.
-func (p *configParser) parse(conf []string) (c *UpstreamConfig, err error) {
-	for i, l := range conf {
+func (p *configParser) parse(lines []string) (c *UpstreamConfig, err error) {
+	var errs []error
+	for i, l := range lines {
 		if err = p.parseLine(i, l); err != nil {
-			return nil, err
+			errs = append(errs, &ParseError{Idx: i, err: err})
 		}
 	}
 
@@ -147,12 +177,16 @@ func (p *configParser) parse(conf []string) (c *UpstreamConfig, err error) {
 		DomainReservedUpstreams:  p.domainReservedUpstreams,
 		SpecifiedDomainUpstreams: p.specifiedDomainUpstreams,
 		SubdomainExclusions:      p.subdomainsOnlyExclusions,
-	}, nil
+	}, errors.Join(errs...)
 }
 
 // parseLine returns an error if upstream configuration line is invalid.
 func (p *configParser) parseLine(idx int, confLine string) (err error) {
-	upstreams, domains, err := splitConfigLine(idx, confLine)
+	if len(confLine) == 0 || confLine[0] == '#' {
+		return nil
+	}
+
+	upstreams, domains, err := splitConfigLine(confLine)
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.
 		return err
@@ -165,7 +199,7 @@ func (p *configParser) parseLine(idx int, confLine string) (err error) {
 	}
 
 	for _, u := range upstreams {
-		err = p.specifyUpstream(domains, u, idx, confLine)
+		err = p.specifyUpstream(domains, u, idx)
 		if err != nil {
 			// Don't wrap the error since it's informative enough as is.
 			return err
@@ -177,15 +211,15 @@ func (p *configParser) parseLine(idx int, confLine string) (err error) {
 
 // splitConfigLine parses upstream configuration line and returns list upstream
 // addresses (one or many), list of domains for which this upstream is reserved
-// (may be nil) or error if something went wrong.
-func splitConfigLine(idx int, confLine string) (upstreams, domains []string, err error) {
+// (may be nil).  It returns an error if the upstream format is incorrect.
+func splitConfigLine(confLine string) (upstreams, domains []string, err error) {
 	if !strings.HasPrefix(confLine, "[/") {
 		return []string{confLine}, nil, nil
 	}
 
 	domainsLine, upstreamsLine, found := strings.Cut(confLine[len("[/"):], "/]")
 	if !found || upstreamsLine == "" {
-		return nil, nil, fmt.Errorf("wrong upstream specification %d %q", idx, confLine)
+		return nil, nil, errors.Error("wrong upstream format")
 	}
 
 	// split domains list
@@ -209,20 +243,14 @@ func splitConfigLine(idx int, confLine string) (upstreams, domains []string, err
 }
 
 // specifyUpstream specifies the upstream for domains.
-func (p *configParser) specifyUpstream(
-	domains []string,
-	u string,
-	idx int,
-	confLine string,
-) (err error) {
+func (p *configParser) specifyUpstream(domains []string, u string, idx int) (err error) {
 	dnsUpstream, ok := p.upstreamsIndex[u]
 	// TODO(e.burkov):  Improve identifying duplicate upstreams.
 	if !ok {
 		// create an upstream
 		dnsUpstream, err = upstream.AddressToUpstream(u, p.options.Clone())
 		if err != nil {
-			return fmt.Errorf("cannot prepare the upstream %d %q (%s): %s",
-				idx, confLine, p.options.Bootstrap, err)
+			return fmt.Errorf("cannot prepare the upstream: %s", err)
 		}
 
 		// save to the index
@@ -231,11 +259,19 @@ func (p *configParser) specifyUpstream(
 
 	addr := dnsUpstream.Address()
 	if len(domains) == 0 {
-		log.Debug("dnsproxy: upstream at index %d: %s", idx, addr)
+		// TODO(s.chzhen):  Handle duplicates.
 		p.upstreams = append(p.upstreams, dnsUpstream)
+
+		// TODO(s.chzhen):  Logs without index.
+		log.Debug("dnsproxy: upstream at index %d: %s", idx, addr)
 	} else {
-		log.Debug("dnsproxy: upstream at index %d: %s is reserved for %s", idx, addr, domains)
 		p.includeToReserved(dnsUpstream, domains)
+
+		log.Debug("dnsproxy: upstream at index %d: %s is reserved for %d domains",
+			idx,
+			addr,
+			len(domains),
+		)
 	}
 
 	return nil

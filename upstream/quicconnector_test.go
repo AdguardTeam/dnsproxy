@@ -11,23 +11,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testConnHandler is used to mock the connection establishment.
-type testConnHandler struct {
-	OnOpenConnection func() (conn quic.Connection, err error)
-	OnCloseConn      func(conn quic.Connection, err error)
+// testConnOpener is used to mock the connection establishment.
+type testConnOpener struct {
+	OnOpenConnection func(conf *quic.Config) (conn quic.Connection, err error)
 }
 
 // type check
-var _ quicConnHandler = (*testConnHandler)(nil)
+var _ quicConnOpener = (*testConnOpener)(nil)
 
-// openConnection implements quicConnOpener.
-func (tco *testConnHandler) openConnection() (conn quic.Connection, err error) {
-	return tco.OnOpenConnection()
-}
-
-// closeConn implements quicConnOpener.
-func (tco *testConnHandler) closeConnWithError(conn quic.Connection, err error) {
-	tco.OnCloseConn(conn, err)
+// openConnection implements the [quicConnOpener] interface for
+// [*testConnOpener].
+func (tco *testConnOpener) openConnection(conf *quic.Config) (conn quic.Connection, err error) {
+	return tco.OnOpenConnection(conf)
 }
 
 func TestQUICConnector(t *testing.T) {
@@ -43,27 +38,26 @@ func TestQUICConnector(t *testing.T) {
 	var connTriesNum atomic.Int32
 	var beforeGet, afterGet sync.WaitGroup
 
-	hdlr := &testConnHandler{
-		OnCloseConn: func(conn quic.Connection, err error) {
-			// do nothing
-		},
-	}
 	pt := testutil.PanicT{}
+
+	opener := &testConnOpener{}
+	sf := newQUICConnector(opener, &quic.Config{
+		KeepAlivePeriod: QUICKeepAlivePeriod,
+		TokenStore:      newQUICTokenStore(),
+	})
 
 	t.Run("success", func(t *testing.T) {
 		t.Cleanup(func() { connTriesNum.Store(0) })
 
 		emptyConn := &testConn{}
 
-		hdlr.OnOpenConnection = func() (conn quic.Connection, err error) {
+		opener.OnOpenConnection = func(_ *quic.Config) (conn quic.Connection, err error) {
 			beforeGet.Wait()
 
 			connTriesNum.Add(1)
 
 			return emptyConn, nil
 		}
-
-		sf := newQUICConnector(hdlr)
 
 		for i := 0; i < triesNum; i++ {
 			sf.reset()
@@ -89,15 +83,13 @@ func TestQUICConnector(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		t.Cleanup(func() { connTriesNum.Store(0) })
 
-		hdlr.OnOpenConnection = func() (conn quic.Connection, err error) {
+		opener.OnOpenConnection = func(_ *quic.Config) (conn quic.Connection, err error) {
 			beforeGet.Wait()
 
 			connTriesNum.Add(1)
 
 			return nil, assert.AnError
 		}
-
-		sf := newQUICConnector(hdlr)
 
 		for i := 0; i < triesNum; i++ {
 			beforeGet.Add(routineNum)

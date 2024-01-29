@@ -406,14 +406,13 @@ func TestDNSOverQUIC_closingConns(t *testing.T) {
 		checkUpstream(t, u, upsURL)
 
 		uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
-		hdlr := uq.connector.connHandler
-		uq.connector.connHandler = &testConnHandler{
-			OnOpenConnection: func() (quic.Connection, error) {
+		hdlr := uq.connector.opener
+		uq.connector.opener = &testConnOpener{
+			OnOpenConnection: func(conf *quic.Config) (quic.Connection, error) {
 				beforeExchange.Wait()
 
-				return hdlr.openConnection()
+				return hdlr.openConnection(conf)
 			},
-			OnCloseConn: hdlr.closeConnWithError,
 		}
 
 		uq.connector.reset()

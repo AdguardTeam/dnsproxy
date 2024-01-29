@@ -66,18 +66,9 @@ type dnsOverQUIC struct {
 	// tlsConf is the configuration of TLS.
 	tlsConf *tls.Config
 
-	// quicConfig is the QUIC configuration that is used for establishing
-	// connections to the upstream.  This configuration includes the TokenStore
-	// that needs to be stored for the lifetime of dnsOverQUIC since we can
-	// re-create the connection.
-	quicConfig *quic.Config
-
 	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
 	// buffers are used to read responses from the upstream.
 	bytesPool *sync.Pool
-
-	// quicConfigMu protects quicConfig.
-	quicConfigMu *sync.Mutex
 
 	// bytesPoolGuard protects bytesPool.
 	bytesPoolMu *sync.Mutex
@@ -93,11 +84,6 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 	uu := &dnsOverQUIC{
 		getDialer: newDialerInitializer(addr, opts),
 		addr:      addr,
-		quicConfig: &quic.Config{
-			KeepAlivePeriod: QUICKeepAlivePeriod,
-			TokenStore:      newQUICTokenStore(),
-			Tracer:          opts.QUICTracer,
-		},
 		// #nosec G402 -- TLS certificate verification could be disabled by
 		// configuration.
 		tlsConf: &tls.Config{
@@ -114,11 +100,14 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 			VerifyConnection:      opts.VerifyConnection,
 			NextProtos:            compatProtoDQ,
 		},
-		quicConfigMu: &sync.Mutex{},
-		bytesPoolMu:  &sync.Mutex{},
-		timeout:      opts.Timeout,
+		bytesPoolMu: &sync.Mutex{},
+		timeout:     opts.Timeout,
 	}
-	uu.connector = newQUICConnector(uu)
+	uu.connector = newQUICConnector(uu, &quic.Config{
+		KeepAlivePeriod: QUICKeepAlivePeriod,
+		TokenStore:      newQUICTokenStore(),
+		Tracer:          opts.QUICTracer,
+	})
 
 	u = uu
 
@@ -168,7 +157,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 // Close implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Close() (err error) {
 	runtime.SetFinalizer(p, nil)
-	p.connector.close()
+	p.connector.closeConn()
 
 	return err
 }
@@ -242,25 +231,6 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 	return p.bytesPool
 }
 
-// getQUICConfig returns the QUIC config in a thread-safe manner.  Note, that
-// this method returns a pointer, it is forbidden to change its properties.
-func (p *dnsOverQUIC) getQUICConfig() (c *quic.Config) {
-	p.quicConfigMu.Lock()
-	defer p.quicConfigMu.Unlock()
-
-	return p.quicConfig
-}
-
-// resetQUICConfig re-creates the tokens store as we may need to use a new one
-// if we failed to connect.
-func (p *dnsOverQUIC) resetQUICConfig() {
-	p.quicConfigMu.Lock()
-	defer p.quicConfigMu.Unlock()
-
-	p.quicConfig = p.quicConfig.Clone()
-	p.quicConfig.TokenStore = newQUICTokenStore()
-}
-
 // openStream opens a new QUIC stream for the specified connection.
 func (p *dnsOverQUIC) openStream(conn quic.Connection) (stream quic.Stream, err error) {
 	ctx, cancel := p.withDeadline(context.Background())
@@ -279,10 +249,10 @@ func (p *dnsOverQUIC) openStream(conn quic.Connection) (stream quic.Stream, err 
 }
 
 // type check
-var _ quicConnHandler = (*dnsOverQUIC)(nil)
+var _ quicConnOpener = (*dnsOverQUIC)(nil)
 
 // openConnection dials a new QUIC connection.
-func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
+func (p *dnsOverQUIC) openConnection(conf *quic.Config) (conn quic.Connection, err error) {
 	dialContext, err := p.getDialer()
 	if err != nil {
 		return nil, fmt.Errorf("bootstrapping %s: %w", p.addr, err)
@@ -312,37 +282,12 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 	ctx, cancel := p.withDeadline(context.Background())
 	defer cancel()
 
-	conn, err = quic.DialAddrEarly(ctx, addr, p.tlsConf.Clone(), p.getQUICConfig())
+	conn, err = quic.DialAddrEarly(ctx, addr, p.tlsConf.Clone(), conf)
 	if err != nil {
 		return nil, fmt.Errorf("dialing quic connection to %s: %w", p.addr, err)
 	}
 
 	return conn, nil
-}
-
-// closeConnWithError closes the active connection with error to make sure that
-// new queries were processed in another connection.  We can do that in the case
-// of a fatal error.
-func (p *dnsOverQUIC) closeConnWithError(conn quic.Connection, err error) {
-	if conn == nil {
-		// Do nothing, there's no active conn anyways.
-		return
-	}
-
-	code := QUICCodeNoError
-	if err != nil {
-		code = QUICCodeInternalError
-	}
-
-	if errors.Is(err, quic.Err0RTTRejected) {
-		// Reset the TokenStore only if 0-RTT was rejected.
-		p.resetQUICConfig()
-	}
-
-	err = conn.CloseWithError(code, "")
-	if err != nil {
-		log.Error("dnsproxy: failed to close the conn: %v", err)
-	}
 }
 
 // readMsg reads the incoming DNS message from the QUIC stream.

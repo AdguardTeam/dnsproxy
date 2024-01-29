@@ -4,38 +4,60 @@ import (
 	"sync"
 
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/quic-go/quic-go"
 )
+
+// quicConnOpener is used to open a QUIC connection.
+type quicConnOpener interface {
+	// openConnection opens a QUIC connection with the specified configuration.
+	openConnection(conf *quic.Config) (conn quic.Connection, err error)
+}
 
 // ready is a semantic alias for a sign of a ready action.
 type ready = struct{}
 
-type quicConnHandler interface {
-	openConnection() (conn quic.Connection, err error)
-	closeConnWithError(conn quic.Connection, err error)
-}
-
 // quicConnector is used to establish a single connection on several demands.
 type quicConnector struct {
-	conn        quic.Connection
-	err         error
-	connHandler quicConnHandler
-	reopenReady chan ready
-	resetReady  chan ready
-	mu          *sync.RWMutex
+	// conf is the QUIC configuration that is used for establishing connections
+	// to the upstream.  This configuration includes the TokenStore that needs
+	// to be stored for re-creatin the connection on 0-RTT rejection.
+	conf *quic.Config
+
+	// mu protects the last establishment result.
+	mu *sync.RWMutex
+
+	// conn is the last established connection.  It is nil if the connection is
+	// not established yet, closed or last connection establishment failed.
+	conn quic.Connection
+
+	// err is the error that occurred during the last connection establishment.
+	err error
+
+	// opener is used to open a new QUIC connection.
+	opener quicConnOpener
+
+	// openReady signs that the connection is ready to be established and either
+	// the last connection establishment failed or the connection was reset.
+	openReady chan ready
+
+	// resetReady signs that the connection can be closed for future
+	// establishment.
+	resetReady chan ready
 }
 
 // newQUICConnector creates a new quicConnector.
-func newQUICConnector(hdlr quicConnHandler) (qc *quicConnector) {
+func newQUICConnector(opener quicConnOpener, conf *quic.Config) (qc *quicConnector) {
 	qc = &quicConnector{
-		conn:        nil,
-		err:         errors.Error("not initialized"),
-		connHandler: hdlr,
-		reopenReady: make(chan ready, 1),
-		resetReady:  make(chan ready, 1),
-		mu:          &sync.RWMutex{},
+		conf:       conf,
+		mu:         &sync.RWMutex{},
+		conn:       nil,
+		err:        errors.Error("not initialized"),
+		opener:     opener,
+		openReady:  make(chan ready, 1),
+		resetReady: make(chan ready, 1),
 	}
-	qc.reopenReady <- ready{}
+	qc.openReady <- ready{}
 
 	return qc
 }
@@ -44,7 +66,8 @@ func newQUICConnector(hdlr quicConnHandler) (qc *quicConnector) {
 func (qc *quicConnector) reset() {
 	select {
 	case <-qc.resetReady:
-		qc.reopenReady <- ready{}
+		qc.closeConn()
+		qc.openReady <- ready{}
 	default:
 		// Already reset.
 	}
@@ -55,31 +78,24 @@ func (qc *quicConnector) reset() {
 // to get will try to establish the connection again.
 func (qc *quicConnector) get() (conn quic.Connection, err error) {
 	select {
-	case <-qc.reopenReady:
+	case <-qc.openReady:
 		qc.mu.Lock()
 		defer qc.mu.Unlock()
 
-		return qc.reopen()
+		qc.conn, qc.err = qc.opener.openConnection(qc.conf)
+		if qc.err != nil {
+			qc.openReady <- ready{}
+		} else {
+			qc.resetReady <- ready{}
+		}
+
+		return qc.conn, qc.err
 	default:
 		return qc.current()
 	}
 }
 
-func (qc *quicConnector) reopen() (conn quic.Connection, err error) {
-	if qc.conn != nil {
-		qc.connHandler.closeConnWithError(qc.conn, qc.err)
-	}
-
-	qc.conn, qc.err = qc.connHandler.openConnection()
-	if qc.err != nil {
-		qc.reopenReady <- ready{}
-	} else {
-		qc.resetReady <- ready{}
-	}
-
-	return qc.conn, qc.err
-}
-
+// current returns the last established connection and connecting error.
 func (qc *quicConnector) current() (conn quic.Connection, err error) {
 	qc.mu.RLock()
 	defer qc.mu.RUnlock()
@@ -87,11 +103,30 @@ func (qc *quicConnector) current() (conn quic.Connection, err error) {
 	return qc.conn, qc.err
 }
 
-func (qc *quicConnector) close() {
+// closeConn closes the connection with the specified error.
+func (qc *quicConnector) closeConn() {
 	qc.mu.Lock()
 	defer qc.mu.Unlock()
 
-	if qc.conn != nil {
-		qc.connHandler.closeConnWithError(qc.conn, qc.err)
+	if qc.conn == nil {
+		return
 	}
+
+	code := QUICCodeNoError
+	if qc.err != nil {
+		code = QUICCodeInternalError
+	}
+
+	if errors.Is(qc.err, quic.Err0RTTRejected) {
+		// Reset the TokenStore only if 0-RTT was rejected.
+		qc.conf = qc.conf.Clone()
+		qc.conf.TokenStore = newQUICTokenStore()
+	}
+
+	err := qc.conn.CloseWithError(code, "")
+	if err != nil {
+		log.Error("dnsproxy: closing quic conn: %v", err)
+	}
+
+	qc.conn = nil
 }

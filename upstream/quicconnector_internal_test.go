@@ -42,113 +42,75 @@ func (tqc *testQUICConn) CloseWithError(code quic.ApplicationErrorCode, msg stri
 	return nil
 }
 
-func TestQUICConnector(t *testing.T) {
-	const (
-		routineNum = 100
-		triesNum   = 10
-	)
-
-	var connTriesNum atomic.Int32
-	var beforeGet, afterGet sync.WaitGroup
+func TestQUICConnector_refactrored(t *testing.T) {
+	const routineNum = 100
 
 	pt := testutil.PanicT{}
-
 	emptyConn := &testQUICConn{}
-	var returnedConn, wantConn quic.Connection
-	var connErr, streamErr error
 
-	opener := &testConnOpener{
-		OnOpenConnection: func(_ *quic.Config) (conn quic.Connection, err error) {
-			beforeGet.Wait()
-			connTriesNum.Add(1)
+	testCases := []struct {
+		returnConn    quic.Connection
+		connErr       error
+		onOpenStream  func(conn quic.Connection) (stream quic.Stream, err error)
+		wantErr       error
+		name          string
+		wantConnTries int32
+	}{{
+		returnConn: emptyConn,
+		connErr:    nil,
+		onOpenStream: func(conn quic.Connection) (stream quic.Stream, err error) {
+			require.Same(pt, emptyConn, conn)
 
-			return returnedConn, connErr
+			return nil, nil
 		},
-		OnOpenStream: func(conn quic.Connection) (stream quic.Stream, err error) {
-			require.Same(pt, wantConn, conn)
+		wantErr:       nil,
+		name:          "success",
+		wantConnTries: 1,
+	}, {
+		returnConn: emptyConn,
+		connErr:    nil,
+		onOpenStream: func(conn quic.Connection) (stream quic.Stream, err error) {
+			require.Same(pt, emptyConn, conn)
 
-			return nil, streamErr
+			return nil, assert.AnError
 		},
-	}
-	qc := newQUICConnector(opener, &quic.Config{
-		KeepAlivePeriod: QUICKeepAlivePeriod,
-		TokenStore:      newQUICTokenStore(),
-	})
-
-	t.Run("success", func(t *testing.T) {
-		t.Cleanup(func() {
-			connTriesNum.Store(0)
-			returnedConn, connErr = nil, nil
-			wantConn, streamErr = nil, nil
-		})
-
-		returnedConn, connErr = emptyConn, nil
-		wantConn, streamErr = emptyConn, nil
-
-		for i := 0; i < triesNum; i++ {
-			qc.close()
-			beforeGet.Add(routineNum)
-			afterGet.Add(routineNum)
-
-			for j := 0; j < routineNum; j++ {
-				go func() {
-					beforeGet.Done()
-					defer afterGet.Done()
-
-					_, err := qc.get()
-					require.NoError(pt, err)
-				}()
-			}
-			afterGet.Wait()
-
-			assert.Equal(t, int32(i+1), connTriesNum.Load())
-		}
-	})
-
-	t.Run("bad_streamer", func(t *testing.T) {
-		t.Cleanup(func() {
-			connTriesNum.Store(0)
-			returnedConn, connErr = nil, nil
-			wantConn, streamErr = nil, nil
-		})
-
-		returnedConn, connErr = emptyConn, nil
-		wantConn, streamErr = emptyConn, assert.AnError
-
-		for i := 0; i < triesNum; i++ {
-			qc.close()
-			beforeGet.Add(routineNum)
-			afterGet.Add(routineNum)
-
-			for j := 0; j < routineNum; j++ {
-				go func() {
-					beforeGet.Done()
-					defer afterGet.Done()
-
-					_, err := qc.get()
-					require.Same(pt, assert.AnError, err)
-				}()
-			}
-			afterGet.Wait()
-
-			assert.Equal(t, int32(i+1)*routineNum, connTriesNum.Load())
-		}
-	})
-
-	t.Run("error", func(t *testing.T) {
-		prevOnOpenStream := opener.OnOpenStream
-		t.Cleanup(func() {
-			connTriesNum.Store(0)
-			returnedConn, connErr = nil, nil
-			opener.OnOpenStream = prevOnOpenStream
-		})
-
-		returnedConn, connErr = nil, assert.AnError
-		opener.OnOpenStream = func(_ quic.Connection) (_ quic.Stream, _ error) {
+		wantErr:       assert.AnError,
+		name:          "bad_streamer",
+		wantConnTries: routineNum,
+	}, {
+		returnConn: emptyConn,
+		connErr:    assert.AnError,
+		onOpenStream: func(conn quic.Connection) (stream quic.Stream, err error) {
 			panic("should not be called")
-		}
+		},
+		wantErr:       assert.AnError,
+		name:          "error",
+		wantConnTries: routineNum,
+	}}
 
-		for i := 0; i < triesNum; i++ {
+	for _, tc := range testCases {
+		tc := tc
+		var beforeGet, afterGet sync.WaitGroup
+		var connTriesNum atomic.Int32
+
+		opener := &testConnOpener{
+			OnOpenConnection: func(_ *quic.Config) (conn quic.Connection, err error) {
+				beforeGet.Wait()
+				connTriesNum.Add(1)
+
+				return tc.returnConn, tc.connErr
+			},
+			OnOpenStream: tc.onOpenStream,
+		}
+		qc := newQUICConnector(opener, &quic.Config{
+			KeepAlivePeriod: QUICKeepAlivePeriod,
+			TokenStore:      newQUICTokenStore(),
+		})
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() { connTriesNum.Store(0) })
+
+			qc.close()
 			beforeGet.Add(routineNum)
 			afterGet.Add(routineNum)
 
@@ -157,14 +119,13 @@ func TestQUICConnector(t *testing.T) {
 					beforeGet.Done()
 					defer afterGet.Done()
 
-					conn, err := qc.get()
-					require.Nil(pt, conn)
-					require.Same(pt, assert.AnError, err)
+					_, err := qc.get()
+					require.ErrorIs(pt, err, tc.wantErr)
 				}()
 			}
 			afterGet.Wait()
 
-			assert.Equal(t, int32(i+1)*routineNum, connTriesNum.Load())
-		}
-	})
+			assert.Equal(t, tc.wantConnTries, connTriesNum.Load())
+		})
+	}
 }

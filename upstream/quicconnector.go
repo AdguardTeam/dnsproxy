@@ -17,9 +17,6 @@ type quicConnOpener interface {
 	openStream(conn quic.Connection) (stream quic.Stream, err error)
 }
 
-// ready is a semantic alias for a sign of a ready action.
-type ready = struct{}
-
 // quicConnector is used to establish a single connection on several demands.
 type quicConnector struct {
 	// mu protects all the fields.

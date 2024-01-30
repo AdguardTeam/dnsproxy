@@ -206,6 +206,7 @@ func validateUpstreamURL(u *url.URL) (err error) {
 	}
 
 	host := u.Host
+	// TODO(s.chzhen):  Consider using [netutil.SplitHostPort].
 	h, port, splitErr := net.SplitHostPort(host)
 	if splitErr == nil {
 		// Validate port.
@@ -217,7 +218,14 @@ func validateUpstreamURL(u *url.URL) (err error) {
 		host = h
 	}
 
-	_, err = netip.ParseAddr(host)
+	// If it's an IPv6 address enclosed in square brackets with no port.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/379.
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		_, err = netip.ParseAddr(host[1 : len(host)-1])
+	} else {
+		_, err = netip.ParseAddr(host)
+	}
 	if err == nil {
 		return nil
 	}

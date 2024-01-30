@@ -260,6 +260,18 @@ func TestAddressToUpstream(t *testing.T) {
 		addr: "h3://one.one.one.one",
 		opt:  opt,
 		want: "https://one.one.one.one:443",
+	}, {
+		addr: "::ffff:1.1.1.1",
+		opt:  nil,
+		want: "[::ffff:1.1.1.1]:53",
+	}, {
+		addr: "https://[2606:4700:4700::1111]/dns-query",
+		opt:  nil,
+		want: "https://[2606:4700:4700::1111]:443/dns-query",
+	}, {
+		addr: "https://[2606:4700:4700::1111]:443/dns-query",
+		opt:  nil,
+		want: "https://[2606:4700:4700::1111]:443/dns-query",
 	}}
 
 	for _, tc := range testCases {

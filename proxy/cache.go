@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"math"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/miekg/dns"
-	"golang.org/x/exp/slices"
 )
 
 // defaultCacheSize is the size of cache in bytes by default.

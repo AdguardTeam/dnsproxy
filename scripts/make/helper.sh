@@ -47,7 +47,7 @@ trap not_found EXIT
 run_linter() (
 	set +e
 
-	if [ "$VERBOSE" -lt '2' ]
+	if [ "${VERBOSE:-0}" -lt '2' ]
 	then
 		set +x
 	fi

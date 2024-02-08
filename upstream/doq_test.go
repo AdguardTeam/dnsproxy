@@ -3,7 +3,6 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -23,18 +23,21 @@ import (
 )
 
 func TestUpstreamDoQ(t *testing.T) {
-	srv := startDoQServer(t, 0)
-	t.Cleanup(srv.Shutdown)
+	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
+
+	srv := startDoQServer(t, tlsConf, 0)
+	testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	var lastState tls.ConnectionState
 	opts := &Options{
-		InsecureSkipVerify: true,
 		VerifyConnection: func(state tls.ConnectionState) error {
 			lastState = state
 
 			return nil
 		},
+		RootCAs:            rootCAs,
+		InsecureSkipVerify: true,
 	}
 	u, err := AddressToUpstream(address, opts)
 	require.NoError(t, err)
@@ -74,12 +77,20 @@ func TestUpstreamDoQ(t *testing.T) {
 }
 
 func TestUpstreamDoQ_serverRestart(t *testing.T) {
+	// Use the same tlsConf for all servers to preserve the data necessary for
+	// 0-RTT connections.
+	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
+
 	// Run the first server instance.
-	srv := startDoQServer(t, 0)
+	srv := startDoQServer(t, tlsConf, 0)
 
 	// Create a DNS-over-QUIC upstream.
 	address := fmt.Sprintf("quic://%s", srv.addr)
-	u, err := AddressToUpstream(address, &Options{InsecureSkipVerify: true, Timeout: time.Second})
+	u, err := AddressToUpstream(address, &Options{
+		InsecureSkipVerify: true,
+		Timeout:            250 * time.Millisecond,
+		RootCAs:            rootCAs,
+	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
@@ -89,42 +100,46 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 	// Now let's restart the server on the same address.
 	_, portStr, err := net.SplitHostPort(srv.addr)
 	require.NoError(t, err)
+
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
 	// Shutdown the first server.
-	srv.Shutdown()
+	require.NoError(t, srv.Shutdown())
 
 	// Start the new one on the same port.
-	srv = startDoQServer(t, port)
+	srv = startDoQServer(t, tlsConf, port)
 
 	// Check that everything works after restart.
 	checkUpstream(t, u, address)
 
 	// Stop the server again.
-	srv.Shutdown()
+	require.NoError(t, srv.Shutdown())
 
 	// Now try to send a message and make sure that it returns an error.
 	_, err = u.Exchange(createTestMessage())
 	require.Error(t, err)
 
 	// Start the server one more time.
-	srv = startDoQServer(t, port)
-	defer srv.Shutdown()
+	srv = startDoQServer(t, tlsConf, port)
+	testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
 	// Check that everything works after the second restart.
 	checkUpstream(t, u, address)
 }
 
 func TestUpstreamDoQ_0RTT(t *testing.T) {
-	srv := startDoQServer(t, 0)
-	t.Cleanup(srv.Shutdown)
+	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
+
+	srv := startDoQServer(t, tlsConf, 0)
+	testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
 	tracer := &quicTracer{}
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
 		InsecureSkipVerify: true,
 		QUICTracer:         tracer.TracerForConnection,
+		RootCAs:            rootCAs,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -166,12 +181,6 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 
 // testDoHServer is an instance of a test DNS-over-QUIC server.
 type testDoQServer struct {
-	// tlsConfig is the TLS configuration that is used for this server.
-	tlsConfig *tls.Config
-
-	// rootCAs is the pool with root certificates used by the test server.
-	rootCAs *x509.CertPool
-
 	// listener is the QUIC connections listener.
 	listener *quic.EarlyListener
 
@@ -180,21 +189,28 @@ type testDoQServer struct {
 }
 
 // Shutdown stops the test server.
-func (s *testDoQServer) Shutdown() {
-	_ = s.listener.Close()
+func (s *testDoQServer) Shutdown() (err error) {
+	return s.listener.Close()
 }
 
 // Serve serves DoQ requests.
 func (s *testDoQServer) Serve() {
 	for {
-		conn, err := s.listener.Accept(context.Background())
-		if err == quic.ErrServerClosed {
-			// Finish serving on ErrServerClosed error.
-			return
-		}
-
+		var conn quic.EarlyConnection
+		var err error
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			conn, err = s.listener.Accept(ctx)
+		}()
 		if err != nil {
-			log.Debug("error while accepting a new connection: %v", err)
+			if errors.Is(err, quic.ErrServerClosed) {
+				log.Debug("test doq: accepting: %s", err)
+			} else {
+				log.Error("test doq: accepting: %s", err)
+			}
+
+			return
 		}
 
 		go s.handleQUICConnection(conn)
@@ -214,6 +230,8 @@ func (s *testDoQServer) handleQUICConnection(conn quic.EarlyConnection) {
 		go func() {
 			qErr := s.handleQUICStream(stream)
 			if qErr != nil {
+				log.Error("test doq: handling from %s: %s", conn.RemoteAddr(), qErr)
+
 				_ = conn.CloseWithError(QUICCodeNoError, "")
 			}
 		}()
@@ -230,6 +248,8 @@ func (s *testDoQServer) handleQUICStream(stream quic.Stream) (err error) {
 	if err != nil && err != io.EOF {
 		return err
 	}
+
+	stream.CancelRead(0)
 
 	req := &dns.Msg{}
 	packetLen := binary.BigEndian.Uint16(buf[:2])
@@ -252,13 +272,12 @@ func (s *testDoQServer) handleQUICStream(stream quic.Stream) (err error) {
 }
 
 // startDoQServer starts a test DoQ server.
-func startDoQServer(t *testing.T, port int) (s *testDoQServer) {
-	tlsConfig, rootCAs := createServerTLSConfig(t, "127.0.0.1")
-	tlsConfig.NextProtos = []string{NextProtoDQ}
+func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServer) {
+	tlsConf.NextProtos = []string{NextProtoDQ}
 
 	listen, err := quic.ListenAddrEarly(
 		fmt.Sprintf("127.0.0.1:%d", port),
-		tlsConfig,
+		tlsConf,
 		&quic.Config{
 			// Necessary for 0-RTT.
 			RequireAddressValidation: func(net.Addr) (ok bool) {
@@ -270,10 +289,8 @@ func startDoQServer(t *testing.T, port int) (s *testDoQServer) {
 	require.NoError(t, err)
 
 	s = &testDoQServer{
-		addr:      listen.Addr().String(),
-		tlsConfig: tlsConfig,
-		rootCAs:   rootCAs,
-		listener:  listen,
+		addr:     listen.Addr().String(),
+		listener: listen,
 	}
 
 	go s.Serve()

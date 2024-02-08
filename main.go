@@ -191,7 +191,11 @@ type Options struct {
 	// If true, all AAAA requests will be replied with NoError RCode and empty answer
 	IPv6Disabled bool `yaml:"ipv6-disabled" long:"ipv6-disabled" description:"If specified, all AAAA requests will be replied with NoError RCode and empty answer" optional:"yes" optional-value:"true"`
 
-	// Transform responses that contain at least one of the given IP addresses into NXDOMAIN
+	// Transform responses that contain at least one of the given IP addresses
+	// into NXDOMAIN.
+	//
+	// TODO(a.garipov): Find a way to use [netutil.Prefix].  Currently, package
+	// go-flags doesn't support text unmarshalers.
 	BogusNXDomain []string `yaml:"bogus-nxdomain" long:"bogus-nxdomain" description:"Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times."`
 
 	// UDP buffer size value

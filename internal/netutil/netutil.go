@@ -7,9 +7,8 @@ package netutil
 
 import (
 	"net/netip"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/slices"
 )
 
 // PreferIPv4 compares two addresses, preferring IPv4 addresses over IPv6 ones.

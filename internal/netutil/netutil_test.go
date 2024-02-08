@@ -2,11 +2,11 @@ package netutil_test
 
 import (
 	"net/netip"
+	"slices"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/slices"
 )
 
 func TestSortNetIPAddrs(t *testing.T) {

@@ -4,19 +4,27 @@
 # See https://pubs.opengroup.org/onlinepubs/9699919799/utilities/make.html.
 .POSIX:
 
-# Don't name this macro "GO", because GNU Make apparenly makes it an
-# exported environment variable with the literal value of "${GO:-go}",
-# which is not what we need.  Use a dot in the name to make sure that
-# users don't have an environment variable with the same name.
+# This comment is used to simplify checking local copies of the
+# Makefile.  Bump this number every time a significant change is made to
+# this Makefile.
+#
+# AdGuard-Project-Version: 4
+
+# Don't name these macros "GO" etc., because GNU Make apparently makes
+# them exported environment variables with the literal value of
+# "${GO:-go}" and so on, which is not what we need.  Use a dot in the
+# name to make sure that users don't have an environment variable with
+# the same name.
 #
 # See https://unix.stackexchange.com/q/646255/105635.
 GO.MACRO = $${GO:-go}
 VERBOSE.MACRO = $${VERBOSE:-0}
 
 BRANCH = $$( git rev-parse --abbrev-ref HEAD )
+DIST_DIR = build
 GOAMD64 = v1
 GOPROXY = https://goproxy.cn|https://proxy.golang.org|direct
-DIST_DIR = build
+GOTOOLCHAIN = go1.21.7
 OUT = dnsproxy
 RACE = 0
 REVISION = $$( git rev-parse --short HEAD )
@@ -29,6 +37,7 @@ ENV = env\
 	GO="$(GO.MACRO)"\
 	GOAMD64='$(GOAMD64)'\
 	GOPROXY='$(GOPROXY)'\
+	GOTOOLCHAIN='$(GOTOOLCHAIN)'\
 	OUT='$(OUT)'\
 	PATH="$${PWD}/bin:$$( "$(GO.MACRO)" env GOPATH )/bin:$${PATH}"\
 	RACE='$(RACE)'\
@@ -51,6 +60,8 @@ go-deps:  ; $(ENV)          "$(SHELL)" ./scripts/make/go-deps.sh
 go-lint:  ; $(ENV)          "$(SHELL)" ./scripts/make/go-lint.sh
 go-test:  ; $(ENV) RACE='1' "$(SHELL)" ./scripts/make/go-test.sh
 go-tools: ; $(ENV)          "$(SHELL)" ./scripts/make/go-tools.sh
+
+go-upd-tools: ; $(ENV) "$(SHELL)" ./scripts/make/go-upd-tools.sh
 
 go-check: go-tools go-lint go-test
 

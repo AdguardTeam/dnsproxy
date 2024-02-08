@@ -8,13 +8,13 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"slices"
 	"time"
 
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
-	"golang.org/x/exp/slices"
 )
 
 // Network is a network type for use in [Resolver]'s methods.

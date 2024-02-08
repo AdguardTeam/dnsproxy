@@ -9,17 +9,14 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"math/big"
 	"net"
 	"net/netip"
 	"net/url"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/ameshkov/dnsstamps"
@@ -31,10 +28,7 @@ import (
 // TODO(ameshkov): make tests here not depend on external servers.
 
 func TestMain(m *testing.M) {
-	// Disable logging in tests.
-	log.SetOutput(io.Discard)
-
-	os.Exit(m.Run())
+	testutil.DiscardLogOutput(m)
 }
 
 func TestUpstream_bootstrapTimeout(t *testing.T) {

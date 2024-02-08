@@ -2,12 +2,12 @@ package proxy
 
 import (
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/AdguardTeam/golibs/log"
 	rate "github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
-	"golang.org/x/exp/slices"
 )
 
 func (p *Proxy) limiterForIP(ip string) interface{} {

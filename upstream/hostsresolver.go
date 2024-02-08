@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io/fs"
 	"net/netip"
+	"slices"
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/hostsfile"
 	"github.com/AdguardTeam/golibs/log"
-	"golang.org/x/exp/slices"
 )
 
 // HostsResolver is a [Resolver] that looks into system hosts files, see

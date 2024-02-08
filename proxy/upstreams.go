@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -10,7 +11,6 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/stringutil"
-	"golang.org/x/exp/slices"
 )
 
 // UpstreamConfig is a wrapper for a list of default upstreams, a map of

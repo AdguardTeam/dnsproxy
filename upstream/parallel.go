@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -117,8 +117,7 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 	}
 
 	if len(errs) == upsNum {
-		// TODO(e.burkov):  Use [errors.Join] in Go 1.20.
-		return res, errors.List("all upstreams failed to exchange", errs...)
+		return res, fmt.Errorf("all upstreams failed: %w", errors.Join(errs...))
 	}
 
 	return slices.Clip(res), nil

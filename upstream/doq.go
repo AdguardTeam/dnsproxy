@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -161,7 +162,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	// make DoQ usable.  We need to make 2 attempts in the case when the
 	// connection was closed (due to inactivity for example) AND the server
 	// refuses to open a 0-RTT connection.
-	for i := 0; hasConnection && p.shouldRetry(err) && i < 2; i++ {
+	for i := 0; hasConnection && isQUICRetryError(err) && i < 2; i++ {
 		log.Debug("dnsproxy: re-creating the QUIC connection and retrying due to %v", err)
 
 		// Close the active connection to make sure we'll try to re-connect.
@@ -202,22 +203,26 @@ func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg) (resp *dns.Msg, err error) {
 	logBegin(addr, networkUDP, req)
 	defer func() { logFinish(addr, networkUDP, err) }()
 
-	var conn quic.Connection
-	conn, err = p.getConnection(true)
+	conn, err := p.getConnection(true)
 	if err != nil {
 		return nil, err
 	}
 
-	var buf []byte
-	buf, err = req.Pack()
+	buf, err := req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack DNS message for DoQ: %w", err)
 	}
 
-	var stream quic.Stream
-	stream, err = p.openStream(conn)
+	stream, err := p.openStream(conn)
 	if err != nil {
 		return nil, fmt.Errorf("opening stream: %w", err)
+	}
+
+	if p.timeout > 0 {
+		err = stream.SetDeadline(time.Now().Add(p.timeout))
+		if err != nil {
+			return nil, fmt.Errorf("setting deadline: %w", err)
+		}
 	}
 
 	_, err = stream.Write(proxyutil.AddPrefix(buf))
@@ -226,21 +231,15 @@ func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg) (resp *dns.Msg, err error) {
 	}
 
 	// The client MUST send the DNS query over the selected stream, and MUST
-	// indicate through the STREAM FIN mechanism that no further data will
-	// be sent on that stream. Note, that stream.Close() closes the
-	// write-direction of the stream, but does not prevent reading from it.
+	// indicate through the STREAM FIN mechanism that no further data will be
+	// sent on that stream. Note, that stream.Close() closes the write-direction
+	// of the stream, but does not prevent reading from it.
 	err = stream.Close()
 	if err != nil {
 		log.Debug("dnsproxy: closing quic stream: %s", err)
 	}
 
 	return p.readMsg(stream)
-}
-
-// shouldRetry checks what error we received and decides whether it is required
-// to re-open the connection and retry sending the request.
-func (p *dnsOverQUIC) shouldRetry(err error) (ok bool) {
-	return isQUICRetryError(err)
 }
 
 // getBytesPool returns (creates if needed) a pool we store byte buffers in.
@@ -425,6 +424,8 @@ func (p *dnsOverQUIC) readMsg(stream quic.Stream) (m *dns.Msg, err error) {
 		return nil, fmt.Errorf("reading response from %s: %w", p.addr, err)
 	}
 
+	stream.CancelRead(0)
+
 	// All DNS messages (queries and responses) sent over DoQ connections MUST
 	// be encoded as a 2-octet length field followed by the message content as
 	// specified in [RFC1035].
@@ -501,6 +502,11 @@ func isQUICRetryError(err error) (ok bool) {
 		// restarting the QUIC server (it will clear its tokens cache).  The
 		// next connection attempt will return this error until the client's
 		// tokens cache is purged.
+		return true
+	}
+
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		// A timeout that could happen when the server has been restarted.
 		return true
 	}
 

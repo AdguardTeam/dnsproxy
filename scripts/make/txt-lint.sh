@@ -36,10 +36,7 @@ trailing_newlines() {
 	readonly nl
 
 	# NOTE: Adjust for your project.
-	# TODO(d.kolyshev): Remove "vendor" after moving out from vendor dir usage.
-	git ls-files\
-		':!vendor/*'\
-		| while read -r f
+	git ls-files | while read -r f
 		do
 			if [ "$( tail -c -1 "$f" )" != "$nl" ]
 			then
@@ -52,10 +49,7 @@ trailing_newlines() {
 # trailing whitespace in plain-text files.
 trailing_whitespace() {
 	# NOTE: Adjust for your project.
-	# TODO(d.kolyshev): Remove "vendor" after moving out from vendor dir usage.
-	git ls-files\
-		':!vendor/*'\
-		| while read -r f
+	git ls-files | while read -r f
 		do
 			grep -e '[[:space:]]$' -n -- "$f"\
 				| sed -e "s:^:${f}\::" -e 's/ \+$/>>>&<<</'

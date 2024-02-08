@@ -4,11 +4,11 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
-	"golang.org/x/exp/slices"
 )
 
 // Resolver resolves the hostnames to IP addresses.  Note, that [net.Resolver]

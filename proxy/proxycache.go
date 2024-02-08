@@ -2,9 +2,9 @@ package proxy
 
 import (
 	"net"
+	"slices"
 
 	"github.com/AdguardTeam/golibs/log"
-	"golang.org/x/exp/slices"
 )
 
 // cacheForContext returns cache object for the given context.

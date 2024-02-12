@@ -441,7 +441,7 @@ func (uc *UpstreamConfig) Close() (err error) {
 	}
 
 	if len(closeErrs) > 0 {
-		return errors.List("failed to close some upstreams", closeErrs...)
+		return fmt.Errorf("failed to close some upstreams: %w", errors.Join(closeErrs...))
 	}
 
 	return nil

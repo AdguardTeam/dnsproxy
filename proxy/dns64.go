@@ -7,7 +7,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
@@ -280,7 +279,7 @@ func (p *Proxy) synthRR(rr dns.RR, soaTTL uint32) (result dns.RR) {
 			Name:   aResp.Hdr.Name,
 			Rrtype: dns.TypeAAAA,
 			Class:  aResp.Hdr.Class,
-			Ttl:    mathutil.Min(aResp.Hdr.Ttl, soaTTL),
+			Ttl:    min(aResp.Hdr.Ttl, soaTTL),
 		},
 		AAAA: p.mapDNS64(addr),
 	}

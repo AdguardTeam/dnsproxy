@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -59,8 +60,9 @@ func (p *Proxy) exchangeUpstreams(
 		p.updateRTT(u.Address(), defaultTimeout)
 	}
 
-	// TODO(e.burkov):  Use [errors.Join].
-	return nil, nil, errors.List("all upstreams failed to exchange request", errs...)
+	err = fmt.Errorf("all upstreams failed to exchange request: %w", errors.Join(errs...))
+
+	return nil, nil, err
 }
 
 // exchange returns the result of the DNS request exchange with the given

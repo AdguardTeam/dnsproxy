@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
@@ -26,9 +25,7 @@ const (
 
 // udpGetOOBSize obtains the destination IP from OOB data.
 func udpGetOOBSize() (oobSize int) {
-	l4, l6 := len(ipv4.NewControlMessage(ipv4Flags)), len(ipv6.NewControlMessage(ipv6Flags))
-
-	return mathutil.Max(l4, l6)
+	return max(len(ipv4.NewControlMessage(ipv4Flags)), len(ipv6.NewControlMessage(ipv6Flags)))
 }
 
 func udpSetOptions(c *net.UDPConn) (err error) {

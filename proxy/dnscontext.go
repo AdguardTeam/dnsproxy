@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -124,14 +123,14 @@ func (dctx *DNSContext) scrub() {
 		dctx.Res.SetEdns0(dctx.udpSize, dctx.doBit)
 	}
 
-	dctx.Res.Truncate(dnsSize(dctx.Proto == ProtoUDP, dctx.Req))
+	dctx.Res.Truncate(int(dnsSize(dctx.Proto == ProtoUDP, dctx.Req)))
 	// Some devices require DNS message compression.
 	dctx.Res.Compress = true
 }
 
 // dnsSize returns the buffer size advertised in the requests OPT record.  When
 // the request is over TCP, it returns the maximum allowed size of 64KiB.
-func dnsSize(isUDP bool, r *dns.Msg) (size int) {
+func dnsSize(isUDP bool, r *dns.Msg) (size uint16) {
 	if !isUDP {
 		return dns.MaxMsgSize
 	}
@@ -141,7 +140,7 @@ func dnsSize(isUDP bool, r *dns.Msg) (size int) {
 		size16 = o.UDPSize()
 	}
 
-	return int(mathutil.Max(dns.MinMsgSize, size16))
+	return max(dns.MinMsgSize, size16)
 }
 
 // DoQVersion is an enumeration with supported DoQ versions.

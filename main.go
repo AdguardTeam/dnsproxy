@@ -20,7 +20,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/log"
-	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/AdguardTeam/golibs/timeutil"
@@ -435,7 +434,7 @@ func initUpstreams(config *proxy.Config, options *Options) {
 	privUpsOpts := &upstream.Options{
 		HTTPVersions: httpVersions,
 		Bootstrap:    boot,
-		Timeout:      mathutil.Min(defaultLocalTimeout, timeout),
+		Timeout:      min(defaultLocalTimeout, timeout),
 	}
 	privUpstreams := loadServersList(options.PrivateRDNSUpstreams)
 

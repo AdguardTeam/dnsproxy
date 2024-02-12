@@ -361,7 +361,7 @@ func (p *Proxy) Stop() error {
 	log.Println("dnsproxy: stopped dns proxy server")
 
 	if len(errs) > 0 {
-		return errors.List("stopping dns proxy server", errs...)
+		return fmt.Errorf("stopping dns proxy server: %w", errors.Join(errs...))
 	}
 
 	return nil

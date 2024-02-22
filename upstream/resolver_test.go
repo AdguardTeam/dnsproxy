@@ -1,18 +1,40 @@
-package upstream
+package upstream_test
 
 import (
 	"context"
+	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewUpstreamResolver(t *testing.T) {
-	r, err := NewUpstreamResolver("1.1.1.1:53", &Options{Timeout: 3 * time.Second})
-	require.NoError(t, err)
+	ups := &dnsproxytest.FakeUpstream{
+		OnAddress: func() (_ string) { panic("not implemented") },
+		OnClose:   func() (_ error) { panic("not implemented") },
+		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+			resp = (&dns.Msg{}).SetReply(req)
+			resp.Answer = []dns.RR{&dns.A{
+				Hdr: dns.RR_Header{
+					Name:   req.Question[0].Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    60,
+				},
+				A: netip.MustParseAddr("1.2.3.4").AsSlice(),
+			}}
+
+			return resp, nil
+		},
+	}
+
+	r := &upstream.UpstreamResolver{Upstream: ups}
 
 	ipAddrs, err := r.LookupNetIP(context.Background(), "ip", "cloudflare-dns.com")
 	require.NoError(t, err)
@@ -21,7 +43,7 @@ func TestNewUpstreamResolver(t *testing.T) {
 }
 
 func TestNewUpstreamResolver_validity(t *testing.T) {
-	withTimeoutOpt := &Options{Timeout: 3 * time.Second}
+	withTimeoutOpt := &upstream.Options{Timeout: 3 * time.Second}
 
 	testCases := []struct {
 		name       string
@@ -71,10 +93,10 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := NewUpstreamResolver(tc.addr, withTimeoutOpt)
+			r, err := upstream.NewUpstreamResolver(tc.addr, withTimeoutOpt)
 			if tc.wantErrMsg != "" {
 				assert.Equal(t, tc.wantErrMsg, err.Error())
-				if nberr := (&NotBootstrapError{}); errors.As(err, &nberr) {
+				if nberr := (&upstream.NotBootstrapError{}); errors.As(err, &nberr) {
 					assert.NotNil(t, r)
 				}
 

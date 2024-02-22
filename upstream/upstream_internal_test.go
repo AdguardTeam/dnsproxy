@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO(ameshkov): make tests here not depend on external servers.
+// TODO(ameshkov): Make tests here not depend on external servers.
 
 func TestMain(m *testing.M) {
 	testutil.DiscardLogOutput(m)

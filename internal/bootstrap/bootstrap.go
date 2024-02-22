@@ -71,6 +71,7 @@ func ResolveDialContext(
 		defer cancel()
 	}
 
+	// TODO(e.burkov):  Use network properly, perhaps, pass it through options.
 	ips, err := r.LookupNetIP(ctx, NetworkIP, host)
 	if err != nil {
 		return nil, fmt.Errorf("resolving hostname: %w", err)

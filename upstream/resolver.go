@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/netip"
 	"net/url"
 	"strings"
@@ -135,54 +136,38 @@ func (r *UpstreamResolver) LookupNetIP(
 
 	host = dns.Fqdn(strings.ToLower(host))
 
-	rr, err := r.resolveIP(ctx, network, host)
+	res, err := r.lookupNetIP(ctx, network, host)
 	if err != nil {
 		return []netip.Addr{}, err
 	}
 
-	for _, ip := range rr {
-		ips = append(ips, ip.addr)
-	}
-
-	return ips, err
+	return res.addrs, err
 }
 
 // ipResult reflects a single A/AAAA record from the DNS response.  It's used
 // to cache the results of lookups.
 type ipResult struct {
-	addr   netip.Addr
 	expire time.Time
+	addrs  []netip.Addr
 }
 
-// filterExpired returns the addresses from res that are not expired yet.  It
-// returns nil if all the addresses are expired.
-func filterExpired(res []ipResult, now time.Time) (filtered []netip.Addr) {
-	for _, r := range res {
-		if r.expire.After(now) {
-			filtered = append(filtered, r.addr)
-		}
-	}
-
-	return filtered
-}
-
-// resolveIP performs a DNS lookup of host and returns the result.  network must
-// be either [bootstrap.NetworkIP4], [bootstrap.NetworkIP6] or
+// lookupNetIP performs a DNS lookup of host and returns the result.  network
+// must be either [bootstrap.NetworkIP4], [bootstrap.NetworkIP6], or
 // [bootstrap.NetworkIP].  host must be in a lower-case FQDN form.
 //
 // TODO(e.burkov):  Use context.
-func (r *UpstreamResolver) resolveIP(
+func (r *UpstreamResolver) lookupNetIP(
 	_ context.Context,
 	network bootstrap.Network,
 	host string,
-) (rr []ipResult, err error) {
+) (result *ipResult, err error) {
 	switch network {
 	case bootstrap.NetworkIP4, bootstrap.NetworkIP6:
-		return r.resolve(host, network)
+		return r.request(host, network)
 	case bootstrap.NetworkIP:
 		// Go on.
 	default:
-		return nil, fmt.Errorf("unsupported network %s", network)
+		return result, fmt.Errorf("unsupported network %s", network)
 	}
 
 	resCh := make(chan any, 2)
@@ -190,29 +175,31 @@ func (r *UpstreamResolver) resolveIP(
 	go r.resolveAsync(resCh, host, bootstrap.NetworkIP6)
 
 	var errs []error
+	result = &ipResult{}
 
 	for i := 0; i < 2; i++ {
 		switch res := <-resCh; res := res.(type) {
 		case error:
 			errs = append(errs, res)
-		case []ipResult:
-			rr = append(rr, res...)
+		case *ipResult:
+			if result.expire.Equal(time.Time{}) || res.expire.Before(result.expire) {
+				result.expire = res.expire
+			}
+			result.addrs = append(result.addrs, res.addrs...)
 		}
 	}
 
-	return rr, errors.Join(errs...)
+	return result, errors.Join(errs...)
 }
 
-// resolve performs a single DNS lookup of host and returns all the valid
+// request performs a single DNS lookup of host and returns all the valid
 // addresses from the answer section of the response.  network must be either
-// "ip4" or "ip6".  host must be in a lower-case FQDN form.
+// [bootstrap.NetworkIP4], or [bootstrap.NetworkIP6].  host must be in a
+// lower-case FQDN form.
 //
 // TODO(e.burkov):  Consider NS and Extra sections when setting TTL.  Check out
 // what RFCs say about it.
-func (r *UpstreamResolver) resolve(
-	host string,
-	n bootstrap.Network,
-) (res []ipResult, err error) {
+func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipResult, err error) {
 	var qtype uint16
 	switch n {
 	case bootstrap.NetworkIP4:
@@ -235,25 +222,29 @@ func (r *UpstreamResolver) resolve(
 		}},
 	}
 
-	// As per [upstream.Exchange] documentation, the response is always returned
+	// As per [Upstream.Exchange] documentation, the response is always returned
 	// if no error occurred.
 	resp, err := r.Exchange(req)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
-	now := time.Now()
+	res = &ipResult{
+		expire: time.Now(),
+		addrs:  make([]netip.Addr, 0, len(resp.Answer)),
+	}
+	var minTTL uint32 = math.MaxUint32
+
 	for _, rr := range resp.Answer {
 		ip := proxyutil.IPFromRR(rr)
 		if !ip.IsValid() {
 			continue
 		}
 
-		res = append(res, ipResult{
-			addr:   ip,
-			expire: now.Add(time.Duration(rr.Header().Ttl) * time.Second),
-		})
+		res.addrs = append(res.addrs, ip)
+		minTTL = min(minTTL, rr.Header().Ttl)
 	}
+	res.expire = res.expire.Add(time.Duration(minTTL) * time.Second)
 
 	return res, nil
 }
@@ -261,7 +252,7 @@ func (r *UpstreamResolver) resolve(
 // resolveAsync performs a single DNS lookup and sends the result to ch.  It's
 // intended to be used as a goroutine.
 func (r *UpstreamResolver) resolveAsync(resCh chan<- any, host, network string) {
-	res, err := r.resolve(host, network)
+	res, err := r.request(host, network)
 	if err != nil {
 		resCh <- err
 	} else {
@@ -279,7 +270,9 @@ type CachingResolver struct {
 	mu *sync.RWMutex
 
 	// cached is the set of cached results sorted by [resolveResult.name].
-	cached map[string][]ipResult
+	//
+	// TODO(e.burkov):  Use expiration cache.
+	cached map[string]*ipResult
 }
 
 // NewCachingResolver creates a new caching resolver that uses r for lookups.
@@ -287,7 +280,7 @@ func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 	return &CachingResolver{
 		resolver: r,
 		mu:       &sync.RWMutex{},
-		cached:   map[string][]ipResult{},
+		cached:   map[string]*ipResult{},
 	}
 }
 
@@ -295,6 +288,9 @@ func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 var _ Resolver = (*CachingResolver)(nil)
 
 // LookupNetIP implements the [Resolver] interface for *CachingResolver.
+//
+// TODO(e.burkov):  It may appear that several concurrent lookup results rewrite
+// each other in the cache.
 func (r *CachingResolver) LookupNetIP(
 	ctx context.Context,
 	network bootstrap.Network,
@@ -308,14 +304,9 @@ func (r *CachingResolver) LookupNetIP(
 		return addrs, nil
 	}
 
-	newRes, err := r.resolver.resolveIP(ctx, network, host)
+	newRes, err := r.resolver.lookupNetIP(ctx, network, host)
 	if err != nil {
 		return []netip.Addr{}, err
-	}
-
-	addrs = filterExpired(newRes, now)
-	if len(addrs) == 0 {
-		return []netip.Addr{}, nil
 	}
 
 	r.mu.Lock()
@@ -323,7 +314,7 @@ func (r *CachingResolver) LookupNetIP(
 
 	r.cached[host] = newRes
 
-	return addrs, nil
+	return newRes.addrs, nil
 }
 
 // findCached returns the cached addresses for host if it's not expired yet, and
@@ -333,9 +324,9 @@ func (r *CachingResolver) findCached(host string, now time.Time) (addrs []netip.
 	defer r.mu.RUnlock()
 
 	res, ok := r.cached[host]
-	if !ok {
+	if !ok || res.expire.Before(now) {
 		return nil
 	}
 
-	return filterExpired(res, now)
+	return res.addrs
 }

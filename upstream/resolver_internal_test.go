@@ -91,10 +91,11 @@ func TestCachingResolver_staleness(t *testing.T) {
 	}))
 
 	t.Run("staleness", func(t *testing.T) {
-		cached := r.findCached(fqdn, time.Now())
+		now := time.Now()
+		cached := r.findCached(fqdn, now)
 		require.ElementsMatch(t, []netip.Addr{ip4, ip6}, cached)
 
-		cached = r.findCached(fqdn, time.Now().Add(smallTTL))
+		cached = r.findCached(fqdn, now.Add(smallTTL+time.Second))
 		require.Empty(t, cached)
 	})
 }

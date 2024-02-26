@@ -151,6 +151,10 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 	// important to test for race conditions.
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if t.Name() == "TestUpstreamDoH_raceReconnect/http3" {
+				t.Skip("TODO(e.burkov): remove the skip when quic-go is fixed")
+			}
+
 			const timeout = time.Millisecond * 100
 			var requestsCount int32
 

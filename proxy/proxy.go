@@ -88,6 +88,9 @@ type Proxy struct {
 	// quicListen are the listened QUIC connections.
 	quicListen []*quic.EarlyListener
 
+	httpListen []net.Listener // HTTP listeners
+	httpServer *http.Server   // HTTP server instance
+
 	// httpsListen are the listened HTTPS connections.
 	httpsListen []net.Listener
 

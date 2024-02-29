@@ -57,6 +57,9 @@ type Options struct {
 	// Server listen ports
 	ListenPorts []int `yaml:"listen-ports" short:"p" long:"port" description:"Listening ports. Zero value disables TCP and UDP listeners"`
 
+	// HTTP listen ports
+	HTTPListenPorts []int `yaml:"http-port" short:"i" long:"http-port" description:"Listening ports for DNS-over-HTTP"`
+
 	// HTTPS listen ports
 	HTTPSListenPorts []int `yaml:"https-port" short:"s" long:"https-port" description:"Listening ports for DNS-over-HTTPS"`
 
@@ -249,9 +252,9 @@ func main() {
 	if err != nil {
 		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
 			os.Exit(0)
+		} else {
+			log.Fatalf("failed to parse args: %v", err)
 		}
-
-		os.Exit(1)
 	}
 
 	run(options)
@@ -625,6 +628,13 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 				a := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
 				config.QUICListenAddr = append(config.QUICListenAddr, a)
 			}
+		}
+	}
+
+	for _, port := range options.HTTPListenPorts {
+		for _, ip := range listenIPs {
+			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			config.HTTPListenAddr = append(config.HTTPSListenAddr, a)
 		}
 	}
 

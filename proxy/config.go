@@ -49,6 +49,7 @@ type Config struct {
 
 	UDPListenAddr         []*net.UDPAddr // if nil, then it does not listen for UDP
 	TCPListenAddr         []*net.TCPAddr // if nil, then it does not listen for TCP
+	HTTPListenAddr        []*net.TCPAddr // if nil, then it does not listen for HTTP (DoH)
 	HTTPSListenAddr       []*net.TCPAddr // if nil, then it does not listen for HTTPS (DoH)
 	TLSListenAddr         []*net.TCPAddr // if nil, then it does not listen for TLS (DoT)
 	QUICListenAddr        []*net.UDPAddr // if nil, then it does not listen for QUIC (DoQ)
@@ -331,6 +332,7 @@ func (p *Proxy) hasListenAddrs() bool {
 	return p.UDPListenAddr != nil ||
 		p.TCPListenAddr != nil ||
 		p.TLSListenAddr != nil ||
+		p.HTTPListenAddr != nil ||
 		p.HTTPSListenAddr != nil ||
 		p.QUICListenAddr != nil ||
 		p.DNSCryptUDPListenAddr != nil ||

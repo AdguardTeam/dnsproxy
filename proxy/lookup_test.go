@@ -12,20 +12,19 @@ import (
 
 func TestLookupNetIP(t *testing.T) {
 	// Use AdGuard DNS here.
-	dnsUpstream, err := upstream.AddressToUpstream("94.140.14.14", &upstream.Options{
-		Timeout: defaultTimeout,
-	})
+	dnsUpstream, err := upstream.AddressToUpstream(
+		"94.140.14.14",
+		&upstream.Options{Timeout: defaultTimeout},
+	)
 	require.NoError(t, err)
 
-	p := Proxy{
-		Config: Config{
-			UpstreamConfig: &UpstreamConfig{
-				Upstreams: []upstream.Upstream{dnsUpstream},
-			},
+	conf := &Config{
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{dnsUpstream},
 		},
 	}
 
-	err = p.Init()
+	p, err := New(conf)
 	require.NoError(t, err)
 
 	// Now let's try doing some lookups.

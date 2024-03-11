@@ -36,21 +36,30 @@ func TestHttpsProxy(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Prepare dnsProxy with its configuration.
-			tlsConf, caPem := createServerTLSConfig(t)
-			dnsProxy := createTestProxy(t, tlsConf)
-			dnsProxy.HTTP3 = tc.http3
+			tlsConf, caPem := newTLSConfig(t)
+			dnsProxy := mustNew(t, &Config{
+				TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TLSConfig:              tlsConf,
+				UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+				TrustedProxies:         defaultTrustedProxies,
+				RatelimitSubnetLenIPv4: 24,
+				RatelimitSubnetLenIPv6: 64,
+				HTTP3:                  tc.http3,
+			})
 
 			// Run the proxy.
-			err := dnsProxy.Start()
+			ctx := context.Background()
+			err := dnsProxy.Start(ctx)
 			require.NoError(t, err)
-			testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
+			testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
 
 			// Create the HTTP client that we'll be using for this test.
 			client := createTestHTTPClient(dnsProxy, caPem, tc.http3)
 
 			// Prepare a test message to be sent to the server.
-			msg := createTestMessage()
+			msg := newTestMessage()
 
 			// Send the test message and check if the response is what we
 			// expected.
@@ -68,8 +77,17 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 	doRequest := func(t *testing.T, addr, expectedClientIP netip.Addr) {
 		// Prepare the proxy server.
-		tlsConf, caPem := createServerTLSConfig(t)
-		dnsProxy := createTestProxy(t, tlsConf)
+		tlsConf, caPem := newTLSConfig(t)
+		dnsProxy := mustNew(t, &Config{
+			TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+			HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+			QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+			TLSConfig:              tlsConf,
+			UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+			TrustedProxies:         defaultTrustedProxies,
+			RatelimitSubnetLenIPv4: 24,
+			RatelimitSubnetLenIPv6: 64,
+		})
 
 		var gotAddr netip.Addr
 		dnsProxy.RequestHandler = func(_ *Proxy, d *DNSContext) (err error) {
@@ -80,14 +98,15 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)
 
-		msg := createTestMessage()
+		msg := newTestMessage()
 
 		dnsProxy.TrustedProxies = netip.PrefixFrom(addr, addr.BitLen())
 
 		// Start listening.
-		serr := dnsProxy.Start()
-		require.NoError(t, serr)
-		testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
+		ctx := context.Background()
+		err := dnsProxy.Start(ctx)
+		require.NoError(t, err)
+		testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
 
 		hdrs := map[string]string{
 			"X-Forwarded-For": strings.Join([]string{clientAddr.String(), proxyAddr.String()}, ","),

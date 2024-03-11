@@ -205,13 +205,7 @@ type Config struct {
 
 // validateConfig verifies that the supplied configuration is valid and returns
 // an error if it's not.
-func (p *Proxy) validateConfig() error {
-	err := p.validateListenAddrs()
-	if err != nil {
-		// Don't wrap the error since it's informative enough as is.
-		return err
-	}
-
+func (p *Proxy) validateConfig() (err error) {
 	err = p.UpstreamConfig.validate()
 	if err != nil {
 		return fmt.Errorf("validating general upstreams: %w", err)

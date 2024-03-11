@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"sync"
@@ -19,7 +20,6 @@ const ipv4OnlyFqdn = "ipv4.only."
 
 func TestDNS64Race(t *testing.T) {
 	log.SetLevel(log.DEBUG)
-	dnsProxy := createTestProxy(t, nil)
 
 	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, net.ParseIP("1.2.3.4"))
 	ups := upstreamFunc(func(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -31,13 +31,25 @@ func TestDNS64Race(t *testing.T) {
 		return resp, nil
 	})
 
-	dnsProxy.UseDNS64 = true
-	// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server.
-	dnsProxy.DNS64Prefs = []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")}
-	dnsProxy.UpstreamConfig.Upstreams = []upstream.Upstream{ups}
+	dnsProxy := mustNew(t, &Config{
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{ups},
+		},
+		TrustedProxies:         defaultTrustedProxies,
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
 
-	require.NoError(t, dnsProxy.Start())
-	testutil.CleanupAndRequireSuccess(t, dnsProxy.Stop)
+		UseDNS64: true,
+		// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server.
+		DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")},
+	})
+
+	ctx := context.Background()
+	err := dnsProxy.Start(ctx)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
 
 	syncCh := make(chan struct{})
 
@@ -49,7 +61,8 @@ func TestDNS64Race(t *testing.T) {
 	for i := 0; i < testMessagesCount; i++ {
 		// The [dns.Conn] isn't safe for concurrent use despite the requirements
 		// from the [net.Conn] documentation.
-		conn, err := dns.Dial("tcp", addr)
+		var conn *dns.Conn
+		conn, err = dns.Dial("tcp", addr)
 		require.NoError(t, err)
 
 		go sendTestAAAAMessageAsync(conn, g, ipv4OnlyFqdn, syncCh)
@@ -338,15 +351,27 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := createTestProxy(t, nil)
-			p.Config.UpstreamConfig.Upstreams = []upstream.Upstream{newUps(tc.upsAns)}
-			p.Config.PrivateRDNSUpstreamConfig = &UpstreamConfig{
-				Upstreams: []upstream.Upstream{localUps},
-			}
-			p.Config.UseDNS64 = true
+			p := mustNew(t, &Config{
+				UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				UpstreamConfig: &UpstreamConfig{
+					Upstreams: []upstream.Upstream{newUps(tc.upsAns)},
+				},
+				PrivateRDNSUpstreamConfig: &UpstreamConfig{
+					Upstreams: []upstream.Upstream{localUps},
+				},
+				TrustedProxies:         defaultTrustedProxies,
+				RatelimitSubnetLenIPv4: 24,
+				RatelimitSubnetLenIPv6: 64,
+				CacheEnabled:           true,
 
-			require.NoError(t, p.Start())
-			testutil.CleanupAndRequireSuccess(t, p.Stop)
+				UseDNS64: true,
+			})
+
+			ctx := context.Background()
+			err = p.Start(ctx)
+			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
 
 			req := (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype)
 			dctx := &DNSContext{

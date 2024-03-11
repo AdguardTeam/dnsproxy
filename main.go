@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -279,7 +280,11 @@ func run(options *Options) {
 
 	// Prepare the proxy server and its configuration.
 	conf := createProxyConfig(options)
-	dnsProxy := &proxy.Proxy{Config: conf}
+
+	dnsProxy, err := proxy.New(conf)
+	if err != nil {
+		log.Fatalf("creating proxy: %s", err)
+	}
 
 	// Add extra handler if needed.
 	if options.IPv6Disabled {
@@ -288,7 +293,11 @@ func run(options *Options) {
 	}
 
 	// Start the proxy server.
-	err := dnsProxy.Start()
+	//
+	// TODO(e.burkov):  Use signal handler.
+	ctx := context.Background()
+
+	err = dnsProxy.Start(ctx)
 	if err != nil {
 		log.Fatalf("cannot start the DNS proxy due to %s", err)
 	}
@@ -298,7 +307,7 @@ func run(options *Options) {
 	<-signalChannel
 
 	// Stopping the proxy.
-	err = dnsProxy.Stop()
+	err = dnsProxy.Shutdown(ctx)
 	if err != nil {
 		log.Fatalf("cannot stop the DNS proxy due to %s", err)
 	}
@@ -336,8 +345,8 @@ func runPprof(options *Options) {
 }
 
 // createProxyConfig creates proxy.Config from the command line arguments
-func createProxyConfig(options *Options) (conf proxy.Config) {
-	conf = proxy.Config{
+func createProxyConfig(options *Options) (conf *proxy.Config) {
+	conf = &proxy.Config{
 		RatelimitSubnetLenIPv4: options.RatelimitSubnetLenIPv4,
 		RatelimitSubnetLenIPv6: options.RatelimitSubnetLenIPv6,
 
@@ -372,13 +381,13 @@ func createProxyConfig(options *Options) (conf proxy.Config) {
 	}
 
 	// TODO(e.burkov):  Make these methods of [Options].
-	initUpstreams(&conf, options)
-	initEDNS(&conf, options)
-	initBogusNXDomain(&conf, options)
-	initTLSConfig(&conf, options)
-	initDNSCryptConfig(&conf, options)
-	initListenAddrs(&conf, options)
-	initDNS64(&conf, options)
+	initUpstreams(conf, options)
+	initEDNS(conf, options)
+	initBogusNXDomain(conf, options)
+	initTLSConfig(conf, options)
+	initDNSCryptConfig(conf, options)
+	initListenAddrs(conf, options)
+	initDNS64(conf, options)
 
 	return conf
 }

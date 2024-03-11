@@ -1,30 +1,40 @@
 package proxy
 
 import (
+	"context"
+	"net"
 	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRatelimitingProxy(t *testing.T) {
-	// Prepare the proxy server
-	dnsProxy := createTestProxy(t, nil)
-	dnsProxy.Ratelimit = 1 // just one request per second is allowed
+	dnsProxy := mustNew(t, &Config{
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies:         defaultTrustedProxies,
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
+		Ratelimit:              1,
+	})
 
 	// Start listening
-	err := dnsProxy.Start()
-	if err != nil {
-		t.Fatalf("cannot start the DNS proxy: %s", err)
-	}
+	ctx := context.Background()
+	err := dnsProxy.Start(ctx)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
 
 	// Send the first message (not blocked)
-	req := createTestMessage()
+	req := newTestMessage()
 
 	r, _, err := client.Exchange(req, addr.String())
 	if err != nil {
@@ -33,17 +43,11 @@ func TestRatelimitingProxy(t *testing.T) {
 	requireResponse(t, req, r)
 
 	// Send the second message (blocked)
-	req = createTestMessage()
+	req = newTestMessage()
 
 	_, _, err = client.Exchange(req, addr.String())
 	if err == nil {
 		t.Fatalf("second request was not blocked")
-	}
-
-	// Stop the proxy
-	err = dnsProxy.Stop()
-	if err != nil {
-		t.Fatalf("cannot stop the DNS proxy: %s", err)
 	}
 }
 

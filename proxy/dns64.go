@@ -42,8 +42,7 @@ func (p *Proxy) setupDNS64() (err error) {
 		return nil
 	}
 
-	l := len(p.Config.DNS64Prefs)
-	if l == 0 {
+	if len(p.Config.DNS64Prefs) == 0 {
 		p.dns64Prefs = []netip.Prefix{dns64WellKnownPref}
 
 		return nil
@@ -114,9 +113,7 @@ func (p *Proxy) checkDNS64(req, resp *dns.Msg) (dns64Req *dns.Msg) {
 // least a single AAAA answer not within the prefixes or a CNAME.
 //
 // TODO(e.burkov):  Remove prefs from args when old API is removed.
-func (p *Proxy) filterNAT64Answers(
-	rrs []dns.RR,
-) (filtered []dns.RR, hasAnswers bool) {
+func (p *Proxy) filterNAT64Answers(rrs []dns.RR) (filtered []dns.RR, hasAnswers bool) {
 	filtered = make([]dns.RR, 0, len(rrs))
 	for _, ans := range rrs {
 		switch ans := ans.(type) {
@@ -124,16 +121,12 @@ func (p *Proxy) filterNAT64Answers(
 			addr, err := netutil.IPToAddrNoMapped(ans.AAAA)
 			if err != nil {
 				log.Error("proxy: bad aaaa record: %s", err)
-
-				continue
-			}
-
-			if p.withinDNS64(addr) {
+			} else if p.withinDNS64(addr) {
 				// Filter the record.
 				continue
+			} else {
+				filtered, hasAnswers = append(filtered, ans), true
 			}
-
-			filtered, hasAnswers = append(filtered, ans), true
 		case *dns.CNAME, *dns.DNAME:
 			// If the response contains a CNAME or a DNAME, then the CNAME or
 			// DNAME chain is followed until the first terminating A or AAAA

@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"io"
+	"net/netip"
 	"slices"
 	"strings"
 
@@ -341,7 +342,8 @@ func (uc *UpstreamConfig) validatePrivate(privateSubnets netutil.SubnetSet) (err
 
 	var errs []error
 	mapsutil.OrderedRange(uc.DomainReservedUpstreams, func(dom string, _ []upstream.Upstream) (ok bool) {
-		pref, err := proxynetutil.ExtractARPASubnet(dom)
+		var pref netip.Prefix
+		pref, err = proxynetutil.ExtractARPASubnet(dom)
 		if err != nil {
 			// Don't wrap the error since it's informative enough as is.
 			errs = append(errs, err)

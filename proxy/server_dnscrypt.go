@@ -73,6 +73,7 @@ var _ dnscrypt.Handler = &dnsCryptHandler{}
 func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) (err error) {
 	d := h.proxy.newDNSContext(ProtoDNSCrypt, req)
 	d.Addr = netutil.NetAddrToAddrPort(rw.RemoteAddr())
+	d.IsLocalClient = h.proxy.PrivateSubnets.Contains(d.Addr.Addr())
 	d.DNSCryptResponseWriter = rw
 
 	// TODO(d.kolyshev): Pass and use context from above.

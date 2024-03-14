@@ -111,6 +111,10 @@ type Options struct {
 	// private addresses.
 	PrivateRDNSUpstreams []string `yaml:"private-rdns-upstream" long:"private-rdns-upstream" description:"Private DNS upstreams to use for reverse DNS lookups of private addresses, can be specified multiple times"`
 
+	// PrivateSubnets are private subnets to check the reverse DNS lookups of
+	// IP addresses and and the request source address for them.
+	PrivateSubnets []netutil.Prefix `yaml:"private-subnets" long:"private-subnets" description:"Private subnets to use for reverse DNS lookups of private addresses, can be specified multiple times"`
+
 	// If true, parallel queries to all configured upstream servers
 	AllServers bool `yaml:"all-servers" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
 
@@ -175,7 +179,7 @@ type Options struct {
 	// DNS64Prefix defines the DNS64 prefixes that dnsproxy should use when it
 	// acts as a DNS64 server.  If not specified, dnsproxy uses the default
 	// Well-Known Prefix.  This option can be specified multiple times.
-	DNS64Prefix []string `yaml:"dns64-prefix" long:"dns64-prefix" description:"Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times" required:"false"`
+	DNS64Prefix []netutil.Prefix `yaml:"dns64-prefix" long:"dns64-prefix" description:"Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times" required:"false"`
 
 	// Other settings and options
 	// --
@@ -369,6 +373,7 @@ func createProxyConfig(options *Options) (conf *proxy.Config) {
 		UDPBufferSize:          options.UDPBufferSize,
 		HTTPSServerName:        options.HTTPSServerName,
 		MaxGoroutines:          options.MaxGoRoutines,
+		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
 	}
 
 	if uiStr := options.HTTPSUserinfo; uiStr != "" {
@@ -652,25 +657,17 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 
 // initDNS64 sets the DNS64 configuration into conf.
 func initDNS64(conf *proxy.Config, options *Options) {
-	if conf.UseDNS64 = options.DNS64; !conf.UseDNS64 {
-		return
-	}
-
 	if conf.PrivateRDNSUpstreamConfig == nil || isEmpty(conf.PrivateRDNSUpstreamConfig) {
-		log.Fatalf("at least one private upstream must be configured to use dns64")
+		log.Fatalf("at least one private upstream must be configured")
 	}
 
-	var prefs []netip.Prefix
-	for i, p := range options.DNS64Prefix {
-		pref, err := netip.ParsePrefix(p)
-		if err != nil {
-			log.Fatalf("parsing prefix at index %d: %v", i, err)
-		}
-
-		prefs = append(prefs, pref)
+	if options.PrivateSubnets != nil {
+		conf.PrivateSubnets = netutil.SliceSubnetSet(netutil.UnembedPrefixes(options.PrivateSubnets))
 	}
 
-	conf.DNS64Prefs = prefs
+	if conf.UseDNS64 = options.DNS64; conf.UseDNS64 {
+		conf.DNS64Prefs = netutil.UnembedPrefixes(options.DNS64Prefix)
+	}
 }
 
 // IPv6 configuration

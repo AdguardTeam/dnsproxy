@@ -19,16 +19,7 @@ type lookupResult struct {
 
 // lookupIPAddr resolves the specified host IP addresses.
 func (p *Proxy) lookupIPAddr(host string, qtype uint16, ch chan *lookupResult) {
-	req := &dns.Msg{}
-	req.Id = dns.Id()
-	req.RecursionDesired = true
-	req.Question = []dns.Question{
-		{
-			Name:   host,
-			Qtype:  qtype,
-			Qclass: dns.ClassINET,
-		},
-	}
+	req := (&dns.Msg{}).SetQuestion(host, qtype)
 
 	d := p.newDNSContext(ProtoUDP, req)
 	err := p.Resolve(d)

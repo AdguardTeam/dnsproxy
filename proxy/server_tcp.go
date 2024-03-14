@@ -136,6 +136,7 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 
 		d := p.newDNSContext(proto, req)
 		d.Addr = netutil.NetAddrToAddrPort(conn.RemoteAddr())
+		d.IsLocalClient = p.PrivateSubnets.Contains(d.Addr.Addr())
 		d.Conn = conn
 
 		err = p.handleDNSRequest(d)

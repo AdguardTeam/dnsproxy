@@ -223,6 +223,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 
 	d := p.newDNSContext(ProtoQUIC, req)
 	d.Addr = netutil.NetAddrToAddrPort(conn.RemoteAddr())
+	d.IsLocalClient = p.PrivateSubnets.Contains(d.Addr.Addr())
 	d.QUICStream = stream
 	d.QUICConnection = conn
 	d.DoQVersion = doqVersion

@@ -6,9 +6,13 @@
 package netutil
 
 import (
+	"net"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/AdguardTeam/golibs/netutil"
 )
 
 // PreferIPv4 compares two addresses, preferring IPv4 addresses over IPv6 ones.
@@ -104,4 +108,79 @@ func ParseSubnet(s string) (p netip.Prefix, err error) {
 	}
 
 	return p, nil
+}
+
+// ExtractARPASubnet tries to convert a reversed ARPA address being a part of
+// domain to an IP network.  domain must be an FQDN.
+//
+// TODO(e.burkov):  !! write tests.
+func ExtractARPASubnet(domain string) (pref netip.Prefix, err error) {
+	err = netutil.ValidateDomainName(strings.TrimSuffix(domain, "."))
+	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return netip.Prefix{}, err
+	}
+
+	const (
+		v4Suffix = "in-addr.arpa."
+		v6Suffix = "ip6.arpa."
+	)
+
+	domain = strings.ToLower(domain)
+
+	var idx int
+	switch {
+	case strings.HasSuffix(domain, v4Suffix):
+		idx = indexFirstV4Label(domain[:len(domain)-len(v4Suffix)])
+	case strings.HasSuffix(domain, v6Suffix):
+		idx = indexFirstV6Label(domain[:len(domain)-len(v6Suffix)])
+	default:
+		return netip.Prefix{}, &netutil.AddrError{
+			Err:  netutil.ErrNotAReversedSubnet,
+			Kind: netutil.AddrKindARPA,
+			Addr: domain,
+		}
+	}
+
+	return netutil.PrefixFromReversedAddr(domain[idx:])
+}
+
+// indexFirstV4Label returns the index at which the reversed IPv4 address
+// starts, assuming the domain is pre-validated ARPA domain having in-addr and
+// arpa labels removed.
+func indexFirstV4Label(domain string) (idx int) {
+	idx = len(domain)
+	for labelsNum := 0; labelsNum < net.IPv4len && idx > 0; labelsNum++ {
+		curIdx := strings.LastIndexByte(domain[:idx-1], '.') + 1
+		_, parseErr := strconv.ParseUint(domain[curIdx:idx-1], 10, 8)
+		if parseErr != nil {
+			return idx
+		}
+
+		idx = curIdx
+	}
+
+	return idx
+}
+
+// indexFirstV6Label returns the index at which the reversed IPv6 address
+// starts, assuming the domain is pre-validated ARPA domain having ip6 and arpa
+// labels removed.
+func indexFirstV6Label(domain string) (idx int) {
+	idx = len(domain)
+	for labelsNum := 0; labelsNum < net.IPv6len*2 && idx > 0; labelsNum++ {
+		curIdx := idx - len("a.")
+		if curIdx > 1 && domain[curIdx-1] != '.' {
+			return idx
+		}
+
+		nibble := domain[curIdx]
+		if (nibble < '0' || nibble > '9') && (nibble < 'a' || nibble > 'f') {
+			return idx
+		}
+
+		idx = curIdx
+	}
+
+	return idx
 }

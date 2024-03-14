@@ -125,6 +125,7 @@ func (p *Proxy) udpHandlePacket(
 
 	d := p.newDNSContext(ProtoUDP, req)
 	d.Addr = netutil.NetAddrToAddrPort(remoteAddr)
+	d.IsLocalClient = p.PrivateSubnets.Contains(d.Addr.Addr())
 	d.Conn = conn
 	d.localIP = localIP
 

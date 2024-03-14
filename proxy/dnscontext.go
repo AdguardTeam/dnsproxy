@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -78,6 +79,14 @@ type DNSContext struct {
 	// instance.
 	RequestID uint64
 
+	// IsLocalClient is true if the client's address is within the set of
+	// private networks.
+	IsLocalClient bool
+
+	// PrivateARPA is the requested prefix from a PTR query.  It's only set if
+	// the prefix is private and IsLocalClient is true.
+	PrivateARPA netip.Prefix
+
 	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
 	// or default otherwise.
 	udpSize uint16
@@ -88,6 +97,18 @@ type DNSContext struct {
 	hasEDNS0 bool
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
+}
+
+// newDNSContext returns a new properly initialized *DNSContext.
+//
+// TODO(e.burkov):  !! only use this to create a context.
+func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
+	return &DNSContext{
+		Proto: proto,
+		Req:   req,
+
+		RequestID: atomic.AddUint64(&p.counter, 1),
+	}
 }
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.

@@ -6,9 +6,11 @@ import (
 	"slices"
 	"strings"
 
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/mapsutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/stringutil"
 )
@@ -330,6 +332,27 @@ func (uc *UpstreamConfig) validate() (err error) {
 	default:
 		return errNoDefaultUpstreams
 	}
+}
+
+func (uc *UpstreamConfig) validatePrivate(privateSubnets netutil.SubnetSet) (err error) {
+	if err = uc.validate(); err != nil {
+		return err
+	}
+
+	var errs []error
+	mapsutil.OrderedRange(uc.DomainReservedUpstreams, func(dom string, _ []upstream.Upstream) (ok bool) {
+		pref, err := proxynetutil.ExtractARPASubnet(dom)
+		if err != nil {
+			// Don't wrap the error since it's informative enough as is.
+			errs = append(errs, err)
+		} else if !privateSubnets.Contains(pref.Addr()) {
+			errs = append(errs, fmt.Errorf("reversed subnet in %q is not private", dom))
+		}
+
+		return true
+	})
+
+	return errors.Join(errs...)
 }
 
 // getUpstreamsForDomain looks for a domain in the reserved domains map and

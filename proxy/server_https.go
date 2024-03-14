@@ -156,6 +156,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	d := p.newDNSContext(ProtoHTTPS, req)
 	d.Addr = raddr
+	d.IsLocalClient = p.PrivateSubnets.Contains(raddr.Addr())
 	d.HTTPRequest = r
 	d.HTTPResponseWriter = w
 
@@ -195,8 +196,7 @@ func (p *Proxy) checkBasicAuth(
 	log.Error("dnsproxy: basic auth failed for user %q from raddr %s", user, raddr)
 
 	h := w.Header()
-	// TODO(a.garipov): Add to httphdr.
-	h.Set("Www-Authenticate", `Basic realm="DNS", charset="UTF-8"`)
+	h.Set(httphdr.WWWAuthenticate, `Basic realm="DNS", charset="UTF-8"`)
 	http.Error(w, "Authorization required", http.StatusUnauthorized)
 
 	return false

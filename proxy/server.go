@@ -6,6 +6,8 @@ import (
 	"net"
 	"time"
 
+	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -79,61 +81,57 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 }
 
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
-func (p *Proxy) handleDNSRequest(d *DNSContext) error {
+func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 	p.logDNSMessage(d.Req)
 
 	if d.Req.Response {
-		log.Debug("Dropping incoming Reply packet from %s", d.Addr.String())
+		log.Debug("proxy: dropping incoming reply packet from %s", d.Addr.String())
+
 		return nil
 	}
 
 	if p.BeforeRequestHandler != nil {
-		ok, err := p.BeforeRequestHandler(p, d)
+		var ok bool
+
+		ok, err = p.BeforeRequestHandler(p, d)
 		if err != nil {
 			log.Error("Error in the BeforeRequestHandler: %s", err)
-			d.Res = p.genServerFailure(d.Req)
+			d.Res = p.msgConstructor.NewMsgSERVFAIL(d.Req)
 			p.respond(d)
+
 			return nil
 		}
+
 		if !ok {
-			return nil // do nothing, don't reply
+			// Do nothing, don't reply
+			return nil
 		}
 	}
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
+	//
+	// TODO(e.burkov):  Investigate if written above true and move to UDP server
+	// implementation?
 	if d.Proto == ProtoUDP && p.isRatelimited(d.Addr.Addr()) {
-		log.Tracef("Ratelimiting %v based on IP only", d.Addr)
-		return nil // do nothing, don't reply, we got ratelimited
+		log.Debug("proxy: ratelimiting %v based on IP only", d.Addr)
+
+		// Do nothing, don't reply, we got ratelimited.
+		return nil
 	}
 
-	if len(d.Req.Question) != 1 {
-		log.Debug("got invalid number of questions: %v", len(d.Req.Question))
-		d.Res = p.genServerFailure(d.Req)
-	}
-
-	// refuse ANY requests (anti-DDOS measure)
-	if p.RefuseAny && len(d.Req.Question) > 0 && d.Req.Question[0].Qtype == dns.TypeANY {
-		log.Tracef("Refusing type=ANY request")
-		d.Res = p.genNotImpl(d.Req)
-	}
-
-	var err error
-
+	d.Res = p.validateRequest(d)
 	if d.Res == nil {
 		if len(p.UpstreamConfig.Upstreams) == 0 {
+			// TODO(e.burkov):  Investigate if we can remove this.
 			panic("SHOULD NOT HAPPEN: no default upstreams specified")
 		}
 
-		// execute the DNS request
-		// if there is a custom middleware configured, use it
+		defer func() { err = errors.Annotate(err, "handling request: %w") }()
+
 		if p.RequestHandler != nil {
 			err = p.RequestHandler(p, d)
 		} else {
 			err = p.Resolve(d)
-		}
-
-		if err != nil {
-			err = fmt.Errorf("talking to dns upstream: %w", err)
 		}
 	}
 
@@ -141,6 +139,50 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	p.respond(d)
 
 	return err
+}
+
+// validateRequest returns a response for invalid request or nil if the request
+// is ok.
+func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
+	switch {
+	case len(d.Req.Question) != 1:
+		log.Debug("proxy: got invalid number of questions: %v", len(d.Req.Question))
+
+		return p.msgConstructor.NewMsgSERVFAIL(d.Req)
+	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
+		// Refuse requests of type ANY (anti-DDOS measure).
+		log.Debug("proxy: refusing type=ANY request")
+
+		return p.msgConstructor.NewMsgNOTIMPLEMENTED(d.Req)
+	case p.recDetector.check(*d.Req):
+		log.Debug("proxy: recursion detected resolving %q", d.Req.Question[0].Name)
+
+		return p.msgConstructor.NewMsgNXDOMAIN(d.Req)
+	default:
+		q := d.Req.Question[0]
+		if q.Qtype != dns.TypePTR {
+			return nil
+		}
+
+		requestedPref, err := proxynetutil.ExtractARPASubnet(q.Name)
+		if err != nil {
+			log.Debug("proxy: parsing reversed subnet: %v", err)
+
+			return nil
+		}
+
+		if p.PrivateSubnets.Contains(requestedPref.Addr()) {
+			if !d.IsLocalClient {
+				log.Debug("proxy: %s requests a private arpa domain %q", d.Addr, q.Name)
+
+				return p.msgConstructor.NewMsgNXDOMAIN(d.Req)
+			}
+
+			d.PrivateARPA = requestedPref
+		}
+
+		return nil
+	}
 }
 
 // respond writes the specified response to the client (or does nothing if d.Res is empty)
@@ -185,27 +227,6 @@ func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
 			rr.Header().Ttl = newTTL
 		}
 	}
-}
-
-func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {
-	return p.genWithRCode(request, dns.RcodeServerFailure)
-}
-
-func (p *Proxy) genNotImpl(request *dns.Msg) (resp *dns.Msg) {
-	resp = p.genWithRCode(request, dns.RcodeNotImplemented)
-	// NOTIMPL without EDNS is treated as 'we don't support EDNS', so
-	// explicitly set it.
-	resp.SetEdns0(1452, false)
-
-	return resp
-}
-
-func (p *Proxy) genWithRCode(req *dns.Msg, code int) (resp *dns.Msg) {
-	resp = &dns.Msg{}
-	resp.SetRcode(req, code)
-	resp.RecursionAvailable = true
-
-	return resp
 }
 
 func (p *Proxy) logDNSMessage(m *dns.Msg) {

@@ -178,9 +178,8 @@ type Config struct {
 	// MaxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.
 	//
-	// TODO(a.garipov): Rename this to something like
-	// “MaxDNSRequestGoroutines” in a later major version, as it doesn't
-	// actually limit all goroutines.
+	// TODO(a.garipov): Rename this to something like “MaxDNSRequestGoroutines”
+	// in a later major version, as it doesn't actually limit all goroutines.
 	MaxGoroutines uint
 
 	// The size of the read buffer on the underlying socket. Larger read buffers can handle
@@ -201,6 +200,21 @@ type Config struct {
 	// PreferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
 	// upstreams that use hostnames.
 	PreferIPv6 bool
+
+	// UsePrivateRDNS defines if the PTR requests for unknown addresses from
+	// locally-served networks should be resolved via private PTR resolvers.
+	UsePrivateRDNS bool
+
+	// PrivateSubnets is the set checked for private IP addresses.  The request
+	// should be resolved via PrivateRDNSUpstreamConfig if it's a PTR for an IP
+	// within this set and came from a client's IP within this set.  It must not
+	// be nil.
+	//
+	// TODO(e.burkov):  !! set everywhere
+	PrivateSubnets netutil.SubnetSet
+
+	// TODO(e.burkov):  !! doc
+	MessageConstructor MessageConstructor
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns
@@ -211,14 +225,21 @@ func (p *Proxy) validateConfig() (err error) {
 		return fmt.Errorf("validating general upstreams: %w", err)
 	}
 
-	// Allow both [Proxy.PrivateRDNSUpstreamConfig] and [Proxy.Fallbacks] to be
-	// nil, but not empty.  nil means using the default values for those.
-
-	err = p.PrivateRDNSUpstreamConfig.validate()
-	if err != nil && !errors.Is(err, errNoDefaultUpstreams) {
+	if p.UsePrivateRDNS || p.UseDNS64 {
+		err = p.PrivateRDNSUpstreamConfig.validatePrivate(p.PrivateSubnets)
+	} else {
+		err = p.PrivateRDNSUpstreamConfig.validate()
+		if errors.Is(err, errNoDefaultUpstreams) {
+			// Allow [Proxy.PrivateRDNSUpstreamConfig] to be nil, but not empty.
+			err = nil
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("validating private RDNS upstreams: %w", err)
 	}
 
+	// Allow [Proxy.Fallbacks] to be nil, but not empty.  nil means not to use
+	// fallbacks at all.
 	err = p.Fallbacks.validate()
 	if err != nil && !errors.Is(err, errNoDefaultUpstreams) {
 		return fmt.Errorf("validating fallbacks: %w", err)

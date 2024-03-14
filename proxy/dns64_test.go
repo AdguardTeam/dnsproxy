@@ -31,11 +31,18 @@ func TestDNS64Race(t *testing.T) {
 		return resp, nil
 	})
 
+	localUps := upstreamFunc(func(req *dns.Msg) (resp *dns.Msg, err error) {
+		panic("not implemented")
+	})
+
 	dnsProxy := mustNew(t, &Config{
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{ups},
+		},
+		PrivateRDNSUpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{localUps},
 		},
 		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
@@ -375,8 +382,9 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 			req := (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype)
 			dctx := &DNSContext{
-				Req:  req,
-				Addr: cliAddrPort,
+				Req:           req,
+				Addr:          cliAddrPort,
+				IsLocalClient: true,
 			}
 
 			err = p.Resolve(dctx)

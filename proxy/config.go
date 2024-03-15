@@ -225,8 +225,8 @@ func (p *Proxy) validateConfig() (err error) {
 		return fmt.Errorf("validating general upstreams: %w", err)
 	}
 
-	if p.UsePrivateRDNS || p.UseDNS64 {
-		err = p.PrivateRDNSUpstreamConfig.validatePrivate(p.PrivateSubnets)
+	if p.UsePrivateRDNS {
+		err = p.PrivateRDNSUpstreamConfig.ValidatePrivateness(p.PrivateSubnets)
 	} else {
 		err = p.PrivateRDNSUpstreamConfig.validate()
 		if errors.Is(err, errNoDefaultUpstreams) {

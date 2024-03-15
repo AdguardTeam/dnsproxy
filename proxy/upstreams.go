@@ -335,24 +335,28 @@ func (uc *UpstreamConfig) validate() (err error) {
 	}
 }
 
-func (uc *UpstreamConfig) validatePrivate(privateSubnets netutil.SubnetSet) (err error) {
+// ValidatePrivateness returns an error if uc isn't valid, or, treated as
+// private upstreams configuration, contains specifications for invalid domains.
+func (uc *UpstreamConfig) ValidatePrivateness(privateSubnets netutil.SubnetSet) (err error) {
 	if err = uc.validate(); err != nil {
 		return err
 	}
 
 	var errs []error
-	mapsutil.OrderedRange(uc.DomainReservedUpstreams, func(dom string, _ []upstream.Upstream) (ok bool) {
+	rangeFunc := func(domain string, _ []upstream.Upstream) (ok bool) {
 		var pref netip.Prefix
-		pref, err = proxynetutil.ExtractARPASubnet(dom)
+		pref, err = proxynetutil.ExtractARPASubnet(domain)
 		if err != nil {
 			// Don't wrap the error since it's informative enough as is.
 			errs = append(errs, err)
 		} else if !privateSubnets.Contains(pref.Addr()) {
-			errs = append(errs, fmt.Errorf("reversed subnet in %q is not private", dom))
+			errs = append(errs, fmt.Errorf("reversed subnet in %q is not private", domain))
 		}
 
 		return true
-	})
+	}
+
+	mapsutil.OrderedRange(uc.DomainReservedUpstreams, rangeFunc)
 
 	return errors.Join(errs...)
 }

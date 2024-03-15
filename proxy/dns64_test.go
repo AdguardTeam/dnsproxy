@@ -372,7 +372,8 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				RatelimitSubnetLenIPv6: 64,
 				CacheEnabled:           true,
 
-				UseDNS64: true,
+				UsePrivateRDNS: true,
+				UseDNS64:       true,
 			})
 
 			ctx := context.Background()

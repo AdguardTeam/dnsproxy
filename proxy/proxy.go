@@ -580,7 +580,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 		upstreams = getUpstreams(p.UpstreamConfig, host)
 	} else {
 		// Use private upstreams.
-		if p.PrivateRDNSUpstreamConfig != nil && d.IsLocalClient {
+		if p.UsePrivateRDNS && p.PrivateRDNSUpstreamConfig != nil && d.IsLocalClient {
 			// It may only be PTR request.
 			upstreams = p.PrivateRDNSUpstreamConfig.getUpstreamsForDomain(host)
 		}

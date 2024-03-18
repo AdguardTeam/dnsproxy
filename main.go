@@ -210,6 +210,9 @@ type Options struct {
 
 	// Print DNSProxy version (just for the help)
 	Version bool `yaml:"version" long:"version" description:"Prints the program version"`
+
+	// SkipParsingArgs is used to skip the command line arguments parsing.
+	SkipParsingArgs bool `yaml:"skip-parsing-args" long:"skip-parsing-args" description:"If present, skips the command line arguments parsing" optional:"yes" optional-value:"false"`
 }
 
 const (
@@ -245,14 +248,16 @@ func main() {
 		}
 	}
 
-	parser := goFlags.NewParser(options, goFlags.Default)
-	_, err := parser.Parse()
-	if err != nil {
-		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
-			os.Exit(0)
-		}
+	if !options.SkipParsingArgs {
+		parser := goFlags.NewParser(options, goFlags.Default)
+		_, err := parser.Parse()
+		if err != nil {
+			if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
+				os.Exit(0)
+			}
 
-		os.Exit(1)
+			os.Exit(1)
+		}
 	}
 
 	run(options)

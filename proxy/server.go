@@ -6,9 +6,9 @@ import (
 	"net"
 	"time"
 
-	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 )
@@ -80,7 +80,27 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 	return nil
 }
 
-// handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
+// handleBeforewards calls the BeforeRequestHandler if it's set and returns true
+// if the request should be processed further.
+func (p *Proxy) handleBeforewards(d *DNSContext) (cont bool) {
+	if p.BeforeRequestHandler != nil {
+		ok, err := p.BeforeRequestHandler(p, d)
+		if err != nil {
+			log.Error("Error in the BeforeRequestHandler: %s", err)
+			d.Res = p.msgConstructor.NewMsgSERVFAIL(d.Req)
+			p.respond(d)
+
+			return false
+		}
+
+		return ok
+	}
+
+	return true
+}
+
+// handleDNSRequest processes the incoming packet bytes and returns with an
+// optional response packet.
 func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 	p.logDNSMessage(d.Req)
 
@@ -90,22 +110,8 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 		return nil
 	}
 
-	if p.BeforeRequestHandler != nil {
-		var ok bool
-
-		ok, err = p.BeforeRequestHandler(p, d)
-		if err != nil {
-			log.Error("Error in the BeforeRequestHandler: %s", err)
-			d.Res = p.msgConstructor.NewMsgSERVFAIL(d.Req)
-			p.respond(d)
-
-			return nil
-		}
-
-		if !ok {
-			// Do nothing, don't reply
-			return nil
-		}
+	if !p.handleBeforewards(d) {
+		return nil
 	}
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
@@ -158,31 +164,40 @@ func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 		log.Debug("proxy: recursion detected resolving %q", d.Req.Question[0].Name)
 
 		return p.msgConstructor.NewMsgNXDOMAIN(d.Req)
+	case !d.isValidARPA(p.PrivateSubnets):
+		log.Debug("proxy: %s requests a private arpa domain %q", d.Addr, d.Req.Question[0].Name)
+
+		return p.msgConstructor.NewMsgNXDOMAIN(d.Req)
 	default:
-		q := d.Req.Question[0]
-		if q.Qtype != dns.TypePTR {
-			return nil
-		}
-
-		requestedPref, err := proxynetutil.ExtractARPASubnet(q.Name)
-		if err != nil {
-			log.Debug("proxy: parsing reversed subnet: %v", err)
-
-			return nil
-		}
-
-		if p.PrivateSubnets.Contains(requestedPref.Addr()) {
-			if !d.IsLocalClient {
-				log.Debug("proxy: %s requests a private arpa domain %q", d.Addr, q.Name)
-
-				return p.msgConstructor.NewMsgNXDOMAIN(d.Req)
-			}
-
-			d.PrivateARPA = requestedPref
-		}
-
 		return nil
 	}
+}
+
+// isValidARPA returns false if the request is for a private ARPA domain and
+// the client isn't local.  It also sets the PrivateARPA field of the DNSContext
+// if the request is for a private ARPA domain.
+func (dctx *DNSContext) isValidARPA(privateNets netutil.SubnetSet) (ok bool) {
+	q := dctx.Req.Question[0]
+	if q.Qtype != dns.TypePTR {
+		return true
+	}
+
+	requestedPref, err := netutil.ExtractReversedAddr(q.Name)
+	if err != nil {
+		log.Debug("proxy: parsing reversed subnet: %v", err)
+
+		return true
+	}
+
+	if privateNets.Contains(requestedPref.Addr()) {
+		if !dctx.IsLocalClient {
+			return false
+		}
+
+		dctx.PrivateARPA = requestedPref
+	}
+
+	return true
 }
 
 // respond writes the specified response to the client (or does nothing if d.Res is empty)

@@ -231,7 +231,10 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < requestsNum; i++ {
-				_ = p.Resolve(&DNSContext{Req: req, Addr: cli})
+				dctx := p.newDNSContext(ProtoTCP, req)
+				dctx.Addr = cli
+
+				_ = p.Resolve(dctx)
 			}
 
 			assert.Equal(t, wantStat, stats)

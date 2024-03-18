@@ -11,7 +11,6 @@ import (
 	"slices"
 	"time"
 
-	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -78,9 +77,9 @@ func ResolveDialContext(
 	}
 
 	if preferV6 {
-		slices.SortStableFunc(ips, proxynetutil.PreferIPv6)
+		slices.SortStableFunc(ips, netutil.PreferIPv6)
 	} else {
-		slices.SortStableFunc(ips, proxynetutil.PreferIPv4)
+		slices.SortStableFunc(ips, netutil.PreferIPv4)
 	}
 
 	addrs := make([]string, 0, len(ips))

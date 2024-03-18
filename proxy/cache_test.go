@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"net"
-	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -347,11 +346,9 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
 
-	d := &DNSContext{}
-
 	t.Run("replace_min", func(t *testing.T) {
-		d.Req = newHostTestMessage("host")
-		d.Addr = netip.AddrPort{}
+		req := newHostTestMessage("host")
+		d := dnsProxy.newDNSContext(ProtoTCP, req)
 
 		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
@@ -374,8 +371,8 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	})
 
 	t.Run("replace_max", func(t *testing.T) {
-		d.Req = newHostTestMessage("host2")
-		d.Addr = netip.AddrPort{}
+		req := newHostTestMessage("host2")
+		d := dnsProxy.newDNSContext(ProtoTCP, req)
 
 		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{

@@ -207,7 +207,7 @@ type Proxy struct {
 	Config
 }
 
-// New creates a new Proxy with the specified configuration.
+// New creates a new Proxy with the specified configuration.  c must not be nil.
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
 		Config:           *c,
@@ -229,7 +229,9 @@ func New(c *Config) (p *Proxy, err error) {
 		msgConstructor: defaultMessageConstructor{},
 	}
 
-	p.PrivateSubnets = netutil.SubnetSetFunc(netutil.IsLocallyServed)
+	if p.PrivateSubnets == nil {
+		p.PrivateSubnets = netutil.SubnetSetFunc(netutil.IsLocallyServed)
+	}
 
 	// TODO(e.burkov):  Validate config separately and add the contract to the
 	// New function.
@@ -276,58 +278,6 @@ func New(c *Config) (p *Proxy, err error) {
 	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
 
 	return p, nil
-}
-
-// Init populates fields of p but does not start listeners.
-//
-// Deprecated:  Use the [New] function instead.
-func (p *Proxy) Init() (err error) {
-	// TODO(s.chzhen):  Consider moving to [Proxy.validateConfig].
-	err = p.validateBasicAuth()
-	if err != nil {
-		return fmt.Errorf("basic auth: %w", err)
-	}
-
-	p.initCache()
-
-	if p.MaxGoroutines > 0 {
-		log.Info("dnsproxy: max goroutines is set to %d", p.MaxGoroutines)
-
-		p.requestsSema = syncutil.NewChanSemaphore(p.MaxGoroutines)
-	} else {
-		p.requestsSema = syncutil.EmptySemaphore{}
-	}
-
-	p.udpOOBSize = proxynetutil.UDPGetOOBSize()
-	p.bytesPool = &sync.Pool{
-		New: func() interface{} {
-			// 2 bytes may be used to store packet length (see TCP/TLS)
-			b := make([]byte, 2+dns.MaxMsgSize)
-
-			return &b
-		},
-	}
-
-	if p.UpstreamMode == UModeFastestAddr {
-		log.Info("dnsproxy: fastest ip is enabled")
-
-		p.fastestAddr = fastip.NewFastestAddr()
-		if timeout := p.FastestPingTimeout; timeout > 0 {
-			p.fastestAddr.PingWaitTimeout = timeout
-		}
-	}
-
-	err = p.setupDNS64()
-	if err != nil {
-		return fmt.Errorf("setting up DNS64: %w", err)
-	}
-
-	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
-	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
-
-	p.time = realClock{}
-
-	return nil
 }
 
 // validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
@@ -561,32 +511,31 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 	host := q.Name
 	qtype := q.Qtype
 
-	isPrivate = d.PrivateARPA != netip.Prefix{} || p.shouldStripDNS64(d.Req)
-	if !isPrivate {
-		getUpstreams := (*UpstreamConfig).getUpstreamsForDomain
-		if qtype == dns.TypeDS {
-			getUpstreams = (*UpstreamConfig).getUpstreamsForDS
-		}
-
-		if custom := d.CustomUpstreamConfig; custom != nil {
-			// Try to use custom.
-			upstreams = getUpstreams(custom.upstream, host)
-			if len(upstreams) > 0 {
-				return upstreams, false
-			}
-		}
-
-		// Use configured.
-		upstreams = getUpstreams(p.UpstreamConfig, host)
-	} else {
+	if d.PrivateARPA != (netip.Prefix{}) || p.shouldStripDNS64(d.Req) {
 		// Use private upstreams.
 		if p.UsePrivateRDNS && p.PrivateRDNSUpstreamConfig != nil && d.IsLocalClient {
 			// It may only be PTR request.
-			upstreams = p.PrivateRDNSUpstreamConfig.getUpstreamsForDomain(host)
+			return p.PrivateRDNSUpstreamConfig.getUpstreamsForDomain(host), true
+		}
+
+		return nil, true
+	}
+
+	getUpstreams := (*UpstreamConfig).getUpstreamsForDomain
+	if qtype == dns.TypeDS {
+		getUpstreams = (*UpstreamConfig).getUpstreamsForDS
+	}
+
+	if custom := d.CustomUpstreamConfig; custom != nil {
+		// Try to use custom.
+		upstreams = getUpstreams(custom.upstream, host)
+		if len(upstreams) > 0 {
+			return upstreams, false
 		}
 	}
 
-	return upstreams, isPrivate
+	// Use configured.
+	return getUpstreams(p.UpstreamConfig, host), false
 }
 
 // replyFromUpstream tries to resolve the request.

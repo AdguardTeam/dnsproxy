@@ -86,9 +86,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, func() (err error) { return prx.Shutdown(ctx) })
 
-	d := &DNSContext{
-		Req: newHostTestMessage("host"),
-	}
+	d := prx.newDNSContext(ProtoTCP, newHostTestMessage("host"))
 
 	for _, tc := range testCases {
 		u.ans = tc.ans

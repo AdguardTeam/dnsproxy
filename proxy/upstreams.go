@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
@@ -345,7 +344,7 @@ func (uc *UpstreamConfig) ValidatePrivateness(privateSubnets netutil.SubnetSet) 
 	var errs []error
 	rangeFunc := func(domain string, _ []upstream.Upstream) (ok bool) {
 		var pref netip.Prefix
-		pref, err = proxynetutil.ExtractARPASubnet(domain)
+		pref, err = netutil.ExtractReversedAddr(domain)
 		if err != nil {
 			// Don't wrap the error since it's informative enough as is.
 			errs = append(errs, err)

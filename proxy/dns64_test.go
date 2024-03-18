@@ -382,11 +382,10 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 			testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
 
 			req := (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype)
-			dctx := &DNSContext{
-				Req:           req,
-				Addr:          cliAddrPort,
-				IsLocalClient: true,
-			}
+
+			dctx := p.newDNSContext(ProtoTCP, req)
+			dctx.Addr = cliAddrPort
+			dctx.IsLocalClient = true
 
 			err = p.Resolve(dctx)
 			require.NoError(t, err)

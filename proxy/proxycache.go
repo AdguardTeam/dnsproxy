@@ -49,13 +49,11 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 
 	if dctxCache.optimistic && expired {
 		// Build a reduced clone of the current context to avoid data race.
-		minCtxClone := &DNSContext{
-			// It is only read inside the optimistic resolver.
-			CustomUpstreamConfig: d.CustomUpstreamConfig,
-			ReqECS:               cloneIPNet(d.ReqECS),
-		}
-		if d.Req != nil {
-			minCtxClone.Req = d.Req.Copy()
+		minCtxClone := p.newDNSContext(d.Proto, d.Req)
+		minCtxClone.CustomUpstreamConfig = d.CustomUpstreamConfig
+		minCtxClone.ReqECS = cloneIPNet(d.ReqECS)
+		if minCtxClone.Req != nil {
+			minCtxClone.Req = minCtxClone.Req.Copy()
 			addDO(minCtxClone.Req)
 		}
 

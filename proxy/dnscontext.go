@@ -27,9 +27,6 @@ type DNSContext struct {
 	// ProtoQUIC only.
 	QUICStream quic.Stream
 
-	// Addr is the address of the client.
-	Addr netip.AddrPort
-
 	// Upstream is the upstream that resolved the request.  In case of cached
 	// response it's nil.
 	Upstream upstream.Upstream
@@ -62,8 +59,15 @@ type DNSContext struct {
 	// cached with.  It's empty for responses resolved by the upstream server.
 	CachedUpstreamAddr string
 
+	// Addr is the address of the client.
+	Addr netip.AddrPort
+
 	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
 	localIP netip.Addr
+
+	// PrivateARPA is the requested prefix from a PTR query.  It's only set if
+	// the prefix is private and IsLocalClient is true.
+	PrivateARPA netip.Prefix
 
 	// QueryDuration is the duration of a successful query to an upstream
 	// server or, if the upstream server is unavailable, to a fallback server.
@@ -79,17 +83,13 @@ type DNSContext struct {
 	// instance.
 	RequestID uint64
 
-	// IsLocalClient is true if the client's address is within the set of
-	// private networks.
-	IsLocalClient bool
-
-	// PrivateARPA is the requested prefix from a PTR query.  It's only set if
-	// the prefix is private and IsLocalClient is true.
-	PrivateARPA netip.Prefix
-
 	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
 	// or default otherwise.
 	udpSize uint16
+
+	// IsLocalClient is true if the client's address is within the set of
+	// private networks.
+	IsLocalClient bool
 
 	// adBit is the authenticated data flag from the request.
 	adBit bool
@@ -100,9 +100,7 @@ type DNSContext struct {
 }
 
 // newDNSContext returns a new properly initialized *DNSContext.
-//
-// TODO(e.burkov):  !! only use this to create a context.
-func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
+func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (dctx *DNSContext) {
 	return &DNSContext{
 		Proto: proto,
 		Req:   req,

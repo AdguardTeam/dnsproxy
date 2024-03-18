@@ -505,10 +505,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 			req.SetEdns0(txtDataLen/2, true)
 		}
 
-		dctx := &DNSContext{
-			Req:   req,
-			Proto: ProtoUDP,
-		}
+		dctx := p.newDNSContext(ProtoUDP, req)
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(p.cache.items.Clear)
@@ -993,24 +990,19 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 		onClose:   func() error { panic("not implemented") },
 	}
 
-	d := &DNSContext{
-		CustomUpstreamConfig: NewCustomUpstreamConfig(
-			&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-			false,
-			0,
-			false,
-		),
-		Req:  newHostTestMessage("host"),
-		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
-	}
+	upsConf := &UpstreamConfig{Upstreams: []upstream.Upstream{u}}
+
+	dctx := dnsProxy.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+	dctx.Addr = netip.MustParseAddrPort("1.2.3.0:1234")
+	dctx.CustomUpstreamConfig = NewCustomUpstreamConfig(upsConf, false, 0, false)
 
 	var err error
 	require.NotPanics(t, func() {
-		err = dnsProxy.Resolve(d)
+		err = dnsProxy.Resolve(dctx)
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, d.Req.Question[0], d.Res.Question[0])
+	assert.Equal(t, dctx.Req.Question[0], dctx.Res.Question[0])
 }
 
 func TestExchangeCustomUpstreamConfig(t *testing.T) {
@@ -1028,21 +1020,16 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 		}},
 	}
 
-	d := DNSContext{
-		CustomUpstreamConfig: NewCustomUpstreamConfig(
-			&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-			false,
-			0,
-			false,
-		),
-		Req:  newHostTestMessage("host"),
-		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
-	}
+	upsConf := &UpstreamConfig{Upstreams: []upstream.Upstream{u}}
 
-	err := prx.Resolve(&d)
+	dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+	dctx.Addr = netip.MustParseAddrPort("1.2.3.0:1234")
+	dctx.CustomUpstreamConfig = NewCustomUpstreamConfig(upsConf, false, 0, false)
+
+	err := prx.Resolve(dctx)
 	require.NoError(t, err)
 
-	assert.Equal(t, ansIP, firstIP(d.Res))
+	assert.Equal(t, ansIP, firstIP(dctx.Res))
 }
 
 func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
@@ -1094,31 +1081,29 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 		prx.EnableEDNSClientSubnet,
 	)
 
-	d := DNSContext{
-		CustomUpstreamConfig: customUpstreamConfig,
-		Req:                  newHostTestMessage("host"),
-		Addr:                 netip.MustParseAddrPort("1.2.3.0:1234"),
-	}
+	dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+	dctx.Addr = netip.MustParseAddrPort("1.2.3.0:1234")
+	dctx.CustomUpstreamConfig = customUpstreamConfig
 
-	err = prx.Resolve(&d)
+	err = prx.Resolve(dctx)
 	require.NoError(t, err)
 
 	require.Equal(t, 1, count)
-	assert.Equal(t, ansIP, firstIP(d.Res))
+	assert.Equal(t, ansIP, firstIP(dctx.Res))
 
-	err = prx.Resolve(&d)
+	err = prx.Resolve(dctx)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, count)
-	assert.Equal(t, ansIP, firstIP(d.Res))
+	assert.Equal(t, ansIP, firstIP(dctx.Res))
 
 	customUpstreamConfig.ClearCache()
 
-	err = prx.Resolve(&d)
+	err = prx.Resolve(dctx)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, count)
-	assert.Equal(t, ansIP, firstIP(d.Res))
+	assert.Equal(t, ansIP, firstIP(dctx.Res))
 }
 
 func TestECS(t *testing.T) {
@@ -1196,78 +1181,72 @@ func TestECSProxy(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, func() (err error) { return prx.Shutdown(ctx) })
 
 	t.Run("cache_subnet", func(t *testing.T) {
-		d := DNSContext{
-			Req:  newHostTestMessage("host"),
-			Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
-		}
+		dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+		dctx.Addr = netip.MustParseAddrPort("1.2.3.0:1234")
 
-		err = prx.Resolve(&d)
+		err = prx.Resolve(dctx)
 		require.NoError(t, err)
 
-		assert.Equal(t, net.IP{4, 3, 2, 1}, firstIP(d.Res))
+		assert.Equal(t, net.IP{4, 3, 2, 1}, firstIP(dctx.Res))
 		assert.Equal(t, ip1230, u.ecsReqIP)
 	})
 
 	t.Run("serve_subnet_cache", func(t *testing.T) {
-		d := &DNSContext{
-			Req:  newHostTestMessage("host"),
-			Addr: netip.MustParseAddrPort("1.2.3.1:1234"),
-		}
+		dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+		dctx.Addr = netip.MustParseAddrPort("1.2.3.1:1234")
+
 		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
 
-		require.NoError(t, prx.Resolve(d))
+		require.NoError(t, prx.Resolve(dctx))
 
-		assert.Equal(t, ip4321, firstIP(d.Res))
+		assert.Equal(t, ip4321, firstIP(dctx.Res))
 		assert.Nil(t, u.ecsReqIP)
 	})
 
 	t.Run("another_subnet", func(t *testing.T) {
-		d := DNSContext{
-			Req:  newHostTestMessage("host"),
-			Addr: netip.MustParseAddrPort("2.2.3.0:1234"),
-		}
+		dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+		dctx.Addr = netip.MustParseAddrPort("2.2.3.0:1234")
+
 		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
 			A:   ip4322,
 		}}
 		u.ecsIP = ip2230
 
-		err = prx.Resolve(&d)
+		err = prx.Resolve(dctx)
 		require.NoError(t, err)
 
-		assert.Equal(t, ip4322, firstIP(d.Res))
+		assert.Equal(t, ip4322, firstIP(dctx.Res))
 		assert.Equal(t, ip2230, u.ecsReqIP)
 	})
 
 	t.Run("cache_general", func(t *testing.T) {
-		d := DNSContext{
-			Req:  newHostTestMessage("host"),
-			Addr: netip.MustParseAddrPort("127.0.0.1:1234"),
-		}
+		dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+		dctx.Addr = netip.MustParseAddrPort("127.0.0.1:1234")
+
 		u.ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
 			A:   ip4323,
 		}}
 		u.ecsIP, u.ecsReqIP = nil, nil
 
-		err = prx.Resolve(&d)
+		err = prx.Resolve(dctx)
 		require.NoError(t, err)
 
-		assert.Equal(t, ip4323, firstIP(d.Res))
+		assert.Equal(t, ip4323, firstIP(dctx.Res))
 		assert.Nil(t, u.ecsReqIP)
 	})
 
 	t.Run("serve_general_cache", func(t *testing.T) {
-		d := DNSContext{
-			Req:  newHostTestMessage("host"),
-			Addr: netip.MustParseAddrPort("127.0.0.2:1234"),
-		}
+		dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+		dctx.Addr = netip.MustParseAddrPort("127.0.0.1:1234")
+
 		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
 
-		err = prx.Resolve(&d)
+		err = prx.Resolve(dctx)
 		require.NoError(t, err)
 
-		assert.Equal(t, ip4323, firstIP(d.Res))
+		assert.Equal(t, ip4323, firstIP(dctx.Res))
 		assert.Nil(t, u.ecsReqIP)
 	})
 }
@@ -1305,27 +1284,26 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, func() (err error) { return prx.Shutdown(ctx) })
 
 	// first request
-	d := DNSContext{
-		Req:  newHostTestMessage("host"),
-		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
-	}
-	err = prx.Resolve(&d)
+	dctx := prx.newDNSContext(ProtoUDP, newHostTestMessage("host"))
+	dctx.Addr = netip.MustParseAddrPort("1.2.3.0:1234")
+
+	err = prx.Resolve(dctx)
 	require.NoError(t, err)
 
 	// get from cache - check min TTL
-	ci, expired, key := prx.cache.getWithSubnet(d.Req, &net.IPNet{
+	ci, expired, key := prx.cache.getWithSubnet(dctx.Req, &net.IPNet{
 		IP:   clientIP,
 		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
 	})
 	assert.False(t, expired)
 
-	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
+	assert.Equal(t, key, msgToKeyWithSubnet(dctx.Req, clientIP, 24))
 	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMinTTL)
 
 	// 2nd request
 	clientIP = net.IP{1, 2, 4, 0}
-	d.Req = newHostTestMessage("host")
-	d.Addr = netip.MustParseAddrPort("1.2.4.0:1234")
+	dctx.Req = newHostTestMessage("host")
+	dctx.Addr = netip.MustParseAddrPort("1.2.4.0:1234")
 	u.ans = []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{
 			Rrtype: dns.TypeA,
@@ -1335,16 +1313,16 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 		A: net.IP{4, 3, 2, 1},
 	}}
 	u.ecsIP = clientIP
-	err = prx.Resolve(&d)
+	err = prx.Resolve(dctx)
 	require.NoError(t, err)
 
 	// get from cache - check max TTL
-	ci, expired, key = prx.cache.getWithSubnet(d.Req, &net.IPNet{
+	ci, expired, key = prx.cache.getWithSubnet(dctx.Req, &net.IPNet{
 		IP:   clientIP,
 		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
 	})
 	assert.False(t, expired)
-	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
+	assert.Equal(t, key, msgToKeyWithSubnet(dctx.Req, clientIP, 24))
 	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMaxTTL)
 }
 
@@ -1354,18 +1332,6 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 		nonOptimisticTTL = 3600
 	)
 
-	buildCtx := func() (dctx *DNSContext) {
-		req := &dns.Msg{
-			MsgHdr: dns.MsgHdr{Id: dns.Id()},
-			Question: []dns.Question{{
-				Name:   host,
-				Qtype:  dns.TypeA,
-				Qclass: dns.ClassINET,
-			}},
-		}
-
-		return &DNSContext{Req: req}
-	}
 	buildResp := func(req *dns.Msg, ttl uint32) (resp *dns.Msg) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Answer = []dns.RR{&dns.A{
@@ -1386,6 +1352,19 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			CacheEnabled:    true,
 			CacheOptimistic: true,
 		},
+	}
+
+	buildCtx := func() (dctx *DNSContext) {
+		return p.newDNSContext(ProtoUDP, &dns.Msg{
+			MsgHdr: dns.MsgHdr{
+				Id: dns.Id(),
+			},
+			Question: []dns.Question{{
+				Name:   host,
+				Qtype:  dns.TypeA,
+				Qclass: dns.ClassINET,
+			}},
+		})
 	}
 
 	p.initCache()

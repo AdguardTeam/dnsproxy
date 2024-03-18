@@ -173,8 +173,14 @@ type Options struct {
 	// DNS64 settings
 	// --
 
-	// Defines whether DNS64 functionality is enabled or not
+	// DNS64 enables the DNS64 handling.  It requires at least one private
+	// upstream to be configured.
 	DNS64 bool `yaml:"dns64" long:"dns64" description:"If specified, dnsproxy will act as a DNS64 server" optional:"yes" optional-value:"true"`
+
+	// UsePrivateRDNS defines whether dnsproxy should use private upstreams for
+	// reverse DNS lookups of private addresses.  It requires at least one
+	// private upstream to be configured.
+	UsePrivateRDNS bool `yaml:"use-private-rdns" long:"use-private-rdns" description:"If specified, dnsproxy will use private upstreams for reverse DNS lookups of private addresses" optional:"yes" optional-value:"false"`
 
 	// DNS64Prefix defines the DNS64 prefixes that dnsproxy should use when it
 	// acts as a DNS64 server.  If not specified, dnsproxy uses the default

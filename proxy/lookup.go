@@ -3,11 +3,12 @@ package proxy
 import (
 	"context"
 	"net/netip"
+	"slices"
 
-	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -72,7 +73,11 @@ func (p *Proxy) LookupNetIP(
 		return addrs, errors.Join(errs...)
 	}
 
-	proxynetutil.SortNetIPAddrs(addrs, p.Config.PreferIPv6)
+	if p.Config.PreferIPv6 {
+		slices.SortFunc(addrs, netutil.PreferIPv6)
+	} else {
+		slices.SortFunc(addrs, netutil.PreferIPv4)
+	}
 
 	return addrs, nil
 }

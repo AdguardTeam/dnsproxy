@@ -23,6 +23,7 @@ import (
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/fakenet"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1432,4 +1433,82 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	require.Len(t, unpacked.m.Answer, 1)
 
 	assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
+}
+
+func TestProxy_isLocalClient(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 5 * time.Second
+
+	req := newHostTestMessage("example.com")
+	packed, err := req.Pack()
+	require.NoError(t, err)
+
+	localIP := netip.MustParseAddrPort("192.168.0.1:1")
+	externalIP := netip.MustParseAddrPort("250.249.0.1:1")
+
+	testCases := []struct {
+		want    assert.BoolAssertionFunc
+		name    string
+		cliAddr netip.AddrPort
+	}{{
+		want:    assert.True,
+		name:    "local",
+		cliAddr: localIP,
+	}, {
+		want:    assert.False,
+		name:    "external",
+		cliAddr: externalIP,
+	}, {
+		want:    assert.False,
+		name:    "invalid",
+		cliAddr: netip.AddrPort{},
+	}}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		localCh := make(chan bool)
+		p := mustNew(t, &Config{
+			TCPListenAddr: []*net.TCPAddr{
+				net.TCPAddrFromAddrPort(localhostAnyPort),
+			},
+			UpstreamConfig: newTestUpstreamConfig(t, testTimeout, testDefaultUpstreamAddr),
+			BeforeRequestHandler: func(p *Proxy, dctx *DNSContext) (bool, error) {
+				testutil.RequireSend(testutil.PanicT{}, localCh, dctx.IsLocalClient, testTimeout)
+
+				return false, nil
+			},
+			PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		})
+
+		conn := &fakenet.Conn{
+			OnRead: func(b []byte) (n int, err error) {
+				copy(b, packed)
+
+				return len(packed), nil
+			},
+			OnRemoteAddr:       func() (a net.Addr) { return net.TCPAddrFromAddrPort(tc.cliAddr) },
+			OnSetDeadline:      func(_ time.Time) (err error) { return nil },
+			OnLocalAddr:        func() (_ net.Addr) { panic("not implemented") },
+			OnClose:            func() (_ error) { panic("not implemented") },
+			OnSetReadDeadline:  func(_ time.Time) (_ error) { panic("not implemented") },
+			OnSetWriteDeadline: func(_ time.Time) (_ error) { panic("not implemented") },
+			OnWrite:            func(_ []byte) (_ int, _ error) { panic("not implemented") },
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			require.NoError(t, p.Start(ctx))
+			testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
+
+			go p.handleTCPConnection(conn, ProtoTCP)
+
+			isLocal, ok := testutil.RequireReceive(t, localCh, testTimeout)
+			require.True(t, ok)
+			tc.want(t, isLocal)
+		})
+	}
 }

@@ -23,11 +23,8 @@ type DNSContext struct {
 	QUICConnection quic.Connection
 
 	// QUICStream is the QUIC stream from which we got the query.  For
-	// ProtoQUIC only.
+	// [ProtoQUIC] only.
 	QUICStream quic.Stream
-
-	// Addr is the address of the client.
-	Addr netip.AddrPort
 
 	// Upstream is the upstream that resolved the request.  In case of cached
 	// response it's nil.
@@ -64,6 +61,9 @@ type DNSContext struct {
 	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
 	localIP netip.Addr
 
+	// Addr is the address of the client.
+	Addr netip.AddrPort
+
 	// QueryDuration is the duration of a successful query to an upstream
 	// server or, if the upstream server is unavailable, to a fallback server.
 	QueryDuration time.Duration
@@ -88,6 +88,19 @@ type DNSContext struct {
 	hasEDNS0 bool
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
+}
+
+// newDNSContext returns a new properly initialized *DNSContext.
+//
+// TODO(e.burkov):  Consider creating DNSContext with this everywhere, to
+// actually respect the contract of DNSContext.RequestID field.
+func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
+	return &DNSContext{
+		Proto: proto,
+		Req:   req,
+
+		RequestID: p.counter.Add(1),
+	}
 }
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.

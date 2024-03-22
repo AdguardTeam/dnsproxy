@@ -46,7 +46,7 @@
                 - |
                   set -e -f -u -x
 
-                  make VERBOSE=1 go-tools go-lint
+                  make VERBOSE=1 GOMAXPROCS=1 go-tools go-lint
 
 'Test':
     'docker':

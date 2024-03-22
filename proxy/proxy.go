@@ -64,18 +64,47 @@ const (
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Proxy struct {
-	// counter is the counter of messages.  It must only be incremented
-	// atomically, so it must be the first member of the struct to make sure
-	// that it has a 64-bit alignment.
+	// requestsSema limits the number of simultaneous requests.
 	//
-	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG.
-	counter uint64
+	// TODO(a.garipov): Currently we have to pass this exact semaphore to the
+	// workers, to prevent races on restart.  In the future we will need a
+	// better restarting mechanism that completely prevents such invalid states.
+	//
+	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
+	requestsSema syncutil.Semaphore
 
-	// started indicates if the proxy has been started.
-	started bool
+	// time provides the current time.
+	//
+	// TODO(e.burkov):  Consider configuring it.
+	time clock
 
-	// Listeners
-	// --
+	// randSrc provides the source of randomness.
+	//
+	// TODO(e.burkov):  Consider configuring it.
+	randSrc rand.Source
+
+	// dnsCryptServer serves DNSCrypt queries.
+	dnsCryptServer *dnscrypt.Server
+
+	// ratelimitBuckets is a storage for ratelimiters for individual IPs.
+	ratelimitBuckets *gocache.Cache
+
+	// fastestAddr finds the fastest IP address for the resolved domain.
+	fastestAddr *fastip.FastestAddr
+
+	// cache is used to cache requests.  It is disabled if nil.
+	//
+	// TODO(d.kolyshev): Move this cache to [Proxy.UpstreamConfig] field.
+	cache *cache
+
+	// shortFlighter is used to resolve the expired cached requests without
+	// repetitions.
+	shortFlighter *optimisticResolver
+
+	// bytesPool is a pool of byte slices used to read DNS packets.
+	//
+	// TODO(e.burkov):  Use [syncutil.Pool].
+	bytesPool *sync.Pool
 
 	// udpListen are the listened UDP connections.
 	udpListen []*net.UDPConn
@@ -107,67 +136,28 @@ type Proxy struct {
 	// dnsCryptTCPListen are the listened TCP connections for DNSCrypt.
 	dnsCryptTCPListen []net.Listener
 
-	// dnsCryptServer serves DNSCrypt queries.
-	dnsCryptServer *dnscrypt.Server
-
-	// Upstream
-	// --
-
 	// upstreamRTTStats maps the upstream address to its round-trip time
 	// statistics.  It's holds the statistics for all upstreams to perform a
 	// weighted random selection when using the load balancing mode.
 	upstreamRTTStats map[string]upstreamRTTStats
-
-	// rttLock protects upstreamRTTStats.
-	//
-	// TODO(e.burkov):  Make it a pointer.
-	rttLock sync.Mutex
-
-	// DNS64 (in case dnsproxy works in a NAT64/DNS64 network)
-	// --
 
 	// dns64Prefs is a set of NAT64 prefixes that are used to detect and
 	// construct DNS64 responses.  The DNS64 function is disabled if it is
 	// empty.
 	dns64Prefs []netip.Prefix
 
-	// Ratelimit
-	// --
-
-	// ratelimitBuckets is a storage for ratelimiters for individual IPs.
-	ratelimitBuckets *gocache.Cache
-
-	// ratelimitLock protects ratelimitBuckets.
-	ratelimitLock sync.Mutex
-
-	// DNS cache
-	// --
-
-	// cache is used to cache requests.  It is disabled if nil.
+	// Config is the proxy configuration.
 	//
-	// TODO(d.kolyshev): Move this cache to [Proxy.UpstreamConfig] field.
-	cache *cache
-
-	// shortFlighter is used to resolve the expired cached requests without
-	// repetitions.
-	shortFlighter *optimisticResolver
-
-	// FastestAddr module
-	// --
-
-	// fastestAddr finds the fastest IP address for the resolved domain.
-	fastestAddr *fastip.FastestAddr
-
-	// Other
-	// --
-
-	// bytesPool is a pool of byte slices used to read DNS packets.
-	//
-	// TODO(e.burkov):  Use [syncutil.Pool].
-	bytesPool *sync.Pool
+	// TODO(a.garipov): Remove this embed and create a proper initializer.
+	Config
 
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int
+
+	// counter is the counter of messages.  It must only be incremented
+	// atomically, so it must be the first member of the struct to make sure
+	// that it has a 64-bit alignment.
+	counter atomic.Uint64
 
 	// RWMutex protects the whole proxy.
 	//
@@ -175,33 +165,19 @@ type Proxy struct {
 	// Also make it a pointer.
 	sync.RWMutex
 
-	// requestsSema limits the number of simultaneous requests.
-	//
-	// TODO(a.garipov): Currently we have to pass this exact semaphore to
-	// the workers, to prevent races on restart.  In the future we will need
-	// a better restarting mechanism that completely prevents such invalid
-	// states.
-	//
-	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
-	requestsSema syncutil.Semaphore
+	// ratelimitLock protects ratelimitBuckets.
+	ratelimitLock sync.Mutex
 
-	// time provides the current time.
+	// rttLock protects upstreamRTTStats.
 	//
-	// TODO(e.burkov):  Consider configuring it.
-	time clock
+	// TODO(e.burkov):  Make it a pointer.
+	rttLock sync.Mutex
 
-	// randSrc provides the source of randomness.
-	//
-	// TODO(e.burkov):  Consider configuring it.
-	randSrc rand.Source
-
-	// Config is the proxy configuration.
-	//
-	// TODO(a.garipov): Remove this embed and create a proper initializer.
-	Config
+	// started indicates if the proxy has been started.
+	started bool
 }
 
-// New creates a new Proxy with the specified configuration.
+// New creates a new Proxy with the specified configuration.  c must not be nil.
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
 		Config:           *c,
@@ -617,12 +593,12 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	if dns64Ups := p.performDNS64(req, resp, upstreams); dns64Ups != nil {
 		u = dns64Ups
 	} else if p.isBogusNXDomain(resp) {
-		log.Debug("proxy: replying from upstream: response contains bogus-nxdomain ip")
+		log.Debug("dnsproxy: replying from upstream: response contains bogus-nxdomain ip")
 		resp = p.genWithRCode(req, dns.RcodeNameError)
 	}
 
 	if err != nil && p.Fallbacks != nil {
-		log.Debug("proxy: replying from upstream: using fallback due to %s", err)
+		log.Debug("dnsproxy: replying from upstream: using fallback due to %s", err)
 
 		// Reset the timer.
 		start = time.Now()
@@ -637,12 +613,12 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	if err != nil {
-		log.Debug("proxy: replying from %s: %s", src, err)
+		log.Debug("dnsproxy: replying from %s: %s", src, err)
 	}
 
 	if resp != nil {
 		rtt := time.Since(start)
-		log.Debug("proxy: replying from %s: rtt is %s", src, rtt)
+		log.Debug("dnsproxy: replying from %s: rtt is %s", src, rtt)
 
 		d.QueryDuration = rtt
 	}
@@ -798,15 +774,5 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 		dctx.ReqECS = setECS(dctx.Req, cliIP, 0)
 
 		log.Debug("dnsproxy: setting ecs: %s", dctx.ReqECS)
-	}
-}
-
-// newDNSContext returns a new properly initialized *DNSContext.
-func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
-	return &DNSContext{
-		Proto: proto,
-		Req:   req,
-
-		RequestID: atomic.AddUint64(&p.counter, 1),
 	}
 }

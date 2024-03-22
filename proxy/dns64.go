@@ -120,7 +120,7 @@ func (p *Proxy) filterNAT64Answers(rrs []dns.RR) (filtered []dns.RR, hasAnswers 
 		case *dns.AAAA:
 			addr, err := netutil.IPToAddrNoMapped(ans.AAAA)
 			if err != nil {
-				log.Error("proxy: bad aaaa record: %s", err)
+				log.Error("dnsproxy: bad aaaa record: %s", err)
 			} else if p.withinDNS64(addr) {
 				// Filter the record.
 				continue
@@ -222,9 +222,9 @@ func (p *Proxy) shouldStripDNS64(addr netip.Addr) (ok bool) {
 
 	switch {
 	case p.withinDNS64(addr):
-		log.Debug("proxy: %s is within DNS64 custom prefix set", addr)
+		log.Debug("dnsproxy: %s is within DNS64 custom prefix set", addr)
 	case dns64WellKnownPref.Contains(addr):
-		log.Debug("proxy: %s is within DNS64 well-known prefix", addr)
+		log.Debug("dnsproxy: %s is within DNS64 well-known prefix", addr)
 	default:
 		return false
 	}
@@ -262,7 +262,7 @@ func (p *Proxy) synthRR(rr dns.RR, soaTTL uint32) (result dns.RR) {
 
 	addr, err := netutil.IPToAddr(aResp.A, netutil.AddrFamilyIPv4)
 	if err != nil {
-		log.Error("proxy: bad a record: %s", err)
+		log.Error("dnsproxy: bad a record: %s", err)
 
 		return nil
 	}
@@ -297,11 +297,11 @@ func (p *Proxy) performDNS64(
 	}
 
 	host := origReq.Question[0].Name
-	log.Debug("proxy: received an empty aaaa response for %q, checking dns64", host)
+	log.Debug("dnsproxy: received an empty aaaa response for %q, checking dns64", host)
 
 	dns64Resp, u, err := p.exchangeUpstreams(dns64Req, upstreams)
 	if err != nil {
-		log.Error("proxy: dns64 request failed: %s", err)
+		log.Error("dnsproxy: dns64 request failed: %s", err)
 
 		return nil
 	}

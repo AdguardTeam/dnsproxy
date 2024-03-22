@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -78,44 +79,51 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 	return nil
 }
 
+// handleBefore calls the [BeforeRequestHandler] if it's set and returns true if
+// the request should be processed further.
+func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
+	if p.BeforeRequestHandler == nil {
+		return true
+	}
+
+	ok, err := p.BeforeRequestHandler(p, d)
+	if err != nil {
+		log.Error("dnsproxy: handling before request: %s", err)
+
+		d.Res = p.genServerFailure(d.Req)
+		p.respond(d)
+
+		return false
+	}
+
+	return ok
+}
+
 // handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
 func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	p.logDNSMessage(d.Req)
 
 	if d.Req.Response {
-		log.Debug("Dropping incoming Reply packet from %s", d.Addr.String())
+		log.Debug("dnsproxy: dropping incoming response packet from %s", d.Addr)
+
 		return nil
 	}
 
-	if p.BeforeRequestHandler != nil {
-		ok, err := p.BeforeRequestHandler(p, d)
-		if err != nil {
-			log.Error("Error in the BeforeRequestHandler: %s", err)
-			d.Res = p.genServerFailure(d.Req)
-			p.respond(d)
-			return nil
-		}
-		if !ok {
-			return nil // do nothing, don't reply
-		}
+	if !p.handleBefore(d) {
+		return nil
 	}
 
 	// ratelimit based on IP only, protects CPU cycles and outbound connections
+	//
+	// TODO(e.burkov):  Investigate if written above true and move to UDP server
+	// implementation?
 	if d.Proto == ProtoUDP && p.isRatelimited(d.Addr.Addr()) {
-		log.Tracef("Ratelimiting %v based on IP only", d.Addr)
+		log.Debug("dnsproxy: ratelimiting %s based on IP only", d.Addr)
+
 		return nil // do nothing, don't reply, we got ratelimited
 	}
 
-	if len(d.Req.Question) != 1 {
-		log.Debug("got invalid number of questions: %v", len(d.Req.Question))
-		d.Res = p.genServerFailure(d.Req)
-	}
-
-	// refuse ANY requests (anti-DDOS measure)
-	if p.RefuseAny && len(d.Req.Question) > 0 && d.Req.Question[0].Qtype == dns.TypeANY {
-		log.Tracef("Refusing type=ANY request")
-		d.Res = p.genNotImpl(d.Req)
-	}
+	d.Res = p.validateRequest(d)
 
 	var err error
 
@@ -124,6 +132,8 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 			panic("SHOULD NOT HAPPEN: no default upstreams specified")
 		}
 
+		defer func() { err = errors.Annotate(err, "handling request: %w") }()
+
 		// execute the DNS request
 		// if there is a custom middleware configured, use it
 		if p.RequestHandler != nil {
@@ -131,16 +141,30 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		} else {
 			err = p.Resolve(d)
 		}
-
-		if err != nil {
-			err = fmt.Errorf("talking to dns upstream: %w", err)
-		}
 	}
 
 	p.logDNSMessage(d.Res)
 	p.respond(d)
 
 	return err
+}
+
+// validateRequest returns a response for invalid request or nil if the request
+// is ok.
+func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
+	switch {
+	case len(d.Req.Question) != 1:
+		log.Debug("dnsproxy: got invalid number of questions: %d", len(d.Req.Question))
+
+		return p.genServerFailure(d.Req)
+	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
+		// Refuse requests of type ANY (anti-DDOS measure).
+		log.Debug("dnsproxy: refusing type=ANY request")
+
+		return p.genNotImpl(d.Req)
+	default:
+		return nil
+	}
 }
 
 // respond writes the specified response to the client (or does nothing if d.Res is empty)

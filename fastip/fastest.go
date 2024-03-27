@@ -12,10 +12,10 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
-	"golang.org/x/exp/maps"
 )
 
 // DefaultPingWaitTimeout is the default period of time for waiting ping
@@ -74,17 +74,17 @@ func (f *FastestAddr) ExchangeFastest(req *dns.Msg, ups []upstream.Upstream) (
 
 	host := strings.ToLower(req.Question[0].Name)
 
-	ipSet := map[netip.Addr]struct{}{}
+	ipSet := container.NewMapSet[netip.Addr]()
 	for _, r := range replies {
 		for _, rr := range r.Resp.Answer {
 			ip := ipFromRR(rr)
-			if _, ok := ipSet[ip]; !ok && ip != (netip.Addr{}) {
-				ipSet[ip] = struct{}{}
+			if !ipSet.Has(ip) && ip != (netip.Addr{}) {
+				ipSet.Add(ip)
 			}
 		}
 	}
 
-	ips := maps.Keys(ipSet)
+	ips := ipSet.Values()
 	if pingRes := f.pingAll(host, ips); pingRes != nil {
 		return f.prepareReply(pingRes, replies)
 	}

@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
-	"github.com/AdguardTeam/golibs/stringutil"
 )
 
 // UpstreamConfig is a wrapper for a list of default upstreams, a map of
@@ -25,7 +25,7 @@ type UpstreamConfig struct {
 	SpecifiedDomainUpstreams map[string][]upstream.Upstream
 
 	// SubdomainExclusions is set of domains with subdomains exclusions.
-	SubdomainExclusions *stringutil.Set
+	SubdomainExclusions *container.MapSet[string]
 
 	// Upstreams is a list of default upstreams.
 	Upstreams []upstream.Upstream
@@ -100,7 +100,7 @@ func ParseUpstreamsConfig(
 		domainReservedUpstreams:  map[string][]upstream.Upstream{},
 		specifiedDomainUpstreams: map[string][]upstream.Upstream{},
 		subdomainsOnlyUpstreams:  map[string][]upstream.Upstream{},
-		subdomainsOnlyExclusions: stringutil.NewSet(),
+		subdomainsOnlyExclusions: container.NewMapSet[string](),
 	}
 
 	return p.parse(lines)
@@ -151,7 +151,7 @@ type configParser struct {
 	subdomainsOnlyUpstreams map[string][]upstream.Upstream
 
 	// subdomainsOnlyExclusions is set of domains with subdomains exclusions.
-	subdomainsOnlyExclusions *stringutil.Set
+	subdomainsOnlyExclusions *container.MapSet[string]
 
 	// upstreams is a list of default upstreams.
 	upstreams []upstream.Upstream

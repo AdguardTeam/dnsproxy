@@ -49,6 +49,10 @@ type Config struct {
 	// value of nil makes Proxy not trust any address.
 	TrustedProxies netutil.SubnetSet
 
+	// MessageConstructor used to build DNS messages.  If nil, the default
+	// constructor will be used.
+	MessageConstructor MessageConstructor
+
 	// BeforeRequestHandler is an optional custom handler called before each DNS
 	// request is started processing.  See [BeforeRequestHandler].
 	BeforeRequestHandler BeforeRequestHandler
@@ -306,7 +310,7 @@ func (p *Proxy) logConfigInfo() {
 	}
 
 	if p.RefuseAny {
-		log.Info("The server is configured to refuse ANY requests")
+		log.Info("dnsproxy: server will refuse requests of type ANY")
 	}
 
 	if len(p.BogusNXDomain) > 0 {

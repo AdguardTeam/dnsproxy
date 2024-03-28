@@ -83,6 +83,9 @@ type Proxy struct {
 	// TODO(e.burkov):  Consider configuring it.
 	randSrc rand.Source
 
+	// messages constructs DNS messages.
+	messages MessageConstructor
+
 	// dnsCryptServer serves DNSCrypt queries.
 	dnsCryptServer *dnscrypt.Server
 
@@ -100,6 +103,10 @@ type Proxy struct {
 	// shortFlighter is used to resolve the expired cached requests without
 	// repetitions.
 	shortFlighter *optimisticResolver
+
+	// recDetector detects recursive requests that may appear when resolving
+	// requests for private addresses.
+	recDetector *recursionDetector
 
 	// bytesPool is a pool of byte slices used to read DNS packets.
 	//
@@ -144,7 +151,7 @@ type Proxy struct {
 	// dns64Prefs is a set of NAT64 prefixes that are used to detect and
 	// construct DNS64 responses.  The DNS64 function is disabled if it is
 	// empty.
-	dns64Prefs []netip.Prefix
+	dns64Prefs netutil.SliceSubnetSet
 
 	// Config is the proxy configuration.
 	//
@@ -193,8 +200,10 @@ func New(c *Config) (p *Proxy, err error) {
 				return &b
 			},
 		},
-		udpOOBSize: proxynetutil.UDPGetOOBSize(),
-		time:       realClock{},
+		udpOOBSize:  proxynetutil.UDPGetOOBSize(),
+		time:        realClock{},
+		messages:    defaultMessageConstructor{},
+		recDetector: newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
 	}
 
 	// TODO(e.burkov):  Validate config separately and add the contract to the
@@ -232,6 +241,10 @@ func New(c *Config) (p *Proxy, err error) {
 	err = p.setupDNS64()
 	if err != nil {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
+	}
+
+	if c.MessageConstructor != nil {
+		p.messages = c.MessageConstructor
 	}
 
 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
@@ -515,74 +528,56 @@ func (p *Proxy) Addr(proto Proto) net.Addr {
 	}
 }
 
-// needsLocalUpstream returns true if the request should be handled by a private
-// upstream servers.
-func (p *Proxy) needsLocalUpstream(req *dns.Msg) (ok bool) {
-	if req.Question[0].Qtype != dns.TypePTR {
-		return false
-	}
-
-	host := req.Question[0].Name
-	ip, err := netutil.IPFromReversedAddr(host)
-	if err != nil {
-		log.Debug("dnsproxy: failed to parse ip from ptr request: %s", err)
-
-		return false
-	}
-
-	return p.shouldStripDNS64(ip)
-}
-
 // selectUpstreams returns the upstreams to use for the specified host.  It
 // firstly considers custom upstreams if those aren't empty and then the
 // configured ones.  The returned slice may be empty or nil.
-func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream) {
+func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, isPrivate bool) {
 	q := d.Req.Question[0]
 	host := q.Name
 	qtype := q.Qtype
 
-	if !p.needsLocalUpstream(d.Req) {
-		// TODO(e.burkov):  Use the same logic for private upstreams as well,
-		// when those start supporting non-PTR requests.
-		getUpstreams := (*UpstreamConfig).getUpstreamsForDomain
-		if qtype == dns.TypeDS {
-			getUpstreams = (*UpstreamConfig).getUpstreamsForDS
+	if p.shouldStripDNS64(d.Req) {
+		// Use private upstreams.
+		private := p.PrivateRDNSUpstreamConfig
+
+		// TODO(e.burkov):  Detect against the actual configured subnet set.
+		// Perhaps, even much earlier.
+		if private == nil || !netutil.IsLocallyServed(d.Addr.Addr()) {
+			return nil, true
 		}
 
-		if custom := d.CustomUpstreamConfig; custom != nil {
-			// Try to use custom.
-			upstreams = getUpstreams(custom.upstream, host)
-			if len(upstreams) > 0 {
-				return upstreams
-			}
+		// This may only be a PTR request.
+		return private.getUpstreamsForDomain(host), true
+	}
+
+	getUpstreams := (*UpstreamConfig).getUpstreamsForDomain
+	if qtype == dns.TypeDS {
+		getUpstreams = (*UpstreamConfig).getUpstreamsForDS
+	}
+
+	if custom := d.CustomUpstreamConfig; custom != nil {
+		// Try to use custom.
+		upstreams = getUpstreams(custom.upstream, host)
+		if len(upstreams) > 0 {
+			return upstreams, false
 		}
-
-		// Use configured.
-		return getUpstreams(p.UpstreamConfig, host)
 	}
 
-	// Use private upstreams.
-	private := p.PrivateRDNSUpstreamConfig
-	if private == nil {
-		return nil
-	}
-
-	// TODO(e.burkov):  Detect against the actual configured subnet set.
-	// Perhaps, even much earlier.
-	if !netutil.IsLocallyServed(d.Addr.Addr()) {
-		return nil
-	}
-
-	return private.getUpstreamsForDomain(host)
+	// Use configured.
+	return getUpstreams(p.UpstreamConfig, host), false
 }
 
 // replyFromUpstream tries to resolve the request.
 func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	req := d.Req
 
-	upstreams := p.selectUpstreams(d)
+	upstreams, isPrivate := p.selectUpstreams(d)
 	if len(upstreams) == 0 {
 		return false, fmt.Errorf("selecting general upstream: %w", upstream.ErrNoUpstreams)
+	}
+
+	if isPrivate {
+		p.recDetector.add(d.Req)
 	}
 
 	start := time.Now()
@@ -594,7 +589,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		u = dns64Ups
 	} else if p.isBogusNXDomain(resp) {
 		log.Debug("dnsproxy: replying from upstream: response contains bogus-nxdomain ip")
-		resp = p.genWithRCode(req, dns.RcodeNameError)
+		resp = p.messages.NewMsgNXDOMAIN(req)
 	}
 
 	if err != nil && p.Fallbacks != nil {
@@ -633,7 +628,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 // the response is nil, it generates a server failure response.
 func (p *Proxy) handleExchangeResult(d *DNSContext, req, resp *dns.Msg, u upstream.Upstream) {
 	if resp == nil {
-		d.Res = p.genServerFailure(req)
+		d.Res = p.messages.NewMsgSERVFAIL(req)
 		d.hasEDNS0 = false
 
 		return

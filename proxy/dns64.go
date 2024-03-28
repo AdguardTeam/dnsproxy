@@ -43,7 +43,7 @@ func (p *Proxy) setupDNS64() (err error) {
 	}
 
 	if len(p.Config.DNS64Prefs) == 0 {
-		p.dns64Prefs = []netip.Prefix{dns64WellKnownPref}
+		p.dns64Prefs = netutil.SliceSubnetSet{dns64WellKnownPref}
 
 		return nil
 	}
@@ -121,7 +121,7 @@ func (p *Proxy) filterNAT64Answers(rrs []dns.RR) (filtered []dns.RR, hasAnswers 
 			addr, err := netutil.IPToAddrNoMapped(ans.AAAA)
 			if err != nil {
 				log.Error("dnsproxy: bad aaaa record: %s", err)
-			} else if p.withinDNS64(addr) {
+			} else if p.dns64Prefs.Contains(addr) {
 				// Filter the record.
 				continue
 			} else {
@@ -190,24 +190,9 @@ func (p *Proxy) synthDNS64(origReq, origResp, resp *dns.Msg) (ok bool) {
 // DNS64.  See https://datatracker.ietf.org/doc/html/rfc6052#section-2.1.
 var dns64WellKnownPref = netip.MustParsePrefix("64:ff9b::/96")
 
-// withinDNS64 checks if ip is within one of the configured DNS64 prefixes.
-//
-// TODO(e.burkov):  We actually using bytes of only the first prefix from the
-// set to construct the answer, so consider using some implementation of a
-// prefix set for the rest.
-func (p *Proxy) withinDNS64(ip netip.Addr) (ok bool) {
-	for _, n := range p.dns64Prefs {
-		if n.Contains(ip) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// shouldStripDNS64 returns true if DNS64 is enabled and addr has either one of
-// custom DNS64 prefixes or the Well-Known one.  This is intended to be used
-// with PTR requests.
+// shouldStripDNS64 returns true if DNS64 is enabled and req is a PTR for a
+// reversed address within either one of custom DNS64 prefixes or the Well-Known
+// one.
 //
 // The requirement is to match any Pref64::/n used at the site, and not merely
 // the locally configured Pref64::/n.  This is because end clients could ask for
@@ -215,16 +200,29 @@ func (p *Proxy) withinDNS64(ip netip.Addr) (ok bool) {
 // DNS64.
 //
 // See https://datatracker.ietf.org/doc/html/rfc6147#section-5.3.1.
-func (p *Proxy) shouldStripDNS64(addr netip.Addr) (ok bool) {
+func (p *Proxy) shouldStripDNS64(req *dns.Msg) (ok bool) {
 	if len(p.dns64Prefs) == 0 {
 		return false
 	}
 
+	q := req.Question[0]
+	if q.Qtype != dns.TypePTR {
+		return false
+	}
+
+	host := q.Name
+	ip, err := netutil.IPFromReversedAddr(host)
+	if err != nil {
+		log.Debug("dnsproxy: failed to parse ip from ptr request: %s", err)
+
+		return false
+	}
+
 	switch {
-	case p.withinDNS64(addr):
-		log.Debug("dnsproxy: %s is within DNS64 custom prefix set", addr)
-	case dns64WellKnownPref.Contains(addr):
-		log.Debug("dnsproxy: %s is within DNS64 well-known prefix", addr)
+	case p.dns64Prefs.Contains(ip):
+		log.Debug("dnsproxy: %s is within DNS64 custom prefix set", ip)
+	case dns64WellKnownPref.Contains(ip):
+		log.Debug("dnsproxy: %s is within DNS64 well-known prefix", ip)
 	default:
 		return false
 	}

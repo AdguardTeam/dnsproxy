@@ -90,7 +90,7 @@ func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
 	if err != nil {
 		log.Error("dnsproxy: handling before request: %s", err)
 
-		d.Res = p.genServerFailure(d.Req)
+		d.Res = p.messages.NewMsgSERVFAIL(d.Req)
 		p.respond(d)
 
 		return false
@@ -156,12 +156,18 @@ func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 	case len(d.Req.Question) != 1:
 		log.Debug("dnsproxy: got invalid number of questions: %d", len(d.Req.Question))
 
-		return p.genServerFailure(d.Req)
+		// TODO(e.burkov):  Probably, FORMERR would be a better choice here.
+		// Check out RFC.
+		return p.messages.NewMsgSERVFAIL(d.Req)
 	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
 		// Refuse requests of type ANY (anti-DDOS measure).
 		log.Debug("dnsproxy: refusing type=ANY request")
 
-		return p.genNotImpl(d.Req)
+		return p.messages.NewMsgNOTIMPLEMENTED(d.Req)
+	case p.recDetector.check(d.Req):
+		log.Debug("dnsproxy: recursion detected resolving %q", d.Req.Question[0].Name)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
 	default:
 		return nil
 	}
@@ -209,27 +215,6 @@ func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
 			rr.Header().Ttl = newTTL
 		}
 	}
-}
-
-func (p *Proxy) genServerFailure(request *dns.Msg) *dns.Msg {
-	return p.genWithRCode(request, dns.RcodeServerFailure)
-}
-
-func (p *Proxy) genNotImpl(request *dns.Msg) (resp *dns.Msg) {
-	resp = p.genWithRCode(request, dns.RcodeNotImplemented)
-	// NOTIMPL without EDNS is treated as 'we don't support EDNS', so
-	// explicitly set it.
-	resp.SetEdns0(1452, false)
-
-	return resp
-}
-
-func (p *Proxy) genWithRCode(req *dns.Msg, code int) (resp *dns.Msg) {
-	resp = &dns.Msg{}
-	resp.SetRcode(req, code)
-	resp.RecursionAvailable = true
-
-	return resp
 }
 
 func (p *Proxy) logDNSMessage(m *dns.Msg) {

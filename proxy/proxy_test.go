@@ -1454,3 +1454,67 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 	assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
 }
+
+func TestProxy_isLocalClient(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 1 * time.Second
+
+	req := newHostTestMessage("example.com")
+
+	privateSet := netutil.SubnetSetFunc(netutil.IsLocallyServed)
+
+	localIP := netip.MustParseAddrPort("192.168.0.1:1")
+	require.True(t, privateSet.Contains(localIP.Addr()))
+
+	externalIP := netip.MustParseAddrPort("250.249.0.1:1")
+	require.False(t, privateSet.Contains(externalIP.Addr()))
+
+	testCases := []struct {
+		want    assert.BoolAssertionFunc
+		name    string
+		cliAddr netip.AddrPort
+	}{{
+		want:    assert.True,
+		name:    "local",
+		cliAddr: localIP,
+	}, {
+		want:    assert.False,
+		name:    "external",
+		cliAddr: externalIP,
+	}, {
+		want:    assert.False,
+		name:    "invalid",
+		cliAddr: netip.AddrPort{},
+	}}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := mustNew(t, &Config{
+				TCPListenAddr: []*net.TCPAddr{
+					net.TCPAddrFromAddrPort(localhostAnyPort),
+				},
+				UpstreamConfig: newTestUpstreamConfig(t, testTimeout, testDefaultUpstreamAddr),
+				BeforeRequestHandler: func(_ *Proxy, dctx *DNSContext) (bool, error) {
+					tc.want(t, dctx.IsLocalClient)
+
+					return false, nil
+				},
+				PrivateSubnets: privateSet,
+			})
+
+			ctx := context.Background()
+			require.NoError(t, p.Start(ctx))
+			testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
+
+			dctx := p.newDNSContext(ProtoTCP, req)
+			dctx.Addr = tc.cliAddr
+
+			require.NoError(t, p.handleDNSRequest(dctx))
+		})
+	}
+}

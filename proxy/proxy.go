@@ -73,6 +73,10 @@ type Proxy struct {
 	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
 	requestsSema syncutil.Semaphore
 
+	// privateNets determines if the requested address and the client address
+	// are private.
+	privateNets netutil.SubnetSet
+
 	// time provides the current time.
 	//
 	// TODO(e.burkov):  Consider configuring it.
@@ -188,6 +192,7 @@ type Proxy struct {
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
 		Config:           *c,
+		privateNets:      netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
 		rttLock:          sync.Mutex{},
 		ratelimitLock:    sync.Mutex{},
@@ -245,6 +250,9 @@ func New(c *Config) (p *Proxy, err error) {
 
 	if c.MessageConstructor != nil {
 		p.messages = c.MessageConstructor
+	}
+	if c.PrivateSubnets != nil {
+		p.privateNets = c.PrivateSubnets
 	}
 
 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
@@ -536,18 +544,15 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 	host := q.Name
 	qtype := q.Qtype
 
-	if p.shouldStripDNS64(d.Req) {
+	if d.PrivateARPA != (netip.Prefix{}) || p.shouldStripDNS64(d.Req) {
 		// Use private upstreams.
 		private := p.PrivateRDNSUpstreamConfig
-
-		// TODO(e.burkov):  Detect against the actual configured subnet set.
-		// Perhaps, even much earlier.
-		if private == nil || !netutil.IsLocallyServed(d.Addr.Addr()) {
-			return nil, true
+		if p.UsePrivateRDNS && d.IsLocalClient {
+			// This may only be a PTR request.
+			return private.getUpstreamsForDomain(host), true
 		}
 
-		// This may only be a PTR request.
-		return private.getUpstreamsForDomain(host), true
+		return nil, true
 	}
 
 	getUpstreams := (*UpstreamConfig).getUpstreamsForDomain
@@ -573,7 +578,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 
 	upstreams, isPrivate := p.selectUpstreams(d)
 	if len(upstreams) == 0 {
-		return false, fmt.Errorf("selecting general upstream: %w", upstream.ErrNoUpstreams)
+		return false, fmt.Errorf("selecting upstream: %w", upstream.ErrNoUpstreams)
 	}
 
 	if isPrivate {
@@ -665,7 +670,7 @@ func addDO(msg *dns.Msg) {
 const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
-// upstream servers.
+// upstream servers.  It expects dctx is filled with the request, the client's
 func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	if p.EnableEDNSClientSubnet {
 		dctx.processECS(p.EDNSAddr)
@@ -726,11 +731,18 @@ func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 	switch {
 	case p.cache == nil:
 		reason = "disabled"
+	case dctx.PrivateARPA != netip.Prefix{}:
+		// Don't cache the requests intended for local upstream servers, those
+		// should be fast enough as is.
+		reason = "requested address is private"
 	case dctx.CustomUpstreamConfig != nil && dctx.CustomUpstreamConfig.cache == nil:
 		// In case of custom upstream cache is not configured, the global proxy
 		// cache cannot be used because different upstreams can return different
 		// results.
+		//
 		// See https://github.com/AdguardTeam/dnsproxy/issues/169.
+		//
+		// TODO(e.burkov):  It probably should be decided after resolve.
 		reason = "custom upstreams cache is not configured"
 	case dctx.Req.CheckingDisabled:
 		reason = "dnssec check disabled"

@@ -31,17 +31,24 @@ func TestDNS64Race(t *testing.T) {
 		return resp, nil
 	})
 
+	localUps := upstreamFunc(func(_ *dns.Msg) (_ *dns.Msg, _ error) { panic("not implemented") })
+
 	dnsProxy := mustNew(t, &Config{
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{ups},
+		},
+		PrivateRDNSUpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{localUps},
 		},
 		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 
-		UseDNS64: true,
+		UseDNS64:       true,
+		UsePrivateRDNS: true,
 		// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server.
 		DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")},
 	})
@@ -365,7 +372,9 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				RatelimitSubnetLenIPv6: 64,
 				CacheEnabled:           true,
 
-				UseDNS64: true,
+				UseDNS64:       true,
+				UsePrivateRDNS: true,
+				PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 			})
 
 			ctx := context.Background()
@@ -373,13 +382,12 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 			require.NoError(t, err)
 			testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
 
-			req := (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype)
 			dctx := &DNSContext{
-				Req:  req,
+				Req:  (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype),
 				Addr: cliAddrPort,
 			}
 
-			err = p.Resolve(dctx)
+			err = p.handleDNSRequest(dctx)
 			require.NoError(t, err)
 
 			res := dctx.Res

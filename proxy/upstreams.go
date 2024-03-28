@@ -10,6 +10,7 @@ import (
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/mapsutil"
 	"github.com/AdguardTeam/golibs/netutil"
 )
 
@@ -330,6 +331,41 @@ func (uc *UpstreamConfig) validate() (err error) {
 	default:
 		return errNoDefaultUpstreams
 	}
+}
+
+// ValidatePrivateness returns an error if uc isn't valid, or, treated as
+// private upstreams configuration, contains specifications for invalid domains.
+//
+// TODO(e.burkov):  !! Should it really be exported.
+func (uc *UpstreamConfig) ValidatePrivateness(privateSubnets netutil.SubnetSet) (err error) {
+	if err = uc.validate(); err != nil {
+		return err
+	}
+
+	var errs []error
+	rangeFunc := func(domain string, _ []upstream.Upstream) (ok bool) {
+		switch domain {
+		case "in-addr.arpa.", "ip6.arpa.":
+			return true
+		default:
+			// Go on.
+		}
+
+		pref, extErr := netutil.ExtractReversedAddr(domain)
+		switch {
+		case extErr != nil:
+			// Don't wrap the error since it's informative enough as is.
+			errs = append(errs, extErr)
+		case !privateSubnets.Contains(pref.Addr()):
+			errs = append(errs, fmt.Errorf("reversed subnet in %q is not private", domain))
+		}
+
+		return true
+	}
+
+	mapsutil.SortedRange(uc.DomainReservedUpstreams, rangeFunc)
+
+	return errors.Join(errs...)
 }
 
 // getUpstreamsForDomain looks for a domain in the reserved domains map and

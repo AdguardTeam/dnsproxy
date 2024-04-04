@@ -230,7 +230,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		wantStat := tc.wantStat
 
 		t.Run(tc.name, func(t *testing.T) {
-			for i := 0; i < requestsNum; i++ {
+			for range requestsNum {
 				_ = p.Resolve(&DNSContext{Req: req, Addr: cli})
 			}
 

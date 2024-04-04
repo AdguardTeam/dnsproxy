@@ -177,7 +177,7 @@ func (r *UpstreamResolver) lookupNetIP(
 	var errs []error
 	result = &ipResult{}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		switch res := <-resCh; res := res.(type) {
 		case error:
 			errs = append(errs, res)

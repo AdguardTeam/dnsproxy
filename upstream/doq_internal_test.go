@@ -47,7 +47,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	var conn quic.Connection
 
 	// Test that it responds properly
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		checkUpstream(t, u, address)
 
 		if conn == nil {

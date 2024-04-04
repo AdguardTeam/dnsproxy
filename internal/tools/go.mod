@@ -1,6 +1,6 @@
 module github.com/AdguardTeam/dnsproxy/internal/tools
 
-go 1.21.8
+go 1.22.2
 
 require (
 	github.com/fzipp/gocyclo v0.6.0
@@ -25,7 +25,7 @@ require (
 	github.com/gookit/color v1.5.4 // indirect
 	github.com/kyoh86/nolint v0.0.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
+	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20240325151524-a685a6edb6d8 // indirect
 	golang.org/x/mod v0.16.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect

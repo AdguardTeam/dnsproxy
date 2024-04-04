@@ -428,7 +428,8 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		"maps.google.com.",
 	}
 
-	for i, l := 0, len(domains); i < b.N; i++ {
+	l := len(domains)
+	for i := range b.N {
 		upsSink = config.getUpstreamsForDomain(domains[i%l])
 	}
 }

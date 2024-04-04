@@ -133,7 +133,7 @@ func BenchmarkMsgToSignature(b *testing.B) {
 	b.Run("efficient", func(b *testing.B) {
 		b.ReportAllocs()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			byteSink = msgToSignature(msg)
 		}
 
@@ -143,7 +143,7 @@ func BenchmarkMsgToSignature(b *testing.B) {
 	b.Run("inefficient", func(b *testing.B) {
 		b.ReportAllocs()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			byteSink = msgToSignatureSlow(msg)
 		}
 

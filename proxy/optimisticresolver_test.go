@@ -60,7 +60,7 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 
 	const secondaryNum = 10
 	wg.Add(secondaryNum)
-	for i := 0; i < secondaryNum; i++ {
+	for range secondaryNum {
 		go func() {
 			defer wg.Done()
 

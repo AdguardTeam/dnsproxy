@@ -72,7 +72,7 @@ func TestDNS64Race(t *testing.T) {
 	g.Add(testMessagesCount)
 
 	addr := dnsProxy.Addr(ProtoTCP).String()
-	for i := 0; i < testMessagesCount; i++ {
+	for range testMessagesCount {
 		// The [dns.Conn] isn't safe for concurrent use despite the requirements
 		// from the [net.Conn] documentation.
 		var conn *dns.Conn

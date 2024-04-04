@@ -34,7 +34,7 @@ func TestUpstream_dnsOverTLS(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	// Test that it responds properly.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		checkUpstream(t, u, addr)
 	}
 }
@@ -59,7 +59,7 @@ func TestUpstream_dnsOverTLS_race(t *testing.T) {
 
 	// Use this upstream from multiple goroutines in parallel.
 	wg := sync.WaitGroup{}
-	for i := 0; i < count; i++ {
+	for range count {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

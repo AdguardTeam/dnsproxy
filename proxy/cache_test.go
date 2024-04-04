@@ -593,7 +593,7 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 
 	c.set(dnsMsg, upstreamWithAddr)
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		ci, expired, key := c.get(dnsMsg)
 		require.NotNilf(t, ci, "no cache found for %s", host)
 

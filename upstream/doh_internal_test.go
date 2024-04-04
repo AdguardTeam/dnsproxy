@@ -90,7 +90,7 @@ func TestUpstreamDoH(t *testing.T) {
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			// Test that it responds properly.
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				checkUpstream(t, u, address)
 			}
 

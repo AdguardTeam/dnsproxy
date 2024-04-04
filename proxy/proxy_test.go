@@ -68,7 +68,7 @@ func mustNew(t *testing.T, conf *Config) (p *Proxy) {
 // sendTestMessages sends [testMessagesCount] DNS requests to the specified
 // connection and checks the responses.
 func sendTestMessages(t *testing.T, conn *dns.Conn) {
-	for i := 0; i < testMessagesCount; i++ {
+	for i := range testMessagesCount {
 		req := newTestMessage()
 		err := conn.WriteMsg(req)
 		require.NoErrorf(t, err, "req number %d", i)
@@ -309,7 +309,7 @@ func TestProxyRace(t *testing.T) {
 	g.Add(testMessagesCount)
 
 	pt := testutil.PanicT{}
-	for i := 0; i < testMessagesCount; i++ {
+	for range testMessagesCount {
 		go func() {
 			defer g.Done()
 
@@ -359,7 +359,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 	}
 	// *dns.TXT requires splitting the actual data into
 	// 256-byte chunks.
-	for i := 0; i < txtDataChunkNum; i++ {
+	for i := range txtDataChunkNum {
 		r := txtDataChunkLen * (i + 1)
 		if r > txtDataLen {
 			r = txtDataLen
@@ -1572,8 +1572,6 @@ func TestProxy_HandleDNSRequest_private(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

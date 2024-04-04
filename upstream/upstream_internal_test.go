@@ -57,7 +57,7 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 
 	ch := make(chan int, count)
 	abort := make(chan string, 1)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		go func(idx int) {
 			t.Logf("Start %d", idx)
 			req := createTestMessage()
@@ -86,7 +86,7 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < count; i++ {
+	for range count {
 		select {
 		case res := <-ch:
 			t.Logf("Got result from %d", res)
@@ -577,7 +577,7 @@ func checkRaceCondition(u Upstream) {
 
 	makeRequests := func() {
 		defer wg.Done()
-		for i := 0; i < reqCount; i++ {
+		for range reqCount {
 			req := createTestMessage()
 			// Ignore exchange errors here, the point is to check for races.
 			_, _ = u.Exchange(req)
@@ -585,7 +585,7 @@ func checkRaceCondition(u Upstream) {
 	}
 
 	wg.Add(goroutinesCount)
-	for i := 0; i < goroutinesCount; i++ {
+	for range goroutinesCount {
 		go makeRequests()
 	}
 

@@ -31,7 +31,7 @@ func TestUpstream_plainDNS(t *testing.T) {
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		checkUpstream(t, u, addr)
 	}
 }

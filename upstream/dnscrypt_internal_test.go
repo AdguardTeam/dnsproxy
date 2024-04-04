@@ -99,7 +99,7 @@ func TestUpstreamDNSCrypt(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	// Test that it responds properly
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		checkUpstream(t, u, address)
 	}
 }
@@ -129,7 +129,7 @@ func TestDNSCrypt_Exchange_truncated(t *testing.T) {
 		res.Answer = append(res.Answer, answer)
 
 		veryLongString := strings.Repeat("VERY LONG STRING", 7)
-		for i := 0; i < 50; i++ {
+		for range 50 {
 			answer.Txt = append(answer.Txt, veryLongString)
 		}
 

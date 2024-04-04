@@ -53,7 +53,7 @@ func (p *Proxy) LookupNetIP(
 	go p.lookupIPAddr(host, dns.TypeAAAA, ch)
 
 	var errs []error
-	for n := 0; n < 2; n++ {
+	for range 2 {
 		result := <-ch
 		if result.err != nil {
 			errs = append(errs, result.err)

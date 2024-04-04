@@ -54,7 +54,7 @@ func TestQuicProxy(t *testing.T) {
 	})
 
 	// Send several test messages.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		sendTestQUICMessage(t, conn, DoQv1)
 
 		// Send a message encoded for a draft version as well.

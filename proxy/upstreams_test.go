@@ -5,9 +5,14 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TODO(e.burkov):  Call [testing.T.Parallel] in this file.
 
 func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 	upstreams := []string{
@@ -144,7 +149,7 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 		},
 	}, {
 		name:            "no_default",
-		wantValidateErr: errNoDefaultUpstreams,
+		wantValidateErr: errors.Error("no default upstreams specified"),
 		in: []string{
 			"[/domain.example/]udp://upstream.example:53",
 			"[/another.domain.example/]#",
@@ -161,8 +166,70 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 	}
 
 	t.Run("actual_nil", func(t *testing.T) {
-		assert.ErrorIs(t, (*UpstreamConfig)(nil).validate(), errNoDefaultUpstreams)
+		assert.ErrorIs(t, (*UpstreamConfig)(nil).validate(), errors.Error("upstream config is nil"))
 	})
+}
+
+func TestValidatePrivateConfig(t *testing.T) {
+	ss := netutil.SubnetSetFunc(netutil.IsLocallyServed)
+
+	testCases := []struct {
+		name    string
+		wantErr string
+		u       string
+	}{{
+		name:    "success_address",
+		wantErr: ``,
+		u:       "[/1.0.0.127.in-addr.arpa/]#",
+	}, {
+		name:    "success_subnet",
+		wantErr: ``,
+		u:       "[/127.in-addr.arpa/]#",
+	}, {
+		name:    "success_v4_family",
+		wantErr: ``,
+		u:       "[/in-addr.arpa/]#",
+	}, {
+		name:    "success_v6_family",
+		wantErr: ``,
+		u:       "[/ip6.arpa/]#",
+	}, {
+		name:    "bad_arpa_domain",
+		wantErr: `bad arpa domain name "arpa": not a reversed ip network`,
+		u:       "[/arpa/]#",
+	}, {
+		name:    "not_arpa_subnet",
+		wantErr: `bad arpa domain name "hello.world": not a reversed ip network`,
+		u:       "[/hello.world/]#",
+	}, {
+		name:    "non-private_arpa_address",
+		wantErr: `reversed subnet in "1.2.3.4.in-addr.arpa." is not private`,
+		u:       "[/1.2.3.4.in-addr.arpa/]#",
+	}, {
+		name:    "non-private_arpa_subnet",
+		wantErr: `reversed subnet in "128.in-addr.arpa." is not private`,
+		u:       "[/128.in-addr.arpa/]#",
+	}, {
+		name: "several_bad",
+		wantErr: `reversed subnet in "1.2.3.4.in-addr.arpa." is not private` +
+			"\n" + `bad arpa domain name "non.arpa": not a reversed ip network`,
+		u: "[/non.arpa/1.2.3.4.in-addr.arpa/127.in-addr.arpa/]#",
+	}, {
+		name:    "partial_good",
+		wantErr: "",
+		u:       "[/a.1.2.3.10.in-addr.arpa/a.10.in-addr.arpa/]#",
+	}}
+
+	for _, tc := range testCases {
+		set := []string{"192.168.0.1", tc.u}
+
+		t.Run(tc.name, func(t *testing.T) {
+			upsConf, err := ParseUpstreamsConfig(set, nil)
+			require.NoError(t, err)
+
+			testutil.AssertErrorMsg(t, tc.wantErr, ValidatePrivateConfig(upsConf, ss))
+		})
+	}
 }
 
 func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {

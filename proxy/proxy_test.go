@@ -1454,3 +1454,134 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 	assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
 }
+
+// testMessageConstructor is a mock message constructor implementation to
+// simplify testing.
+type testMessageConstructor struct {
+	onNewMsgNXDOMAIN       func(req *dns.Msg) (resp *dns.Msg)
+	onNewMsgSERVFAIL       func(req *dns.Msg) (resp *dns.Msg)
+	onNewMsgNOTIMPLEMENTED func(req *dns.Msg) (resp *dns.Msg)
+}
+
+// type check
+var _ MessageConstructor = (*testMessageConstructor)(nil)
+
+// NewMsgNXDOMAIN implements the [MessageConstructor] interface for
+// *testMessageConstructor.
+func (c *testMessageConstructor) NewMsgNXDOMAIN(req *dns.Msg) (resp *dns.Msg) {
+	return c.onNewMsgNXDOMAIN(req)
+}
+
+// NewMsgSERVFAIL implements the [MessageConstructor] interface for
+// *testMessageConstructor.
+func (c *testMessageConstructor) NewMsgSERVFAIL(req *dns.Msg) (resp *dns.Msg) {
+	return c.onNewMsgSERVFAIL(req)
+}
+
+// NewMsgNOTIMPLEMENTED implements the [MessageConstructor] interface for
+// *testMessageConstructor.
+func (c *testMessageConstructor) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.Msg) {
+	return c.onNewMsgNOTIMPLEMENTED(req)
+}
+
+func TestProxy_HandleDNSRequest_private(t *testing.T) {
+	t.Parallel()
+
+	privateSet := netutil.SubnetSetFunc(netutil.IsLocallyServed)
+
+	localIP := netip.MustParseAddrPort("192.168.0.1:1")
+	require.True(t, privateSet.Contains(localIP.Addr()))
+
+	externalIP := netip.MustParseAddrPort("4.3.2.1:1")
+	require.False(t, privateSet.Contains(externalIP.Addr()))
+
+	privateReq := (&dns.Msg{}).SetQuestion("2.0.168.192.in-addr.arpa", dns.TypePTR)
+	privateResp := (&dns.Msg{}).SetReply(privateReq)
+	privateResp.Compress = true
+
+	externalReq := (&dns.Msg{}).SetQuestion("2.2.3.4.in-addr.arpa", dns.TypePTR)
+	externalResp := (&dns.Msg{}).SetReply(externalReq)
+	externalResp.Compress = true
+
+	nxdomainResp := (&dns.Msg{}).SetReply(privateReq)
+	nxdomainResp.Rcode = dns.RcodeNameError
+
+	generalUps := &fakeUpstream{
+		onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+			return externalResp.Copy(), nil
+		},
+		onAddress: func() (addr string) { return "general" },
+		onClose:   func() (err error) { return nil },
+	}
+	privateUps := &fakeUpstream{
+		onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+			return privateResp.Copy(), nil
+		},
+		onAddress: func() (addr string) { return "private" },
+		onClose:   func() (err error) { return nil },
+	}
+	messages := &testMessageConstructor{
+		onNewMsgNXDOMAIN: func(req *dns.Msg) (resp *dns.Msg) {
+			return nxdomainResp
+		},
+		onNewMsgSERVFAIL:       func(_ *dns.Msg) (_ *dns.Msg) { panic("not implemented") },
+		onNewMsgNOTIMPLEMENTED: func(_ *dns.Msg) (_ *dns.Msg) { panic("not implemented") },
+	}
+
+	p := mustNew(t, &Config{
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{generalUps},
+		},
+		PrivateRDNSUpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{privateUps},
+		},
+		PrivateSubnets:     privateSet,
+		UsePrivateRDNS:     true,
+		MessageConstructor: messages,
+	})
+	ctx := context.Background()
+	require.NoError(t, p.Start(ctx))
+	testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
+
+	testCases := []struct {
+		name    string
+		want    *dns.Msg
+		req     *dns.Msg
+		cliAddr netip.AddrPort
+	}{{
+		name:    "local_requests_external",
+		want:    externalResp,
+		req:     externalReq,
+		cliAddr: localIP,
+	}, {
+		name:    "external_requests_external",
+		want:    externalResp,
+		req:     externalReq,
+		cliAddr: externalIP,
+	}, {
+		name:    "local_requests_private",
+		want:    privateResp,
+		req:     privateReq,
+		cliAddr: localIP,
+	}, {
+		name:    "external_requests_private",
+		want:    nxdomainResp,
+		req:     privateReq,
+		cliAddr: externalIP,
+	}}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dctx := p.newDNSContext(ProtoUDP, tc.req)
+			dctx.Addr = tc.cliAddr
+
+			require.NoError(t, p.handleDNSRequest(dctx))
+			assert.Equal(t, tc.want, dctx.Res)
+		})
+	}
+}

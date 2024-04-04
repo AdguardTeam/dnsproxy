@@ -10,6 +10,7 @@ import (
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/mapsutil"
 	"github.com/AdguardTeam/golibs/netutil"
 )
 
@@ -311,25 +312,56 @@ func (p *configParser) includeToReserved(dnsUpstream upstream.Upstream, domains 
 	}
 }
 
-// errNoDefaultUpstreams is returned when no default upstreams specified within
-// a [Config.UpstreamConfig].
-const errNoDefaultUpstreams errors.Error = "no default upstreams specified"
-
 // validate returns an error if the upstreams aren't configured properly.  c
-// considered valid if it contains at least a single default upstream.  Nil c,
-// as well as c with no default upstreams causes [ErrNoDefaultUpstreams].  Empty
-// c causes [upstream.ErrNoUpstreams].
+// considered valid if it contains at least a single default upstream.  Empty c
+// causes [upstream.ErrNoUpstreams].
 func (uc *UpstreamConfig) validate() (err error) {
+	const (
+		errNilConf   errors.Error = "upstream config is nil"
+		errNoDefault errors.Error = "no default upstreams specified"
+	)
+
 	switch {
 	case uc == nil:
-		return fmt.Errorf("%w; uc is nil", errNoDefaultUpstreams)
+		return errNilConf
 	case len(uc.Upstreams) > 0:
 		return nil
 	case len(uc.DomainReservedUpstreams) == 0 && len(uc.SpecifiedDomainUpstreams) == 0:
 		return upstream.ErrNoUpstreams
 	default:
-		return errNoDefaultUpstreams
+		return errNoDefault
 	}
+}
+
+// ValidatePrivateConfig returns an error if uc isn't valid, or, treated as
+// private upstreams configuration, contains specifications for invalid domains.
+func ValidatePrivateConfig(uc *UpstreamConfig, privateSubnets netutil.SubnetSet) (err error) {
+	if err = uc.validate(); err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return err
+	}
+
+	var errs []error
+	rangeFunc := func(domain string, _ []upstream.Upstream) (ok bool) {
+		pref, extErr := netutil.ExtractReversedAddr(domain)
+		switch {
+		case extErr != nil:
+			// Don't wrap the error since it's informative enough as is.
+			errs = append(errs, extErr)
+		case pref.Bits() == 0:
+			// Allow private subnets for subdomains of the root domain.
+		case !privateSubnets.Contains(pref.Addr()):
+			errs = append(errs, fmt.Errorf("reversed subnet in %q is not private", domain))
+		default:
+			// Go on.
+		}
+
+		return true
+	}
+
+	mapsutil.SortedRange(uc.DomainReservedUpstreams, rangeFunc)
+
+	return errors.Join(errs...)
 }
 
 // getUpstreamsForDomain looks for a domain in the reserved domains map and

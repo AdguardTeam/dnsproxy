@@ -8,6 +8,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 )
@@ -99,8 +100,11 @@ func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
 	return ok
 }
 
-// handleDNSRequest processes the incoming packet bytes and returns with an optional response packet.
-func (p *Proxy) handleDNSRequest(d *DNSContext) error {
+// handleDNSRequest processes the context.  The only error it returns is the one
+// from the [RequestHandler], or [Resolve] if the [RequestHandler] is not set.
+// d is left without a response as the documentation to [BeforeRequestHandler]
+// says, and if it's ratelimited.
+func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 	p.logDNSMessage(d.Req)
 
 	if d.Req.Response {
@@ -108,6 +112,9 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 
 		return nil
 	}
+
+	ip := d.Addr.Addr()
+	d.IsPrivateClient = p.privateNets.Contains(ip)
 
 	if !p.handleBefore(d) {
 		return nil
@@ -117,29 +124,19 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 	//
 	// TODO(e.burkov):  Investigate if written above true and move to UDP server
 	// implementation?
-	if d.Proto == ProtoUDP && p.isRatelimited(d.Addr.Addr()) {
+	if d.Proto == ProtoUDP && p.isRatelimited(ip) {
 		log.Debug("dnsproxy: ratelimiting %s based on IP only", d.Addr)
 
-		return nil // do nothing, don't reply, we got ratelimited
+		// Don't reply to ratelimitted clients.
+		return nil
 	}
 
 	d.Res = p.validateRequest(d)
-
-	var err error
-
 	if d.Res == nil {
-		if len(p.UpstreamConfig.Upstreams) == 0 {
-			panic("SHOULD NOT HAPPEN: no default upstreams specified")
-		}
-
-		defer func() { err = errors.Annotate(err, "handling request: %w") }()
-
-		// execute the DNS request
-		// if there is a custom middleware configured, use it
 		if p.RequestHandler != nil {
-			err = p.RequestHandler(p, d)
+			err = errors.Annotate(p.RequestHandler(p, d), "using request handler: %w")
 		} else {
-			err = p.Resolve(d)
+			err = errors.Annotate(p.Resolve(d), "using default request handler: %w")
 		}
 	}
 
@@ -168,9 +165,38 @@ func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 		log.Debug("dnsproxy: recursion detected resolving %q", d.Req.Question[0].Name)
 
 		return p.messages.NewMsgNXDOMAIN(d.Req)
+	case d.isForbiddenARPA(p.privateNets):
+		log.Debug("dnsproxy: %s requests a private arpa domain %q", d.Addr, d.Req.Question[0].Name)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
 	default:
 		return nil
 	}
+}
+
+// isForbiddenARPA returns true if dctx contains a PTR request for some private
+// address and client's address is not within the private network.  Otherwise,
+// it sets [DNSContext.PrivateARPA] for future use.
+func (dctx *DNSContext) isForbiddenARPA(privateNets netutil.SubnetSet) (ok bool) {
+	q := dctx.Req.Question[0]
+	if q.Qtype != dns.TypePTR {
+		return false
+	}
+
+	requestedPref, err := netutil.ExtractReversedAddr(q.Name)
+	if err != nil {
+		log.Debug("proxy: parsing reversed subnet: %v", err)
+
+		return false
+	}
+
+	if privateNets.Contains(requestedPref.Addr()) {
+		dctx.RequestedPrivateRDNS = requestedPref
+
+		return !dctx.IsPrivateClient
+	}
+
+	return false
 }
 
 // respond writes the specified response to the client (or does nothing if d.Res is empty)

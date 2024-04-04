@@ -22,26 +22,40 @@ func TestDNS64Race(t *testing.T) {
 	log.SetLevel(log.DEBUG)
 
 	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, net.ParseIP("1.2.3.4"))
-	ups := upstreamFunc(func(req *dns.Msg) (resp *dns.Msg, err error) {
-		resp = (&dns.Msg{}).SetReply(req)
-		if req.Question[0].Qtype == dns.TypeA {
-			resp.Answer = []dns.RR{dns.Copy(ans)}
-		}
+	ups := &fakeUpstream{
+		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+			resp = (&dns.Msg{}).SetReply(req)
+			if req.Question[0].Qtype == dns.TypeA {
+				resp.Answer = []dns.RR{dns.Copy(ans)}
+			}
 
-		return resp, nil
-	})
+			return resp, nil
+		},
+		onAddress: func() (addr string) { return "fake.address" },
+		onClose:   func() (err error) { return nil },
+	}
+	localUps := &fakeUpstream{
+		onExchange: func(_ *dns.Msg) (_ *dns.Msg, _ error) { panic("not implemented") },
+		onAddress:  func() (addr string) { return "fake.address" },
+		onClose:    func() (err error) { return nil },
+	}
 
 	dnsProxy := mustNew(t, &Config{
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{ups},
+		},
+		PrivateRDNSUpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{localUps},
 		},
 		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 
-		UseDNS64: true,
+		UseDNS64:       true,
+		UsePrivateRDNS: true,
 		// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server.
 		DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")},
 	})
@@ -130,22 +144,6 @@ func newRR(t *testing.T, name string, qtype uint16, ttl uint32, val any) (rr dns
 	return rr
 }
 
-// upstreamFunc is a helper type that implements the [upstream.Upstream]
-// interface.
-type upstreamFunc func(req *dns.Msg) (resp *dns.Msg, err error)
-
-// type check
-var _ upstream.Upstream = upstreamFunc(nil)
-
-// Exchange implements the [upstream.Upstream] interface for upstreamFunc.
-func (u upstreamFunc) Exchange(req *dns.Msg) (resp *dns.Msg, err error) { return u(req) }
-
-// Address implements the [upstream.Upstream] interface for upstreamFunc.
-func (u upstreamFunc) Address() (addr string) { return "func.upstream" }
-
-// Close implements the [upstream.Upstream] interface for upstreamFunc.
-func (u upstreamFunc) Close() (err error) { return nil }
-
 func TestProxy_Resolve_dns64(t *testing.T) {
 	const (
 		ipv6Domain    = "ipv6.only."
@@ -169,7 +167,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	require.NoError(t, err)
 	ptrGlobDomain = dns.Fqdn(ptrGlobDomain)
 
-	cliAddrPort := netip.MustParseAddrPort("192.168.1.1:1234")
+	localCliAddr := netip.MustParseAddrPort("192.168.1.1:1234")
 
 	const (
 		sectionAnswer = iota
@@ -185,29 +183,37 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	pt := testutil.PanicT{}
 	newUps := func(answers answerMap) (u upstream.Upstream) {
-		return upstreamFunc(func(req *dns.Msg) (resp *dns.Msg, err error) {
-			q := req.Question[0]
-			require.Contains(pt, answers, q.Qtype)
+		return &fakeUpstream{
+			onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+				q := req.Question[0]
+				require.Contains(pt, answers, q.Qtype)
 
-			answer := answers[q.Qtype]
+				answer := answers[q.Qtype]
 
-			resp = (&dns.Msg{}).SetReply(req)
-			resp.Answer = answer[sectionAnswer]
-			resp.Ns = answer[sectionAuthority]
-			resp.Extra = answer[sectionAdditional]
+				resp = (&dns.Msg{}).SetReply(req)
+				resp.Answer = answer[sectionAnswer]
+				resp.Ns = answer[sectionAuthority]
+				resp.Extra = answer[sectionAdditional]
 
-			return resp, nil
-		})
+				return resp, nil
+			},
+			onAddress: func() (addr string) { return "fake.address" },
+			onClose:   func() (err error) { return nil },
+		}
 	}
 
 	localRR := newRR(t, ptr64Domain, dns.TypePTR, 3600, pointedDomain)
-	localUps := upstreamFunc(func(req *dns.Msg) (resp *dns.Msg, err error) {
-		require.Equal(pt, req.Question[0].Name, ptr64Domain)
-		resp = (&dns.Msg{}).SetReply(req)
-		resp.Answer = []dns.RR{localRR}
+	localUps := &fakeUpstream{
+		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+			require.Equal(pt, req.Question[0].Name, ptr64Domain)
+			resp = (&dns.Msg{}).SetReply(req)
+			resp.Answer = []dns.RR{localRR}
 
-		return resp, nil
-	})
+			return resp, nil
+		},
+		onAddress: func() (addr string) { return "fake.local.address" },
+		onClose:   func() (err error) { return nil },
+	}
 
 	testCases := []struct {
 		name    string
@@ -365,7 +371,9 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				RatelimitSubnetLenIPv6: 64,
 				CacheEnabled:           true,
 
-				UseDNS64: true,
+				UseDNS64:       true,
+				UsePrivateRDNS: true,
+				PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 			})
 
 			ctx := context.Background()
@@ -373,13 +381,12 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 			require.NoError(t, err)
 			testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
 
-			req := (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype)
 			dctx := &DNSContext{
-				Req:  req,
-				Addr: cliAddrPort,
+				Req:  (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype),
+				Addr: localCliAddr,
 			}
 
-			err = p.Resolve(dctx)
+			err = p.handleDNSRequest(dctx)
 			require.NoError(t, err)
 
 			res := dctx.Res

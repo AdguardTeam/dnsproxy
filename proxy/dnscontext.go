@@ -58,6 +58,11 @@ type DNSContext struct {
 	// cached with.  It's empty for responses resolved by the upstream server.
 	CachedUpstreamAddr string
 
+	// RequestedPrivateRDNS is the subnet extracted from the ARPA domain of
+	// request's question if it's a PTR query for a private IP address.  It can
+	// be a single-address subnet as well as a zero-length one.
+	RequestedPrivateRDNS netip.Prefix
+
 	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)
 	localIP netip.Addr
 
@@ -82,10 +87,16 @@ type DNSContext struct {
 	// or default otherwise.
 	udpSize uint16
 
+	// IsPrivateClient is true if the client's address is considered private
+	// according to the configured private subnet set.
+	IsPrivateClient bool
+
 	// adBit is the authenticated data flag from the request.
 	adBit bool
+
 	// hasEDNS0 reflects if the request has EDNS0 RRs.
 	hasEDNS0 bool
+
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
 }
@@ -94,6 +105,8 @@ type DNSContext struct {
 //
 // TODO(e.burkov):  Consider creating DNSContext with this everywhere, to
 // actually respect the contract of DNSContext.RequestID field.
+//
+// TODO(e.burkov):  Add remote address into arguments.
 func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
 	return &DNSContext{
 		Proto: proto,

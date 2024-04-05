@@ -81,6 +81,9 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 
 // handleBefore calls the [BeforeRequestHandler] if it's set and returns true if
 // the request should be processed further.
+//
+// NOTE:  handleBefore can still set d.Res.  In which case this is likely a
+// valid response to an invalid query of some sort, e.g. access denied.
 func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
 	if p.BeforeRequestHandler == nil {
 		return true
@@ -121,6 +124,16 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) error {
 		log.Debug("dnsproxy: ratelimiting %s based on IP only", d.Addr)
 
 		return nil // do nothing, don't reply, we got ratelimited
+	}
+
+	if d.Res != nil {
+		// Respond with the message from BeforeRequestHandler.  Assume it is
+		// valid.
+
+		p.logDNSMessage(d.Res)
+		p.respond(d)
+
+		return nil
 	}
 
 	d.Res = p.validateRequest(d)

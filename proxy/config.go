@@ -26,9 +26,9 @@ const (
 	UModeFastestAddr
 )
 
-// BeforeRequestHandler is an optional custom handler called before DNS requests
-// If it returns false, the request won't be processed at all
-type BeforeRequestHandler func(p *Proxy, dctx *DNSContext) (bool, error)
+// BeforeRequestHandler is an optional custom handler called before DNS
+// requests.
+type BeforeRequestHandler func(p *Proxy, dctx *DNSContext) (cont bool, err error)
 
 // RequestHandler is an optional custom handler for DNS requests
 // It is called instead of the default method (Proxy.Resolve())
@@ -54,7 +54,12 @@ type Config struct {
 	MessageConstructor MessageConstructor
 
 	// BeforeRequestHandler is an optional custom handler called before each DNS
-	// request is started processing.  See [BeforeRequestHandler].
+	// request is processed.  If it returns false, the request won't be
+	// processed at all.  If it returns true and sets dctx.Res, that response is
+	// sent to the client; in that case, dctx.Res must be a valid DNS message.
+	//
+	// TODO(a.garipov, e.burkov):  This API is error-prone and must be replaced
+	// by a better one.
 	BeforeRequestHandler BeforeRequestHandler
 
 	// RequestHandler is an optional custom handler for DNS requests.  It's used

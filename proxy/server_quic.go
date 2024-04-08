@@ -64,12 +64,14 @@ const (
 // createQUICListeners creates QUIC listeners for the DoQ server.
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
-		log.Info("Creating a QUIC listener")
+		log.Info("creating listener quic://%s", a)
 
 		conn, err := net.ListenUDP(bootstrap.NetworkUDP, a)
 		if err != nil {
 			return fmt.Errorf("listening to %s: %w", a, err)
 		}
+
+		p.quicConns = append(p.quicConns, conn)
 
 		v := newQUICAddrValidator(quicAddrValidatorCacheSize, quicAddrValidatorCacheTTL)
 		transport := &quic.Transport{
@@ -88,7 +90,8 @@ func (p *Proxy) createQUICListeners() error {
 		}
 
 		p.quicListen = append(p.quicListen, quicListen)
-		log.Info("Listening to quic://%s", quicListen.Addr())
+
+		log.Info("listening quic://%s", quicListen.Addr())
 	}
 	return nil
 }

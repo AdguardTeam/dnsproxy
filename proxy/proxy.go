@@ -129,6 +129,10 @@ type Proxy struct {
 	// quicListen are the listened QUIC connections.
 	quicListen []*quic.EarlyListener
 
+	// quicConns are UDP connections for all listened QUIC connections.  Those
+	// should be closed on shutdown, since *quic.EarlyListener doesn't close it.
+	quicConns []*net.UDPConn
+
 	// httpsListen are the listened HTTPS connections.
 	httpsListen []net.Listener
 
@@ -410,6 +414,9 @@ func (p *Proxy) Shutdown(_ context.Context) (err error) {
 
 	errs = closeAll(errs, p.quicListen...)
 	p.quicListen = nil
+
+	errs = closeAll(errs, p.quicConns...)
+	p.quicConns = nil
 
 	errs = closeAll(errs, p.dnsCryptUDPListen...)
 	p.dnsCryptUDPListen = nil

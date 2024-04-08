@@ -18,22 +18,6 @@ import (
 
 func TestQuicProxy(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
-	dnsProxy := mustNew(t, &Config{
-		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TLSConfig:              serverConfig,
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-	})
-
-	// Start listening.
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
 
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPem)
@@ -43,23 +27,63 @@ func TestQuicProxy(t *testing.T) {
 		NextProtos: append([]string{NextProtoDQ}, compatProtoDQ...),
 	}
 
-	// Create a DNS-over-QUIC client connection.
-	addr := dnsProxy.Addr(ProtoQUIC)
+	conf := &Config{
+		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TLSConfig:              serverConfig,
+		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies:         defaultTrustedProxies,
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
+	}
 
-	// Open a QUIC connection.
-	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) {
-		return conn.CloseWithError(DoQCodeNoError, "")
+	var addr *net.UDPAddr
+	t.Run("run", func(t *testing.T) {
+		dnsProxy := mustNew(t, conf)
+
+		ctx := context.Background()
+		err := dnsProxy.Start(ctx)
+		require.NoError(t, err)
+		testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+
+		addr = testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoQUIC))
+
+		conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
+		require.NoError(t, err)
+		testutil.CleanupAndRequireSuccess(t, func() (err error) {
+			return conn.CloseWithError(DoQCodeNoError, "")
+		})
+
+		for range 10 {
+			sendTestQUICMessage(t, conn, DoQv1)
+
+			// Send a message encoded for a draft version as well.
+			sendTestQUICMessage(t, conn, DoQv1Draft)
+		}
 	})
+	require.False(t, t.Failed())
 
-	// Send several test messages.
-	for range 10 {
+	conf.QUICListenAddr = []*net.UDPAddr{addr}
+	conf.UpstreamConfig = newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
+
+	t.Run("rerun", func(t *testing.T) {
+		dnsProxy := mustNew(t, conf)
+
+		ctx := context.Background()
+		err := dnsProxy.Start(ctx)
+		require.NoError(t, err)
+		testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+
+		conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
+		require.NoError(t, err)
+		testutil.CleanupAndRequireSuccess(t, func() (err error) {
+			return conn.CloseWithError(DoQCodeNoError, "")
+		})
+
 		sendTestQUICMessage(t, conn, DoQv1)
 
 		// Send a message encoded for a draft version as well.
 		sendTestQUICMessage(t, conn, DoQv1Draft)
-	}
+	})
 }
 
 func TestQuicProxy_largePackets(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
@@ -64,10 +65,21 @@ const (
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
 		log.Info("Creating a QUIC listener")
+
+		conn, err := net.ListenUDP(bootstrap.NetworkUDP, a)
+		if err != nil {
+			return fmt.Errorf("listening to %s: %w", a, err)
+		}
+
+		v := newQUICAddrValidator(quicAddrValidatorCacheSize, quicAddrValidatorCacheTTL)
+		transport := &quic.Transport{
+			Conn:                conn,
+			VerifySourceAddress: v.requiresValidation,
+		}
+
 		tlsConfig := p.TLSConfig.Clone()
 		tlsConfig.NextProtos = compatProtoDQ
-		quicListen, err := quic.ListenAddrEarly(
-			a.String(),
+		quicListen, err := transport.ListenEarly(
 			tlsConfig,
 			newServerQUICConfig(),
 		)
@@ -393,13 +405,10 @@ func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode) {
 // newServerQUICConfig creates *quic.Config populated with the default settings.
 // This function is supposed to be used for both DoQ and DoH3 server.
 func newServerQUICConfig() (conf *quic.Config) {
-	v := newQUICAddrValidator(quicAddrValidatorCacheSize, quicAddrValidatorCacheTTL)
-
 	return &quic.Config{
-		MaxIdleTimeout:           maxQUICIdleTimeout,
-		MaxIncomingStreams:       math.MaxUint16,
-		MaxIncomingUniStreams:    math.MaxUint16,
-		RequireAddressValidation: v.requiresValidation,
+		MaxIdleTimeout:        maxQUICIdleTimeout,
+		MaxIncomingStreams:    math.MaxUint16,
+		MaxIncomingUniStreams: math.MaxUint16,
 		// Enable 0-RTT by default for all connections on the server-side.
 		Allow0RTT: true,
 	}

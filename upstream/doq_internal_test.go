@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
+	"net/netip"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -81,51 +82,50 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 	// 0-RTT connections.
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
-	// Run the first server instance.
-	srv := startDoQServer(t, tlsConf, 0)
+	var addr netip.AddrPort
+	var upsStr string
+	var u Upstream
 
-	// Create a DNS-over-QUIC upstream.
-	address := fmt.Sprintf("quic://%s", srv.addr)
-	u, err := AddressToUpstream(address, &Options{
-		InsecureSkipVerify: true,
-		Timeout:            250 * time.Millisecond,
-		RootCAs:            rootCAs,
+	t.Run("first_try", func(t *testing.T) {
+		srv := startDoQServer(t, tlsConf, 0)
+		testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
+
+		addr = netip.MustParseAddrPort(srv.addr)
+		upsStr = (&url.URL{
+			Scheme: "quic",
+			Host:   addr.String(),
+		}).String()
+
+		var err error
+		u, err = AddressToUpstream(upsStr, &Options{
+			InsecureSkipVerify: true,
+			Timeout:            250 * time.Millisecond,
+			RootCAs:            rootCAs,
+		})
+		require.NoError(t, err)
+
+		checkUpstream(t, u, upsStr)
 	})
-	require.NoError(t, err)
+	require.False(t, t.Failed())
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
-	// Test that the upstream works properly.
-	checkUpstream(t, u, address)
+	t.Run("second_try", func(t *testing.T) {
+		srv := startDoQServer(t, tlsConf, int(addr.Port()))
+		testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
-	// Now let's restart the server on the same address.
-	_, portStr, err := net.SplitHostPort(srv.addr)
-	require.NoError(t, err)
+		checkUpstream(t, u, upsStr)
+	})
+	require.False(t, t.Failed())
 
-	port, err := strconv.Atoi(portStr)
-	require.NoError(t, err)
+	t.Run("retry", func(t *testing.T) {
+		_, err := u.Exchange(createTestMessage())
+		require.Error(t, err)
 
-	// Shutdown the first server.
-	require.NoError(t, srv.Shutdown())
+		srv := startDoQServer(t, tlsConf, int(addr.Port()))
+		testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
-	// Start the new one on the same port.
-	srv = startDoQServer(t, tlsConf, port)
-
-	// Check that everything works after restart.
-	checkUpstream(t, u, address)
-
-	// Stop the server again.
-	require.NoError(t, srv.Shutdown())
-
-	// Now try to send a message and make sure that it returns an error.
-	_, err = u.Exchange(createTestMessage())
-	require.Error(t, err)
-
-	// Start the server one more time.
-	srv = startDoQServer(t, tlsConf, port)
-	testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
-
-	// Check that everything works after the second restart.
-	checkUpstream(t, u, address)
+		checkUpstream(t, u, upsStr)
+	})
 }
 
 func TestUpstreamDoQ_0RTT(t *testing.T) {
@@ -275,14 +275,24 @@ func (s *testDoQServer) handleQUICStream(stream quic.Stream) (err error) {
 func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServer) {
 	tlsConf.NextProtos = []string{NextProtoDQ}
 
-	listen, err := quic.ListenAddrEarly(
-		fmt.Sprintf("127.0.0.1:%d", port),
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", port))
+	require.NoError(t, err)
+
+	conn, err := net.ListenUDP("udp", udpAddr)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, conn.Close)
+
+	transport := &quic.Transport{
+		Conn: conn,
+		// Necessary for 0-RTT.
+		VerifySourceAddress: func(a net.Addr) bool {
+			return true
+		},
+	}
+
+	listen, err := transport.ListenEarly(
 		tlsConf,
 		&quic.Config{
-			// Necessary for 0-RTT.
-			RequireAddressValidation: func(net.Addr) (ok bool) {
-				return false
-			},
 			Allow0RTT: true,
 		},
 	)

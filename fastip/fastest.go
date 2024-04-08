@@ -78,7 +78,7 @@ func (f *FastestAddr) ExchangeFastest(req *dns.Msg, ups []upstream.Upstream) (
 	for _, r := range replies {
 		for _, rr := range r.Resp.Answer {
 			ip := ipFromRR(rr)
-			if !ipSet.Has(ip) && ip != (netip.Addr{}) {
+			if ip.IsValid() && !ip.IsUnspecified() {
 				ipSet.Add(ip)
 			}
 		}

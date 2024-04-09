@@ -89,6 +89,7 @@ func (p *Proxy) createQUICListeners() error {
 			return fmt.Errorf("quic listener: %w", err)
 		}
 
+		p.quicTransports = append(p.quicTransports, transport)
 		p.quicListen = append(p.quicListen, quicListen)
 
 		log.Info("listening quic://%s", quicListen.Addr())

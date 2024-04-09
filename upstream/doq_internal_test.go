@@ -27,7 +27,6 @@ func TestUpstreamDoQ(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
 	srv := startDoQServer(t, tlsConf, 0)
-	testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	var lastState tls.ConnectionState
@@ -88,7 +87,6 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 
 	t.Run("first_try", func(t *testing.T) {
 		srv := startDoQServer(t, tlsConf, 0)
-		testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
 		addr = netip.MustParseAddrPort(srv.addr)
 		upsStr = (&url.URL{
@@ -110,8 +108,7 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	t.Run("second_try", func(t *testing.T) {
-		srv := startDoQServer(t, tlsConf, int(addr.Port()))
-		testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
+		_ = startDoQServer(t, tlsConf, int(addr.Port()))
 
 		checkUpstream(t, u, upsStr)
 	})
@@ -121,8 +118,7 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 		_, err := u.Exchange(createTestMessage())
 		require.Error(t, err)
 
-		srv := startDoQServer(t, tlsConf, int(addr.Port()))
-		testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
+		_ = startDoQServer(t, tlsConf, int(addr.Port()))
 
 		checkUpstream(t, u, upsStr)
 	})
@@ -132,7 +128,6 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
 	srv := startDoQServer(t, tlsConf, 0)
-	testutil.CleanupAndRequireSuccess(t, srv.Shutdown)
 
 	tracer := &quicTracer{}
 	address := fmt.Sprintf("quic://%s", srv.addr)
@@ -271,7 +266,8 @@ func (s *testDoQServer) handleQUICStream(stream quic.Stream) (err error) {
 	return err
 }
 
-// startDoQServer starts a test DoQ server.
+// startDoQServer starts a test DoQ server.  Note that it adds its own shutdown
+// to cleanup of t.
 func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServer) {
 	tlsConf.NextProtos = []string{NextProtoDQ}
 
@@ -297,6 +293,7 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 		},
 	)
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, transport.Close)
 
 	s = &testDoQServer{
 		addr:     listen.Addr().String(),
@@ -304,6 +301,7 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 	}
 
 	go s.Serve()
+	testutil.CleanupAndRequireSuccess(t, s.Shutdown)
 
 	return s
 }

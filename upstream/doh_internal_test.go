@@ -65,7 +65,6 @@ func TestUpstreamDoH(t *testing.T) {
 				delayHandshakeH2: tc.delayHandshakeH2,
 				delayHandshakeH3: tc.delayHandshakeH3,
 			})
-			t.Cleanup(srv.Shutdown)
 
 			// Create a DNS-over-HTTPS upstream.
 			address := fmt.Sprintf("https://%s/dns-query", srv.addr)
@@ -175,7 +174,6 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 				delayHandshakeH3: tc.delayHandshakeH3,
 				handler:          mux,
 			})
-			t.Cleanup(srv.Shutdown)
 
 			// Create a DNS-over-HTTPS upstream that will be used for the
 			// race test.
@@ -216,7 +214,6 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 				srv := startDoHServer(t, testDoHServerOptions{
 					http3Enabled: true,
 				})
-				t.Cleanup(srv.Shutdown)
 
 				addr = netip.MustParseAddrPort(srv.addr)
 				upsAddr = (&url.URL{
@@ -239,11 +236,10 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			t.Run("second_try", func(t *testing.T) {
-				srv := startDoHServer(t, testDoHServerOptions{
+				_ = startDoHServer(t, testDoHServerOptions{
 					http3Enabled: true,
 					port:         int(addr.Port()),
 				})
-				t.Cleanup(srv.Shutdown)
 
 				checkUpstream(t, u, upsAddr)
 			})
@@ -253,11 +249,10 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 				_, err := u.Exchange(createTestMessage())
 				require.Error(t, err)
 
-				srv := startDoHServer(t, testDoHServerOptions{
+				_ = startDoHServer(t, testDoHServerOptions{
 					http3Enabled: true,
 					port:         int(addr.Port()),
 				})
-				t.Cleanup(srv.Shutdown)
 
 				checkUpstream(t, u, upsAddr)
 			})
@@ -270,7 +265,6 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	srv := startDoHServer(t, testDoHServerOptions{
 		http3Enabled: true,
 	})
-	t.Cleanup(srv.Shutdown)
 
 	// Create a DNS-over-HTTPS upstream.
 	tracer := &quicTracer{}
@@ -319,11 +313,21 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 
 // testDoHServerOptions allows customizing testDoHServer behavior.
 type testDoHServerOptions struct {
-	handler          http.Handler
+	// handler is an HTTP handler that should be used by the server.  The
+	// default one is used on nil.
+	handler http.Handler
+	// delayHandshakeH2 is a delay that should be added to the handshake of the
+	// HTTP/2 server.
 	delayHandshakeH2 time.Duration
+	// delayHandshakeH3 is a delay that should be added to the handshake of the
+	// HTTP/3 server.
 	delayHandshakeH3 time.Duration
-	port             int
-	http3Enabled     bool
+	// port is the port that the server should listen to.  If it's 0, a random
+	// port is used.
+	port int
+	// http3Enabled is a flag that indicates whether the server should start an
+	// HTTP/3 server.
+	http3Enabled bool
 }
 
 // testDoHServer is an instance of a test DNS-over-HTTPS server.
@@ -359,9 +363,9 @@ func (s *testDoHServer) Shutdown() {
 	}
 }
 
-// startDoHServer starts a new DNS-over-HTTPS server on a random port and
-// returns the instance of this server.  Depending on whether http3Enabled is
-// set to true or false it will or will not initialize a HTTP/3 server.
+// startDoHServer starts a new DNS-over-HTTPS server with specified options.  It
+// returns a started server instance with addr set.  Note that it adds its own
+// shutdown to cleanup of t.
 func startDoHServer(
 	t *testing.T,
 	opts testDoHServerOptions,
@@ -444,6 +448,7 @@ func startDoHServer(
 			Allow0RTT: true,
 		})
 		require.NoError(t, err)
+		testutil.CleanupAndRequireSuccess(t, transport.Close)
 
 		// Run the H3 server.
 		go func() {
@@ -452,7 +457,7 @@ func startDoHServer(
 		}()
 	}
 
-	return &testDoHServer{
+	s = &testDoHServer{
 		tlsConfig:  tlsConfig,
 		rootCAs:    rootCAs,
 		server:     server,
@@ -461,6 +466,9 @@ func startDoHServer(
 		// Save the address that the server listens to.
 		addr: tcpAddr.String(),
 	}
+	t.Cleanup(s.Shutdown)
+
+	return s
 }
 
 // createDoHHandlerFunc creates a simple http.HandlerFunc that reads the

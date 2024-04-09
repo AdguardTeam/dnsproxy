@@ -27,23 +27,22 @@ const (
 	UModeFastestAddr
 )
 
-// BeforeRequestHandler is an optional custom handler called before each DNS
-// request is started processing.  If it returns an error, the request is
-// responded with SERVFAIL.  If it just returns false, the request is dropped
-// without an answer.  dctx will always have the Req, Addr, and IsLocalClient
-// fields set.
-type BeforeRequestHandler func(p *Proxy, dctx *DNSContext) (ok bool, err error)
-
 // RequestHandler is an optional custom handler for DNS requests.  It's used
 // instead of [Proxy.Resolve] if set.  The resulting error doesn't affect the
 // request processing.  The custom handler is responsible for calling
 // [ResponseHandler], if it doesn't call [Proxy.Resolve].
+//
+// TODO(e.burkov):  Use the same interface-based approach as
+// [BeforeRequestHandler].
 type RequestHandler func(p *Proxy, dctx *DNSContext) (err error)
 
 // ResponseHandler is an optional custom handler called when DNS query has been
 // processed.  When called from [Proxy.Resolve], dctx will contain the response
 // message if the upstream or cache succeeded.  err is only not nil if the
 // upstream failed to respond.
+//
+// TODO(e.burkov):  Use the same interface-based approach as
+// [BeforeRequestHandler].
 type ResponseHandler func(dctx *DNSContext, err error)
 
 // Config contains all the fields necessary for proxy configuration
@@ -65,7 +64,8 @@ type Config struct {
 	MessageConstructor MessageConstructor
 
 	// BeforeRequestHandler is an optional custom handler called before each DNS
-	// request is started processing.  See [BeforeRequestHandler].
+	// request is started processing, see [BeforeRequestHandler].  The default
+	// no-op implementation is used, if it's nil.
 	BeforeRequestHandler BeforeRequestHandler
 
 	// RequestHandler is an optional custom handler for DNS requests.  It's used

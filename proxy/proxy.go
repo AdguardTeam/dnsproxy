@@ -90,6 +90,9 @@ type Proxy struct {
 	// messages constructs DNS messages.
 	messages MessageConstructor
 
+	// beforeRequestHandler handles the request's context before it is resolved.
+	beforeRequestHandler BeforeRequestHandler
+
 	// dnsCryptServer serves DNSCrypt queries.
 	dnsCryptServer *dnscrypt.Server
 
@@ -199,12 +202,13 @@ type Proxy struct {
 // New creates a new Proxy with the specified configuration.  c must not be nil.
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
-		Config:           *c,
-		privateNets:      netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		upstreamRTTStats: map[string]upstreamRTTStats{},
-		rttLock:          sync.Mutex{},
-		ratelimitLock:    sync.Mutex{},
-		RWMutex:          sync.RWMutex{},
+		Config:               *c,
+		privateNets:          netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		beforeRequestHandler: noopRequestHandler{},
+		upstreamRTTStats:     map[string]upstreamRTTStats{},
+		rttLock:              sync.Mutex{},
+		ratelimitLock:        sync.Mutex{},
+		RWMutex:              sync.RWMutex{},
 		bytesPool: &sync.Pool{
 			New: func() any {
 				// 2 bytes may be used to store packet length (see TCP/TLS).
@@ -261,6 +265,9 @@ func New(c *Config) (p *Proxy, err error) {
 	}
 	if c.PrivateSubnets != nil {
 		p.privateNets = c.PrivateSubnets
+	}
+	if c.BeforeRequestHandler != nil {
+		p.beforeRequestHandler = c.BeforeRequestHandler
 	}
 
 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)

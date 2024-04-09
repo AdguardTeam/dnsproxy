@@ -80,26 +80,6 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 	return nil
 }
 
-// handleBefore calls the [BeforeRequestHandler] if it's set and returns true if
-// the request should be processed further.
-func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
-	if p.BeforeRequestHandler == nil {
-		return true
-	}
-
-	ok, err := p.BeforeRequestHandler(p, d)
-	if err != nil {
-		log.Error("dnsproxy: handling before request: %s", err)
-
-		d.Res = p.messages.NewMsgSERVFAIL(d.Req)
-		p.respond(d)
-
-		return false
-	}
-
-	return ok
-}
-
 // handleDNSRequest processes the context.  The only error it returns is the one
 // from the [RequestHandler], or [Resolve] if the [RequestHandler] is not set.
 // d is left without a response as the documentation to [BeforeRequestHandler]

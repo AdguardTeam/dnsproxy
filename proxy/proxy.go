@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -200,15 +201,23 @@ type Proxy struct {
 }
 
 // New creates a new Proxy with the specified configuration.  c must not be nil.
+//
+// TODO(e.burkov):  Cover with tests.
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
-		Config:               *c,
-		privateNets:          netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		beforeRequestHandler: noopRequestHandler{},
-		upstreamRTTStats:     map[string]upstreamRTTStats{},
-		rttLock:              sync.Mutex{},
-		ratelimitLock:        sync.Mutex{},
-		RWMutex:              sync.RWMutex{},
+		Config: *c,
+		privateNets: cmp.Or[netutil.SubnetSet](
+			c.PrivateSubnets,
+			netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		),
+		beforeRequestHandler: cmp.Or[BeforeRequestHandler](
+			c.BeforeRequestHandler,
+			noopRequestHandler{},
+		),
+		upstreamRTTStats: map[string]upstreamRTTStats{},
+		rttLock:          sync.Mutex{},
+		ratelimitLock:    sync.Mutex{},
+		RWMutex:          sync.RWMutex{},
 		bytesPool: &sync.Pool{
 			New: func() any {
 				// 2 bytes may be used to store packet length (see TCP/TLS).
@@ -217,9 +226,12 @@ func New(c *Config) (p *Proxy, err error) {
 				return &b
 			},
 		},
-		udpOOBSize:  proxynetutil.UDPGetOOBSize(),
-		time:        realClock{},
-		messages:    defaultMessageConstructor{},
+		udpOOBSize: proxynetutil.UDPGetOOBSize(),
+		time:       realClock{},
+		messages: cmp.Or[MessageConstructor](
+			c.MessageConstructor,
+			defaultMessageConstructor{},
+		),
 		recDetector: newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
 	}
 
@@ -258,16 +270,6 @@ func New(c *Config) (p *Proxy, err error) {
 	err = p.setupDNS64()
 	if err != nil {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
-	}
-
-	if c.MessageConstructor != nil {
-		p.messages = c.MessageConstructor
-	}
-	if c.PrivateSubnets != nil {
-		p.privateNets = c.PrivateSubnets
-	}
-	if c.BeforeRequestHandler != nil {
-		p.beforeRequestHandler = c.BeforeRequestHandler
 	}
 
 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)

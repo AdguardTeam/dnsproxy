@@ -43,9 +43,8 @@ type BeforeRequestHandler interface {
 	// set accordingly.
 	//
 	// If returned err is a [BeforeRequestError], the given response message is
-	// used, on any other error a SERVFAIL response used.  If err is nil, the
-	// request is processed further.  [Proxy] assumes a handler itself doesn't
-	// set the [DNSContext.Res] field.
+	// used.  If err is nil, the request is processed further.  [Proxy] assumes
+	// a handler itself doesn't set the [DNSContext.Res] field.
 	HandleBefore(p *Proxy, dctx *DNSContext) (err error)
 }
 
@@ -62,10 +61,10 @@ func (noopRequestHandler) HandleBefore(_ *Proxy, _ *DNSContext) (err error) {
 	return nil
 }
 
-// handleBefore calls the [BeforeRequestHandler] if it's set and returns true if
-// the request should be processed further.  It sets the SERVFAIL response to
-// [DNSContext.Res] if an error returned, or the [BeforeRequestError.Response]
-// on an appropriate error.
+// handleBefore calls the [BeforeRequestHandler] if it's set.  If the returned
+// error is nil, it returns true and the request is processed further.  If the
+// returned error has type [BeforeRequestError], the specified response is sent
+// to the client.  Otherwise, the request just ignored.
 func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
 	err := p.beforeRequestHandler.HandleBefore(p, d)
 	if err == nil {
@@ -76,12 +75,10 @@ func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
 
 	if befReqErr := (&BeforeRequestError{}); errors.As(err, &befReqErr) {
 		d.Res = befReqErr.Response
-	} else {
-		d.Res = p.messages.NewMsgSERVFAIL(d.Req)
-	}
 
-	p.logDNSMessage(d.Res)
-	p.respond(d)
+		p.logDNSMessage(d.Res)
+		p.respond(d)
+	}
 
 	return false
 }

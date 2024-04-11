@@ -36,7 +36,7 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 
 	const (
 		allowedID = iota
-		failedID
+		droppedID
 		errorID
 	)
 
@@ -44,8 +44,8 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 	allowedRequest.Id = allowedID
 	allowedResponse := (&dns.Msg{}).SetReply(allowedRequest)
 
-	failedRequest := (&dns.Msg{}).SetQuestion("failed.", dns.TypeA)
-	failedRequest.Id = failedID
+	droppedRequest := (&dns.Msg{}).SetQuestion("dropped.", dns.TypeA)
+	droppedRequest.Id = droppedID
 
 	errorRequest := (&dns.Msg{}).SetQuestion("error.", dns.TypeA)
 	errorRequest.Id = errorID
@@ -69,8 +69,8 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 				switch dctx.Req.Id {
 				case allowedID:
 					return nil
-				case failedID:
-					return errors.Error("servfail")
+				case droppedID:
+					return errors.Error("just drop")
 				case errorID:
 					return &BeforeRequestError{
 						Err:      errors.Error("just error"),
@@ -92,31 +92,31 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 	}
 	addr := p.Addr(ProtoTCP).String()
 
-	testCases := []struct {
-		req      *dns.Msg
-		wantResp *dns.Msg
-		name     string
-	}{{
-		req:      allowedRequest,
-		wantResp: allowedResponse,
-		name:     "allowed",
-	}, {
-		req:      failedRequest,
-		wantResp: p.messages.NewMsgSERVFAIL(failedRequest),
-		name:     "failed",
-	}, {
-		req:      errorRequest,
-		wantResp: errorResponse,
-		name:     "error",
-	}}
+	t.Run("allowed", func(t *testing.T) {
+		t.Parallel()
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		resp, _, err := client.Exchange(allowedRequest, addr)
+		require.NoError(t, err)
+		assert.Equal(t, allowedResponse, resp)
+	})
 
-			resp, _, err := client.Exchange(tc.req, addr)
-			require.NoError(t, err)
-			assert.Equal(t, tc.wantResp, resp)
-		})
-	}
+	t.Run("dropped", func(t *testing.T) {
+		t.Parallel()
+
+		resp, _, err := client.Exchange(droppedRequest, addr)
+
+		wantErr := &net.OpError{}
+		require.ErrorAs(t, err, &wantErr)
+		assert.True(t, wantErr.Timeout())
+
+		assert.Nil(t, resp)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
+		resp, _, err := client.Exchange(errorRequest, addr)
+		require.NoError(t, err)
+		assert.Equal(t, errorResponse, resp)
+	})
 }

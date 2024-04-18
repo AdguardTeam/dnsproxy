@@ -59,8 +59,8 @@ type DNSContext struct {
 	CachedUpstreamAddr string
 
 	// RequestedPrivateRDNS is the subnet extracted from the ARPA domain of
-	// request's question if it's a PTR query for a private IP address.  It can
-	// be a single-address subnet as well as a zero-length one.
+	// request's question if it's a PTR, SOA, or NS query for a private IP
+	// address.  It can be a single-address subnet as well as a zero-length one.
 	RequestedPrivateRDNS netip.Prefix
 
 	// localIP - local IP address (for UDP socket to call udpMakeOOBWithSrc)

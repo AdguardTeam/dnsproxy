@@ -91,7 +91,8 @@ type Options struct {
 	Fallbacks []string `yaml:"fallback" short:"f" long:"fallback" description:"Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers"`
 
 	// PrivateRDNSUpstreams are upstreams to use for reverse DNS lookups of
-	// private addresses.
+	// private addresses, including the requests for authority records, such as
+	// SOA and NS.
 	PrivateRDNSUpstreams []string `yaml:"private-rdns-upstream" long:"private-rdns-upstream" description:"Private DNS upstreams to use for reverse DNS lookups of private addresses, can be specified multiple times"`
 
 	// DNS64Prefix defines the DNS64 prefixes that dnsproxy should use when it
@@ -197,7 +198,8 @@ type Options struct {
 	DNS64 bool `yaml:"dns64" long:"dns64" description:"If specified, dnsproxy will act as a DNS64 server" optional:"yes" optional-value:"true"`
 
 	// UsePrivateRDNS makes the server to use private upstreams for reverse DNS
-	// lookups of private addresses.
+	// lookups of private addresses, including the requests for authority
+	// records, such as SOA and NS.
 	UsePrivateRDNS bool `yaml:"use-private-rdns" long:"use-private-rdns" description:"If specified, use private upstreams for reverse DNS lookups of private addresses" optional:"yes" optional-value:"true"`
 }
 

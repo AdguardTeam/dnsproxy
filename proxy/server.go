@@ -154,12 +154,19 @@ func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 	}
 }
 
-// isForbiddenARPA returns true if dctx contains a PTR request for some private
-// address and client's address is not within the private network.  Otherwise,
-// it sets [DNSContext.PrivateARPA] for future use.
+// isForbiddenARPA returns true if dctx contains a PTR, SOA, or NS request for
+// some private address and client's address is not within the private network.
+// Otherwise, it sets [DNSContext.RequestedPrivateRDNS] for future use.
 func (dctx *DNSContext) isForbiddenARPA(privateNets netutil.SubnetSet) (ok bool) {
 	q := dctx.Req.Question[0]
-	if q.Qtype != dns.TypePTR {
+	switch q.Qtype {
+	case dns.TypePTR, dns.TypeSOA, dns.TypeNS:
+		// Go on.
+		//
+		// TODO(e.burkov):  Reconsider the list of types involved to private
+		// address space.  Perhaps, use the logic for any type.  See
+		// https://www.rfc-editor.org/rfc/rfc6761.html#section-6.1.
+	default:
 		return false
 	}
 

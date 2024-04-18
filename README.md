@@ -49,49 +49,51 @@ Usage:
 
 Application Options:
       --config-path=               yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
-  -v, --verbose                    Verbose output (optional)
   -o, --output=                    Path to the log file. If not set, write to stdout.
+  -c, --tls-crt=                   Path to a file with the certificate chain
+  -k, --tls-key=                   Path to a file with the private key
+      --https-server-name=         Set the Server header for the responses from the HTTPS server. (default: dnsproxy)
+      --https-userinfo=            If set, all DoH queries are required to have this basic authentication information.
+  -g, --dnscrypt-config=           Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
+      --edns-addr=                 Send EDNS Client Address
   -l, --listen=                    Listening addresses
   -p, --port=                      Listening ports. Zero value disables TCP and UDP listeners
   -s, --https-port=                Listening ports for DNS-over-HTTPS
   -t, --tls-port=                  Listening ports for DNS-over-TLS
   -q, --quic-port=                 Listening ports for DNS-over-QUIC
   -y, --dnscrypt-port=             Listening ports for DNSCrypt
-  -c, --tls-crt=                   Path to a file with the certificate chain
-  -k, --tls-key=                   Path to a file with the private key
-      --tls-min-version=           Minimum TLS version, for example 1.0
-      --tls-max-version=           Maximum TLS version, for example 1.3
-      --insecure                   Disable secure TLS certificate validation
-  -g, --dnscrypt-config=           Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
-      --http3                      Enable HTTP/3 support
   -u, --upstream=                  An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers
   -b, --bootstrap=                 Bootstrap DNS for DoH and DoT, can be specified multiple times (default: use system-provided)
   -f, --fallback=                  Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers
       --private-rdns-upstream=     Private DNS upstreams to use for reverse DNS lookups of private addresses, can be specified multiple times
-      --all-servers                If specified, parallel queries to all configured upstream servers are enabled
-      --fastest-addr               Respond to A or AAAA requests only with the fastest IP address
+      --dns64-prefix=              Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times
+      --private-subnets=           Private subnets to use for reverse DNS lookups of private addresses
+      --bogus-nxdomain=            Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times.
       --timeout=                   Timeout for outbound DNS queries to remote upstream servers in a human-readable form (default: 10s)
-      --cache                      If specified, DNS cache is enabled
-      --cache-size=                Cache size (in bytes). Default: 64k
       --cache-min-ttl=             Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration.
       --cache-max-ttl=             Maximum TTL value for DNS entries, in seconds.
-      --cache-optimistic           If specified, optimistic DNS cache is enabled
+      --cache-size=                Cache size (in bytes). Default: 64k
   -r, --ratelimit=                 Ratelimit (requests per second)
       --ratelimit-subnet-len-ipv4= Ratelimit subnet length for IPv4. (default: 24)
-      --ratelimit-subnet-len-ipv6= Ratelimit subnet length for IPv6. (default: 64)
-      --refuse-any                 If specified, refuse ANY requests
-      --edns                       Use EDNS Client Subnet extension
-      --edns-addr=                 Send EDNS Client Address
-      --dns64                      If specified, dnsproxy will act as a DNS64 server
-      --dns64-prefix=              Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times
-      --https-server-name=         Set the Server header for the responses from the HTTPS server. (default: dnsproxy)
-      --https-userinfo=            If set, all DoH queries are required to have this basic authentication information.
-      --ipv6-disabled              If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --bogus-nxdomain=            Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times.
+      --ratelimit-subnet-len-ipv6= Ratelimit subnet length for IPv6. (default: 56)
       --udp-buf-size=              Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
       --max-go-routines=           Set the maximum number of go routines. A zero value will not not set a maximum.
+      --tls-min-version=           Minimum TLS version, for example 1.0
+      --tls-max-version=           Maximum TLS version, for example 1.3
       --pprof                      If present, exposes pprof information on localhost:6060.
       --version                    Prints the program version
+  -v, --verbose                    Verbose output (optional)
+      --insecure                   Disable secure TLS certificate validation
+      --ipv6-disabled              If specified, all AAAA requests will be replied with NoError RCode and empty answer
+      --http3                      Enable HTTP/3 support
+      --all-servers                If specified, parallel queries to all configured upstream servers are enabled
+      --fastest-addr               Respond to A or AAAA requests only with the fastest IP address
+      --cache-optimistic           If specified, optimistic DNS cache is enabled
+      --cache                      If specified, DNS cache is enabled
+      --refuse-any                 If specified, refuse ANY requests
+      --edns                       Use EDNS Client Subnet extension
+      --dns64                      If specified, dnsproxy will act as a DNS64 server
+      --use-private-rdns           If specified, use private upstreams for reverse DNS lookups of private addresses
 
 Help Options:
   -h, --help                       Show this help message
@@ -245,12 +247,12 @@ See also [RFC 6147](https://datatracker.ietf.org/doc/html/rfc6147).
 
 Enables DNS64 with the default [Well-Known Prefix][wkp]:
 ```shell
-./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8 --private-rdns-upstream=127.0.0.1  --dns64
+./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8 --use-private-rdns --private-rdns-upstream=127.0.0.1 --dns64
 ```
 
 You can also specify any number of custom DNS64 prefixes:
 ```shell
-./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8 --private-rdns-upstream=127.0.0.1 --dns64 --dns64-prefix=64:ffff:: --dns64-prefix=32:ffff::
+./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8 --use-private-rdns --private-rdns-upstream=127.0.0.1 --dns64 --dns64-prefix=64:ffff:: --dns64-prefix=32:ffff::
 ```
 
 Note that only the first specified prefix will be used for synthesis.
@@ -258,7 +260,7 @@ Note that only the first specified prefix will be used for synthesis.
 PTR queries for addresses within the specified ranges or the
 [Well-Known one][wkp] could only be answered with locally appropriate data, so
 dnsproxy will route those to the local upstream servers.  Those should be
-specified if DNS64 is enabled.
+specified and enabled if DNS64 is enabled.
 
 [wkp]: https://datatracker.ietf.org/doc/html/rfc6052#section-2.1
 
@@ -311,6 +313,35 @@ Sends queries for `*.host.com` to `1.1.1.1:53` except for `host.com` which is se
 ```
 ./dnsproxy -u 8.8.8.8:53 -u [/*.host.com/]1.1.1.1:53
 ```
+
+### Specifying private rDNS upstreams
+
+You can specify upstreams that will be used for reverse DNS requests of type PTR
+for private addresses.  Same applies to the authority requests of types SOA and
+NS.  The set of private addresses is defined by the `--private-rdns-upstream`,
+and the set from [RFC 6303][rfc6303] is used by default.
+
+The additional requirement to the domains specified for upstreams is to be
+`in-addr.arpa`, `ip6.arpa`, or its subdomain.  Addresses encoded in the domains
+should also be private.
+
+**Examples**
+
+Sends queries for `*.168.192.in-addr.arpa` to `192.168.1.2`, if requested by
+client from `192.168.0.0/16` subnet.  Other queries answered with `NXDOMAIN`.
+```shell
+./dnsproxy -l 192.168.1.1 -p 53 -u 8.8.8.8 --use-private-rdns --private-rdns-upstream="192.168.1.2" --private-subnets="192.168.0.0/16"
+```
+
+Sends queries for `*.in-addr.arpa` to `192.168.1.2`, `*.ip6.arpa` to `fe80::1`,
+if requested by client within the default [RFC 6303][rfc6303] subnet set.  Other
+queries answered with `NXDOMAIN`.
+```shell
+./dnsproxy -l 192.168.1.1 -p 53 -u 8.8.8.8 --use-private-rdns --private-rdns-upstream="192.168.1.2" --private-rdns-upstream="[/ip6.arpa/]fe80::1"
+```
+
+[rfc6303]: https://datatracker.ietf.org/doc/html/rfc6303
+
 
 ### EDNS Client Subnet
 

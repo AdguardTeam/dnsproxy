@@ -55,11 +55,6 @@ const (
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
 
-const (
-	// UnqualifiedNames is reserved name for "unqualified names only", ie names without dots
-	UnqualifiedNames = "unqualified_names"
-)
-
 // Proxy combines the proxy server state and configuration.  It must not be used
 // until initialized with [Proxy.Init].
 //

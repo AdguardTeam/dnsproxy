@@ -14,15 +14,17 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 )
 
-// UpstreamConfig is a wrapper for a list of default upstreams, a map of
-// reserved domains and corresponding upstreams.
+// UnqualifiedNames is a key for [UpstreamConfig.DomainReservedUpstreams] map to
+// specify the upstreams only used for resolving domain names consisting of a
+// single label.
+const UnqualifiedNames = "unqualified_names"
+
+// UpstreamConfig maps domain names to upstreams.
 type UpstreamConfig struct {
-	// DomainReservedUpstreams is a map of reserved domains and lists of
-	// corresponding upstreams.
+	// DomainReservedUpstreams maps the domains to the upstreams.
 	DomainReservedUpstreams map[string][]upstream.Upstream
 
-	// SpecifiedDomainUpstreams is a map of excluded domains and lists of
-	// corresponding upstreams.
+	// SpecifiedDomainUpstreams maps the specific domain names to the upstreams.
 	SpecifiedDomainUpstreams map[string][]upstream.Upstream
 
 	// SubdomainExclusions is set of domains with subdomains exclusions.
@@ -364,44 +366,49 @@ func ValidatePrivateConfig(uc *UpstreamConfig, privateSubnets netutil.SubnetSet)
 	return errors.Join(errs...)
 }
 
-// getUpstreamsForDomain looks for a domain in the reserved domains map and
-// returns a list of corresponding upstreams.  It returns default upstreams list
-// if the domain was not found in the map.  More specific domains take priority
-// over less specific domains.  For example, take a map that contains the
-// following keys: host.com and www.host.com.  If we are looking for domain
-// mail.host.com, this method will return value of host.com key.  If we are
-// looking for domain www.host.com, this method will return value of the
-// www.host.com key.  If a more specific domain value is nil, it means that the
-// domain was excluded and should be exchanged with default upstreams.
-func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Upstream) {
+// getUpstreamsForDomain returns the upstreams specified for resolving fqdn.  It
+// always returns the default set of upstreams if the domain is not reserved for
+// any other upstreams.
+//
+// More specific domains take priority over less specific ones.  For example, if
+// the upstreams specified for the following domains:
+//
+//   - host.com
+//   - www.host.com
+//
+// The request for mail.host.com will be resolved using the upstreams specified
+// for host.com.
+func (uc *UpstreamConfig) getUpstreamsForDomain(fqdn string) (ups []upstream.Upstream) {
 	if len(uc.DomainReservedUpstreams) == 0 {
 		return uc.Upstreams
 	}
 
-	dotsCount := strings.Count(host, ".")
-	if dotsCount < 2 {
-		host = UnqualifiedNames
-	} else {
-		host = strings.ToLower(host)
-		if uc.SubdomainExclusions.Has(host) {
-			return uc.lookupSubdomainExclusion(host)
-		}
-	}
-
-	for host != "" {
-		var ok bool
-		if ups, ok = uc.lookupUpstreams(host); ok {
+	var ok bool
+	fqdn = strings.ToLower(fqdn)
+	if strings.Count(fqdn, ".") < 2 {
+		ups, ok = uc.lookupUpstreams(fqdn)
+		if ok {
 			return ups
 		}
 
-		_, host, _ = strings.Cut(host, ".")
+		fqdn = UnqualifiedNames
+	} else if uc.SubdomainExclusions.Has(fqdn) {
+		return uc.lookupSubdomainExclusion(fqdn)
+	}
+
+	for fqdn != "" {
+		if ups, ok = uc.lookupUpstreams(fqdn); ok {
+			return ups
+		}
+
+		_, fqdn, _ = strings.Cut(fqdn, ".")
 	}
 
 	return uc.Upstreams
 }
 
 // getUpstreamsForDS is like [getUpstreamsForDomain], but intended for DS
-// queries only, so that it matches the host without the first label.
+// queries only, so that it matches fqdn without the first label.
 //
 // A DS RRset SHOULD be present at a delegation point when the child zone is
 // signed.  The DS RRset MAY contain multiple records, each referencing a public
@@ -409,13 +416,13 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(host string) (ups []upstream.Ups
 // in a zone MUST be signed, and DS RRsets MUST NOT appear at a zone's apex.
 //
 // See https://datatracker.ietf.org/doc/html/rfc4035#section-2.4
-func (uc *UpstreamConfig) getUpstreamsForDS(host string) (ups []upstream.Upstream) {
-	_, host, found := strings.Cut(host, ".")
-	if !found {
+func (uc *UpstreamConfig) getUpstreamsForDS(fqdn string) (ups []upstream.Upstream) {
+	_, fqdn, _ = strings.Cut(fqdn, ".")
+	if fqdn == "" {
 		return uc.Upstreams
 	}
 
-	return uc.getUpstreamsForDomain(host)
+	return uc.getUpstreamsForDomain(fqdn)
 }
 
 // lookupSubdomainExclusion returns upstreams for the host from subdomain
@@ -436,7 +443,7 @@ func (uc *UpstreamConfig) lookupSubdomainExclusion(host string) (u []upstream.Up
 	return uc.Upstreams
 }
 
-// lookupUpstreams returns upstreams for a domain name.  Returns default
+// lookupUpstreams returns upstreams for a domain name.  It returns default
 // upstream list for domain name excluded by domain reserved upstreams.
 func (uc *UpstreamConfig) lookupUpstreams(name string) (ups []upstream.Upstream, ok bool) {
 	ups, ok = uc.DomainReservedUpstreams[name]

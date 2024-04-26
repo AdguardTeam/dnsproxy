@@ -284,34 +284,76 @@ Run a DNS proxy with two upstreams, min-TTL set to 10 minutes, fastest address d
 
 ### Specifying upstreams for domains
 
-You can specify upstreams that will be used for a specific domain(s). We use the dnsmasq-like syntax (see `--server` description [here](http://www.thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html)).
+You can specify upstreams that will be used for a specific domain(s). We use the
+dnsmasq-like syntax, decorating domains with brackets (see `--server`
+[description][server-description]).
 
 **Syntax:** `[/[domain1][/../domainN]/]upstreamString`
 
-Where `upstreamString` is one or many upstreams separated by space (e.g. `1.1.1.1` or `1.1.1.1 2.2.2.2`).
+Where `upstreamString` is one or many upstreams separated by space (e.g.
+`1.1.1.1` or `1.1.1.1 2.2.2.2`).
 
-If one or more domains are specified, that upstream (`upstreamString`) is used only for those domains. Usually, it is used for private nameservers. For instance, if you have a nameserver on your network which deals with `xxx.internal.local` at `192.168.0.1` then you can specify `[/internal.local/]192.168.0.1`, and dnsproxy will send all queries to that nameserver. Everything else will be sent to the default upstreams (which are mandatory!).
+If one or more domains are specified, that upstream (`upstreamString`) is used
+only for those domains. Usually, it is used for private nameservers. For
+instance, if you have a nameserver on your network which deals with
+`xxx.internal.local` at `192.168.0.1` then you can specify
+`[/internal.local/]192.168.0.1`, and dnsproxy will send all queries to that
+nameserver. Everything else will be sent to the default upstreams (which are
+mandatory!).
 
-1. An empty domain specification, // has the special meaning of "unqualified names only" ie names without any dots in them.
-2. More specific domains take precedence over less specific domains, so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send queries for *.host.com to 1.2.3.4, except *.www.host.com, which will go to 2.3.4.5
-3. The special server address `#` means, "use the standard servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for \*.host.com to 1.2.3.4, except \*.www.host.com which will be forwarded as usual.
-4. The wildcard `*` has special meaning of "any sub-domain", so: `--upstream=[/*.host.com/]1.2.3.4` will send queries for \*.host.com to 1.2.3.4, but host.com will be forwarded to default upstreams.
+1. An empty domain specification, `//` has the special meaning of "unqualified
+   names only", which will be used to resolve names with a single label in them,
+   or with exactly two labels in case of `DS` requests.
+2. More specific domains take precedence over less specific domains, so:
+   `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send
+   queries for `*.host.com` to `1.2.3.4`, except `*.www.host.com`, which will go
+   to `2.3.4.5`.
+3. The special server address `#` means, "use the common servers", so:
+   `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send
+   queries for `*.host.com` to `1.2.3.4`, except `*.www.host.com` which will be
+   forwarded as usual.
+4. The wildcard `*` has special meaning of "any sub-domain", so:
+   `--upstream=[/*.host.com/]1.2.3.4` will send queries for `*.host.com` to
+   `1.2.3.4`, but `host.com` will be forwarded to default upstreams.
 
 **Examples**
 
-Sends queries for `*.local` domains to `192.168.0.1:53`. Other queries are sent to `8.8.8.8:53`.
-```
-./dnsproxy -u 8.8.8.8:53 -u [/local/]192.168.0.1:53
+Sends requests for `*.local` domains to `192.168.0.1:53`. Other requests are
+sent to `8.8.8.8:53`:
+
+```sh
+./dnsproxy\
+    -u "8.8.8.8:53"\
+    -u "[/local/]192.168.0.1:53"
 ```
 
-Sends queries for `*.host.com` to `1.1.1.1:53` except for `*.maps.host.com` which are sent to `8.8.8.8:53` (along with other queries).
-```
-./dnsproxy -u 8.8.8.8:53 -u [/host.com/]1.1.1.1:53 -u [/maps.host.com/]#
+Sends requests for `*.host.com` to `1.1.1.1:53` except for `*.maps.host.com`
+which are sent to `8.8.8.8:53` (along with other requests):
+
+```sh
+./dnsproxy\
+    -u "8.8.8.8:53"\
+    -u "[/host.com/]1.1.1.1:53"\
+    -u "[/maps.host.com/]#"
 ```
 
-Sends queries for `*.host.com` to `1.1.1.1:53` except for `host.com` which is sent to `8.8.8.8:53` (along with other queries).
+Sends requests for `*.host.com` to `1.1.1.1:53` except for `host.com` which is
+sent to `8.8.8.8:53` (along with other requests):
+
+```sh
+./dnsproxy\
+    -u "8.8.8.8:53"
+    -u "[/*.host.com/]1.1.1.1:53"
 ```
-./dnsproxy -u 8.8.8.8:53 -u [/*.host.com/]1.1.1.1:53
+
+Sends requests for `com` (and its subdomains) to `1.2.3.4:53`, requests for
+other top-level domains to `1.1.1.1:53`, and all other requests to `8.8.8.8:53`:
+
+```sh
+./dnsproxy\
+    -u "8.8.8.8:53"\
+    -u "[//]1.1.1.1:53"\
+    -u "[/com/]1.2.3.4:53"
 ```
 
 ### Specifying private rDNS upstreams
@@ -328,19 +370,32 @@ should also be private.
 **Examples**
 
 Sends queries for `*.168.192.in-addr.arpa` to `192.168.1.2`, if requested by
-client from `192.168.0.0/16` subnet.  Other queries answered with `NXDOMAIN`.
-```shell
-./dnsproxy -l 192.168.1.1 -p 53 -u 8.8.8.8 --use-private-rdns --private-rdns-upstream="192.168.1.2" --private-subnets="192.168.0.0/16"
+client from `192.168.0.0/16` subnet.  Other queries answered with `NXDOMAIN`:
+
+```sh
+./dnsproxy\
+    -l "0.0.0.0"\
+    -u "8.8.8.8"\
+    --use-private-rdns\
+    --private-subnets="192.168.0.0/16"
+    --private-rdns-upstream="192.168.1.2"\
 ```
 
 Sends queries for `*.in-addr.arpa` to `192.168.1.2`, `*.ip6.arpa` to `fe80::1`,
 if requested by client within the default [RFC 6303][rfc6303] subnet set.  Other
-queries answered with `NXDOMAIN`.
-```shell
-./dnsproxy -l 192.168.1.1 -p 53 -u 8.8.8.8 --use-private-rdns --private-rdns-upstream="192.168.1.2" --private-rdns-upstream="[/ip6.arpa/]fe80::1"
+queries answered with `NXDOMAIN`:
+
+```sh
+./dnsproxy\
+    -l "0.0.0.0"\
+    -u 8.8.8.8\
+    --use-private-rdns\
+    --private-rdns-upstream="192.168.1.2"\
+    --private-rdns-upstream="[/ip6.arpa/]fe80::1"
 ```
 
 [rfc6303]: https://datatracker.ietf.org/doc/html/rfc6303
+[server-description]: http://www.thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html
 
 
 ### EDNS Client Subnet

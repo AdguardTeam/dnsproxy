@@ -14,24 +14,53 @@ import (
 
 // TODO(e.burkov):  Call [testing.T.Parallel] in this file.
 
-func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
-	upstreams := []string{
-		"[/google.com/local/]4.3.2.1",
-		"[/www.google.com//]1.2.3.4",
-		"[/maps.google.com/]#",
-		"[/www.google.com/]tls://1.1.1.1",
-		"[/_acme-challenge.example.org/]#",
-		"[/example.com/]1.1.1.1 2.2.2.2 3.3.3.3",
-	}
+// Domains specifications and their questions used in tests of [UpstreamConfig].
+const (
+	unqualifiedFQDN = "unqualified."
+	unspecifiedFQDN = "unspecified.domain."
 
-	config, err := ParseUpstreamsConfig(
-		upstreams,
-		&upstream.Options{
-			InsecureSkipVerify: false,
-			Bootstrap:          nil,
-			Timeout:            1 * time.Second,
-		},
-	)
+	topLevelDomain = "example"
+	topLevelFQDN   = topLevelDomain + "."
+
+	firstLevelDomain = "name." + topLevelDomain
+	firstLevelFQDN   = firstLevelDomain + "."
+
+	subDomain = "sub." + firstLevelDomain
+	subFQDN   = subDomain + "."
+
+	generalDomain = "general." + firstLevelDomain
+	generalFQDN   = generalDomain + "."
+
+	wildcardDomain = "*." + firstLevelDomain
+	anotherSubFQDN = "another." + firstLevelDomain + "."
+)
+
+// Upstream URLs used in tests of [UpstreamConfig].
+const (
+	generalUpstream     = "tcp://general.upstream:53"
+	unqualifiedUpstream = "tcp://unqualified.upstream:53"
+	tldUpstream         = "tcp://tld.upstream:53"
+	domainUpstream      = "tcp://domain.upstream:53"
+	wildcardUpstream    = "tcp://wildcard.upstream:53"
+	subdomainUpstream   = "tcp://subdomain.upstream:53"
+)
+
+// testUpstreamConfigLines is the common set of upstream configurations used in
+// tests of [UpstreamConfig].
+var testUpstreamConfigLines = []string{
+	generalUpstream,
+	"[//]" + unqualifiedUpstream,
+	"[/" + topLevelDomain + "/]" + tldUpstream,
+	"[/" + firstLevelDomain + "/]" + domainUpstream,
+	"[/" + wildcardDomain + "/]" + wildcardUpstream,
+	"[/" + generalDomain + "/]#",
+	"[/" + subDomain + "/]" + subdomainUpstream,
+}
+
+func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
+	t.Parallel()
+
+	config, err := ParseUpstreamsConfig(testUpstreamConfigLines, nil)
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -39,59 +68,53 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 		in   string
 		want []string
 	}{{
-		name: "direct_match",
-		in:   "www.google.com.",
-		want: []string{"1.2.3.4:53", "tls://1.1.1.1:853"},
+		name: "unspecified",
+		in:   unspecifiedFQDN,
+		want: []string{generalUpstream},
 	}, {
-		name: "subdomain_match",
-		in:   "www2.google.com.",
-		want: []string{"4.3.2.1:53"},
+		name: "unqualified",
+		in:   unqualifiedFQDN,
+		want: []string{unqualifiedUpstream},
 	}, {
-		name: "second_subdomain_match",
-		in:   "internal.local.",
-		want: []string{"4.3.2.1:53"},
+		name: "tld",
+		in:   topLevelFQDN,
+		want: []string{tldUpstream},
 	}, {
-		name: "unqualified_match",
-		in:   "google.",
-		want: []string{"1.2.3.4:53"},
+		name: "unspecified_subdomain",
+		in:   unspecifiedFQDN + topLevelFQDN,
+		want: []string{tldUpstream},
 	}, {
-		name: "default",
-		in:   "_acme-challenge.example.org.",
-		want: []string{},
+		name: "domain",
+		in:   firstLevelFQDN,
+		want: []string{domainUpstream},
 	}, {
-		name: "another_default",
-		in:   "maps.google.com.",
-		want: []string{},
+		name: "wildcard",
+		in:   anotherSubFQDN,
+		want: []string{wildcardUpstream},
 	}, {
-		name: "multiple_reserved",
-		in:   "example.com.",
-		want: []string{"1.1.1.1:53", "2.2.2.2:53", "3.3.3.3:53"},
+		name: "general",
+		in:   generalFQDN,
+		want: []string{generalUpstream},
+	}, {
+		name: "subdomain",
+		in:   subFQDN,
+		want: []string{subdomainUpstream},
 	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ups := config.getUpstreamsForDomain(tc.in)
-			assertUpstreamsForDomain(t, ups, tc.want)
+			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
 
 func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
-	upstreams := []string{
-		"[/google.com/local/]4.3.2.1",
-		"[/www.google.com//]1.2.3.4",
-		"[/maps.google.com/]#",
-		"[/www.google.com/]tls://1.1.1.1",
-		"[/_acme-challenge.example.org/]#",
-	}
+	t.Parallel()
 
-	config, err := ParseUpstreamsConfig(
-		upstreams,
-		&upstream.Options{
-			InsecureSkipVerify: false,
-			Timeout:            1 * time.Second,
-		},
-	)
+	config, err := ParseUpstreamsConfig(testUpstreamConfigLines, nil)
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -99,57 +122,71 @@ func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 		in   string
 		want []string
 	}{{
-		name: "direct_match",
-		in:   "www.google.com.",
-		want: []string{"4.3.2.1:53"},
+		name: "unspecified",
+		in:   unspecifiedFQDN,
+		want: []string{unqualifiedUpstream},
 	}, {
-		name: "subdomain_match",
-		in:   "abc.www.google.com.",
-		want: []string{"1.2.3.4:53", "tls://1.1.1.1:853"},
+		name: "unqualified",
+		in:   unqualifiedFQDN,
+		want: []string{generalUpstream},
 	}, {
-		name: "unqualified_match",
-		in:   "internal.local.",
-		want: []string{"1.2.3.4:53"},
+		name: "tld",
+		in:   topLevelFQDN,
+		want: []string{generalUpstream},
 	}, {
-		name: "more_unqualified_match",
-		in:   "google.",
-		want: []string{"1.2.3.4:53"},
+		name: "unspecified_subdomain",
+		in:   unspecifiedFQDN + topLevelFQDN,
+		want: []string{tldUpstream},
 	}, {
-		name: "default",
-		in:   "_acme-challenge.example.org.",
-		want: []string{},
+		name: "domain",
+		in:   firstLevelFQDN,
+		want: []string{tldUpstream},
+	}, {
+		name: "wildcard",
+		in:   anotherSubFQDN,
+		want: []string{domainUpstream},
+	}, {
+		name: "general",
+		in:   "label." + generalFQDN,
+		want: []string{generalUpstream},
+	}, {
+		name: "subdomain",
+		in:   "label." + subFQDN,
+		want: []string{subdomainUpstream},
 	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ups := config.getUpstreamsForDS(tc.in)
-			assertUpstreamsForDomain(t, ups, tc.want)
+			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
 
 func TestUpstreamConfig_Validate(t *testing.T) {
 	testCases := []struct {
-		name            string
-		wantValidateErr error
-		in              []string
+		name    string
+		wantErr error
+		in      []string
 	}{{
-		name:            "empty",
-		wantValidateErr: upstream.ErrNoUpstreams,
-		in:              []string{},
+		name:    "empty",
+		wantErr: upstream.ErrNoUpstreams,
+		in:      []string{},
 	}, {
-		name:            "nil",
-		wantValidateErr: upstream.ErrNoUpstreams,
-		in:              nil,
+		name:    "nil",
+		wantErr: upstream.ErrNoUpstreams,
+		in:      nil,
 	}, {
-		name:            "valid",
-		wantValidateErr: nil,
+		name:    "valid",
+		wantErr: nil,
 		in: []string{
 			"udp://upstream.example:53",
 		},
 	}, {
-		name:            "no_default",
-		wantValidateErr: errors.Error("no default upstreams specified"),
+		name:    "no_default",
+		wantErr: errors.Error("no default upstreams specified"),
 		in: []string{
 			"[/domain.example/]udp://upstream.example:53",
 			"[/another.domain.example/]#",
@@ -161,7 +198,7 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 			c, err := ParseUpstreamsConfig(tc.in, nil)
 			require.NoError(t, err)
 
-			assert.ErrorIs(t, c.validate(), tc.wantValidateErr)
+			assert.ErrorIs(t, c.validate(), tc.wantErr)
 		})
 	}
 
@@ -312,7 +349,7 @@ func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ups := uconf.getUpstreamsForDomain(tc.in)
-			assertUpstreamsForDomain(t, ups, tc.want)
+			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
@@ -353,7 +390,7 @@ func TestGetUpstreamsForDomain_sub_wildcards(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ups := uconf.getUpstreamsForDomain(tc.in)
-			assertUpstreamsForDomain(t, ups, tc.want)
+			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
@@ -395,7 +432,7 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ups := uconf.getUpstreamsForDomain(tc.in)
-			assertUpstreamsForDomain(t, ups, tc.want)
+			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
@@ -434,13 +471,12 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 	}
 }
 
-// assertUpstreamsForDomain checks the addresses of the specified domain
-// upstreams and their number.
-func assertUpstreamsForDomain(tb testing.TB, ups []upstream.Upstream, want []string) {
+// assertUpstreamsAddrs checks the addresses of ups to exactly match want.
+func assertUpstreamsAddrs(tb testing.TB, ups []upstream.Upstream, want []string) {
 	tb.Helper()
 
 	require.Len(tb, ups, len(want))
 	for i, up := range ups {
-		assert.Equalf(tb, want[i], up.Address(), "bad upstream at index %d", i)
+		assert.Equalf(tb, want[i], up.Address(), "at index %d", i)
 	}
 }

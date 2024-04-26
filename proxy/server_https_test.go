@@ -438,7 +438,7 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 				return quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
 			},
 			TLSClientConfig:    tlsClientConfig,
-			QuicConfig:         &quic.Config{},
+			QUICConfig:         &quic.Config{},
 			DisableCompression: true,
 		}
 	} else {

@@ -338,11 +338,12 @@ which are sent to `8.8.8.8:53` (along with other requests):
 ```
 
 Sends requests for `*.host.com` to `1.1.1.1:53` except for `host.com` which is
-sent to `8.8.8.8:53` (along with other requests):
+sent to `9.9.9.10:53`, and all other requests are sent to `8.8.8.8:53`:
 
 ```sh
 ./dnsproxy\
-    -u "8.8.8.8:53"
+    -u "8.8.8.8:53"\
+    -u "[/host.com/]9.9.9.10:53"\
     -u "[/*.host.com/]1.1.1.1:53"
 ```
 

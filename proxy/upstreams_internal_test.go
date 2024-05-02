@@ -22,8 +22,9 @@ const (
 	topLevelDomain = "example"
 	topLevelFQDN   = topLevelDomain + "."
 
-	firstLevelDomain = "name." + topLevelDomain
-	firstLevelFQDN   = firstLevelDomain + "."
+	firstLevelDomain         = "name." + topLevelDomain
+	firstLevelFQDN           = firstLevelDomain + "."
+	wildcardFirstLevelDomain = "*." + topLevelDomain
 
 	subDomain = "sub." + firstLevelDomain
 	subFQDN   = subDomain + "."
@@ -51,6 +52,7 @@ var testUpstreamConfigLines = []string{
 	generalUpstream,
 	"[//]" + unqualifiedUpstream,
 	"[/" + topLevelDomain + "/]" + tldUpstream,
+	"[/" + wildcardFirstLevelDomain + "/]#",
 	"[/" + firstLevelDomain + "/]" + domainUpstream,
 	"[/" + wildcardDomain + "/]" + wildcardUpstream,
 	"[/" + generalDomain + "/]#",
@@ -82,7 +84,7 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 	}, {
 		name: "unspecified_subdomain",
 		in:   unspecifiedFQDN + topLevelFQDN,
-		want: []string{tldUpstream},
+		want: []string{generalUpstream},
 	}, {
 		name: "domain",
 		in:   firstLevelFQDN,
@@ -136,7 +138,7 @@ func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 	}, {
 		name: "unspecified_subdomain",
 		in:   unspecifiedFQDN + topLevelFQDN,
-		want: []string{tldUpstream},
+		want: []string{generalUpstream},
 	}, {
 		name: "domain",
 		in:   firstLevelFQDN,

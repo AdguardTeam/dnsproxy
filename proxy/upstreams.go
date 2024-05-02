@@ -383,17 +383,18 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(fqdn string) (ups []upstream.Ups
 		return uc.Upstreams
 	}
 
-	var ok bool
 	fqdn = strings.ToLower(fqdn)
-	if strings.Count(fqdn, ".") < 2 {
-		ups, ok = uc.lookupUpstreams(fqdn)
-		if ok {
-			return ups
-		}
-
-		fqdn = UnqualifiedNames
-	} else if uc.SubdomainExclusions.Has(fqdn) {
+	if uc.SubdomainExclusions.Has(fqdn) {
 		return uc.lookupSubdomainExclusion(fqdn)
+	}
+
+	ups, ok := uc.lookupUpstreams(fqdn)
+	if ok {
+		return ups
+	}
+
+	if _, fqdn, _ = strings.Cut(fqdn, "."); fqdn == "" {
+		fqdn = UnqualifiedNames
 	}
 
 	for fqdn != "" {

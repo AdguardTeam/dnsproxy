@@ -8,7 +8,7 @@
 # Makefile.  Bump this number every time a significant change is made to
 # this Makefile.
 #
-# AdGuard-Project-Version: 4
+# AdGuard-Project-Version: 5
 
 # Don't name these macros "GO" etc., because GNU Make apparently makes
 # them exported environment variables with the literal value of
@@ -23,7 +23,7 @@ VERBOSE.MACRO = $${VERBOSE:-0}
 BRANCH = $$( git rev-parse --abbrev-ref HEAD )
 DIST_DIR = build
 GOAMD64 = v1
-GOPROXY = https://goproxy.cn|https://proxy.golang.org|direct
+GOPROXY = https://proxy.golang.org|direct
 GOTOOLCHAIN = go1.22.3
 OUT = dnsproxy
 RACE = 0

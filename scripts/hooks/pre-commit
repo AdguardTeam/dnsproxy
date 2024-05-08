@@ -6,7 +6,7 @@ set -e -f -u
 # Bump this number every time a significant change is made to this
 # script.
 #
-# AdGuard-Project-Version: 1
+# AdGuard-Project-Version: 2
 
 # TODO(a.garipov): Add pre-merge-commit.
 
@@ -82,12 +82,12 @@ fi
 verbose="${VERBOSE:-0}"
 readonly verbose
 
-if [ "$( git diff --cached --name-only -- '*.go' '*.mod' '*.sh' 'Makefile' )" ]
-then
-	make VERBOSE="$verbose" go-os-check go-lint go-test
-fi
-
 if [ "$( git diff --cached --name-only -- '*.md' '*.yaml' '*.yml' )" ]
 then
 	make VERBOSE="$verbose" txt-lint
+fi
+
+if [ "$( git diff --cached --name-only -- '*.go' '*.mod' '*.sh' 'Makefile' )" ]
+then
+	make VERBOSE="$verbose" go-os-check go-lint go-test
 fi

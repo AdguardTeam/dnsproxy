@@ -676,7 +676,13 @@ func createServerTLSConfig(
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
-	template.DNSNames = append(template.DNSNames, tlsServerName)
+
+	ipAddress := net.ParseIP(tlsServerName)
+	if ipAddress != nil {
+		template.IPAddresses = append(template.IPAddresses, ipAddress)
+	} else {
+		template.DNSNames = append(template.DNSNames, tlsServerName)
+	}
 
 	derBytes, err := x509.CreateCertificate(
 		rand.Reader,

@@ -1,6 +1,6 @@
 module github.com/AdguardTeam/dnsproxy
 
-go 1.22.2
+go 1.22.3
 
 require (
 	github.com/AdguardTeam/golibs v0.23.1

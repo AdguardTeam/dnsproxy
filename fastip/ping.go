@@ -15,10 +15,44 @@ const pingTCPTimeout = 4 * time.Second
 type pingResult struct {
 	// addrPort is the address-port pair the result is related to.
 	addrPort netip.AddrPort
+
 	// latency is the duration of dialing process in milliseconds.
 	latency uint
+
 	// success is true when the dialing succeeded.
 	success bool
+}
+
+// schedulePings returns the result with the fastest IP address from the cache,
+// if it's found, and starts pinging other IPs which are not cached or outdated.
+// Returns scheduled flag which indicates that some goroutines have been
+// scheduled.
+func (f *FastestAddr) schedulePings(
+	resCh chan *pingResult,
+	ips []netip.Addr,
+	host string,
+) (pr *pingResult, scheduled bool) {
+	for _, ip := range ips {
+		cached := f.cacheFind(ip)
+		if cached == nil {
+			scheduled = true
+			for _, port := range f.pingPorts {
+				go f.pingDoTCP(host, netip.AddrPortFrom(ip, uint16(port)), resCh)
+			}
+
+			continue
+		}
+
+		if cached.status == 0 && (pr == nil || cached.latencyMsec < pr.latency) {
+			pr = &pingResult{
+				addrPort: netip.AddrPortFrom(ip, 0),
+				latency:  cached.latencyMsec,
+				success:  true,
+			}
+		}
+	}
+
+	return pr, scheduled
 }
 
 // pingAll pings all ips concurrently and returns as soon as the fastest one is
@@ -35,82 +69,58 @@ func (f *FastestAddr) pingAll(host string, ips []netip.Addr) (pr *pingResult) {
 		}
 	}
 
-	portN := len(f.pingPorts)
-	resCh := make(chan *pingResult, ipN*portN)
-	scheduled := 0
-
-	// Find the fastest cached IP address and start pinging others.
-	for _, ip := range ips {
-		cached := f.cacheFind(ip)
-		if cached == nil {
-			for _, port := range f.pingPorts {
-				go f.pingDoTCP(host, netip.AddrPortFrom(ip, uint16(port)), resCh)
-			}
-			scheduled += portN
-
-			continue
-		} else if cached.status != 0 {
-			continue
-		}
-
-		if pr == nil || cached.latencyMsec < pr.latency {
-			pr = &pingResult{
-				addrPort: netip.AddrPortFrom(ip, 0),
-				latency:  cached.latencyMsec,
-				success:  true,
-			}
-		}
-	}
-
-	cached := pr != nil
-	if scheduled == 0 {
-		if cached {
-			log.Debug("pingAll: %s: return cached response: %s", host, pr.addrPort)
+	resCh := make(chan *pingResult, ipN*len(f.pingPorts))
+	pr, scheduled := f.schedulePings(resCh, ips, host)
+	if !scheduled {
+		if pr != nil {
+			log.Debug("fastip: pingAll: %s: return cached response: %s", host, pr.addrPort)
 		} else {
-			log.Debug("pingAll: %s: returning nothing", host)
+			log.Debug("fastip: pingAll: %s: returning nothing", host)
 		}
 
 		return pr
 	}
 
-	// Wait for the first successful ping result or the timeout.
-	for i, after := 0, time.After(f.PingWaitTimeout); i < scheduled; i++ {
+	res := f.firstSuccessRes(resCh, host)
+	if res == nil {
+		// In case of timeout return cached or nil.
+		return pr
+	}
+
+	if pr == nil || res.latency <= pr.latency {
+		// Cache wasn't found or is worse than res.
+		return res
+	}
+
+	// Return cached result.
+	return pr
+}
+
+// firstSuccessRes waits and returns the first successful ping result or nil in
+// case of timeout.
+func (f *FastestAddr) firstSuccessRes(resCh chan *pingResult, host string) (res *pingResult) {
+	after := time.After(f.PingWaitTimeout)
+	for {
 		select {
-		case res := <-resCh:
+		case res = <-resCh:
 			log.Debug(
-				"pingAll: %s: got result for %s status %v",
+				"fastip: pingAll: %s: got result for %s status %v",
 				host,
 				res.addrPort,
 				res.success,
 			)
+
 			if !res.success {
 				continue
 			}
 
-			if !cached || pr.latency >= res.latency {
-				pr = res
-			}
-
-			return pr
+			return res
 		case <-after:
-			if cached {
-				log.Debug(
-					"pingAll: %s: pinging timed out, returning cached: %s",
-					host,
-					pr.addrPort,
-				)
-			} else {
-				log.Debug(
-					"pingAll: %s: ping checks timed out, returning nothing",
-					host,
-				)
-			}
+			log.Debug("fastip: pingAll: %s: pinging timed out", host)
 
-			return pr
+			return nil
 		}
 	}
-
-	return pr
 }
 
 // pingDoTCP sends the result of dialing the specified address into resCh.
@@ -123,8 +133,8 @@ func (f *FastestAddr) pingDoTCP(host string, addrPort netip.AddrPort, resCh chan
 
 	success := err == nil
 	if success {
-		if cerr := conn.Close(); cerr != nil {
-			log.Debug("closing tcp connection: %s", cerr)
+		if cErr := conn.Close(); cErr != nil {
+			log.Debug("fastip: closing tcp connection: %s", cErr)
 		}
 	}
 
@@ -138,11 +148,11 @@ func (f *FastestAddr) pingDoTCP(host string, addrPort netip.AddrPort, resCh chan
 
 	addr := addrPort.Addr().Unmap()
 	if success {
-		log.Debug("pingDoTCP: %s: elapsed %s ms on %s", host, elapsed, addrPort)
+		log.Debug("fastip: pingDoTCP: %s: elapsed %s ms on %s", host, elapsed, addrPort)
 		f.cacheAddSuccessful(addr, latency)
 	} else {
 		log.Debug(
-			"pingDoTCP: %s: failed to connect to %s, elapsed %s ms: %v",
+			"fastip: pingDoTCP: %s: failed to connect to %s, elapsed %s ms: %v",
 			host,
 			addrPort,
 			elapsed,

@@ -11,8 +11,7 @@ require (
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/miekg/dns v1.1.58
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	// TODO(a.garipov): Update to a tag when released.
-	github.com/quic-go/quic-go v0.42.1-0.20240424141022-12aa63824c7f
+	github.com/quic-go/quic-go v0.43.1
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/exp v0.0.0-20240409090435-93d18d7e34b8
 	golang.org/x/net v0.24.0

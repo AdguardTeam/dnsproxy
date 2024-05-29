@@ -8,6 +8,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
@@ -18,11 +19,15 @@ type lookupResult struct {
 	err  error
 }
 
-// lookupIPAddr resolves the specified host IP addresses.
+// lookupIPAddr resolves the specified host IP addresses.  It is intended to be
+// used as a goroutine.
 func (p *Proxy) lookupIPAddr(host string, qtype uint16, ch chan *lookupResult) {
+	defer log.OnPanic("Proxy.lookupIPAddr")
+
 	req := (&dns.Msg{}).SetQuestion(host, qtype)
 
-	d := p.newDNSContext(ProtoUDP, req)
+	// TODO(d.kolyshev): Investigate why the client address is not defined.
+	d := p.newDNSContext(ProtoUDP, req, netip.AddrPort{})
 	err := p.Resolve(d)
 	ch <- &lookupResult{d.Res, err}
 }
@@ -36,7 +41,7 @@ var _ upstream.Resolver = (*Proxy)(nil)
 
 // LookupNetIP implements the [upstream.Resolver] interface for *Proxy.  It
 // resolves the specified host IP addresses by sending two DNS queries (A and
-// AAAA) in parallel. It returns both results for those two queries.
+// AAAA) in parallel.  It returns both results for those two queries.
 func (p *Proxy) LookupNetIP(
 	_ context.Context,
 	_ string,
@@ -61,12 +66,7 @@ func (p *Proxy) LookupNetIP(
 			continue
 		}
 
-		for _, ans := range result.resp.Answer {
-			a := proxyutil.IPFromRR(ans)
-			if a != (netip.Addr{}) {
-				addrs = append(addrs, a)
-			}
-		}
+		addrs = appendAnswerAddrs(addrs, result.resp.Answer)
 	}
 
 	if len(addrs) == 0 && len(errs) != 0 {
@@ -80,4 +80,16 @@ func (p *Proxy) LookupNetIP(
 	}
 
 	return addrs, nil
+}
+
+// appendAnswerAddrs returns addrs with addresses appended from the given ans.
+func appendAnswerAddrs(addrs []netip.Addr, ans []dns.RR) (res []netip.Addr) {
+	for _, ansRR := range ans {
+		a := proxyutil.IPFromRR(ansRR)
+		if a != (netip.Addr{}) {
+			addrs = append(addrs, a)
+		}
+	}
+
+	return addrs
 }

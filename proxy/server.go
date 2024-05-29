@@ -13,9 +13,9 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-// startListeners configures and starts listener loops
-func (p *Proxy) startListeners(ctx context.Context) error {
-	err := p.createUDPListeners(ctx)
+// configureListeners configures listeners.
+func (p *Proxy) configureListeners(ctx context.Context) (err error) {
+	err = p.createUDPListeners(ctx)
 	if err != nil {
 		return err
 	}
@@ -45,6 +45,11 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 		return err
 	}
 
+	return nil
+}
+
+// startListeners starts listener loops.
+func (p *Proxy) startListeners() {
 	for _, l := range p.udpListen {
 		go p.udpPacketLoop(l, p.requestsSema)
 	}
@@ -76,8 +81,6 @@ func (p *Proxy) startListeners(ctx context.Context) error {
 	for _, l := range p.dnsCryptTCPListen {
 		go func(l net.Listener) { _ = p.dnsCryptServer.ServeTCP(l) }(l)
 	}
-
-	return nil
 }
 
 // handleDNSRequest processes the context.  The only error it returns is the one

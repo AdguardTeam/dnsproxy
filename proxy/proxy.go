@@ -340,6 +340,14 @@ func (p *Proxy) validateBasicAuth() (err error) {
 	return nil
 }
 
+// Returns true if proxy is started.  It is safe for concurrent use.
+func (p *Proxy) isStarted() (ok bool) {
+	p.RLock()
+	defer p.RUnlock()
+
+	return p.started
+}
+
 // type check
 var _ service.Interface = (*Proxy)(nil)
 
@@ -360,11 +368,12 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 		return err
 	}
 
-	err = p.startListeners(ctx)
+	err = p.configureListeners(ctx)
 	if err != nil {
-		return fmt.Errorf("starting listeners: %w", err)
+		return fmt.Errorf("configuring listeners: %w", err)
 	}
 
+	p.startListeners()
 	p.started = true
 
 	return nil
@@ -458,97 +467,80 @@ func (p *Proxy) Shutdown(_ context.Context) (err error) {
 	return nil
 }
 
-// Addrs returns all listen addresses for the specified proto or nil if the proxy does not listen to it.
-// proto must be "tcp", "tls", "https", "quic", or "udp"
-func (p *Proxy) Addrs(proto Proto) []net.Addr {
-	p.RLock()
-	defer p.RUnlock()
+// addrFunc provides the address from the given A.
+type addrFunc[A any] func(l A) (addr net.Addr)
 
-	var addrs []net.Addr
-
-	switch proto {
-	case ProtoTCP:
-		for _, l := range p.tcpListen {
-			addrs = append(addrs, l.Addr())
-		}
-
-	case ProtoTLS:
-		for _, l := range p.tlsListen {
-			addrs = append(addrs, l.Addr())
-		}
-
-	case ProtoHTTPS:
-		for _, l := range p.httpsListen {
-			addrs = append(addrs, l.Addr())
-		}
-
-	case ProtoUDP:
-		for _, l := range p.udpListen {
-			addrs = append(addrs, l.LocalAddr())
-		}
-
-	case ProtoQUIC:
-		for _, l := range p.quicListen {
-			addrs = append(addrs, l.Addr())
-		}
-
-	case ProtoDNSCrypt:
-		// Using only UDP addrs here
-		// TODO: to do it better we should either do ProtoDNSCryptTCP/ProtoDNSCryptUDP
-		// or we should change the configuration so that it was not possible to
-		// set different ports for TCP/UDP listeners.
-		for _, l := range p.dnsCryptUDPListen {
-			addrs = append(addrs, l.LocalAddr())
-		}
-
-	default:
-		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
+// collectAddrs returns the slice of network addresses of the given listeners
+// using the given addrFunc.
+func collectAddrs[A any](listeners []A, af addrFunc[A]) (addrs []net.Addr) {
+	for _, l := range listeners {
+		addrs = append(addrs, af(l))
 	}
 
 	return addrs
 }
 
-// Addr returns the first listen address for the specified proto or null if the proxy does not listen to it
-// proto must be "tcp", "tls", "https", "quic", or "udp"
-func (p *Proxy) Addr(proto Proto) net.Addr {
+// Addrs returns all listen addresses for the specified proto or nil if the
+// proxy does not listen to it.  proto must be one of [Proto]: [ProtoTCP],
+// [ProtoUDP], [ProtoTLS], [ProtoHTTPS], [ProtoQUIC], or [ProtoDNSCrypt].
+func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 	p.RLock()
 	defer p.RUnlock()
+
 	switch proto {
 	case ProtoTCP:
-		if len(p.tcpListen) == 0 {
-			return nil
-		}
-		return p.tcpListen[0].Addr()
-
+		return collectAddrs(p.tcpListen, net.Listener.Addr)
 	case ProtoTLS:
-		if len(p.tlsListen) == 0 {
-			return nil
-		}
-		return p.tlsListen[0].Addr()
-
+		return collectAddrs(p.tlsListen, net.Listener.Addr)
 	case ProtoHTTPS:
-		if len(p.httpsListen) == 0 {
-			return nil
-		}
-		return p.httpsListen[0].Addr()
-
+		return collectAddrs(p.httpsListen, net.Listener.Addr)
 	case ProtoUDP:
-		if len(p.udpListen) == 0 {
-			return nil
-		}
-		return p.udpListen[0].LocalAddr()
-
+		return collectAddrs(p.udpListen, (*net.UDPConn).LocalAddr)
 	case ProtoQUIC:
-		if len(p.quicListen) == 0 {
-			return nil
-		}
-		return p.quicListen[0].Addr()
-
+		return collectAddrs(p.quicListen, (*quic.EarlyListener).Addr)
 	case ProtoDNSCrypt:
-		if len(p.dnsCryptUDPListen) == 0 {
-			return nil
-		}
-		return p.dnsCryptUDPListen[0].LocalAddr()
+		// Using only UDP addrs here
+		//
+		// TODO(ameshkov): To do it better we should either do
+		// ProtoDNSCryptTCP/ProtoDNSCryptUDP or we should change the
+		// configuration so that it was not possible to set different ports for
+		// TCP/UDP listeners.
+		return collectAddrs(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
+	default:
+		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
+	}
+}
+
+// firstAddr returns the network address of the first listener in the given
+// listeners or nil using the given addrFunc.
+func firstAddr[A any](listeners []A, af addrFunc[A]) (addr net.Addr) {
+	if len(listeners) == 0 {
+		return nil
+	}
+
+	return af(listeners[0])
+}
+
+// Addr returns the first listen address for the specified proto or nil if the
+// proxy does not listen to it.  proto must be one of [Proto]: [ProtoTCP],
+// [ProtoUDP], [ProtoTLS], [ProtoHTTPS], [ProtoQUIC], or [ProtoDNSCrypt].
+func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
+	p.RLock()
+	defer p.RUnlock()
+
+	switch proto {
+	case ProtoTCP:
+		return firstAddr(p.tcpListen, net.Listener.Addr)
+	case ProtoTLS:
+		return firstAddr(p.tlsListen, net.Listener.Addr)
+	case ProtoHTTPS:
+		return firstAddr(p.httpsListen, net.Listener.Addr)
+	case ProtoUDP:
+		return firstAddr(p.udpListen, (*net.UDPConn).LocalAddr)
+	case ProtoQUIC:
+		return firstAddr(p.quicListen, (*quic.EarlyListener).Addr)
+	case ProtoDNSCrypt:
+		return firstAddr(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
 	default:
 		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
 	}

@@ -90,12 +90,62 @@ func (p *Proxy) createHTTPSListeners() (err error) {
 	return nil
 }
 
+// newDoHReq returns new DNS request parsed from the given HTTP request.  In
+// case of invalid request returns nil and the suitable status code for an HTTP
+// error response.
+func newDoHReq(r *http.Request) (req *dns.Msg, statusCode int) {
+	var buf []byte
+	var err error
+
+	switch r.Method {
+	case http.MethodGet:
+		dnsParam := r.URL.Query().Get("dns")
+		buf, err = base64.RawURLEncoding.DecodeString(dnsParam)
+		if len(buf) == 0 || err != nil {
+			log.Debug("dnsproxy: parsing dns request from get param %q: %v", dnsParam, err)
+
+			return nil, http.StatusBadRequest
+		}
+	case http.MethodPost:
+		contentType := r.Header.Get(httphdr.ContentType)
+		if contentType != "application/dns-message" {
+			log.Debug("dnsproxy: unsupported media type %q", contentType)
+
+			return nil, http.StatusUnsupportedMediaType
+		}
+
+		// TODO(d.kolyshev): Limit reader.
+		buf, err = io.ReadAll(r.Body)
+		if err != nil {
+			log.Debug("dnsproxy: reading http request body: %s", err)
+
+			return nil, http.StatusBadRequest
+		}
+
+		defer log.OnCloserError(r.Body, log.DEBUG)
+	default:
+		log.Debug("dnsproxy: bad http method %q", r.Method)
+
+		return nil, http.StatusMethodNotAllowed
+	}
+
+	req = &dns.Msg{}
+	if err = req.Unpack(buf); err != nil {
+		log.Debug("dnsproxy: unpacking http msg: %s", err)
+
+		return nil, http.StatusBadRequest
+	}
+
+	return req, http.StatusOK
+}
+
 // ServeHTTP is the http.Handler implementation that handles DoH queries.
+//
 // Here is what it returns:
 //
-//   - http.StatusBadRequest if there is no DNS request data;
+//   - http.StatusBadRequest if there is no DNS request data,
 //   - http.StatusUnsupportedMediaType if request content type is not
-//     "application/dns-message";
+//     "application/dns-message",
 //   - http.StatusMethodNotAllowed if request method is not GET or POST.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Debug("dnsproxy: incoming https request on %s", r.URL)
@@ -109,64 +159,30 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var buf []byte
-
-	switch r.Method {
-	case http.MethodGet:
-		dnsParam := r.URL.Query().Get("dns")
-		buf, err = base64.RawURLEncoding.DecodeString(dnsParam)
-		if len(buf) == 0 || err != nil {
-			log.Debug("dnsproxy: parsing dns request from get param %q: %v", dnsParam, err)
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-
-			return
-		}
-	case http.MethodPost:
-		contentType := r.Header.Get("Content-Type")
-		if contentType != "application/dns-message" {
-			log.Debug("dnsproxy: unsupported media type %q", contentType)
-			http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-
-			return
-		}
-
-		buf, err = io.ReadAll(r.Body)
-		if err != nil {
-			log.Debug("dnsproxy: reading http request body: %s", err)
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-
-			return
-		}
-
-		defer log.OnCloserError(r.Body, log.DEBUG)
-	default:
-		log.Debug("dnsproxy: bad http method %q", r.Method)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+	req, statusCode := newDoHReq(r)
+	if req == nil {
+		http.Error(w, http.StatusText(statusCode), statusCode)
 
 		return
 	}
-
-	req := &dns.Msg{}
-	if err = req.Unpack(buf); err != nil {
-		log.Debug("dnsproxy: unpacking http msg: %s", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-
-		return
-	}
-
-	d := p.newDNSContext(ProtoHTTPS, req)
-	d.Addr = raddr
-	d.HTTPRequest = r
-	d.HTTPResponseWriter = w
 
 	if prx.IsValid() {
 		log.Debug("dnsproxy: request came from proxy server %s", prx)
 
 		if !p.TrustedProxies.Contains(prx.Addr()) {
 			log.Debug("dnsproxy: proxy %s is not trusted, using original remote addr", prx)
-			d.Addr = prx
+
+			// So the address of the proxy itself is used, as the remote address
+			// parsed from headers cannot be trusted.
+			//
+			// TODO(e.burkov): Do not parse headers in this case.
+			raddr = prx
 		}
 	}
+
+	d := p.newDNSContext(ProtoHTTPS, req, raddr)
+	d.HTTPRequest = r
+	d.HTTPResponseWriter = w
 
 	err = p.handleDNSRequest(d)
 	if err != nil {

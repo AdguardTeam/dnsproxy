@@ -66,18 +66,13 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, reqSema syncutil.Semaphore) {
 	log.Info("dnsproxy: entering udp listener loop on %s", conn.LocalAddr())
 
 	b := make([]byte, dns.MaxMsgSize)
-	for {
-		p.RLock()
-		if !p.started {
-			return
-		}
-		p.RUnlock()
-
+	for p.isStarted() {
 		n, localIP, remoteAddr, err := proxynetutil.UDPRead(conn, b, p.udpOOBSize)
-		// documentation says to handle the packet even if err occurs, so do that first
+		// The documentation says to handle the packet even if err occurs.
 		if n > 0 {
-			// make a copy of all bytes because ReadFrom() will overwrite contents of b on next call
-			// we need the contents to survive the call because we're handling them in goroutine
+			// Make a copy of all bytes because ReadFrom() will overwrite the
+			// contents of b on the next call.  We need that contents to sustain
+			// the call because we're handling them in goroutines.
 			packet := make([]byte, n)
 			copy(packet, b)
 
@@ -94,15 +89,21 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, reqSema syncutil.Semaphore) {
 				p.udpHandlePacket(packet, localIP, remoteAddr, conn)
 			}()
 		}
+
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				log.Debug("dnsproxy: udp connection %s closed", conn.LocalAddr())
-			} else {
-				log.Error("dnsproxy: reading from udp: %s", err)
-			}
+			logUDPConnError(err, conn)
 
 			break
 		}
+	}
+}
+
+// logUDPConnError writes suitable log message for given err.
+func logUDPConnError(err error, conn *net.UDPConn) {
+	if errors.Is(err, net.ErrClosed) {
+		log.Debug("dnsproxy: udp connection %s closed", conn.LocalAddr())
+	} else {
+		log.Error("dnsproxy: reading from udp: %s", err)
 	}
 }
 
@@ -123,8 +124,7 @@ func (p *Proxy) udpHandlePacket(
 		return
 	}
 
-	d := p.newDNSContext(ProtoUDP, req)
-	d.Addr = netutil.NetAddrToAddrPort(remoteAddr)
+	d := p.newDNSContext(ProtoUDP, req, netutil.NetAddrToAddrPort(remoteAddr))
 	d.Conn = conn
 	d.localIP = localIP
 

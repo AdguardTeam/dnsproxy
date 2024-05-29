@@ -339,28 +339,46 @@ func (p *Proxy) logConfigInfo() {
 
 // validateListenAddrs returns an error if the addresses are not configured
 // properly.
-func (p *Proxy) validateListenAddrs() error {
+func (p *Proxy) validateListenAddrs() (err error) {
 	if !p.hasListenAddrs() {
 		return errors.Error("no listen address specified")
 	}
 
-	if p.TLSConfig == nil {
-		if p.TLSListenAddr != nil {
-			return errors.Error("cannot create tls listener without tls config")
+	err = p.validateTLSConfig()
+	if err != nil {
+		return fmt.Errorf("invalid tls configuration: %w", err)
+	}
+
+	if p.DNSCryptResolverCert == nil || p.DNSCryptProviderName == "" {
+		if p.DNSCryptTCPListenAddr != nil {
+			return errors.Error("cannot create dnscrypt tcp listener without dnscrypt config")
 		}
 
-		if p.HTTPSListenAddr != nil {
-			return errors.Error("cannot create https listener without tls config")
-		}
-
-		if p.QUICListenAddr != nil {
-			return errors.Error("cannot create quic listener without tls config")
+		if p.DNSCryptUDPListenAddr != nil {
+			return errors.Error("cannot create dnscrypt udp listener without dnscrypt config")
 		}
 	}
 
-	if (p.DNSCryptTCPListenAddr != nil || p.DNSCryptUDPListenAddr != nil) &&
-		(p.DNSCryptResolverCert == nil || p.DNSCryptProviderName == "") {
-		return errors.Error("cannot create dnscrypt listener without dnscrypt config")
+	return nil
+}
+
+// validateTLSConfig returns an error if proxy TLS configuration parameters are
+// needed but aren't provided.
+func (p *Proxy) validateTLSConfig() (err error) {
+	if p.TLSConfig != nil {
+		return nil
+	}
+
+	if p.TLSListenAddr != nil {
+		return errors.Error("tls listener configuration not found")
+	}
+
+	if p.HTTPSListenAddr != nil {
+		return errors.Error("https listener configuration not found")
+	}
+
+	if p.QUICListenAddr != nil {
+		return errors.Error("quic listener configuration not found")
 	}
 
 	return nil

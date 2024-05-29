@@ -71,8 +71,7 @@ var _ dnscrypt.Handler = &dnsCryptHandler{}
 
 // ServeDNS - processes the DNS query
 func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) (err error) {
-	d := h.proxy.newDNSContext(ProtoDNSCrypt, req)
-	d.Addr = netutil.NetAddrToAddrPort(rw.RemoteAddr())
+	d := h.proxy.newDNSContext(ProtoDNSCrypt, req, netutil.NetAddrToAddrPort(rw.RemoteAddr()))
 	d.DNSCryptResponseWriter = rw
 
 	// TODO(d.kolyshev): Pass and use context from above.

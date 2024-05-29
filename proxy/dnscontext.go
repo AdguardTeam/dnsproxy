@@ -105,12 +105,11 @@ type DNSContext struct {
 //
 // TODO(e.burkov):  Consider creating DNSContext with this everywhere, to
 // actually respect the contract of DNSContext.RequestID field.
-//
-// TODO(e.burkov):  Add remote address into arguments.
-func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg) (d *DNSContext) {
+func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg, addr netip.AddrPort) (d *DNSContext) {
 	return &DNSContext{
 		Proto: proto,
 		Req:   req,
+		Addr:  addr,
 
 		RequestID: p.counter.Add(1),
 	}

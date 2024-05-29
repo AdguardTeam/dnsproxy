@@ -156,12 +156,12 @@ run_linter gocyclo --over 10\
 	./internal/netutil/\
 	./internal/version/\
 	./fastip/\
+	./proxy/\
 	./proxyutil/\
 	./upstream/\
 	;
 
 run_linter gocyclo --over 20 ./main.go
-run_linter gocyclo --over 15 ./proxy/
 
 # TODO(a.garipov): Enable for all.
 run_linter gocognit --over 10\
@@ -169,12 +169,12 @@ run_linter gocognit --over 10\
 	./internal/netutil/\
 	./internal/version/\
 	./fastip/\
+	./proxy/\
 	./proxyutil/\
 	./upstream/\
 	;
 
 run_linter gocognit --over 35 ./main.go
-run_linter gocognit --over 17 ./proxy/
 
 run_linter ineffassign ./...
 

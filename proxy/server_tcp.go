@@ -58,8 +58,8 @@ func (p *Proxy) createTLSListeners() (err error) {
 	return nil
 }
 
-// tcpPacketLoop listens for incoming TCP packets.  proto must be either "tcp"
-// or "tls".
+// tcpPacketLoop listens for incoming TCP packets.  proto must be either
+// [ProtoTCP] or [ProtoTLS].
 //
 // See also the comment on Proxy.requestsSema.
 func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, reqSema syncutil.Semaphore) {
@@ -68,11 +68,7 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, reqSema syncutil.Sema
 	for {
 		clientConn, err := l.Accept()
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				log.Debug("dnsproxy: tcp connection %s closed", l.Addr())
-			} else {
-				log.Error("dnsproxy: reading from tcp: %s", err)
-			}
+			logTCPConnError(err, l)
 
 			break
 		}
@@ -84,21 +80,25 @@ func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, reqSema syncutil.Sema
 
 			break
 		}
-		go func() {
-			defer reqSema.Release()
 
-			p.handleTCPConnection(clientConn, proto)
-		}()
+		go p.handleTCPConnection(clientConn, proto, reqSema)
+	}
+}
+
+// logTCPConnError writes suitable log message for given err.
+func logTCPConnError(err error, l net.Listener) {
+	if errors.Is(err, net.ErrClosed) {
+		log.Debug("dnsproxy: tcp connection %s closed", l.Addr())
+	} else {
+		log.Error("dnsproxy: reading from tcp: %s", err)
 	}
 }
 
 // handleTCPConnection starts a loop that handles an incoming TCP connection.
-// proto must be either ProtoTCP or ProtoTLS.
-func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
+// proto must be either [ProtoTCP] or [ProtoTLS].
+func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto, reqSema syncutil.Semaphore) {
 	defer log.OnPanic("proxy.handleTCPConnection")
-
-	log.Debug("dnsproxy: handling new %s request from %s", proto, conn.RemoteAddr())
-
+	defer reqSema.Release()
 	defer func() {
 		err := conn.Close()
 		if err != nil {
@@ -106,36 +106,21 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 		}
 	}()
 
-	for {
-		p.RLock()
-		if !p.started {
-			return
-		}
-		p.RUnlock()
+	log.Debug("dnsproxy: handling new %s request from %s", proto, conn.RemoteAddr())
 
+	for p.isStarted() {
 		err := conn.SetDeadline(time.Now().Add(defaultTimeout))
 		if err != nil {
 			// Consider deadline errors non-critical.
 			logWithNonCrit(err, "handling tcp: setting deadline")
 		}
 
-		packet, err := readPrefixed(conn)
-		if err != nil {
-			logWithNonCrit(err, "handling tcp: reading msg")
-
-			break
-		}
-
-		req := &dns.Msg{}
-		err = req.Unpack(packet)
-		if err != nil {
-			log.Error("dnsproxy: handling tcp: unpacking msg: %s", err)
-
+		req := readDNSReq(conn)
+		if req == nil {
 			return
 		}
 
-		d := p.newDNSContext(proto, req)
-		d.Addr = netutil.NetAddrToAddrPort(conn.RemoteAddr())
+		d := p.newDNSContext(proto, req, netutil.NetAddrToAddrPort(conn.RemoteAddr()))
 		d.Conn = conn
 
 		err = p.handleDNSRequest(d)
@@ -143,6 +128,27 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto) {
 			logWithNonCrit(err, fmt.Sprintf("handling tcp: handling %s request", d.Proto))
 		}
 	}
+}
+
+// readDNSReq returns DNS request message from the given connection or nil if
+// it failed to read it.  Properly logs the error if it happened.
+func readDNSReq(conn net.Conn) (req *dns.Msg) {
+	packet, err := readPrefixed(conn)
+	if err != nil {
+		logWithNonCrit(err, "handling tcp: reading msg")
+
+		return nil
+	}
+
+	req = &dns.Msg{}
+	err = req.Unpack(packet)
+	if err != nil {
+		log.Error("dnsproxy: handling tcp: unpacking msg: %s", err)
+
+		return nil
+	}
+
+	return req
 }
 
 // errTooLarge means that a DNS message is larger than 64KiB.

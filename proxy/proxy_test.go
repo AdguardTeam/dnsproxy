@@ -335,30 +335,28 @@ func TestProxyRace(t *testing.T) {
 	g.Wait()
 }
 
-func TestProxy_Resolve_dnssecCache(t *testing.T) {
-	const host = "example.com"
+// newTxts returns new test TXT RR strings.
+func newTxts(t *testing.T, txtDataLen int) (txts []string) {
+	t.Helper()
 
-	const (
-		// Larger than UDP buffer size to invoke truncation.
-		txtDataLen      = 1024
-		txtDataChunkLen = 255
-	)
+	const txtDataChunkLen = 255
 
 	txtDataChunkNum := txtDataLen / txtDataChunkLen
 	if txtDataLen%txtDataChunkLen > 0 {
 		txtDataChunkNum++
 	}
 
-	txts := make([]string, txtDataChunkNum)
+	txts = make([]string, txtDataChunkNum)
 	randData := make([]byte, txtDataLen)
 	n, err := rand.Read(randData)
 	require.NoError(t, err)
 	require.Equal(t, txtDataLen, n)
+
 	for i, c := range randData {
 		randData[i] = c%26 + 'a'
 	}
-	// *dns.TXT requires splitting the actual data into
-	// 256-byte chunks.
+
+	// *dns.TXT requires splitting the actual data into 256-byte chunks.
 	for i := range txtDataChunkNum {
 		r := txtDataChunkLen * (i + 1)
 		if r > txtDataLen {
@@ -366,13 +364,60 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		}
 		txts[i] = string(randData[txtDataChunkLen*i : r])
 	}
+
+	return txts
+}
+
+// newDNSContext returns new DNS request message context with Proto set to
+// [ProtoUDP].  Constructs request message from the given parameters.
+func newDNSContext(
+	domain string,
+	qtype uint16,
+	qclass uint16,
+	edns bool,
+	udpsize uint16,
+) (dctx *DNSContext) {
+	req := newReq(domain, qtype, qclass)
+	if edns {
+		req.SetEdns0(udpsize, true)
+	}
+
+	return &DNSContext{
+		Req:   req,
+		Proto: ProtoUDP,
+	}
+}
+
+// newReq returns new request message for provided parameters.
+func newReq(domain string, qtype, qclass uint16) (req *dns.Msg) {
+	return &dns.Msg{
+		MsgHdr: dns.MsgHdr{
+			Id: dns.Id(),
+		},
+		Compress: true,
+		Question: []dns.Question{{
+			Name:   dns.Fqdn(domain),
+			Qtype:  qtype,
+			Qclass: qclass,
+		}},
+	}
+}
+
+func TestProxy_Resolve_dnssecCache(t *testing.T) {
+	const (
+		host = "example.com"
+
+		// Larger than UDP buffer size to invoke truncation.
+		txtDataLen = 1024
+	)
+
 	txt := &dns.TXT{
 		Hdr: dns.RR_Header{
 			Name:   dns.Fqdn(host),
 			Rrtype: dns.TypeTXT,
 			Class:  dns.ClassINET,
 		},
-		Txt: txts,
+		Txt: newTxts(t, txtDataLen),
 	}
 
 	a := &dns.A{
@@ -406,10 +451,10 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		SignerName:  dns.Fqdn(host),
 		Signature:   "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm",
 	}
+
 	u := &fakeUpstream{
 		onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
-			resp = &dns.Msg{}
-			resp.SetReply(m)
+			resp = (&dns.Msg{}).SetReply(m)
 
 			q := m.Question[0]
 			switch q.Qtype {
@@ -490,29 +535,13 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
-		req := &dns.Msg{
-			MsgHdr: dns.MsgHdr{
-				Id: dns.Id(),
-			},
-			Compress: true,
-			Question: []dns.Question{{
-				Name:   dns.Fqdn(tc.wantAns.Header().Name),
-				Qtype:  tc.wantAns.Header().Rrtype,
-				Qclass: tc.wantAns.Header().Class,
-			}},
-		}
-		if tc.edns {
-			req.SetEdns0(txtDataLen/2, true)
-		}
-
-		dctx := &DNSContext{
-			Req:   req,
-			Proto: ProtoUDP,
-		}
+		ansHdr := tc.wantAns.Header()
+		dctx := newDNSContext(ansHdr.Name, ansHdr.Rrtype, ansHdr.Class, tc.edns, txtDataLen/2)
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(p.cache.items.Clear)
-			err = p.Resolve(dctx)
+
+			err := p.Resolve(dctx)
 			require.NoError(t, err)
 
 			res := dctx.Res
@@ -536,6 +565,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 			cached, expired, key := p.cache.get(dctx.Req)
 			require.NotNil(t, cached)
 			require.Len(t, cached.m.Answer, 2)
+
 			assert.False(t, expired)
 			assert.Equal(t, key, msgToKey(dctx.Req))
 
@@ -1575,8 +1605,7 @@ func TestProxy_HandleDNSRequest_private(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			dctx := p.newDNSContext(ProtoUDP, tc.req)
-			dctx.Addr = tc.cliAddr
+			dctx := p.newDNSContext(ProtoUDP, tc.req, tc.cliAddr)
 
 			require.NoError(t, p.handleDNSRequest(dctx))
 			assert.Equal(t, tc.want, dctx.Res)

@@ -237,8 +237,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 		return
 	}
 
-	d := p.newDNSContext(ProtoQUIC, req)
-	d.Addr = netutil.NetAddrToAddrPort(conn.RemoteAddr())
+	d := p.newDNSContext(ProtoQUIC, req, netutil.NetAddrToAddrPort(conn.RemoteAddr()))
 	d.QUICStream = stream
 	d.QUICConnection = conn
 	d.DoQVersion = doqVersion

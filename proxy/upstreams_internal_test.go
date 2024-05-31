@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"testing"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
@@ -278,7 +277,7 @@ func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 		&upstream.Options{
 			InsecureSkipVerify: false,
 			Bootstrap:          nil,
-			Timeout:            1 * time.Second,
+			Timeout:            testTimeout,
 		},
 	)
 	assert.NoError(t, err)
@@ -455,7 +454,7 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		&upstream.Options{
 			InsecureSkipVerify: false,
 			Bootstrap:          nil,
-			Timeout:            1 * time.Second,
+			Timeout:            testTimeout,
 		},
 	)
 

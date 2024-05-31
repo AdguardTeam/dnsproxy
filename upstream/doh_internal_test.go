@@ -22,6 +22,8 @@ import (
 )
 
 func TestUpstreamDoH(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name             string
 		expectedProtocol HTTPVersion
@@ -60,6 +62,8 @@ func TestUpstreamDoH(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			srv := startDoHServer(t, testDoHServerOptions{
 				http3Enabled:     tc.http3Enabled,
 				delayHandshakeH2: tc.delayHandshakeH2,
@@ -109,6 +113,8 @@ func TestUpstreamDoH(t *testing.T) {
 }
 
 func TestUpstreamDoH_raceReconnect(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name             string
 		expectedProtocol HTTPVersion
@@ -151,9 +157,7 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 	// important to test for race conditions.
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if t.Name() == "TestUpstreamDoH_raceReconnect/http3" {
-				t.Skip("TODO(e.burkov): remove the skip when quic-go is fixed")
-			}
+			t.Parallel()
 
 			const timeout = time.Millisecond * 100
 			var requestsCount int32
@@ -193,6 +197,8 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 }
 
 func TestUpstreamDoH_serverRestart(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name         string
 		httpVersions []HTTPVersion
@@ -206,6 +212,8 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var addr netip.AddrPort
 			var upsAddr string
 			var u Upstream
@@ -226,7 +234,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 				u, err = AddressToUpstream(upsAddr, &Options{
 					InsecureSkipVerify: true,
 					HTTPVersions:       tc.httpVersions,
-					Timeout:            time.Second,
+					Timeout:            100 * time.Millisecond,
 				})
 				require.NoError(t, err)
 
@@ -261,6 +269,8 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 }
 
 func TestUpstreamDoH_0RTT(t *testing.T) {
+	t.Parallel()
+
 	// Run the first server instance.
 	srv := startDoHServer(t, testDoHServerOptions{
 		http3Enabled: true,

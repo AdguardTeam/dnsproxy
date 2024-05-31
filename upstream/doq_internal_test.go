@@ -126,6 +126,8 @@ func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
 }
 
 func TestUpstreamDoQ_serverRestart(t *testing.T) {
+	t.Parallel()
+
 	// Use the same tlsConf for all servers to preserve the data necessary for
 	// 0-RTT connections.
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
@@ -144,7 +146,10 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 		}).String()
 
 		var err error
-		u, err = AddressToUpstream(upsStr, &Options{RootCAs: rootCAs})
+		u, err = AddressToUpstream(
+			upsStr,
+			&Options{RootCAs: rootCAs, Timeout: 100 * time.Millisecond},
+		)
 		require.NoError(t, err)
 
 		checkUpstream(t, u, upsStr)

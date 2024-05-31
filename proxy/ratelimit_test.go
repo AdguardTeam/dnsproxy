@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/netip"
 	"testing"
-	"time"
 
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -31,7 +30,10 @@ func TestRatelimitingProxy(t *testing.T) {
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr(ProtoUDP)
-	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+	client := &dns.Client{
+		Net:     string(ProtoUDP),
+		Timeout: testTimeout,
+	}
 
 	// Send the first message (not blocked)
 	req := newTestMessage()

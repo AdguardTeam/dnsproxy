@@ -19,8 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helpers
-
 // dnsCryptHandlerFunc is a function-based implementation of the
 // [dnscrypt.Handler] interface.
 type dnsCryptHandlerFunc func(w dnscrypt.ResponseWriter, r *dns.Msg) (err error)
@@ -89,9 +87,9 @@ func startTestDNSCryptServer(
 	return stamp
 }
 
-// Tests
-
 func TestUpstreamDNSCrypt(t *testing.T) {
+	t.Parallel()
+
 	// AdGuard DNS (DNSCrypt)
 	address := "sdns://AQMAAAAAAAAAETk0LjE0MC4xNC4xNDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
 	u, err := AddressToUpstream(address, &Options{Timeout: dialTimeout})
@@ -153,6 +151,8 @@ func TestDNSCrypt_Exchange_truncated(t *testing.T) {
 }
 
 func TestDNSCrypt_Exchange_deadline(t *testing.T) {
+	t.Parallel()
+
 	// Prepare the test DNSCrypt server config
 	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil)
 	require.NoError(t, err)

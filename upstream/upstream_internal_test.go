@@ -32,6 +32,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestUpstream_bootstrapTimeout(t *testing.T) {
+	t.Parallel()
+
 	const (
 		timeout = 100 * time.Millisecond
 		count   = 10
@@ -99,12 +101,16 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 }
 
 func TestUpstreams(t *testing.T) {
+	t.Parallel()
+
+	const upsTimeout = 500 * time.Second
+
 	googleRslv, err := NewUpstreamResolver("8.8.8.8:53", &Options{
-		Timeout: timeout,
+		Timeout: upsTimeout,
 	})
 	require.NoError(t, err)
 	cloudflareRslv, err := NewUpstreamResolver("1.0.0.1:53", &Options{
-		Timeout: timeout,
+		Timeout: upsTimeout,
 	})
 	require.NoError(t, err)
 
@@ -198,7 +204,7 @@ func TestUpstreams(t *testing.T) {
 		t.Run(test.address, func(t *testing.T) {
 			u, upsErr := AddressToUpstream(
 				test.address,
-				&Options{Bootstrap: test.bootstrap, Timeout: timeout},
+				&Options{Bootstrap: test.bootstrap, Timeout: upsTimeout},
 			)
 			require.NoErrorf(t, upsErr, "failed to generate upstream from address %s", test.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -341,6 +347,8 @@ func TestAddressToUpstream_bads(t *testing.T) {
 }
 
 func TestUpstreamDoTBootstrap(t *testing.T) {
+	t.Parallel()
+
 	upstreams := []struct {
 		address   string
 		bootstrap string
@@ -377,6 +385,8 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 
 // Test for DoH and DoT upstreams with two bootstraps (only one is valid)
 func TestUpstreamsInvalidBootstrap(t *testing.T) {
+	t.Parallel()
+
 	upstreams := []struct {
 		address   string
 		bootstrap []string
@@ -404,6 +414,8 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
+			t.Parallel()
+
 			var rslv ConsequentResolver
 			for _, b := range tc.bootstrap {
 				r, err := NewUpstreamResolver(b, &Options{
@@ -432,6 +444,8 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 }
 
 func TestAddressToUpstream_StaticResolver(t *testing.T) {
+	t.Parallel()
+
 	h := func(w dns.ResponseWriter, m *dns.Msg) {
 		require.NoError(testutil.PanicT{}, w.WriteMsg(respondToTestMessage(m)))
 	}
@@ -478,6 +492,8 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 
 	for _, tc := range upstreams {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			opts := &Options{
 				Bootstrap:          tc.rslv,
 				Timeout:            timeout,

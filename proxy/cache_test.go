@@ -59,7 +59,10 @@ func TestServeCached(t *testing.T) {
 
 	// Create a DNS-over-UDP client connection.
 	addr := dnsProxy.Addr(ProtoUDP)
-	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+	client := &dns.Client{
+		Net:     string(ProtoUDP),
+		Timeout: testTimeout,
+	}
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -270,7 +273,17 @@ func TestCache_concurrent(t *testing.T) {
 	g.Wait()
 }
 
+const (
+	// cacheTick is a cache check period.
+	cacheTick = 50 * time.Millisecond
+
+	// cacheTimeout is the timeout of cache check.
+	cacheTimeout = 20 * cacheTick
+)
+
 func TestCacheExpiration(t *testing.T) {
+	t.Parallel()
+
 	dnsProxy := mustNew(t, &Config{
 		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
@@ -322,7 +335,7 @@ func TestCacheExpiration(t *testing.T) {
 		}
 
 		return true
-	}, 1100*time.Millisecond, 100*time.Millisecond)
+	}, cacheTimeout, cacheTick)
 }
 
 func TestCacheExpirationWithTTLOverride(t *testing.T) {
@@ -607,7 +620,7 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 		ci, _, _ := c.get(dnsMsg)
 
 		return ci == nil
-	}, 1100*time.Millisecond, 100*time.Millisecond, "cache for %s should already be removed", host)
+	}, cacheTimeout, cacheTick, "cache for %s should already be removed", host)
 }
 
 func TestCache_getWithSubnet(t *testing.T) {

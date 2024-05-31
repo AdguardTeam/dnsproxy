@@ -43,6 +43,9 @@ const (
 
 	// defaultTestTTL used to guarantee caching.
 	defaultTestTTL = 1000
+
+	// testTimeout is the default timeout for tests.
+	testTimeout = 500 * time.Millisecond
 )
 
 // localhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
@@ -579,12 +582,14 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 }
 
 func TestExchangeWithReservedDomains(t *testing.T) {
+	t.Parallel()
+
 	dnsProxy := mustNew(t, &Config{
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfigWithBoot(
 			t,
-			1*time.Second,
+			testTimeout,
 			"[/adguard.com/]1.2.3.4",
 			"[/google.ru/]2.3.4.5",
 			"[/maps.google.ru/]#",
@@ -646,7 +651,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 // TestOneByOneUpstreamsExchange tries to resolve DNS request
 // with one valid and two invalid upstreams
 func TestOneByOneUpstreamsExchange(t *testing.T) {
-	const testTimeout = 1 * time.Second
+	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
@@ -712,18 +717,18 @@ func newLocalUpstreamListener(t *testing.T, port uint16, h dns.Handler) (real ne
 }
 
 func TestFallback(t *testing.T) {
+	t.Parallel()
+
 	responseCh := make(chan uint16)
 	failCh := make(chan uint16)
 
-	const timeout = 1 * time.Second
-
 	successHandler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
-		testutil.RequireSend(testutil.PanicT{}, responseCh, r.Id, timeout)
+		testutil.RequireSend(testutil.PanicT{}, responseCh, r.Id, testTimeout)
 
 		require.NoError(testutil.PanicT{}, w.WriteMsg((&dns.Msg{}).SetReply(r)))
 	})
 	failHandler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
-		testutil.RequireSend(testutil.PanicT{}, failCh, r.Id, timeout)
+		testutil.RequireSend(testutil.PanicT{}, failCh, r.Id, testTimeout)
 
 		require.NoError(testutil.PanicT{}, w.WriteMsg(&dns.Msg{}))
 	})
@@ -746,7 +751,7 @@ func TestFallback(t *testing.T) {
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfig(
 			t,
-			timeout,
+			testTimeout,
 			failAddr,
 			"[/specific.example/]"+alsoSuccessAddr,
 			// almost.failing.example will fall here first.
@@ -755,7 +760,7 @@ func TestFallback(t *testing.T) {
 		TrustedProxies: defaultTrustedProxies,
 		Fallbacks: newTestUpstreamConfig(
 			t,
-			timeout,
+			testTimeout,
 			failAddr,
 			successAddr,
 			"[/failing.example/]"+failAddr,
@@ -810,7 +815,7 @@ func TestFallback(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, ch := range tc.wantSignals {
-				reqID, ok := testutil.RequireReceive(testutil.PanicT{}, ch, timeout)
+				reqID, ok := testutil.RequireReceive(testutil.PanicT{}, ch, testTimeout)
 				require.True(t, ok)
 
 				assert.Equal(t, req.Id, reqID)
@@ -823,17 +828,17 @@ func TestFallback(t *testing.T) {
 }
 
 func TestFallbackFromInvalidBootstrap(t *testing.T) {
-	timeout := 1 * time.Second
+	t.Parallel()
 
 	invalidRslv, err := upstream.NewUpstreamResolver("8.8.8.8:555", &upstream.Options{
-		Timeout: timeout,
+		Timeout: testTimeout,
 	})
 	require.NoError(t, err)
 
 	// Prepare the proxy server
 	upsConf, err := ParseUpstreamsConfig(
 		[]string{"tls://dns.adguard.com"},
-		&upstream.Options{Bootstrap: invalidRslv, Timeout: timeout},
+		&upstream.Options{Bootstrap: invalidRslv, Timeout: testTimeout},
 	)
 	require.NoError(t, err)
 
@@ -844,7 +849,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 		TrustedProxies: defaultTrustedProxies,
 		Fallbacks: newTestUpstreamConfig(
 			t,
-			timeout,
+			testTimeout,
 			"1.0.0.1",
 			"8.8.8.8",
 		),
@@ -874,7 +879,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	requireResponse(t, req, res)
 
 	elapsed := time.Since(start)
-	assert.Greater(t, 3*timeout, elapsed)
+	assert.Greater(t, 3*testTimeout, elapsed)
 }
 
 func TestRefuseAny(t *testing.T) {
@@ -896,7 +901,10 @@ func TestRefuseAny(t *testing.T) {
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr(ProtoUDP)
-	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+	client := &dns.Client{
+		Net:     string(ProtoUDP),
+		Timeout: testTimeout,
+	}
 
 	// Create a DNS request
 	request := (&dns.Msg{
@@ -930,7 +938,10 @@ func TestInvalidDNSRequest(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
 
 	// Create a DNS-over-UDP client connection
-	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+	client := &dns.Client{
+		Net:     string(ProtoUDP),
+		Timeout: testTimeout,
+	}
 
 	// Create a DNS request
 	request := &dns.Msg{
@@ -950,7 +961,10 @@ func TestResponseInRequest(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	addr := dnsProxy.Addr(ProtoUDP)
-	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+	client := &dns.Client{
+		Net:     string(ProtoUDP),
+		Timeout: testTimeout,
+	}
 
 	req := newTestMessage()
 	req.Response = true
@@ -968,7 +982,10 @@ func TestNoQuestion(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	addr := dnsProxy.Addr(ProtoUDP)
-	client := &dns.Client{Net: "udp", Timeout: 500 * time.Millisecond}
+	client := &dns.Client{
+		Net:     string(ProtoUDP),
+		Timeout: testTimeout,
+	}
 
 	req := newTestMessage()
 	req.Question = nil

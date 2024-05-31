@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	timeout = 5 * time.Second
+	timeout = 2 * time.Second
 )
 
 // TestExchangeParallel launches several parallel exchanges

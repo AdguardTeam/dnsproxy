@@ -150,27 +150,9 @@ run_linter "${GO:-go}" vet ./...
 
 run_linter govulncheck ./...
 
-run_linter gocyclo --over 10\
-	./internal/bootstrap/\
-	./internal/netutil/\
-	./internal/version/\
-	./fastip/\
-	./main.go\
-	./proxy/\
-	./proxyutil/\
-	./upstream/\
-	;
+run_linter gocyclo --over 10 .
 
-run_linter gocognit --over 10\
-	./internal/bootstrap/\
-	./internal/netutil/\
-	./internal/version/\
-	./fastip/\
-	./main.go\
-	./proxy/\
-	./proxyutil/\
-	./upstream/\
-	;
+run_linter gocognit --over 10 .
 
 run_linter ineffassign ./...
 

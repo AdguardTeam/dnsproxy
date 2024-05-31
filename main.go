@@ -205,33 +205,34 @@ type Options struct {
 
 const (
 	defaultLocalTimeout = 1 * time.Second
+
+	argConfigPath = "--config-path="
+	argVersion    = "--version"
 )
 
+// main is the entry point.
+//
+// TODO(d.kolyshev): Do not exit the application in the inner functions, return
+// errors instead and handle them here.
 func main() {
 	options := &Options{}
 
+	// TODO(e.burkov, a.garipov):  Use flag package and remove the manual
+	// options parsing.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/182.
 	for _, arg := range os.Args {
-		if arg == "--version" {
+		if arg == argVersion {
 			fmt.Printf("dnsproxy version: %s\n", version.Version())
 
 			os.Exit(0)
-		}
+		} else if strings.HasPrefix(arg, argConfigPath) {
+			confPath := strings.TrimPrefix(arg, argConfigPath)
+			fmt.Printf("dnsproxy config path: %s\n", confPath)
 
-		// TODO(e.burkov, a.garipov):  Use flag package and remove the manual
-		// options parsing.
-		//
-		// See https://github.com/AdguardTeam/dnsproxy/issues/182.
-		if len(arg) > 13 {
-			if arg[:13] == "--config-path" {
-				fmt.Printf("Path: %s\n", arg[14:])
-				b, err := os.ReadFile(arg[14:])
-				if err != nil {
-					log.Fatalf("failed to read the config file %s: %v", arg[14:], err)
-				}
-				err = yaml.Unmarshal(b, options)
-				if err != nil {
-					log.Fatalf("failed to unmarshal the config file %s: %v", arg[14:], err)
-				}
+			err := parseConfigFile(options, confPath)
+			if err != nil {
+				log.Fatalf("parsing config file %s: %v", confPath, err)
 			}
 		}
 	}
@@ -247,6 +248,23 @@ func main() {
 	}
 
 	run(options)
+}
+
+// parseConfigFile fills options with the settings from file read by the given
+// path.
+func parseConfigFile(options *Options, confPath string) (err error) {
+	// #nosec G304 -- Trust the file path that is given in the args.
+	b, err := os.ReadFile(confPath)
+	if err != nil {
+		return fmt.Errorf("reading file: %w", err)
+	}
+
+	err = yaml.Unmarshal(b, options)
+	if err != nil {
+		return fmt.Errorf("unmarshalling file: %w", err)
+	}
+
+	return nil
 }
 
 func run(options *Options) {
@@ -568,79 +586,96 @@ func initDNSCryptConfig(config *proxy.Config, options *Options) {
 	config.DNSCryptProviderName = rc.ProviderName
 }
 
-// initListenAddrs inits listen addrs
+// initListenAddrs sets up proxy configuration listen IP addresses.
 func initListenAddrs(config *proxy.Config, options *Options) {
-	listenIPs := []netip.Addr{}
-
-	if len(options.ListenAddrs) == 0 {
-		// If ListenAddrs has not been parsed through config file nor command
-		// line we set it to "0.0.0.0".
-		options.ListenAddrs = []string{"0.0.0.0"}
-	}
-
+	addrs := mustParseListenAddrs(options)
 	if len(options.ListenPorts) == 0 {
 		// If ListenPorts has not been parsed through config file nor command
 		// line we set it to 53.
 		options.ListenPorts = []int{53}
 	}
 
+	for _, port := range options.ListenPorts {
+		for _, ip := range addrs {
+			addrPort := netip.AddrPortFrom(ip, uint16(port))
+
+			config.UDPListenAddr = append(config.UDPListenAddr, net.UDPAddrFromAddrPort(addrPort))
+			config.TCPListenAddr = append(config.TCPListenAddr, net.TCPAddrFromAddrPort(addrPort))
+		}
+	}
+
+	initTLSListenAddrs(config, options, addrs)
+	initDNSCryptListenAddrs(config, options, addrs)
+}
+
+// initTLSListenAddrs sets up proxy configuration TLS listen addresses.
+func initTLSListenAddrs(config *proxy.Config, options *Options, addrs []netip.Addr) {
+	if config.TLSConfig == nil {
+		return
+	}
+
+	for _, ip := range addrs {
+		for _, port := range options.TLSListenPorts {
+			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			config.TLSListenAddr = append(config.TLSListenAddr, a)
+		}
+
+		for _, port := range options.HTTPSListenPorts {
+			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			config.HTTPSListenAddr = append(config.HTTPSListenAddr, a)
+		}
+
+		for _, port := range options.QUICListenPorts {
+			a := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			config.QUICListenAddr = append(config.QUICListenAddr, a)
+		}
+	}
+}
+
+// initDNSCryptListenAddrs sets up proxy configuration DNSCrypt listen
+// addresses.
+func initDNSCryptListenAddrs(config *proxy.Config, options *Options, addrs []netip.Addr) {
+	if config.DNSCryptResolverCert == nil || config.DNSCryptProviderName == "" {
+		return
+	}
+
+	for _, port := range options.DNSCryptListenPorts {
+		p := uint16(port)
+
+		for _, ip := range addrs {
+			addrPort := netip.AddrPortFrom(ip, p)
+
+			tcp := net.TCPAddrFromAddrPort(addrPort)
+			config.DNSCryptTCPListenAddr = append(config.DNSCryptTCPListenAddr, tcp)
+
+			udp := net.UDPAddrFromAddrPort(addrPort)
+			config.DNSCryptUDPListenAddr = append(config.DNSCryptUDPListenAddr, udp)
+		}
+	}
+}
+
+// mustParseListenAddrs returns a slice of listen IP addresses from the given
+// options and considers any error as fatal.  In case no addresses are specified
+// by options returns a slice with the IPv4 unspecified address "0.0.0.0".
+func mustParseListenAddrs(options *Options) (addrs []netip.Addr) {
 	for i, a := range options.ListenAddrs {
 		ip, err := netip.ParseAddr(a)
 		if err != nil {
 			log.Fatalf("parsing listen address at index %d: %s", i, a)
 		}
 
-		listenIPs = append(listenIPs, ip)
+		addrs = append(addrs, ip)
 	}
 
-	if len(options.ListenPorts) != 0 && options.ListenPorts[0] != 0 {
-		for _, port := range options.ListenPorts {
-			for _, ip := range listenIPs {
-				p := uint16(port)
-
-				ua := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, p))
-				config.UDPListenAddr = append(config.UDPListenAddr, ua)
-
-				ta := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, p))
-				config.TCPListenAddr = append(config.TCPListenAddr, ta)
-			}
-		}
+	if len(addrs) == 0 {
+		// If ListenAddrs has not been parsed through config file nor command
+		// line we set it to "0.0.0.0".
+		//
+		// TODO(a.garipov): Consider using localhost.
+		addrs = append(addrs, netip.IPv4Unspecified())
 	}
 
-	if config.TLSConfig != nil {
-		for _, port := range options.TLSListenPorts {
-			for _, ip := range listenIPs {
-				a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
-				config.TLSListenAddr = append(config.TLSListenAddr, a)
-			}
-		}
-
-		for _, port := range options.HTTPSListenPorts {
-			for _, ip := range listenIPs {
-				a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
-				config.HTTPSListenAddr = append(config.HTTPSListenAddr, a)
-			}
-		}
-
-		for _, port := range options.QUICListenPorts {
-			for _, ip := range listenIPs {
-				a := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
-				config.QUICListenAddr = append(config.QUICListenAddr, a)
-			}
-		}
-	}
-
-	if config.DNSCryptResolverCert != nil && config.DNSCryptProviderName != "" {
-		for _, port := range options.DNSCryptListenPorts {
-			for _, ip := range listenIPs {
-				tcp := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
-				config.DNSCryptTCPListenAddr = append(config.DNSCryptTCPListenAddr, tcp)
-
-				udp := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
-				config.DNSCryptUDPListenAddr = append(config.DNSCryptUDPListenAddr, udp)
-			}
-		}
-	}
+	return addrs
 }
 
 // mustParsePrefixes parses prefixes and considers any error as fatal, logging

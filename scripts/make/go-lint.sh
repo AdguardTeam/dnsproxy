@@ -150,31 +150,27 @@ run_linter "${GO:-go}" vet ./...
 
 run_linter govulncheck ./...
 
-# TODO(a.garipov): Enable for all.
 run_linter gocyclo --over 10\
 	./internal/bootstrap/\
 	./internal/netutil/\
 	./internal/version/\
 	./fastip/\
+	./main.go\
 	./proxy/\
 	./proxyutil/\
 	./upstream/\
 	;
 
-run_linter gocyclo --over 20 ./main.go
-
-# TODO(a.garipov): Enable for all.
 run_linter gocognit --over 10\
 	./internal/bootstrap/\
 	./internal/netutil/\
 	./internal/version/\
 	./fastip/\
+	./main.go\
 	./proxy/\
 	./proxyutil/\
 	./upstream/\
 	;
-
-run_linter gocognit --over 35 ./main.go
 
 run_linter ineffassign ./...
 

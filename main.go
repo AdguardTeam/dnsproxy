@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -20,7 +21,9 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/version"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/AdguardTeam/golibs/timeutil"
@@ -208,14 +211,74 @@ const (
 
 	argConfigPath = "--config-path="
 	argVersion    = "--version"
+
+	// statusArgumentError is returned when the program exits due to invalid
+	// command-line argument or its value.
+	//
+	// TODO(a.garipov): Add to golibs.
+	statusArgumentError = 2
 )
 
 // main is the entry point.
-//
-// TODO(d.kolyshev): Do not exit the application in the inner functions, return
-// errors instead and handle them here.
 func main() {
-	options := &Options{}
+	opts, exitCode, err := parseOptions()
+	if err != nil {
+		log.Fatalf("parsing options: %s", err)
+	} else if opts == nil {
+		os.Exit(exitCode)
+	}
+
+	// TODO(d.kolyshev): Remove after migration to slog.
+	if opts.Verbose {
+		log.SetLevel(log.DEBUG)
+	}
+
+	logOutput := os.Stdout
+	if opts.LogOutput != "" {
+		// #nosec G302 -- Trust the file path that is given in the
+		// configuration.
+		logOutput, err = os.OpenFile(opts.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		if err != nil {
+			log.Fatalf("cannot create a log file: %s", err)
+		}
+
+		defer func() { _ = logOutput.Close() }()
+		log.SetOutput(logOutput)
+	}
+
+	l := slogutil.New(&slogutil.Config{
+		Output: logOutput,
+		Format: slogutil.FormatAdGuardLegacy,
+		// TODO(d.kolyshev): Consider making configurable.
+		AddTimestamp: true,
+		Verbose:      opts.Verbose,
+	})
+
+	ctx := context.Background()
+
+	if opts.Pprof {
+		runPprof(l)
+	}
+
+	err = runProxy(ctx, l, opts)
+	if err != nil {
+		l.ErrorContext(ctx, "running dnsproxy", slogutil.KeyError, err)
+
+		// As defers are skipped in case of os.Exit, close logOutput manually.
+		//
+		// TODO(a.garipov): Consider making logger.Close method.
+		if logOutput != os.Stdout {
+			_ = logOutput.Close()
+		}
+
+		os.Exit(osutil.ExitCodeFailure)
+	}
+}
+
+// parseOptions returns options parsed from the command args or config file.
+// If no options have been parsed returns a suitable exit code and an error.
+func parseOptions() (opts *Options, exitCode int, err error) {
+	opts = &Options{}
 
 	// TODO(e.burkov, a.garipov):  Use flag package and remove the manual
 	// options parsing.
@@ -225,29 +288,33 @@ func main() {
 		if arg == argVersion {
 			fmt.Printf("dnsproxy version: %s\n", version.Version())
 
-			os.Exit(0)
+			return nil, osutil.ExitCodeSuccess, nil
 		} else if strings.HasPrefix(arg, argConfigPath) {
 			confPath := strings.TrimPrefix(arg, argConfigPath)
 			fmt.Printf("dnsproxy config path: %s\n", confPath)
 
-			err := parseConfigFile(options, confPath)
+			err = parseConfigFile(opts, confPath)
 			if err != nil {
-				log.Fatalf("parsing config file %s: %v", confPath, err)
+				return nil, osutil.ExitCodeFailure, fmt.Errorf(
+					"parsing config file %s: %w",
+					confPath,
+					err,
+				)
 			}
 		}
 	}
 
-	parser := goFlags.NewParser(options, goFlags.Default)
-	_, err := parser.Parse()
+	parser := goFlags.NewParser(opts, goFlags.Default)
+	_, err = parser.Parse()
 	if err != nil {
 		if flagsErr, ok := err.(*goFlags.Error); ok && flagsErr.Type == goFlags.ErrHelp {
-			os.Exit(0)
+			return nil, osutil.ExitCodeSuccess, nil
 		}
 
-		os.Exit(1)
+		return nil, statusArgumentError, nil
 	}
 
-	run(options)
+	return opts, osutil.ExitCodeSuccess, nil
 }
 
 // parseConfigFile fills options with the settings from file read by the given
@@ -267,32 +334,33 @@ func parseConfigFile(options *Options, confPath string) (err error) {
 	return nil
 }
 
-func run(options *Options) {
-	if options.Verbose {
-		log.SetLevel(log.DEBUG)
-	}
-	if options.LogOutput != "" {
-		// #nosec G302 -- Trust the file path that is given in the
-		// configuration.
-		file, err := os.OpenFile(options.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-		if err != nil {
-			log.Fatalf("cannot create a log file: %s", err)
-		}
+// runProxy starts and runs the proxy.
+func runProxy(ctx context.Context, l *slog.Logger, options *Options) (err error) {
+	var (
+		buildVersion = version.Version()
+		revision     = version.Revision()
+		branch       = version.Branch()
+		commitTime   = version.CommitTime()
+	)
 
-		defer func() { _ = file.Close() }()
-		log.SetOutput(file)
-	}
-
-	runPprof(options)
-
-	log.Info("Starting dnsproxy %s", version.Version())
+	l.InfoContext(
+		ctx,
+		"dnsproxy starting",
+		"version", buildVersion,
+		"revision", revision,
+		"branch", branch,
+		"commit_time", commitTime,
+	)
 
 	// Prepare the proxy server and its configuration.
-	conf := createProxyConfig(options)
+	conf, err := createProxyConfig(ctx, l, options)
+	if err != nil {
+		return fmt.Errorf("configuring proxy: %w", err)
+	}
 
 	dnsProxy, err := proxy.New(conf)
 	if err != nil {
-		log.Fatalf("creating proxy: %s", err)
+		return fmt.Errorf("creating proxy: %w", err)
 	}
 
 	// Add extra handler if needed.
@@ -302,15 +370,12 @@ func run(options *Options) {
 	}
 
 	// Start the proxy server.
-	//
-	// TODO(e.burkov):  Use signal handler.
-	ctx := context.Background()
-
 	err = dnsProxy.Start(ctx)
 	if err != nil {
-		log.Fatalf("cannot start the DNS proxy due to %s", err)
+		return fmt.Errorf("starting dnsproxy: %w", err)
 	}
 
+	// TODO(e.burkov):  Use signal handler.
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
 	<-signalChannel
@@ -318,16 +383,14 @@ func run(options *Options) {
 	// Stopping the proxy.
 	err = dnsProxy.Shutdown(ctx)
 	if err != nil {
-		log.Fatalf("cannot stop the DNS proxy due to %s", err)
+		return fmt.Errorf("stopping dnsproxy: %w", err)
 	}
+
+	return nil
 }
 
-// runPprof runs pprof server on localhost:6060 if it's enabled in the options.
-func runPprof(options *Options) {
-	if !options.Pprof {
-		return
-	}
-
+// runPprof runs pprof server on localhost:6060.
+func runPprof(l *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -342,19 +405,29 @@ func runPprof(options *Options) {
 	mux.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
 
 	go func() {
-		log.Info("pprof: listening on localhost:6060")
+		// TODO(d.kolyshev): Consider making configurable.
+		pprofAddr := "localhost:6060"
+		l.Info("starting pprof", "addr", pprofAddr)
+
 		srv := &http.Server{
-			Addr:        "localhost:6060",
+			Addr:        pprofAddr,
 			ReadTimeout: 60 * time.Second,
 			Handler:     mux,
 		}
+
 		err := srv.ListenAndServe()
-		log.Error("error while running the pprof server: %s", err)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			l.Error("pprof failed to listen %v", "addr", pprofAddr, slogutil.KeyError, err)
+		}
 	}()
 }
 
-// createProxyConfig creates proxy.Config from the command line arguments
-func createProxyConfig(options *Options) (conf *proxy.Config) {
+// createProxyConfig initializes [proxy.Config].
+func createProxyConfig(
+	ctx context.Context,
+	l *slog.Logger,
+	options *Options,
+) (conf *proxy.Config, err error) {
 	conf = &proxy.Config{
 		RatelimitSubnetLenIPv4: options.RatelimitSubnetLenIPv4,
 		RatelimitSubnetLenIPv6: options.RatelimitSubnetLenIPv6,
@@ -391,16 +464,17 @@ func createProxyConfig(options *Options) (conf *proxy.Config) {
 		}
 	}
 
-	// TODO(e.burkov):  Make these methods of [Options].
-	initUpstreams(conf, options)
-	initEDNS(conf, options)
-	initBogusNXDomain(conf, options)
-	initTLSConfig(conf, options)
-	initDNSCryptConfig(conf, options)
-	initListenAddrs(conf, options)
-	initSubnets(conf, options)
+	options.initBogusNXDomain(ctx, l, conf)
 
-	return conf
+	var errs []error
+	errs = append(errs, options.initUpstreams(ctx, l, conf))
+	errs = append(errs, options.initEDNS(ctx, l, conf))
+	errs = append(errs, options.initTLSConfig(conf))
+	errs = append(errs, options.initDNSCryptConfig(conf))
+	errs = append(errs, options.initListenAddrs(conf))
+	errs = append(errs, options.initSubnets(conf))
+
+	return conf, errors.Join(errs...)
 }
 
 // isEmpty returns false if uc contains at least a single upstream.  uc must not
@@ -414,12 +488,16 @@ func isEmpty(uc *proxy.UpstreamConfig) (ok bool) {
 		len(uc.SpecifiedDomainUpstreams) == 0
 }
 
-// initUpstreams inits upstream-related config
-func initUpstreams(config *proxy.Config, options *Options) {
-	// Init upstreams
-
+// initUpstreams inits upstream-related config fields.
+//
+// TODO(d.kolyshev): Join errors.
+func (opts *Options) initUpstreams(
+	ctx context.Context,
+	l *slog.Logger,
+	config *proxy.Config,
+) (err error) {
 	httpVersions := upstream.DefaultHTTPVersions
-	if options.HTTP3 {
+	if opts.HTTP3 {
 		httpVersions = []upstream.HTTPVersion{
 			upstream.HTTPVersion3,
 			upstream.HTTPVersion2,
@@ -427,68 +505,76 @@ func initUpstreams(config *proxy.Config, options *Options) {
 		}
 	}
 
-	timeout := options.Timeout.Duration
+	timeout := opts.Timeout.Duration
 	bootOpts := &upstream.Options{
 		HTTPVersions:       httpVersions,
-		InsecureSkipVerify: options.Insecure,
+		InsecureSkipVerify: opts.Insecure,
 		Timeout:            timeout,
 	}
-	boot, err := initBootstrap(options.BootstrapDNS, bootOpts)
+	boot, err := initBootstrap(ctx, l, opts.BootstrapDNS, bootOpts)
 	if err != nil {
-		log.Fatalf("error while initializing bootstrap: %s", err)
+		return fmt.Errorf("initializing bootstrap: %w", err)
 	}
 
 	upsOpts := &upstream.Options{
 		HTTPVersions:       httpVersions,
-		InsecureSkipVerify: options.Insecure,
+		InsecureSkipVerify: opts.Insecure,
 		Bootstrap:          boot,
 		Timeout:            timeout,
 	}
-	upstreams := loadServersList(options.Upstreams)
+	upstreams := loadServersList(opts.Upstreams)
 
 	config.UpstreamConfig, err = proxy.ParseUpstreamsConfig(upstreams, upsOpts)
 	if err != nil {
-		log.Fatalf("error while parsing upstreams configuration: %s", err)
+		return fmt.Errorf("parsing upstreams configuration: %w", err)
 	}
 
-	privUpsOpts := &upstream.Options{
+	privateUpsOpts := &upstream.Options{
 		HTTPVersions: httpVersions,
 		Bootstrap:    boot,
 		Timeout:      min(defaultLocalTimeout, timeout),
 	}
-	privUpstreams := loadServersList(options.PrivateRDNSUpstreams)
+	privateUpstreams := loadServersList(opts.PrivateRDNSUpstreams)
 
-	private, err := proxy.ParseUpstreamsConfig(privUpstreams, privUpsOpts)
+	private, err := proxy.ParseUpstreamsConfig(privateUpstreams, privateUpsOpts)
 	if err != nil {
-		log.Fatalf("error while parsing private rdns upstreams configuration: %s", err)
+		return fmt.Errorf("parsing private rdns upstreams configuration: %w", err)
 	}
+
 	if !isEmpty(private) {
 		config.PrivateRDNSUpstreamConfig = private
 	}
 
-	fallbackUpstreams := loadServersList(options.Fallbacks)
+	fallbackUpstreams := loadServersList(opts.Fallbacks)
 	fallbacks, err := proxy.ParseUpstreamsConfig(fallbackUpstreams, upsOpts)
 	if err != nil {
-		log.Fatalf("error while parsing fallback upstreams configuration: %s", err)
+		return fmt.Errorf("parsing fallback upstreams configuration: %w", err)
 	}
 
 	if !isEmpty(fallbacks) {
 		config.Fallbacks = fallbacks
 	}
 
-	if options.AllServers {
+	if opts.AllServers {
 		config.UpstreamMode = proxy.UModeParallel
-	} else if options.FastestAddress {
+	} else if opts.FastestAddress {
 		config.UpstreamMode = proxy.UModeFastestAddr
 	} else {
 		config.UpstreamMode = proxy.UModeLoadBalance
 	}
+
+	return nil
 }
 
 // initBootstrap initializes the [upstream.Resolver] for bootstrapping upstream
 // servers.  It returns the default resolver if no bootstraps were specified.
 // The returned resolver will also use system hosts files first.
-func initBootstrap(bootstraps []string, opts *upstream.Options) (r upstream.Resolver, err error) {
+func initBootstrap(
+	ctx context.Context,
+	l *slog.Logger,
+	bootstraps []string,
+	opts *upstream.Options,
+) (r upstream.Resolver, err error) {
 	var resolvers []upstream.Resolver
 
 	for i, b := range bootstraps {
@@ -505,7 +591,7 @@ func initBootstrap(bootstraps []string, opts *upstream.Options) (r upstream.Reso
 	case 0:
 		etcHosts, hostsErr := upstream.NewDefaultHostsResolver(osutil.RootDirFS())
 		if hostsErr != nil {
-			log.Error("creating default hosts resolver: %s", hostsErr)
+			l.ErrorContext(ctx, "creating default hosts resolver", slogutil.KeyError, hostsErr)
 
 			return net.DefaultResolver, nil
 		}
@@ -518,84 +604,104 @@ func initBootstrap(bootstraps []string, opts *upstream.Options) (r upstream.Reso
 	}
 }
 
-// initEDNS inits EDNS-related config
-func initEDNS(config *proxy.Config, options *Options) {
-	if options.EDNSAddr != "" {
-		if options.EnableEDNSSubnet {
-			ednsIP := net.ParseIP(options.EDNSAddr)
-			if ednsIP == nil {
-				log.Fatalf("cannot parse %s", options.EDNSAddr)
-			}
-			config.EDNSAddr = ednsIP
-		} else {
-			log.Printf("--edns-addr=%s need --edns to work", options.EDNSAddr)
-		}
+// initEDNS inits EDNS-related config fields.
+func (opts *Options) initEDNS(
+	ctx context.Context,
+	l *slog.Logger,
+	config *proxy.Config,
+) (err error) {
+	if opts.EDNSAddr == "" {
+		return nil
 	}
+
+	if !opts.EnableEDNSSubnet {
+		l.WarnContext(ctx, "--edns is required", "--edns-addr", opts.EDNSAddr)
+
+		return nil
+	}
+
+	config.EDNSAddr, err = netutil.ParseIP(opts.EDNSAddr)
+	if err != nil {
+		return fmt.Errorf("parsing edns-addr: %w", err)
+	}
+
+	return nil
 }
 
-// initBogusNXDomain inits BogusNXDomain structure
-func initBogusNXDomain(config *proxy.Config, options *Options) {
-	if len(options.BogusNXDomain) == 0 {
+// initBogusNXDomain inits BogusNXDomain structure.
+func (opts *Options) initBogusNXDomain(ctx context.Context, l *slog.Logger, config *proxy.Config) {
+	if len(opts.BogusNXDomain) == 0 {
 		return
 	}
 
-	for i, s := range options.BogusNXDomain {
+	for i, s := range opts.BogusNXDomain {
 		p, err := proxynetutil.ParseSubnet(s)
 		if err != nil {
-			log.Error("parsing bogus nxdomain subnet at index %d: %s", i, err)
+			// TODO(a.garipov): Consider returning this err as a proper error.
+			l.WarnContext(ctx, "parsing bogus nxdomain", "index", i, slogutil.KeyError, err)
 		} else {
 			config.BogusNXDomain = append(config.BogusNXDomain, p)
 		}
 	}
 }
 
-// initTLSConfig inits the TLS config
-func initTLSConfig(config *proxy.Config, options *Options) {
-	if options.TLSCertPath != "" && options.TLSKeyPath != "" {
-		tlsConfig, err := newTLSConfig(options)
+// initTLSConfig inits the TLS config.
+func (opts *Options) initTLSConfig(config *proxy.Config) (err error) {
+	if opts.TLSCertPath != "" && opts.TLSKeyPath != "" {
+		var tlsConfig *tls.Config
+		tlsConfig, err = newTLSConfig(opts)
 		if err != nil {
-			log.Fatalf("failed to load TLS config: %s", err)
+			return fmt.Errorf("loading TLS config: %w", err)
 		}
+
 		config.TLSConfig = tlsConfig
 	}
+
+	return nil
 }
 
-// initDNSCryptConfig inits the DNSCrypt config
-func initDNSCryptConfig(config *proxy.Config, options *Options) {
-	if options.DNSCryptConfigPath == "" {
+// initDNSCryptConfig inits the DNSCrypt config.
+func (opts *Options) initDNSCryptConfig(config *proxy.Config) (err error) {
+	if opts.DNSCryptConfigPath == "" {
 		return
 	}
 
-	b, err := os.ReadFile(options.DNSCryptConfigPath)
+	b, err := os.ReadFile(opts.DNSCryptConfigPath)
 	if err != nil {
-		log.Fatalf("failed to read DNSCrypt config %s: %v", options.DNSCryptConfigPath, err)
+		return fmt.Errorf("reading DNSCrypt config %q: %w", opts.DNSCryptConfigPath, err)
 	}
 
 	rc := &dnscrypt.ResolverConfig{}
 	err = yaml.Unmarshal(b, rc)
 	if err != nil {
-		log.Fatalf("failed to unmarshal DNSCrypt config: %v", err)
+		return fmt.Errorf("unmarshalling DNSCrypt config: %w", err)
 	}
 
 	cert, err := rc.CreateCert()
 	if err != nil {
-		log.Fatalf("failed to create DNSCrypt certificate: %v", err)
+		return fmt.Errorf("creating DNSCrypt certificate: %w", err)
 	}
 
 	config.DNSCryptResolverCert = cert
 	config.DNSCryptProviderName = rc.ProviderName
+
+	return nil
 }
 
 // initListenAddrs sets up proxy configuration listen IP addresses.
-func initListenAddrs(config *proxy.Config, options *Options) {
-	addrs := mustParseListenAddrs(options)
-	if len(options.ListenPorts) == 0 {
-		// If ListenPorts has not been parsed through config file nor command
-		// line we set it to 53.
-		options.ListenPorts = []int{53}
+func (opts *Options) initListenAddrs(config *proxy.Config) (err error) {
+	addrs, err := parseListenAddrs(opts)
+	if err != nil {
+		return fmt.Errorf("parsing listen addresses: %w", err)
 	}
 
-	for _, port := range options.ListenPorts {
+	if len(opts.ListenPorts) == 0 {
+		// If ListenPorts has not been parsed through config file nor command
+		// line we set it to 53.
+		opts.ListenPorts = []int{53}
+	}
+
+	for _, port := range opts.ListenPorts {
 		for _, ip := range addrs {
 			addrPort := netip.AddrPortFrom(ip, uint16(port))
 
@@ -604,8 +710,10 @@ func initListenAddrs(config *proxy.Config, options *Options) {
 		}
 	}
 
-	initTLSListenAddrs(config, options, addrs)
-	initDNSCryptListenAddrs(config, options, addrs)
+	initTLSListenAddrs(config, opts, addrs)
+	initDNSCryptListenAddrs(config, opts, addrs)
+
+	return nil
 }
 
 // initTLSListenAddrs sets up proxy configuration TLS listen addresses.
@@ -654,14 +762,16 @@ func initDNSCryptListenAddrs(config *proxy.Config, options *Options, addrs []net
 	}
 }
 
-// mustParseListenAddrs returns a slice of listen IP addresses from the given
-// options and considers any error as fatal.  In case no addresses are specified
-// by options returns a slice with the IPv4 unspecified address "0.0.0.0".
-func mustParseListenAddrs(options *Options) (addrs []netip.Addr) {
+// parseListenAddrs returns a slice of listen IP addresses from the given
+// options.  In case no addresses are specified by options returns a slice with
+// the IPv4 unspecified address "0.0.0.0".
+func parseListenAddrs(options *Options) (addrs []netip.Addr, err error) {
+	// TODO(d.kolyshev): Join errors.
 	for i, a := range options.ListenAddrs {
-		ip, err := netip.ParseAddr(a)
+		var ip netip.Addr
+		ip, err = netip.ParseAddr(a)
 		if err != nil {
-			log.Fatalf("parsing listen address at index %d: %s", i, a)
+			return addrs, fmt.Errorf("parsing listen address at index %d: %s", i, a)
 		}
 
 		addrs = append(addrs, ip)
@@ -675,45 +785,62 @@ func mustParseListenAddrs(options *Options) (addrs []netip.Addr) {
 		addrs = append(addrs, netip.IPv4Unspecified())
 	}
 
-	return addrs
-}
-
-// mustParsePrefixes parses prefixes and considers any error as fatal, logging
-// it with the entity name.
-func mustParsePrefixes(prefixes []string, entity string) (prefs []netip.Prefix) {
-	for i, p := range prefixes {
-		pref, err := netip.ParsePrefix(p)
-		if err != nil {
-			log.Fatalf("parsing %s at index %d: %v", entity, i, err)
-		}
-
-		prefs = append(prefs, pref)
-	}
-
-	return prefs
+	return addrs, nil
 }
 
 // initSubnets sets the DNS64 configuration into conf.
-func initSubnets(conf *proxy.Config, options *Options) {
-	if conf.UseDNS64 = options.DNS64; conf.UseDNS64 {
-		conf.DNS64Prefs = mustParsePrefixes(options.DNS64Prefix, "dns64 prefix")
-	}
+//
+// TODO(d.kolyshev): Join errors.
+func (opts *Options) initSubnets(conf *proxy.Config) (err error) {
+	if conf.UseDNS64 = opts.DNS64; conf.UseDNS64 {
+		for i, p := range opts.DNS64Prefix {
+			var pref netip.Prefix
+			pref, err = netip.ParsePrefix(p)
+			if err != nil {
+				return fmt.Errorf("parsing dns64 prefix at index %d: %w", i, err)
+			}
 
-	if options.UsePrivateRDNS {
-		private := mustParsePrefixes(options.PrivateSubnets, "private subnet")
-		if len(private) > 0 {
-			conf.PrivateSubnets = netutil.SliceSubnetSet(private)
+			conf.DNS64Prefs = append(conf.DNS64Prefs, pref)
 		}
 	}
+
+	if !opts.UsePrivateRDNS {
+		return nil
+	}
+
+	return opts.initPrivateSubnets(conf)
 }
 
-// IPv6 configuration
+// initSubnets sets the private subnets configuration into conf.
+func (opts *Options) initPrivateSubnets(conf *proxy.Config) (err error) {
+	private := make([]netip.Prefix, 0, len(opts.PrivateSubnets))
+	for i, p := range opts.PrivateSubnets {
+		var pref netip.Prefix
+		pref, err = netip.ParsePrefix(p)
+		if err != nil {
+			return fmt.Errorf("parsing private subnet at index %d: %w", i, err)
+		}
+
+		private = append(private, pref)
+	}
+
+	if len(private) > 0 {
+		conf.PrivateSubnets = netutil.SliceSubnetSet(private)
+	}
+
+	return nil
+}
+
+// ipv6Configuration represents IPv6 configuration.
 type ipv6Configuration struct {
-	ipv6Disabled bool // If true, all AAAA requests will be replied with NoError RCode and empty answer
+	// ipv6Disabled set all AAAA requests to be replied with NoError RCode and
+	// an empty answer.
+	ipv6Disabled bool
 }
 
-// handleDNSRequest checks IPv6 configuration for current session before resolve
-func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) error {
+// handleDNSRequest checks the IPv6 configuration for current session before
+// resolving.
+func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) (err error) {
 	if proxy.CheckDisabledAAAARequest(ctx, c.ipv6Disabled) {
 		return nil
 	}
@@ -721,13 +848,14 @@ func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSConte
 	return p.Resolve(ctx)
 }
 
-// NewTLSConfig returns a TLS config that includes a certificate
-// Use for server TLS config or when using a client certificate
-// If caPath is empty, system CAs will be used
-func newTLSConfig(options *Options) (*tls.Config, error) {
+// NewTLSConfig returns the TLS config that includes a certificate.  Use it for
+// server TLS configuration or for a client certificate.  If caPath is empty,
+// system CAs will be used.
+func newTLSConfig(options *Options) (c *tls.Config, err error) {
 	// Set default TLS min/max versions
-	tlsMinVersion := tls.VersionTLS10 // Default for crypto/tls
-	tlsMaxVersion := tls.VersionTLS13 // Default for crypto/tls
+	tlsMinVersion := tls.VersionTLS10
+	tlsMaxVersion := tls.VersionTLS13
+
 	switch options.TLSMinVersion {
 	case 1.1:
 		tlsMinVersion = tls.VersionTLS11
@@ -736,6 +864,7 @@ func newTLSConfig(options *Options) (*tls.Config, error) {
 	case 1.3:
 		tlsMinVersion = tls.VersionTLS13
 	}
+
 	switch options.TLSMaxVersion {
 	case 1.0:
 		tlsMaxVersion = tls.VersionTLS10
@@ -747,7 +876,7 @@ func newTLSConfig(options *Options) (*tls.Config, error) {
 
 	cert, err := loadX509KeyPair(options.TLSCertPath, options.TLSKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("could not load TLS cert: %s", err)
+		return nil, fmt.Errorf("loading TLS cert: %s", err)
 	}
 
 	// #nosec G402 -- TLS MinVersion is configured by user.

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -19,8 +18,6 @@ import (
 const ipv4OnlyFqdn = "ipv4.only."
 
 func TestDNS64Race(t *testing.T) {
-	log.SetLevel(log.DEBUG)
-
 	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, net.ParseIP("1.2.3.4"))
 	ups := &fakeUpstream{
 		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {

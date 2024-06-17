@@ -334,7 +334,7 @@ func parseConfigFile(options *Options, confPath string) (err error) {
 	return nil
 }
 
-// runProxy starts and runs the proxy.
+// runProxy starts and runs the proxy.  l must not be nil.
 func runProxy(ctx context.Context, l *slog.Logger, options *Options) (err error) {
 	var (
 		buildVersion = version.Version()
@@ -422,13 +422,15 @@ func runPprof(l *slog.Logger) {
 	}()
 }
 
-// createProxyConfig initializes [proxy.Config].
+// createProxyConfig initializes [proxy.Config].  l must not be nil.
 func createProxyConfig(
 	ctx context.Context,
 	l *slog.Logger,
 	options *Options,
 ) (conf *proxy.Config, err error) {
 	conf = &proxy.Config{
+		Logger: l.With(slogutil.KeyPrefix, proxy.LogPrefix),
+
 		RatelimitSubnetLenIPv4: options.RatelimitSubnetLenIPv4,
 		RatelimitSubnetLenIPv6: options.RatelimitSubnetLenIPv6,
 

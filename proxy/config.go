@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 )
@@ -26,6 +26,9 @@ const (
 	// UModeFastestAddr - use Fastest Address algorithm
 	UModeFastestAddr
 )
+
+// LogPrefix is a prefix for logging.
+const LogPrefix = "dnsproxy"
 
 // RequestHandler is an optional custom handler for DNS requests.  It's used
 // instead of [Proxy.Resolve] if set.  The resulting error doesn't affect the
@@ -45,10 +48,14 @@ type RequestHandler func(p *Proxy, dctx *DNSContext) (err error)
 // [BeforeRequestHandler].
 type ResponseHandler func(dctx *DNSContext, err error)
 
-// Config contains all the fields necessary for proxy configuration
+// Config contains all the fields necessary for proxy configuration.
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Config struct {
+	// Logger is used as the base logger for the proxy service.  If nil,
+	// [slog.Default] with [LogPrefix] is used.
+	Logger *slog.Logger
+
 	// TrustedProxies is the trusted list of CIDR networks to detect proxy
 	// servers addresses from where the DoH requests should be handled.  The
 	// value of nil makes Proxy not trust any address.
@@ -316,24 +323,27 @@ func checkInclusion(n, minN, maxN int) (err error) {
 // logConfigInfo logs proxy configuration information.
 func (p *Proxy) logConfigInfo() {
 	if p.CacheMinTTL > 0 || p.CacheMaxTTL > 0 {
-		log.Info("Cache TTL override is enabled. Min=%d, Max=%d", p.CacheMinTTL, p.CacheMaxTTL)
+		p.logger.Info("cache ttl override is enabled", "min", p.CacheMinTTL, "max", p.CacheMaxTTL)
 	}
 
 	if p.Ratelimit > 0 {
-		log.Info(
-			"Ratelimit is enabled and set to %d rps, IPv4 subnet mask len %d, IPv6 subnet mask len %d",
+		p.logger.Info(
+			"ratelimit is enabled",
+			"rps",
 			p.Ratelimit,
+			"ipv4_subnet_mask_len",
 			p.RatelimitSubnetLenIPv4,
+			"ipv6_subnet_mask_len",
 			p.RatelimitSubnetLenIPv6,
 		)
 	}
 
 	if p.RefuseAny {
-		log.Info("dnsproxy: server will refuse requests of type ANY")
+		p.logger.Info("server will refuse requests of type any")
 	}
 
 	if len(p.BogusNXDomain) > 0 {
-		log.Info("%d bogus-nxdomain IP specified", len(p.BogusNXDomain))
+		p.logger.Info("bogus-nxdomain ip specified", "prefix_len", len(p.BogusNXDomain))
 	}
 }
 

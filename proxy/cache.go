@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/binary"
+	"log/slog"
 	"math"
 	"net"
 	"slices"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/miekg/dns"
 )
@@ -33,6 +34,11 @@ type cache struct {
 
 	// itemsWithSubnet is the requests cache.
 	itemsWithSubnet glcache.Cache
+
+	// logger is used for logging in the cache.  It is never nil.
+	//
+	// TODO(a.garipov): Consider removing logger from cache.
+	logger *slog.Logger
 
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
@@ -55,8 +61,8 @@ type cacheItem struct {
 
 // respToItem converts the pair of the response and upstream resolved the one
 // into item for storing it in cache.
-func respToItem(m *dns.Msg, u upstream.Upstream) (item *cacheItem) {
-	ttl := cacheTTL(m)
+func (c *cache) respToItem(m *dns.Msg, u upstream.Upstream) (item *cacheItem) {
+	ttl := cacheTTL(m, c.logger)
 	if ttl == 0 {
 		return nil
 	}
@@ -161,27 +167,36 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 	}, expired
 }
 
+// CacheLogPrefix is a prefix for logging cache operations.
+const CacheLogPrefix = "cache"
+
 // initCache initializes cache if it's enabled.
 func (p *Proxy) initCache() {
 	if !p.CacheEnabled {
-		log.Info("dnsproxy: cache: disabled")
+		p.logger.Info("cache disabled")
 
 		return
 	}
 
 	size := p.CacheSizeBytes
-	log.Info("dnsproxy: cache: enabled, size %d b", size)
+	p.logger.Info("cache enabled", "size", size)
 
-	p.cache = newCache(size, p.EnableEDNSClientSubnet, p.CacheOptimistic)
+	p.cache = newCache(
+		size,
+		p.EnableEDNSClientSubnet,
+		p.CacheOptimistic,
+		p.logger.With(slogutil.KeyPrefix, CacheLogPrefix),
+	)
 	p.shortFlighter = newOptimisticResolver(p)
 }
 
-// newCache returns a properly initialized cache.
-func newCache(size int, withECS, optimistic bool) (c *cache) {
+// newCache returns a properly initialized cache.  logger must not be nil.
+func newCache(size int, withECS, optimistic bool, logger *slog.Logger) (c *cache) {
 	c = &cache{
 		itemsLock:           &sync.RWMutex{},
 		itemsWithSubnetLock: &sync.RWMutex{},
 		items:               createCache(size),
+		logger:              logger,
 		optimistic:          optimistic,
 	}
 
@@ -296,9 +311,9 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 	return glcache.New(conf)
 }
 
-// set tries to add the ci into cache.
+// set stores response and upstream in the cache.
 func (c *cache) set(m *dns.Msg, u upstream.Upstream) {
-	item := respToItem(m, u)
+	item := c.respToItem(m, u)
 	if item == nil {
 		return
 	}
@@ -312,10 +327,10 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream) {
 	c.items.Set(key, packed)
 }
 
-// setWithSubnet tries to add the ci into cache with subnet and ip used to
-// calculate the key.
+// setWithSubnet stores response and upstream with subnet in the cache.  The
+// given subnet mask and IP address are used to calculate the cache key.
 func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet) {
-	item := respToItem(m, u)
+	item := c.respToItem(m, u)
 	if item == nil {
 		return
 	}
@@ -353,26 +368,26 @@ func (c *cache) clearItemsWithSubnet() {
 
 // cacheTTL returns the number of seconds for which m is valid to be cached.
 // For negative answers it follows RFC 2308 on how to cache NXDOMAIN and NODATA
-// kinds of responses.
+// kinds of responses.  l must not be nil.
 //
 // See https://datatracker.ietf.org/doc/html/rfc2308#section-2.1,
 // https://datatracker.ietf.org/doc/html/rfc2308#section-2.2.
-func cacheTTL(m *dns.Msg) (ttl uint32) {
+func cacheTTL(m *dns.Msg, l *slog.Logger) (ttl uint32) {
 	switch {
 	case m == nil:
 		return 0
 	case m.Truncated:
-		log.Debug("dnsproxy: cache: truncated message; not caching")
+		l.Debug("truncated message; not caching")
 
 		return 0
 	case len(m.Question) != 1:
-		log.Debug("dnsproxy: cache: message with wrong number of questions; not caching")
+		l.Debug("message with wrong number of questions; not caching")
 
 		return 0
 	default:
 		ttl = calculateTTL(m)
 		if ttl == 0 {
-			log.Debug("dnsproxy: cache: ttl calculated to be 0; not caching")
+			l.Debug("ttl calculated to be 0; not caching")
 
 			return 0
 		}
@@ -384,17 +399,17 @@ func cacheTTL(m *dns.Msg) (ttl uint32) {
 			return ttl
 		}
 
-		log.Debug("dnsproxy: cache: not a cacheable noerror response; not caching")
+		l.Debug("not a cacheable noerror response; not caching")
 	case dns.RcodeNameError:
 		if isCacheableNegative(m) {
 			return ttl
 		}
 
-		log.Debug("dnsproxy: cache: not a cacheable nxdomain response; not caching")
+		l.Debug("not a cacheable nxdomain response; not caching")
 	case dns.RcodeServerFailure:
 		return ttl
 	default:
-		log.Debug("dnsproxy: cache: response code %s; not caching", dns.RcodeToString[rcode])
+		l.Debug("response code %s; not caching", "rcode", dns.RcodeToString[rcode])
 	}
 
 	return 0

@@ -1,5 +1,5 @@
-// Package proxy implements a DNS proxy that supports all known DNS
-// encryption protocols.
+// Package proxy implements a DNS proxy that supports all known DNS encryption
+// protocols.
 package proxy
 
 import (
@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -19,7 +20,7 @@ import (
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/service"
 	"github.com/AdguardTeam/golibs/syncutil"
@@ -55,8 +56,7 @@ const (
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
 
-// Proxy combines the proxy server state and configuration.  It must not be used
-// until initialized with [Proxy.Init].
+// Proxy combines the proxy server state and configuration.
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Proxy struct {
@@ -91,6 +91,9 @@ type Proxy struct {
 
 	// dnsCryptServer serves DNSCrypt queries.
 	dnsCryptServer *dnscrypt.Server
+
+	// logger is used for logging in the proxy service.  It is never nil.
+	logger *slog.Logger
 
 	// ratelimitBuckets is a storage for ratelimiters for individual IPs.
 	ratelimitBuckets *gocache.Cache
@@ -230,6 +233,12 @@ func New(c *Config) (p *Proxy, err error) {
 		recDetector: newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
 	}
 
+	if c.Logger != nil {
+		p.logger = c.Logger
+	} else {
+		p.logger = slog.Default().With(slogutil.KeyPrefix, LogPrefix)
+	}
+
 	// TODO(e.burkov):  Validate config separately and add the contract to the
 	// New function.
 	err = p.validateConfig()
@@ -246,7 +255,7 @@ func New(c *Config) (p *Proxy, err error) {
 	p.initCache()
 
 	if p.MaxGoroutines > 0 {
-		log.Info("dnsproxy: max goroutines is set to %d", p.MaxGoroutines)
+		p.logger.Info("max goroutines is set", "count", p.MaxGoroutines)
 
 		p.requestsSema = syncutil.NewChanSemaphore(p.MaxGoroutines)
 	} else {
@@ -254,7 +263,7 @@ func New(c *Config) (p *Proxy, err error) {
 	}
 
 	if p.UpstreamMode == UModeFastestAddr {
-		log.Info("dnsproxy: fastest ip is enabled")
+		p.logger.Info("fastest ip is enabled")
 
 		p.fastestAddr = fastip.NewFastestAddr()
 		if timeout := p.FastestPingTimeout; timeout > 0 {
@@ -271,58 +280,6 @@ func New(c *Config) (p *Proxy, err error) {
 	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
 
 	return p, nil
-}
-
-// Init populates fields of p but does not start listeners.
-//
-// Deprecated:  Use the [New] function instead.
-func (p *Proxy) Init() (err error) {
-	// TODO(s.chzhen):  Consider moving to [Proxy.validateConfig].
-	err = p.validateBasicAuth()
-	if err != nil {
-		return fmt.Errorf("basic auth: %w", err)
-	}
-
-	p.initCache()
-
-	if p.MaxGoroutines > 0 {
-		log.Info("dnsproxy: max goroutines is set to %d", p.MaxGoroutines)
-
-		p.requestsSema = syncutil.NewChanSemaphore(p.MaxGoroutines)
-	} else {
-		p.requestsSema = syncutil.EmptySemaphore{}
-	}
-
-	p.udpOOBSize = proxynetutil.UDPGetOOBSize()
-	p.bytesPool = &sync.Pool{
-		New: func() interface{} {
-			// 2 bytes may be used to store packet length (see TCP/TLS)
-			b := make([]byte, 2+dns.MaxMsgSize)
-
-			return &b
-		},
-	}
-
-	if p.UpstreamMode == UModeFastestAddr {
-		log.Info("dnsproxy: fastest ip is enabled")
-
-		p.fastestAddr = fastip.NewFastestAddr()
-		if timeout := p.FastestPingTimeout; timeout > 0 {
-			p.fastestAddr.PingWaitTimeout = timeout
-		}
-	}
-
-	err = p.setupDNS64()
-	if err != nil {
-		return fmt.Errorf("setting up DNS64: %w", err)
-	}
-
-	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
-	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
-
-	p.time = realClock{}
-
-	return nil
 }
 
 // validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
@@ -353,7 +310,7 @@ var _ service.Interface = (*Proxy)(nil)
 
 // Start implements the [service.Interface] for *Proxy.
 func (p *Proxy) Start(ctx context.Context) (err error) {
-	log.Info("dnsproxy: starting dns proxy server")
+	p.logger.InfoContext(ctx, "starting dns proxy server")
 
 	p.Lock()
 	defer p.Unlock()
@@ -392,16 +349,15 @@ func closeAll[C io.Closer](errs []error, closers ...C) (appended []error) {
 }
 
 // Shutdown implements the [service.Interface] for *Proxy.
-//
-// TODO(e.burkov):  Use the context.
-func (p *Proxy) Shutdown(_ context.Context) (err error) {
-	log.Info("dnsproxy: stopping server")
+func (p *Proxy) Shutdown(ctx context.Context) (err error) {
+	p.logger.InfoContext(ctx, "stopping server")
 
 	p.Lock()
 	defer p.Unlock()
 
 	if !p.started {
-		log.Info("dnsproxy: dns proxy server is not started")
+		// TODO(a.garipov): Consider returning err.
+		p.logger.WarnContext(ctx, "dns proxy server is not started")
 
 		return nil
 	}
@@ -458,7 +414,7 @@ func (p *Proxy) Shutdown(_ context.Context) (err error) {
 
 	p.started = false
 
-	log.Println("dnsproxy: stopped dns proxy server")
+	p.logger.InfoContext(ctx, "stopped dns proxy server")
 
 	if len(errs) > 0 {
 		return fmt.Errorf("stopping dns proxy server: %w", errors.Join(errs...))
@@ -597,6 +553,8 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		p.recDetector.add(d.Req)
 	}
 
+	l := p.logger.With(slogutil.KeyPrefix, "resolving from upstream")
+
 	start := time.Now()
 	src := "upstream"
 
@@ -605,12 +563,12 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	if dns64Ups := p.performDNS64(req, resp, upstreams); dns64Ups != nil {
 		u = dns64Ups
 	} else if p.isBogusNXDomain(resp) {
-		log.Debug("dnsproxy: replying from upstream: response contains bogus-nxdomain ip")
+		l.Debug("response contains bogus-nxdomain ip")
 		resp = p.messages.NewMsgNXDOMAIN(req)
 	}
 
 	if err != nil && !isPrivate && p.Fallbacks != nil {
-		log.Debug("dnsproxy: replying from upstream: using fallback due to %s", err)
+		l.Debug("using fallback", slogutil.KeyError, err)
 
 		// Reset the timer.
 		start = time.Now()
@@ -624,12 +582,12 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	if err != nil {
-		log.Debug("dnsproxy: replying from %s: %s", src, err)
+		l.Debug("resolving err", "upstream", src, slogutil.KeyError, err)
 	}
 
 	if resp != nil {
 		d.QueryDuration = time.Since(start)
-		log.Debug("dnsproxy: replying from %s: rtt is %s", src, d.QueryDuration)
+		l.Debug("resolved", "upstream", src, "rtt", d.QueryDuration)
 	}
 
 	p.handleExchangeResult(d, req, resp, u)
@@ -682,7 +640,7 @@ const defaultUDPBufSize = 2048
 // upstream servers.  It expects dctx is filled with the request, the client's
 func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	if p.EnableEDNSClientSubnet {
-		dctx.processECS(p.EDNSAddr)
+		dctx.processECS(p.EDNSAddr, p.logger)
 	}
 
 	dctx.calcFlagsAndSize()
@@ -759,18 +717,18 @@ func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 		return true
 	}
 
-	log.Debug("dnsproxy: cache: %s; not caching", reason)
+	p.logger.Debug("not caching", "reason", reason)
 
 	return false
 }
 
 // processECS adds EDNS Client Subnet data into the request from d.
-func (dctx *DNSContext) processECS(cliIP net.IP) {
+func (dctx *DNSContext) processECS(cliIP net.IP, l *slog.Logger) {
 	if ecs, _ := ecsFromMsg(dctx.Req); ecs != nil {
 		if ones, _ := ecs.Mask.Size(); ones != 0 {
 			dctx.ReqECS = ecs
 
-			log.Debug("dnsproxy: passing through ecs: %s", dctx.ReqECS)
+			l.Debug("passing through ecs", "subnet", dctx.ReqECS)
 
 			return
 		}
@@ -789,6 +747,6 @@ func (dctx *DNSContext) processECS(cliIP net.IP) {
 		// Section 6.
 		dctx.ReqECS = setECS(dctx.Req, cliIP, 0)
 
-		log.Debug("dnsproxy: setting ecs: %s", dctx.ReqECS)
+		l.Debug("setting ecs", "subnet", dctx.ReqECS)
 	}
 }

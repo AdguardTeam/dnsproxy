@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 )
 
@@ -71,7 +71,7 @@ func (p *Proxy) handleBefore(d *DNSContext) (cont bool) {
 		return true
 	}
 
-	log.Debug("dnsproxy: handling before request: %s", err)
+	p.logger.Debug("handling before request", slogutil.KeyError, err)
 
 	if befReqErr := (&BeforeRequestError{}); errors.As(err, &befReqErr) {
 		d.Res = befReqErr.Response

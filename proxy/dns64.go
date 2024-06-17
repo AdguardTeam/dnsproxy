@@ -6,7 +6,7 @@ import (
 	"net/netip"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
@@ -120,7 +120,7 @@ func (p *Proxy) filterNAT64Answers(rrs []dns.RR) (filtered []dns.RR, hasAnswers 
 		case *dns.AAAA:
 			addr, err := netutil.IPToAddrNoMapped(ans.AAAA)
 			if err != nil {
-				log.Error("dnsproxy: bad aaaa record: %s", err)
+				p.logger.Error("bad aaaa record", slogutil.KeyError, err)
 			} else if p.dns64Prefs.Contains(addr) {
 				// Filter the record.
 				continue
@@ -213,16 +213,16 @@ func (p *Proxy) shouldStripDNS64(req *dns.Msg) (ok bool) {
 	host := q.Name
 	ip, err := netutil.IPFromReversedAddr(host)
 	if err != nil {
-		log.Debug("dnsproxy: failed to parse ip from ptr request: %s", err)
+		p.logger.Debug("failed to parse ip from ptr request", slogutil.KeyError, err)
 
 		return false
 	}
 
 	switch {
 	case p.dns64Prefs.Contains(ip):
-		log.Debug("dnsproxy: %s is within DNS64 custom prefix set", ip)
+		p.logger.Debug("the ip is within dns64 custom prefix set", "ip", ip)
 	case dns64WellKnownPref.Contains(ip):
-		log.Debug("dnsproxy: %s is within DNS64 well-known prefix", ip)
+		p.logger.Debug("the ip is within dns64 well-known prefix", "ip", ip)
 	default:
 		return false
 	}
@@ -260,7 +260,7 @@ func (p *Proxy) synthRR(rr dns.RR, soaTTL uint32) (result dns.RR) {
 
 	addr, err := netutil.IPToAddr(aResp.A, netutil.AddrFamilyIPv4)
 	if err != nil {
-		log.Error("dnsproxy: bad a record: %s", err)
+		p.logger.Error("bad a record", slogutil.KeyError, err)
 
 		return nil
 	}
@@ -295,17 +295,17 @@ func (p *Proxy) performDNS64(
 	}
 
 	host := origReq.Question[0].Name
-	log.Debug("dnsproxy: received an empty aaaa response for %q, checking dns64", host)
+	p.logger.Debug("received an empty aaaa response, checking dns64", "host", host)
 
 	dns64Resp, u, err := p.exchangeUpstreams(dns64Req, upstreams)
 	if err != nil {
-		log.Error("dnsproxy: dns64 request failed: %s", err)
+		p.logger.Error("dns64 request failed", slogutil.KeyError, err)
 
 		return nil
 	}
 
 	if dns64Resp != nil && p.synthDNS64(origReq, origResp, dns64Resp) {
-		log.Debug("dnsforward: synthesized aaaa response for %q", host)
+		p.logger.Debug("synthesized aaaa response", "host", host)
 
 		return u
 	}

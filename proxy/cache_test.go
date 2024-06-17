@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strings"
@@ -119,7 +120,7 @@ func TestCache_expired(t *testing.T) {
 		optimistic: true,
 	}}
 
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newCache(testCacheSize, false, false, slog.Default())
 	for _, tc := range testCases {
 		ans.Hdr.Ttl = tc.ttl
 		req := (&dns.Msg{}).SetQuestion(host, dns.TypeA)
@@ -156,7 +157,7 @@ func TestCache_expired(t *testing.T) {
 }
 
 func TestCacheDO(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newCache(testCacheSize, false, false, slog.Default())
 
 	// Fill the cache.
 	reply := (&dns.Msg{
@@ -199,7 +200,7 @@ func TestCacheDO(t *testing.T) {
 }
 
 func TestCacheCNAME(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newCache(testCacheSize, false, false, slog.Default())
 
 	// Fill the cache
 	reply := (&dns.Msg{
@@ -236,7 +237,7 @@ func TestCacheCNAME(t *testing.T) {
 }
 
 func TestCache_uncacheable(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newCache(testCacheSize, false, false, slog.Default())
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -252,7 +253,7 @@ func TestCache_uncacheable(t *testing.T) {
 }
 
 func TestCache_concurrent(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newCache(testCacheSize, false, false, slog.Default())
 
 	hosts := map[string]string{
 		dns.Fqdn("yandex.com"):     "213.180.204.62",
@@ -525,7 +526,7 @@ func TestCache(t *testing.T) {
 }
 
 func (tests testCases) run(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newCache(testCacheSize, false, false, slog.Default())
 
 	for _, res := range tests.cache {
 		reply := (&dns.Msg{
@@ -631,7 +632,7 @@ func TestCache_getWithSubnet(t *testing.T) {
 	mask16 := net.CIDRMask(16, netutil.IPv4BitLen)
 	mask24 := net.CIDRMask(24, netutil.IPv4BitLen)
 
-	c := newCache(testCacheSize, true, false)
+	c := newCache(testCacheSize, true, false, slog.Default())
 
 	t.Run("empty", func(t *testing.T) {
 		ci, expired, _ := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
@@ -717,7 +718,7 @@ func TestCache_getWithSubnet_mask(t *testing.T) {
 
 	ansIP := net.IP{4, 4, 4, 4}
 
-	c := newCache(testCacheSize, true, true)
+	c := newCache(testCacheSize, true, true, slog.Default())
 
 	req := (&dns.Msg{}).SetQuestion(testFQDN, dns.TypeA)
 	resp := (&dns.Msg{
@@ -956,7 +957,7 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.wantTTL, cacheTTL(tc.req))
+			assert.Equal(t, tc.wantTTL, cacheTTL(tc.req, slog.Default()))
 		})
 	}
 }

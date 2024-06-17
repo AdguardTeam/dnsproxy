@@ -8,19 +8,17 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/netip"
 	"net/url"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -29,10 +27,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// Disable logging in tests.
-	log.SetOutput(io.Discard)
-
-	os.Exit(m.Run())
+	// TODO(d.kolyshev): Remove after slog migration.
+	testutil.DiscardLogOutput(m)
 }
 
 const (
@@ -1046,6 +1042,7 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 			false,
 			0,
 			false,
+			nil,
 		),
 		Req:  newHostTestMessage("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
@@ -1081,6 +1078,7 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 			false,
 			0,
 			false,
+			nil,
 		),
 		Req:  newHostTestMessage("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
@@ -1139,6 +1137,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 		true,
 		defaultCacheSize,
 		prx.EnableEDNSClientSubnet,
+		nil,
 	)
 
 	d := DNSContext{
@@ -1433,6 +1432,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			CacheEnabled:    true,
 			CacheOptimistic: true,
 		},
+		logger: slog.Default(),
 	}
 
 	p.initCache()

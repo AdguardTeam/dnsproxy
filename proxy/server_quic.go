@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"time"
@@ -12,7 +13,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/bluele/gcache"
@@ -64,7 +65,7 @@ const (
 // createQUICListeners creates QUIC listeners for the DoQ server.
 func (p *Proxy) createQUICListeners() error {
 	for _, a := range p.QUICListenAddr {
-		log.Info("creating listener quic://%s", a)
+		p.logger.Info("creating quic listener", "addr", a)
 
 		conn, err := net.ListenUDP(bootstrap.NetworkUDP, a)
 		if err != nil {
@@ -92,8 +93,9 @@ func (p *Proxy) createQUICListeners() error {
 		p.quicTransports = append(p.quicTransports, transport)
 		p.quicListen = append(p.quicListen, quicListen)
 
-		log.Info("listening quic://%s", quicListen.Addr())
+		p.logger.Info("listening quic", "addr", quicListen.Addr())
 	}
+
 	return nil
 }
 
@@ -101,23 +103,25 @@ func (p *Proxy) createQUICListeners() error {
 //
 // See also the comment on Proxy.requestsSema.
 func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, reqSema syncutil.Semaphore) {
-	log.Info("Entering the DNS-over-QUIC listener loop on %s", l.Addr())
+	p.logger.Info("entering dns-over-quic listener loop", "addr", l.Addr())
+
 	for {
 		ctx := context.Background()
 		conn, err := l.Accept(ctx)
 		if err != nil {
-			if isQUICErrorForDebugLog(err) {
-				log.Debug("accepting quic conn: closed or timed out: %s", err)
-			} else {
-				log.Error("accepting quic conn: %s", err)
-			}
+			logQUICError(ctx, "accepting quic conn", err, p.logger)
 
 			break
 		}
 
 		err = reqSema.Acquire(ctx)
 		if err != nil {
-			log.Error("dnsproxy: quic: acquiring semaphore: %s", err)
+			p.logger.ErrorContext(
+				ctx,
+				"acquiring semaphore",
+				"proto", ProtoQUIC,
+				slogutil.KeyError, err,
+			)
 
 			break
 		}
@@ -126,6 +130,20 @@ func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, reqSema syncutil.Semaphore
 
 			p.handleQUICConnection(conn, reqSema)
 		}()
+	}
+}
+
+// logQUICError writes suitable log message for the given err.
+func logQUICError(ctx context.Context, prefix string, err error, l *slog.Logger) {
+	if isQUICErrorForDebugLog(err) {
+		l.DebugContext(
+			ctx,
+			"closed or timed out",
+			slogutil.KeyPrefix, prefix,
+			slogutil.KeyError, err,
+		)
+	} else {
+		l.ErrorContext(ctx, prefix, slogutil.KeyError, err)
 	}
 }
 
@@ -144,31 +162,27 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Sema
 		// bidirectional stream.
 		stream, err := conn.AcceptStream(ctx)
 		if err != nil {
-			if isQUICErrorForDebugLog(err) {
-				log.Debug("accepting quic stream: closed or timed out: %s", err)
-			} else {
-				log.Error("accepting quic stream: %s", err)
-			}
+			logQUICError(ctx, "accepting quic stream", err, p.logger)
 
 			// Close the connection to make sure resources are freed.
-			closeQUICConn(conn, DoQCodeNoError)
+			closeQUICConn(conn, DoQCodeNoError, p.logger)
 
 			return
 		}
 
 		err = reqSema.Acquire(ctx)
 		if err != nil {
-			log.Error("dnsproxy: quic: acquiring semaphore: %s", err)
+			p.logger.ErrorContext(ctx, "acquiring semaphore: %s", err)
 
 			// Close the connection to make sure resources are freed.
-			closeQUICConn(conn, DoQCodeNoError)
+			closeQUICConn(conn, DoQCodeNoError, p.logger)
 
 			return
 		}
 		go func() {
 			defer reqSema.Release()
 
-			p.handleQUICStream(stream, conn)
+			p.handleQUICStream(ctx, stream, conn)
 
 			// The server MUST send the response(s) on the same stream and MUST
 			// indicate, after the last response, through the STREAM FIN
@@ -180,7 +194,7 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Sema
 
 // handleQUICStream reads DNS queries from the stream, processes them,
 // and writes back the response.
-func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
+func (p *Proxy) handleQUICStream(ctx context.Context, stream quic.Stream, conn quic.Connection) {
 	bufPtr := p.bytesPool.Get().(*[]byte)
 	defer p.bytesPool.Put(bufPtr)
 
@@ -198,7 +212,7 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 	// just a signal that there will be no data to read anymore from this
 	// stream.
 	if (err != nil && err != io.EOF) || n < minDNSPacketSize {
-		logShortQUICRead(err)
+		logShortQUICRead(ctx, err, p.logger)
 
 		return
 	}
@@ -221,18 +235,18 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 	}
 
 	if err != nil {
-		log.Error("unpacking quic packet: %s", err)
-		closeQUICConn(conn, DoQCodeProtocolError)
+		p.logger.ErrorContext(ctx, "unpacking quic packet", slogutil.KeyError, err)
+		closeQUICConn(conn, DoQCodeProtocolError, p.logger)
 
 		return
 	}
 
-	if !validQUICMsg(req) {
+	if !validQUICMsg(req, p.logger) {
 		// If a peer encounters such an error condition, it is considered a
 		// fatal error. It SHOULD forcibly abort the connection using QUIC's
 		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
 		// DOQ_PROTOCOL_ERROR.
-		closeQUICConn(conn, DoQCodeProtocolError)
+		closeQUICConn(conn, DoQCodeProtocolError, p.logger)
 
 		return
 	}
@@ -244,7 +258,12 @@ func (p *Proxy) handleQUICStream(stream quic.Stream, conn quic.Connection) {
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
-		log.Tracef("error handling DNS (%s) request: %s", d.Proto, err)
+		p.logger.DebugContext(
+			ctx,
+			"error handling dns request",
+			"proto", d.Proto,
+			slogutil.KeyError, err,
+		)
 	}
 }
 
@@ -254,7 +273,7 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 
 	if resp == nil {
 		// If no response has been written, close the QUIC connection now.
-		closeQUICConn(d.QUICConnection, DoQCodeInternalError)
+		closeQUICConn(d.QUICConnection, DoQCodeInternalError, p.logger)
 
 		return errors.Error("no response to write")
 	}
@@ -289,7 +308,7 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 
 // validQUICMsg validates the incoming DNS message and returns false if
 // something is wrong with the message.
-func validQUICMsg(req *dns.Msg) (ok bool) {
+func validQUICMsg(req *dns.Msg, l *slog.Logger) (ok bool) {
 	// See https://www.rfc-editor.org/rfc/rfc9250.html#name-protocol-errors
 
 	// 1. a client or server receives a message with a non-zero Message ID.
@@ -317,7 +336,7 @@ func validQUICMsg(req *dns.Msg) (ok bool) {
 		for _, option := range opt.Option {
 			// Check for EDNS TCP keepalive option
 			if option.Option() == dns.EDNS0TCPKEEPALIVE {
-				log.Debug("client sent EDNS0 TCP keepalive option")
+				l.Debug("client sent edns0 tcp keepalive option")
 
 				return false
 			}
@@ -336,18 +355,14 @@ func validQUICMsg(req *dns.Msg) (ok bool) {
 }
 
 // logShortQUICRead is a logging helper for short reads from a QUIC stream.
-func logShortQUICRead(err error) {
+func logShortQUICRead(ctx context.Context, err error, l *slog.Logger) {
 	if err == nil {
-		log.Info("quic packet too short for dns query")
+		l.InfoContext(ctx, "quic packet too short for dns query")
 
 		return
 	}
 
-	if isQUICErrorForDebugLog(err) {
-		log.Debug("reading from quic stream: closed or timeout: %s", err)
-	} else {
-		log.Error("reading from quic stream: %s", err)
-	}
+	logQUICError(ctx, "reading from quic stream", err, l)
 }
 
 const (
@@ -360,8 +375,8 @@ const (
 	qCodeApplicationErrorError = quic.ApplicationErrorCode(quic.ApplicationErrorErrorCode)
 )
 
-// isQUICErrorForDebugLog returns true if err is a non-critical error, most probably
-// related to the current QUIC implementation. err must not be nil.
+// isQUICErrorForDebugLog returns true if err is a non-critical error, most
+// probably related to the current QUIC implementation. err must not be nil.
 //
 // TODO(ameshkov): re-test when updating quic-go.
 func isQUICErrorForDebugLog(err error) (ok bool) {
@@ -396,12 +411,12 @@ func isQUICErrorForDebugLog(err error) (ok bool) {
 }
 
 // closeQUICConn quietly closes the QUIC connection.
-func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode) {
-	log.Debug("closing quic conn %s with code %d", conn.LocalAddr(), code)
+func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode, l *slog.Logger) {
+	l.Debug("closing quic conn", "addr", conn.LocalAddr(), "code", code)
 
 	err := conn.CloseWithError(code, "")
 	if err != nil {
-		log.Debug("closing quic connection with code %d: %s", code, err)
+		l.Debug("closing quic connection", "code", code, slogutil.KeyError, err)
 	}
 }
 

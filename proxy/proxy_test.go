@@ -26,11 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMain(m *testing.M) {
-	// TODO(d.kolyshev): Remove after slog migration.
-	testutil.DiscardLogOutput(m)
-}
-
 const (
 	listenIP                = "127.0.0.1"
 	testDefaultUpstreamAddr = "8.8.8.8:53"

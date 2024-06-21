@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -20,10 +20,10 @@ func (p *Proxy) createDNSCryptListeners() (err error) {
 	}
 
 	if p.DNSCryptResolverCert == nil || p.DNSCryptProviderName == "" {
-		return errors.Error("invalid DNSCrypt configuration: no certificate or provider name")
+		return errors.Error("invalid dnscrypt configuration: no certificate or provider name")
 	}
 
-	log.Info("Initializing DNSCrypt: %s", p.DNSCryptProviderName)
+	p.logger.Info("initializing dnscrypt", "provider", p.DNSCryptProviderName)
 	p.dnsCryptServer = &dnscrypt.Server{
 		ProviderName: p.DNSCryptProviderName,
 		ResolverCert: p.DNSCryptResolverCert,
@@ -35,25 +35,25 @@ func (p *Proxy) createDNSCryptListeners() (err error) {
 	}
 
 	for _, a := range p.DNSCryptUDPListenAddr {
-		log.Info("Creating a DNSCrypt UDP listener")
-		udpListen, lErr := net.ListenUDP("udp", a)
+		p.logger.Info("creating dnscrypt udp listener")
+		udpListen, lErr := net.ListenUDP(bootstrap.NetworkUDP, a)
 		if lErr != nil {
 			return fmt.Errorf("listening to dnscrypt udp socket: %w", lErr)
 		}
 
 		p.dnsCryptUDPListen = append(p.dnsCryptUDPListen, udpListen)
-		log.Info("Listening for DNSCrypt messages on udp://%s", udpListen.LocalAddr())
+		p.logger.Info("listening for dnscrypt messages on udp", "addr", udpListen.LocalAddr())
 	}
 
 	for _, a := range p.DNSCryptTCPListenAddr {
-		log.Info("Creating a DNSCrypt TCP listener")
-		tcpListen, lErr := net.ListenTCP("tcp", a)
+		p.logger.Info("creating a dnscrypt tcp listener")
+		tcpListen, lErr := net.ListenTCP(bootstrap.NetworkTCP, a)
 		if lErr != nil {
 			return fmt.Errorf("listening to dnscrypt tcp socket: %w", lErr)
 		}
 
 		p.dnsCryptTCPListen = append(p.dnsCryptTCPListen, tcpListen)
-		log.Info("Listening for DNSCrypt messages on tcp://%s", tcpListen.Addr())
+		p.logger.Info("listening for dnscrypt messages on tcp", "addr", tcpListen.Addr())
 	}
 
 	return nil

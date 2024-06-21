@@ -3,12 +3,13 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/miekg/dns"
@@ -30,7 +31,7 @@ func (p *Proxy) createUDPListeners(ctx context.Context) (err error) {
 
 // udpCreate - create a UDP listening socket
 func (p *Proxy) udpCreate(ctx context.Context, udpAddr *net.UDPAddr) (*net.UDPConn, error) {
-	log.Info("dnsproxy: creating udp server socket %s", udpAddr)
+	p.logger.InfoContext(ctx, "creating udp server socket", "addr", udpAddr)
 
 	packetConn, err := proxynetutil.ListenConfig().ListenPacket(ctx, "udp", udpAddr.String())
 	if err != nil {
@@ -54,7 +55,7 @@ func (p *Proxy) udpCreate(ctx context.Context, udpAddr *net.UDPAddr) (*net.UDPCo
 		return nil, fmt.Errorf("setting udp opts: %w", err)
 	}
 
-	log.Info("dnsproxy: listening to udp://%s", udpListen.LocalAddr())
+	p.logger.InfoContext(ctx, "listening to udp", "addr", udpListen.LocalAddr())
 
 	return udpListen, nil
 }
@@ -63,7 +64,7 @@ func (p *Proxy) udpCreate(ctx context.Context, udpAddr *net.UDPAddr) (*net.UDPCo
 //
 // See also the comment on Proxy.requestsSema.
 func (p *Proxy) udpPacketLoop(conn *net.UDPConn, reqSema syncutil.Semaphore) {
-	log.Info("dnsproxy: entering udp listener loop on %s", conn.LocalAddr())
+	p.logger.Info("entering udp listener loop", "addr", conn.LocalAddr())
 
 	b := make([]byte, dns.MaxMsgSize)
 	for p.isStarted() {
@@ -79,7 +80,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, reqSema syncutil.Semaphore) {
 			// TODO(d.kolyshev): Pass and use context from above.
 			sErr := reqSema.Acquire(context.Background())
 			if sErr != nil {
-				log.Error("dnsproxy: udp: acquiring semaphore: %s", sErr)
+				p.logger.Error("acquiring semaphore", "proto", ProtoUDP, slogutil.KeyError, sErr)
 
 				break
 			}
@@ -91,7 +92,7 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, reqSema syncutil.Semaphore) {
 		}
 
 		if err != nil {
-			logUDPConnError(err, conn)
+			logUDPConnError(err, conn, p.logger)
 
 			break
 		}
@@ -99,11 +100,11 @@ func (p *Proxy) udpPacketLoop(conn *net.UDPConn, reqSema syncutil.Semaphore) {
 }
 
 // logUDPConnError writes suitable log message for given err.
-func logUDPConnError(err error, conn *net.UDPConn) {
+func logUDPConnError(err error, conn *net.UDPConn, l *slog.Logger) {
 	if errors.Is(err, net.ErrClosed) {
-		log.Debug("dnsproxy: udp connection %s closed", conn.LocalAddr())
+		l.Debug("udp connection closed", "addr", conn.LocalAddr())
 	} else {
-		log.Error("dnsproxy: reading from udp: %s", err)
+		l.Error("reading from udp", slogutil.KeyError, err)
 	}
 }
 
@@ -114,12 +115,12 @@ func (p *Proxy) udpHandlePacket(
 	remoteAddr *net.UDPAddr,
 	conn *net.UDPConn,
 ) {
-	log.Debug("dnsproxy: handling new udp packet from %s", remoteAddr)
+	p.logger.Debug("handling new udp packet", "raddr", remoteAddr)
 
 	req := &dns.Msg{}
 	err := req.Unpack(packet)
 	if err != nil {
-		log.Error("dnsproxy: unpacking udp packet: %s", err)
+		p.logger.Error("unpacking udp packet", slogutil.KeyError, err)
 
 		return
 	}
@@ -130,7 +131,7 @@ func (p *Proxy) udpHandlePacket(
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
-		log.Debug("dnsproxy: handling dns (proto %s) request: %s", d.Proto, err)
+		p.logger.Debug("handling dns request", "proto", d.Proto, slogutil.KeyError, err)
 	}
 }
 

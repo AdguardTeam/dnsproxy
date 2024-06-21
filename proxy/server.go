@@ -3,11 +3,13 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -91,7 +93,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 	p.logDNSMessage(d.Req)
 
 	if d.Req.Response {
-		log.Debug("dnsproxy: dropping incoming response packet from %s", d.Addr)
+		p.logger.Debug("dropping incoming response packet", "addr", d.Addr)
 
 		return nil
 	}
@@ -108,9 +110,9 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 	// TODO(e.burkov):  Investigate if written above true and move to UDP server
 	// implementation?
 	if d.Proto == ProtoUDP && p.isRatelimited(ip) {
-		log.Debug("dnsproxy: ratelimiting %s based on IP only", d.Addr)
+		p.logger.Debug("ratelimited based on ip only", "addr", d.Addr)
 
-		// Don't reply to ratelimitted clients.
+		// Don't reply to ratelimited clients.
 		return nil
 	}
 
@@ -134,22 +136,26 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 	switch {
 	case len(d.Req.Question) != 1:
-		log.Debug("dnsproxy: got invalid number of questions: %d", len(d.Req.Question))
+		p.logger.Debug("invalid number of questions", "req_questions_len", len(d.Req.Question))
 
 		// TODO(e.burkov):  Probably, FORMERR would be a better choice here.
 		// Check out RFC.
 		return p.messages.NewMsgSERVFAIL(d.Req)
 	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
 		// Refuse requests of type ANY (anti-DDOS measure).
-		log.Debug("dnsproxy: refusing type=ANY request")
+		p.logger.Debug("refusing dns type any request")
 
 		return p.messages.NewMsgNOTIMPLEMENTED(d.Req)
 	case p.recDetector.check(d.Req):
-		log.Debug("dnsproxy: recursion detected resolving %q", d.Req.Question[0].Name)
+		p.logger.Debug("recursion detected", "req_question", d.Req.Question[0].Name)
 
 		return p.messages.NewMsgNXDOMAIN(d.Req)
-	case d.isForbiddenARPA(p.privateNets):
-		log.Debug("dnsproxy: %s requests a private arpa domain %q", d.Addr, d.Req.Question[0].Name)
+	case d.isForbiddenARPA(p.privateNets, p.logger):
+		p.logger.Debug(
+			"private arpa domain is requested",
+			"addr", d.Addr,
+			"arpa", d.Req.Question[0].Name,
+		)
 
 		return p.messages.NewMsgNXDOMAIN(d.Req)
 	default:
@@ -160,7 +166,7 @@ func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 // isForbiddenARPA returns true if dctx contains a PTR, SOA, or NS request for
 // some private address and client's address is not within the private network.
 // Otherwise, it sets [DNSContext.RequestedPrivateRDNS] for future use.
-func (dctx *DNSContext) isForbiddenARPA(privateNets netutil.SubnetSet) (ok bool) {
+func (dctx *DNSContext) isForbiddenARPA(privateNets netutil.SubnetSet, l *slog.Logger) (ok bool) {
 	q := dctx.Req.Question[0]
 	switch q.Qtype {
 	case dns.TypePTR, dns.TypeSOA, dns.TypeNS:
@@ -175,7 +181,7 @@ func (dctx *DNSContext) isForbiddenARPA(privateNets netutil.SubnetSet) (ok bool)
 
 	requestedPref, err := netutil.ExtractReversedAddr(q.Name)
 	if err != nil {
-		log.Debug("proxy: parsing reversed subnet: %v", err)
+		l.Debug("parsing reversed subnet", slogutil.KeyError, err)
 
 		return false
 	}
@@ -216,7 +222,7 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 
 	if err != nil {
-		logWithNonCrit(err, fmt.Sprintf("responding %s request", d.Proto))
+		logWithNonCrit(err, "responding request", d.Proto, p.logger)
 	}
 }
 
@@ -227,20 +233,46 @@ func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
 		newTTL := respectTTLOverrides(originalTTL, p.CacheMinTTL, p.CacheMaxTTL)
 
 		if originalTTL != newTTL {
-			log.Debug("Override TTL from %d to %d", originalTTL, newTTL)
+			p.logger.Debug("ttl overwritten", "old", originalTTL, "new", newTTL)
 			rr.Header().Ttl = newTTL
 		}
 	}
 }
 
+// logDNSMessage logs the given DNS message.
 func (p *Proxy) logDNSMessage(m *dns.Msg) {
 	if m == nil {
 		return
 	}
 
+	var msg string
 	if m.Response {
-		log.Tracef("OUT: %s", m)
+		msg = "out"
 	} else {
-		log.Tracef("IN: %s", m)
+		msg = "in"
+	}
+
+	slogutil.PrintLines(context.TODO(), p.logger, slog.LevelDebug, msg, m.String())
+}
+
+// logWithNonCrit logs the error on the appropriate level depending on whether
+// err is a critical error or not.
+func logWithNonCrit(err error, msg string, proto Proto, l *slog.Logger) {
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || isEPIPE(err) {
+		l.Debug(
+			"connection is closed",
+			"proto", proto,
+			"details", msg,
+			slogutil.KeyError, err,
+		)
+	} else if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
+		l.Debug(
+			"connection timed out",
+			"proto", proto,
+			"details", msg,
+			slogutil.KeyError, err,
+		)
+	} else {
+		l.Error(msg, "proto", proto, slogutil.KeyError, err)
 	}
 }

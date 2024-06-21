@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -331,6 +332,8 @@ func TestRemoteAddr(t *testing.T) {
 		wantProxy: netip.AddrPort{},
 	}}
 
+	l := slogutil.NewDiscardLogger()
+
 	for _, tc := range testCases {
 		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
 		require.NoError(t, err)
@@ -342,7 +345,7 @@ func TestRemoteAddr(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			var addr, prx netip.AddrPort
-			addr, prx, err = remoteAddr(r)
+			addr, prx, err = remoteAddr(r, l)
 			if tc.wantErr != "" {
 				testutil.AssertErrorMsg(t, tc.wantErr, err)
 

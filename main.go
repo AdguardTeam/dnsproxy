@@ -212,12 +212,6 @@ const (
 
 	argConfigPath = "--config-path="
 	argVersion    = "--version"
-
-	// statusArgumentError is returned when the program exits due to invalid
-	// command-line argument or its value.
-	//
-	// TODO(a.garipov): Add to golibs.
-	statusArgumentError = 2
 )
 
 // main is the entry point.
@@ -312,7 +306,7 @@ func parseOptions() (opts *Options, exitCode int, err error) {
 			return nil, osutil.ExitCodeSuccess, nil
 		}
 
-		return nil, statusArgumentError, nil
+		return nil, osutil.ExitCodeArgumentError, nil
 	}
 
 	return opts, osutil.ExitCodeSuccess, nil

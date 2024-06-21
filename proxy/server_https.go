@@ -1,18 +1,21 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"strings"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/httphdr"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -23,11 +26,12 @@ import (
 // H1/H2 server.  Returns the address the listener actually listens to (useful
 // in the case if port 0 is specified).
 func (p *Proxy) listenHTTP(addr *net.TCPAddr) (laddr *net.TCPAddr, err error) {
-	tcpListen, err := net.ListenTCP("tcp", addr)
+	tcpListen, err := net.ListenTCP(bootstrap.NetworkTCP, addr)
 	if err != nil {
 		return nil, fmt.Errorf("tcp listener: %w", err)
 	}
-	log.Info("Listening to https://%s", tcpListen.Addr())
+
+	p.logger.Info("listening to https", "addr", tcpListen.Addr())
 
 	tlsConfig := p.TLSConfig.Clone()
 	tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
@@ -47,7 +51,8 @@ func (p *Proxy) listenH3(addr *net.UDPAddr) (err error) {
 	if err != nil {
 		return fmt.Errorf("quic listener: %w", err)
 	}
-	log.Info("Listening to h3://%s", quicListen.Addr())
+
+	p.logger.Info("listening to h3", "addr", quicListen.Addr())
 
 	p.h3Listen = append(p.h3Listen, quicListen)
 
@@ -69,7 +74,7 @@ func (p *Proxy) createHTTPSListeners() (err error) {
 	}
 
 	for _, addr := range p.HTTPSListenAddr {
-		log.Info("Creating an HTTPS server")
+		p.logger.Info("creating an https server")
 
 		tcpAddr, lErr := p.listenHTTP(addr)
 		if lErr != nil {
@@ -92,8 +97,8 @@ func (p *Proxy) createHTTPSListeners() (err error) {
 
 // newDoHReq returns new DNS request parsed from the given HTTP request.  In
 // case of invalid request returns nil and the suitable status code for an HTTP
-// error response.
-func newDoHReq(r *http.Request) (req *dns.Msg, statusCode int) {
+// error response.  l must not be nil.
+func newDoHReq(r *http.Request, l *slog.Logger) (req *dns.Msg, statusCode int) {
 	var buf []byte
 	var err error
 
@@ -102,14 +107,18 @@ func newDoHReq(r *http.Request) (req *dns.Msg, statusCode int) {
 		dnsParam := r.URL.Query().Get("dns")
 		buf, err = base64.RawURLEncoding.DecodeString(dnsParam)
 		if len(buf) == 0 || err != nil {
-			log.Debug("dnsproxy: parsing dns request from get param %q: %v", dnsParam, err)
+			l.Debug(
+				"parsing dns request from http get param",
+				"param_name", dnsParam,
+				slogutil.KeyError, err,
+			)
 
 			return nil, http.StatusBadRequest
 		}
 	case http.MethodPost:
 		contentType := r.Header.Get(httphdr.ContentType)
 		if contentType != "application/dns-message" {
-			log.Debug("dnsproxy: unsupported media type %q", contentType)
+			l.Debug("unsupported media type", "content_type", contentType)
 
 			return nil, http.StatusUnsupportedMediaType
 		}
@@ -117,21 +126,21 @@ func newDoHReq(r *http.Request) (req *dns.Msg, statusCode int) {
 		// TODO(d.kolyshev): Limit reader.
 		buf, err = io.ReadAll(r.Body)
 		if err != nil {
-			log.Debug("dnsproxy: reading http request body: %s", err)
+			l.Debug("reading http request body", slogutil.KeyError, err)
 
 			return nil, http.StatusBadRequest
 		}
 
-		defer log.OnCloserError(r.Body, log.DEBUG)
+		defer slogutil.CloseAndLog(context.TODO(), l, r.Body, slog.LevelDebug)
 	default:
-		log.Debug("dnsproxy: bad http method %q", r.Method)
+		l.Debug("bad http method", "method", r.Method)
 
 		return nil, http.StatusMethodNotAllowed
 	}
 
 	req = &dns.Msg{}
 	if err = req.Unpack(buf); err != nil {
-		log.Debug("dnsproxy: unpacking http msg: %s", err)
+		l.Debug("unpacking http msg", slogutil.KeyError, err)
 
 		return nil, http.StatusBadRequest
 	}
@@ -148,18 +157,18 @@ func newDoHReq(r *http.Request) (req *dns.Msg, statusCode int) {
 //     "application/dns-message",
 //   - http.StatusMethodNotAllowed if request method is not GET or POST.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Debug("dnsproxy: incoming https request on %s", r.URL)
+	p.logger.Debug("incoming https request", "url", r.URL)
 
-	raddr, prx, err := remoteAddr(r)
+	raddr, prx, err := remoteAddr(r, p.logger)
 	if err != nil {
-		log.Debug("dnsproxy: warning: getting real ip: %s", err)
+		p.logger.Debug("getting real ip", slogutil.KeyError, err)
 	}
 
 	if !p.checkBasicAuth(w, r, raddr) {
 		return
 	}
 
-	req, statusCode := newDoHReq(r)
+	req, statusCode := newDoHReq(r, p.logger)
 	if req == nil {
 		http.Error(w, http.StatusText(statusCode), statusCode)
 
@@ -167,10 +176,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if prx.IsValid() {
-		log.Debug("dnsproxy: request came from proxy server %s", prx)
+		p.logger.Debug("request came from proxy server", "addr", prx)
 
 		if !p.TrustedProxies.Contains(prx.Addr()) {
-			log.Debug("dnsproxy: proxy %s is not trusted, using original remote addr", prx)
+			p.logger.Debug("proxy is not trusted, using original remote addr", "addr", prx)
 
 			// So the address of the proxy itself is used, as the remote address
 			// parsed from headers cannot be trusted.
@@ -186,7 +195,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err = p.handleDNSRequest(d)
 	if err != nil {
-		log.Debug("dnsproxy: handling dns (%s) request: %s", d.Proto, err)
+		p.logger.Debug("handling dns request", "proto", d.Proto, slogutil.KeyError, err)
 	}
 }
 
@@ -208,7 +217,7 @@ func (p *Proxy) checkBasicAuth(
 		return true
 	}
 
-	log.Error("dnsproxy: basic auth failed for user %q from raddr %s", user, raddr)
+	p.logger.Error("basic auth failed", "user", user, "raddr", raddr)
 
 	h := w.Header()
 	h.Set(httphdr.WWWAuthenticate, `Basic realm="DNS", charset="UTF-8"`)
@@ -285,7 +294,7 @@ func realIPFromHdrs(r *http.Request) (realIP netip.Addr, err error) {
 
 // remoteAddr returns the real client's address and the IP address of the latest
 // proxy server if any.
-func remoteAddr(r *http.Request) (addr, prx netip.AddrPort, err error) {
+func remoteAddr(r *http.Request, l *slog.Logger) (addr, prx netip.AddrPort, err error) {
 	host, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return netip.AddrPort{}, netip.AddrPort{}, err
@@ -293,12 +302,12 @@ func remoteAddr(r *http.Request) (addr, prx netip.AddrPort, err error) {
 
 	realIP, err := realIPFromHdrs(r)
 	if err != nil {
-		log.Debug("dnsproxy: getting ip address from http request: %s", err)
+		l.Debug("getting ip address from http request", slogutil.KeyError, err)
 
 		return host, netip.AddrPort{}, nil
 	}
 
-	log.Debug("dnsproxy: using ip address from http request: %s", realIP)
+	l.Debug("using ip address from http request", "addr", realIP)
 
 	// TODO(a.garipov): Add port if we can get it from headers like X-Real-Port,
 	// X-Forwarded-Port, etc.

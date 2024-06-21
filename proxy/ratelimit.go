@@ -1,11 +1,12 @@
 package proxy
 
 import (
+	"fmt"
 	"net/netip"
 	"slices"
 	"time"
 
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	rate "github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -53,7 +54,11 @@ func (p *Proxy) isRatelimited(addr netip.Addr) (ok bool) {
 	value := p.limiterForIP(ipStr)
 	rl, ok := value.(*rate.RateLimiter)
 	if !ok {
-		log.Error("dnsproxy: %T found in ratelimit cache", value)
+		p.logger.Error(
+			"invalid value found in ratelimit cache",
+			slogutil.KeyError,
+			fmt.Errorf("bad type %T", value),
+		)
 
 		return false
 	}

@@ -1,15 +1,16 @@
 package proxy
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/mapsutil"
 	"github.com/AdguardTeam/golibs/netutil"
 )
@@ -99,6 +100,7 @@ func ParseUpstreamsConfig(
 
 	p := &configParser{
 		options:                  opts,
+		logger:                   cmp.Or(opts.Logger, slog.Default()),
 		upstreamsIndex:           map[string]upstream.Upstream{},
 		domainReservedUpstreams:  map[string][]upstream.Upstream{},
 		specifiedDomainUpstreams: map[string][]upstream.Upstream{},
@@ -137,6 +139,9 @@ func (e *ParseError) Unwrap() (unwrapped error) { return e.err }
 type configParser struct {
 	// options contains upstream properties.
 	options *upstream.Options
+
+	// logger is used for logging during parsing.  It's never nil.
+	logger *slog.Logger
 
 	// upstreamsIndex is used to avoid creating duplicates of upstreams.
 	upstreamsIndex map[string]upstream.Upstream
@@ -266,14 +271,15 @@ func (p *configParser) specifyUpstream(domains []string, u string, idx int) (err
 		p.upstreams = append(p.upstreams, dnsUpstream)
 
 		// TODO(s.chzhen):  Logs without index.
-		log.Debug("dnsproxy: upstream at index %d: %s", idx, addr)
+		p.logger.Debug("set upstream", "idx", idx, "addr", addr)
 	} else {
 		p.includeToReserved(dnsUpstream, domains)
 
-		log.Debug("dnsproxy: upstream at index %d: %s is reserved for %d domains",
-			idx,
-			addr,
-			len(domains),
+		p.logger.Debug(
+			"upstream is reserved",
+			"idx", idx,
+			"addr", addr,
+			"domains_num", len(domains),
 		)
 	}
 
@@ -303,7 +309,7 @@ func (p *configParser) includeToReserved(dnsUpstream upstream.Upstream, domains 
 			host = host[len("*."):]
 
 			p.subdomainsOnlyExclusions.Add(host)
-			log.Debug("domain %q is added to exclusions list", host)
+			p.logger.Debug("domain is added to exclusions list", "domain", host)
 
 			p.subdomainsOnlyUpstreams[host] = append(p.subdomainsOnlyUpstreams[host], dnsUpstream)
 		} else {

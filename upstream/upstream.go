@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -52,6 +53,11 @@ type QUICTraceFunc func(
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
 type Options struct {
+	// Logger is used for logging during parsing.
+	//
+	// TODO(d.kolyshev): Use logger in this package.
+	Logger *slog.Logger
+
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
 	// of the *tls.Config for DNS-over-HTTPS, DNS-over-QUIC, and DNS-over-TLS.
 	VerifyServerCertificate func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error

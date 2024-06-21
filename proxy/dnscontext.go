@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"cmp"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -202,14 +200,11 @@ func NewCustomUpstreamConfig(
 	cacheEnabled bool,
 	cacheSize int,
 	enableEDNSClientSubnet bool,
-	cacheLogger *slog.Logger,
 ) (c *CustomUpstreamConfig) {
 	var customCache *cache
 	if cacheEnabled {
-		logger := cmp.Or(cacheLogger, slog.Default())
-
 		// TODO(d.kolyshev): Support optimistic with newOptimisticResolver.
-		customCache = newCache(cacheSize, enableEDNSClientSubnet, false, logger)
+		customCache = newCache(cacheSize, enableEDNSClientSubnet, false)
 	}
 
 	return &CustomUpstreamConfig{

@@ -6,7 +6,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"gonum.org/v1/gonum/stat/sampleuv"
 )
@@ -34,7 +34,7 @@ func (p *Proxy) exchangeUpstreams(
 
 	if len(ups) == 1 {
 		u = ups[0]
-		resp, _, err = exchange(u, req, p.time)
+		resp, _, err = p.exchange(u, req, p.time)
 		// TODO(e.burkov):  p.updateRTT(u.Address(), elapsed)
 
 		return resp, u, err
@@ -46,7 +46,7 @@ func (p *Proxy) exchangeUpstreams(
 		u = ups[i]
 
 		var elapsed time.Duration
-		resp, elapsed, err = exchange(u, req, p.time)
+		resp, elapsed, err = p.exchange(u, req, p.time)
 		if err == nil {
 			p.updateRTT(u.Address(), elapsed)
 
@@ -68,33 +68,37 @@ func (p *Proxy) exchangeUpstreams(
 // exchange returns the result of the DNS request exchange with the given
 // upstream and the elapsed time in milliseconds.  It uses the given clock to
 // measure the request duration.
-func exchange(u upstream.Upstream, req *dns.Msg, c clock) (resp *dns.Msg, dur time.Duration, err error) {
+func (p *Proxy) exchange(
+	u upstream.Upstream,
+	req *dns.Msg,
+	c clock,
+) (resp *dns.Msg, dur time.Duration, err error) {
 	startTime := c.Now()
-
-	reply, err := u.Exchange(req)
+	resp, err = u.Exchange(req)
 
 	// Don't use [time.Since] because it uses [time.Now].
 	dur = c.Now().Sub(startTime)
 
 	addr := u.Address()
+	q := &req.Question[0]
 	if err != nil {
-		log.Error(
-			"dnsproxy: upstream %s failed to exchange %s in %s: %s",
-			addr,
-			req.Question[0].String(),
-			dur,
-			err,
+		p.logger.Error(
+			"exchange failed",
+			"upstream", addr,
+			"question", q,
+			"duration", dur,
+			slogutil.KeyError, err,
 		)
 	} else {
-		log.Debug(
-			"dnsproxy: upstream %s successfully finished exchange of %s; elapsed %s",
-			addr,
-			req.Question[0].String(),
-			dur,
+		p.logger.Debug(
+			"exchange successfully finished",
+			"upstream", addr,
+			"question", q,
+			"duration", dur,
 		)
 	}
 
-	return reply, dur, err
+	return resp, dur, err
 }
 
 // upstreamRTTStats is the statistics for a single upstream's round-trip time.

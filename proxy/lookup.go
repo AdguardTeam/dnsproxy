@@ -8,7 +8,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
@@ -21,15 +21,23 @@ type lookupResult struct {
 
 // lookupIPAddr resolves the specified host IP addresses.  It is intended to be
 // used as a goroutine.
-func (p *Proxy) lookupIPAddr(host string, qtype uint16, ch chan *lookupResult) {
-	defer log.OnPanic("Proxy.lookupIPAddr")
+func (p *Proxy) lookupIPAddr(
+	ctx context.Context,
+	host string,
+	qtype uint16,
+	ch chan *lookupResult,
+) {
+	defer slogutil.RecoverAndLog(ctx, p.logger)
 
 	req := (&dns.Msg{}).SetQuestion(host, qtype)
 
 	// TODO(d.kolyshev): Investigate why the client address is not defined.
 	d := p.newDNSContext(ProtoUDP, req, netip.AddrPort{})
 	err := p.Resolve(d)
-	ch <- &lookupResult{d.Res, err}
+	ch <- &lookupResult{
+		resp: d.Res,
+		err:  err,
+	}
 }
 
 // ErrEmptyHost is returned by LookupIPAddr when the host is empty and can't be
@@ -43,7 +51,7 @@ var _ upstream.Resolver = (*Proxy)(nil)
 // resolves the specified host IP addresses by sending two DNS queries (A and
 // AAAA) in parallel.  It returns both results for those two queries.
 func (p *Proxy) LookupNetIP(
-	_ context.Context,
+	ctx context.Context,
 	_ string,
 	host string,
 ) (addrs []netip.Addr, err error) {
@@ -54,8 +62,8 @@ func (p *Proxy) LookupNetIP(
 	host = dns.Fqdn(host)
 
 	ch := make(chan *lookupResult)
-	go p.lookupIPAddr(host, dns.TypeA, ch)
-	go p.lookupIPAddr(host, dns.TypeAAAA, ch)
+	go p.lookupIPAddr(ctx, host, dns.TypeA, ch)
+	go p.lookupIPAddr(ctx, host, dns.TypeAAAA, ch)
 
 	var errs []error
 	for range 2 {

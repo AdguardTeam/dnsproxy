@@ -13,7 +13,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/miekg/dns"
 )
@@ -35,11 +34,6 @@ type cache struct {
 	// itemsWithSubnet is the requests cache.
 	itemsWithSubnet glcache.Cache
 
-	// logger is used for logging in the cache.  It is never nil.
-	//
-	// TODO(a.garipov): Consider removing logger from cache.
-	logger *slog.Logger
-
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
 	optimistic bool
@@ -60,9 +54,9 @@ type cacheItem struct {
 }
 
 // respToItem converts the pair of the response and upstream resolved the one
-// into item for storing it in cache.
-func (c *cache) respToItem(m *dns.Msg, u upstream.Upstream) (item *cacheItem) {
-	ttl := cacheTTL(m, c.logger)
+// into item for storing it in cache.  l must not be nil.
+func (c *cache) respToItem(m *dns.Msg, u upstream.Upstream, l *slog.Logger) (item *cacheItem) {
+	ttl := cacheTTL(m, l)
 	if ttl == 0 {
 		return nil
 	}
@@ -181,22 +175,16 @@ func (p *Proxy) initCache() {
 	size := p.CacheSizeBytes
 	p.logger.Info("cache enabled", "size", size)
 
-	p.cache = newCache(
-		size,
-		p.EnableEDNSClientSubnet,
-		p.CacheOptimistic,
-		p.logger.With(slogutil.KeyPrefix, CacheLogPrefix),
-	)
+	p.cache = newCache(size, p.EnableEDNSClientSubnet, p.CacheOptimistic)
 	p.shortFlighter = newOptimisticResolver(p)
 }
 
 // newCache returns a properly initialized cache.  logger must not be nil.
-func newCache(size int, withECS, optimistic bool, logger *slog.Logger) (c *cache) {
+func newCache(size int, withECS, optimistic bool) (c *cache) {
 	c = &cache{
 		itemsLock:           &sync.RWMutex{},
 		itemsWithSubnetLock: &sync.RWMutex{},
 		items:               createCache(size),
-		logger:              logger,
 		optimistic:          optimistic,
 	}
 
@@ -311,9 +299,9 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 	return glcache.New(conf)
 }
 
-// set stores response and upstream in the cache.
-func (c *cache) set(m *dns.Msg, u upstream.Upstream) {
-	item := c.respToItem(m, u)
+// set stores response and upstream in the cache.  l must not be nil.
+func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
+	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
 	}
@@ -328,9 +316,10 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream) {
 }
 
 // setWithSubnet stores response and upstream with subnet in the cache.  The
-// given subnet mask and IP address are used to calculate the cache key.
-func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet) {
-	item := c.respToItem(m, u)
+// given subnet mask and IP address are used to calculate the cache key.  l must
+// not be nil.
+func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet, l *slog.Logger) {
+	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
 	}

@@ -2,11 +2,12 @@ package proxy
 
 import (
 	"bytes"
+	"log/slog"
 	"sync"
 	"testing"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -52,7 +53,7 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 	sameKey := []byte{1, 2, 3}
 
 	// Start the primary goroutine.
-	go s.ResolveOnce(nil, sameKey)
+	go s.resolveOnce(nil, sameKey, slogutil.NewDiscardLogger())
 	// Block until the primary goroutine reaches the resolve function.
 	<-out
 
@@ -64,7 +65,7 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			s.ResolveOnce(nil, sameKey)
+			s.resolveOnce(nil, sameKey, slogutil.NewDiscardLogger())
 		}()
 	}
 
@@ -81,25 +82,25 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 	key := []byte{1, 2, 3}
 
 	t.Run("error", func(t *testing.T) {
+		// TODO(d.kolyshev): Consider adding mock handler to golibs.
 		logOutput := &bytes.Buffer{}
+		l := slog.New(slog.NewTextHandler(logOutput, &slog.HandlerOptions{
+			AddSource:   false,
+			Level:       slog.LevelDebug,
+			ReplaceAttr: nil,
+		}))
 
-		prevLevel := log.GetLevel()
-		prevOutput := log.Writer()
-		log.SetLevel(log.DEBUG)
-		log.SetOutput(logOutput)
-		t.Cleanup(func() {
-			log.SetLevel(prevLevel)
-			log.SetOutput(prevOutput)
-		})
+		const rErr errors.Error = "sample resolving error"
 
-		const rerr errors.Error = "sample resolving error"
+		cached := false
 		s := newOptimisticResolver(&testCachingResolver{
-			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return true, rerr },
-			onCacheResp:         func(_ *DNSContext) {},
+			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return true, rErr },
+			onCacheResp:         func(_ *DNSContext) { cached = true },
 		})
-		s.ResolveOnce(nil, key)
+		s.resolveOnce(nil, key, l)
 
-		assert.Contains(t, logOutput.String(), rerr.Error())
+		assert.True(t, cached)
+		assert.Contains(t, logOutput.String(), rErr.Error())
 	})
 
 	t.Run("not_ok", func(t *testing.T) {
@@ -108,7 +109,7 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return false, nil },
 			onCacheResp:         func(_ *DNSContext) { cached = true },
 		})
-		s.ResolveOnce(nil, key)
+		s.resolveOnce(nil, key, slogutil.NewDiscardLogger())
 
 		assert.False(t, cached)
 	})

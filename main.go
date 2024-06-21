@@ -29,6 +29,7 @@ import (
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	goFlags "github.com/jessevdk/go-flags"
+	"github.com/miekg/dns"
 	"gopkg.in/yaml.v3"
 )
 
@@ -365,8 +366,11 @@ func runProxy(ctx context.Context, l *slog.Logger, options *Options) (err error)
 
 	// Add extra handler if needed.
 	if options.IPv6Disabled {
-		ipv6Configuration := ipv6Configuration{ipv6Disabled: options.IPv6Disabled}
-		dnsProxy.RequestHandler = ipv6Configuration.handleDNSRequest
+		ipv6Config := ipv6Configuration{
+			logger:       l,
+			ipv6Disabled: options.IPv6Disabled,
+		}
+		dnsProxy.RequestHandler = ipv6Config.handleDNSRequest
 	}
 
 	// Start the proxy server.
@@ -519,6 +523,7 @@ func (opts *Options) initUpstreams(
 	}
 
 	upsOpts := &upstream.Options{
+		Logger:             l,
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: opts.Insecure,
 		Bootstrap:          boot,
@@ -532,6 +537,7 @@ func (opts *Options) initUpstreams(
 	}
 
 	privateUpsOpts := &upstream.Options{
+		Logger:       l,
 		HTTPVersions: httpVersions,
 		Bootstrap:    boot,
 		Timeout:      min(defaultLocalTimeout, timeout),
@@ -835,6 +841,9 @@ func (opts *Options) initPrivateSubnets(conf *proxy.Config) (err error) {
 
 // ipv6Configuration represents IPv6 configuration.
 type ipv6Configuration struct {
+	// logger is used for logging during requests handling.  It is never nil.
+	logger *slog.Logger
+
 	// ipv6Disabled set all AAAA requests to be replied with NoError RCode and
 	// an empty answer.
 	ipv6Disabled bool
@@ -843,11 +852,31 @@ type ipv6Configuration struct {
 // handleDNSRequest checks the IPv6 configuration for current session before
 // resolving.
 func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) (err error) {
-	if proxy.CheckDisabledAAAARequest(ctx, c.ipv6Disabled) {
+	if !c.isIPv6Enabled(ctx, !c.ipv6Disabled) {
 		return nil
 	}
 
 	return p.Resolve(ctx)
+}
+
+// retryNoError is the time for NoError SOA.
+const retryNoError = 60
+
+// isIPv6Enabled checks if AAAA requests should be enabled or not and sets
+// NoError empty response to the given DNSContext if needed.
+func (c *ipv6Configuration) isIPv6Enabled(ctx *proxy.DNSContext, ipv6Enabled bool) (enabled bool) {
+	if !ipv6Enabled && ctx.Req.Question[0].Qtype == dns.TypeAAAA {
+		c.logger.Debug(
+			"ipv6 is disabled; replying with empty response",
+			"req", ctx.Req.Question[0].Name,
+		)
+
+		ctx.Res = proxy.GenEmptyMessage(ctx.Req, dns.RcodeSuccess, retryNoError)
+
+		return false
+	}
+
+	return true
 }
 
 // NewTLSConfig returns the TLS config that includes a certificate.  Use it for

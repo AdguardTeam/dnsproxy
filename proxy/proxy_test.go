@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"log/slog"
 	"math/big"
 	"net"
 	"net/netip"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -230,6 +230,7 @@ func newTestUpstreamConfigWithBoot(
 	require.NoError(t, err)
 
 	upsConf, err := ParseUpstreamsConfig(addrs, &upstream.Options{
+		Logger:    slogutil.NewDiscardLogger(),
 		Timeout:   timeout,
 		Bootstrap: upstream.NewCachingResolver(googleRslv),
 	})
@@ -247,7 +248,10 @@ func newTestUpstreamConfig(
 ) (u *UpstreamConfig) {
 	t.Helper()
 
-	upsConf, err := ParseUpstreamsConfig(addrs, &upstream.Options{Timeout: timeout})
+	upsConf, err := ParseUpstreamsConfig(addrs, &upstream.Options{
+		Logger:  slogutil.NewDiscardLogger(),
+		Timeout: timeout,
+	})
 	require.NoError(t, err)
 
 	return upsConf
@@ -832,10 +836,10 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	require.NoError(t, err)
 
 	// Prepare the proxy server
-	upsConf, err := ParseUpstreamsConfig(
-		[]string{"tls://dns.adguard.com"},
-		&upstream.Options{Bootstrap: invalidRslv, Timeout: testTimeout},
-	)
+	upsConf, err := ParseUpstreamsConfig([]string{"tls://dns.adguard.com"}, &upstream.Options{
+		Logger:    slogutil.NewDiscardLogger(),
+		Bootstrap: invalidRslv, Timeout: testTimeout,
+	})
 	require.NoError(t, err)
 
 	dnsProxy := mustNew(t, &Config{
@@ -1042,7 +1046,6 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 			false,
 			0,
 			false,
-			nil,
 		),
 		Req:  newHostTestMessage("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
@@ -1078,7 +1081,6 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 			false,
 			0,
 			false,
-			nil,
 		),
 		Req:  newHostTestMessage("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
@@ -1137,7 +1139,6 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 		true,
 		defaultCacheSize,
 		prx.EnableEDNSClientSubnet,
-		nil,
 	)
 
 	d := DNSContext{
@@ -1432,7 +1433,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			CacheEnabled:    true,
 			CacheOptimistic: true,
 		},
-		logger: slog.Default(),
+		logger: slogutil.NewDiscardLogger(),
 	}
 
 	p.initCache()

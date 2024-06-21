@@ -3,10 +3,11 @@ package proxy
 import (
 	"bytes"
 	"encoding/binary"
+	"log/slog"
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -177,7 +178,7 @@ func msgToSignatureSlow(msg *dns.Msg) (sig []byte) {
 	}
 	copy(signature.name[:], q.Name)
 	if err := binary.Write(b, binary.BigEndian, signature); err != nil {
-		log.Debug("writing message signature: %s", err)
+		slog.Default().Debug("writing message signature", slogutil.KeyError, err)
 	}
 
 	return b.Bytes()

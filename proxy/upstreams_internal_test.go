@@ -5,6 +5,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
@@ -272,14 +273,12 @@ func TestValidatePrivateConfig(t *testing.T) {
 
 func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
-	config, err := ParseUpstreamsConfig(
-		upstreams,
-		&upstream.Options{
-			InsecureSkipVerify: false,
-			Bootstrap:          nil,
-			Timeout:            testTimeout,
-		},
-	)
+	config, err := ParseUpstreamsConfig(upstreams, &upstream.Options{
+		Logger:             slogutil.NewDiscardLogger(),
+		InsecureSkipVerify: false,
+		Bootstrap:          nil,
+		Timeout:            testTimeout,
+	})
 	assert.NoError(t, err)
 	assert.Len(t, config.Upstreams, 0)
 	assert.Len(t, config.DomainReservedUpstreams, 2)
@@ -449,14 +448,12 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		"[/www.google.com/]tls://1.1.1.1",
 	}
 
-	config, _ := ParseUpstreamsConfig(
-		upstreams,
-		&upstream.Options{
-			InsecureSkipVerify: false,
-			Bootstrap:          nil,
-			Timeout:            testTimeout,
-		},
-	)
+	config, _ := ParseUpstreamsConfig(upstreams, &upstream.Options{
+		Logger:             slogutil.NewDiscardLogger(),
+		InsecureSkipVerify: false,
+		Bootstrap:          nil,
+		Timeout:            testTimeout,
+	})
 
 	domains := []string{
 		"www.google.com.",

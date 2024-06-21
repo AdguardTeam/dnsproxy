@@ -3,18 +3,20 @@ package proxy
 import (
 	"net"
 
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
 
 const retryNoError = 60 // Retry time for NoError SOA
 
-// CheckDisabledAAAARequest checks if AAAA requests should be disabled or not and sets NoError empty response to given DNSContext if needed
+// CheckDisabledAAAARequest checks if AAAA requests should be disabled or not
+// and sets NoError empty response to given DNSContext if needed.
+//
+// Deprecated: Use [RequestHandler] instead.
 func CheckDisabledAAAARequest(ctx *DNSContext, ipv6Disabled bool) bool {
 	if ipv6Disabled && ctx.Req.Question[0].Qtype == dns.TypeAAAA {
-		log.Debug("IPv6 is disabled. Reply with NoError to %s AAAA request", ctx.Req.Question[0].Name)
-		ctx.Res = genEmptyNoError(ctx.Req)
+		ctx.Res = GenEmptyMessage(ctx.Req, dns.RcodeSuccess, retryNoError)
+
 		return true
 	}
 
@@ -28,11 +30,6 @@ func GenEmptyMessage(request *dns.Msg, rCode int, retry uint32) *dns.Msg {
 	resp.RecursionAvailable = true
 	resp.Ns = genSOA(request, retry)
 	return &resp
-}
-
-// genEmptyNoError returns response without answer and NoError RCode
-func genEmptyNoError(request *dns.Msg) *dns.Msg {
-	return GenEmptyMessage(request, dns.RcodeSuccess, retryNoError)
 }
 
 // genSOA returns SOA for an authority section

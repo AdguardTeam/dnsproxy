@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"context"
 	"encoding/hex"
+	"log/slog"
 	"sync"
 
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 )
 
 // cachingResolver is the DNS resolver that is also able to cache responses.
@@ -40,12 +42,12 @@ func newOptimisticResolver(cr cachingResolver) (s *optimisticResolver) {
 // unit is a convenient alias for struct{}.
 type unit = struct{}
 
-// ResolveOnce tries to resolve the request from dctx but only a single request
+// resolveOnce tries to resolve the request from dctx but only a single request
 // with the same key at the same period of time.  It runs in a separate
 // goroutine.  Do not pass the *DNSContext which is used elsewhere since it
 // isn't intended to be used concurrently.
-func (s *optimisticResolver) ResolveOnce(dctx *DNSContext, key []byte) {
-	defer log.OnPanic("optimistic resolver")
+func (s *optimisticResolver) resolveOnce(dctx *DNSContext, key []byte, l *slog.Logger) {
+	defer slogutil.RecoverAndLog(context.TODO(), l)
 
 	keyHexed := hex.EncodeToString(key)
 	if _, ok := s.reqs.LoadOrStore(keyHexed, unit{}); ok {
@@ -55,7 +57,7 @@ func (s *optimisticResolver) ResolveOnce(dctx *DNSContext, key []byte) {
 
 	ok, err := s.cr.replyFromUpstream(dctx)
 	if err != nil {
-		log.Debug("resolving request for optimistic cache: %s", err)
+		l.Debug("resolving request for optimistic cache", slogutil.KeyError, err)
 	}
 
 	if ok {

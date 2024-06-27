@@ -262,7 +262,7 @@ func New(c *Config) (p *Proxy, err error) {
 		p.requestsSema = syncutil.EmptySemaphore{}
 	}
 
-	if p.UpstreamMode == UModeFastestAddr {
+	if p.UpstreamMode == UpstreamModeFastestAddr {
 		p.logger.Info("fastest ip is enabled")
 
 		p.fastestAddr = fastip.New(&fastip.Config{

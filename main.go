@@ -556,11 +556,11 @@ func (opts *Options) initUpstreams(
 	}
 
 	if opts.AllServers {
-		config.UpstreamMode = proxy.UModeParallel
+		config.UpstreamMode = proxy.UpstreamModeParallel
 	} else if opts.FastestAddress {
-		config.UpstreamMode = proxy.UModeFastestAddr
+		config.UpstreamMode = proxy.UpstreamModeFastestAddr
 	} else {
-		config.UpstreamMode = proxy.UModeLoadBalance
+		config.UpstreamMode = proxy.UpstreamModeLoadBalance
 	}
 
 	return nil

@@ -15,16 +15,13 @@ import (
 	"github.com/ameshkov/dnscrypt/v2"
 )
 
-// UpstreamModeType - upstream mode
-type UpstreamModeType int
+// UpstreamMode is an enumeration of upstream mode representations.
+type UpstreamMode string
 
 const (
-	// UModeLoadBalance - LoadBalance
-	UModeLoadBalance UpstreamModeType = iota
-	// UModeParallel - parallel queries to all configured upstream servers are enabled
-	UModeParallel
-	// UModeFastestAddr - use Fastest Address algorithm
-	UModeFastestAddr
+	UpstreamModeLoadBalance UpstreamMode = "load_balance"
+	UpstreamModeParallel    UpstreamMode = "parallel"
+	UpstreamModeFastestAddr UpstreamMode = "fastest_addr"
 )
 
 // LogPrefix is a prefix for logging.
@@ -117,6 +114,9 @@ type Config struct {
 	// not empty.
 	HTTPSServerName string
 
+	// UpstreamMode determines the logic through which upstreams will be used.
+	UpstreamMode UpstreamMode
+
 	// UDPListenAddr is the set of UDP addresses to listen for plain
 	// DNS-over-UDP requests.
 	UDPListenAddr []*net.UDPAddr
@@ -195,12 +195,9 @@ type Config struct {
 	// buffers can handle larger bursts of requests before packets get dropped.
 	UDPBufferSize int
 
-	// UpstreamMode determines the logic through which upstreams will be used.
-	UpstreamMode UpstreamModeType
-
 	// FastestPingTimeout is the timeout for waiting the first successful
-	// dialing when the UpstreamMode is set to UModeFastestAddr.  Non-positive
-	// value will be replaced with the default one.
+	// dialing when the UpstreamMode is set to [UpstreamModeFastestAddr].
+	// Non-positive value will be replaced with the default one.
 	FastestPingTimeout time.Duration
 
 	// RefuseAny makes proxy refuse the requests of type ANY.

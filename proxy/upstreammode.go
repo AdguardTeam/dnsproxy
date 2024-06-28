@@ -9,8 +9,17 @@ import (
 type UpstreamMode string
 
 const (
+	// UpstreamModeLoadBalance is the default upstream mode.  It balances the
+	// upstreams load.
 	UpstreamModeLoadBalance UpstreamMode = "load_balance"
-	UpstreamModeParallel    UpstreamMode = "parallel"
+
+	// UpstreamModeParallel makes server to query all configured upstream
+	// servers in parallel.
+	UpstreamModeParallel UpstreamMode = "parallel"
+
+	// UpstreamModeFastestAddr controls whether the server should respond to A
+	// or AAAA requests only with the fastest IP address detected by ICMP
+	// response time or TCP connection time.
 	UpstreamModeFastestAddr UpstreamMode = "fastest_addr"
 )
 

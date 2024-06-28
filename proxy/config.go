@@ -15,15 +15,6 @@ import (
 	"github.com/ameshkov/dnscrypt/v2"
 )
 
-// UpstreamMode is an enumeration of upstream mode representations.
-type UpstreamMode string
-
-const (
-	UpstreamModeLoadBalance UpstreamMode = "load_balance"
-	UpstreamModeParallel    UpstreamMode = "parallel"
-	UpstreamModeFastestAddr UpstreamMode = "fastest_addr"
-)
-
 // LogPrefix is a prefix for logging.
 const LogPrefix = "dnsproxy"
 

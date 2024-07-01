@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/url"
 	"strings"
@@ -11,7 +12,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 )
 
@@ -32,6 +33,9 @@ const (
 type plainDNS struct {
 	// addr is the DNS server URL.  Scheme is always "udp" or "tcp".
 	addr *url.URL
+
+	// logger is used for exchange logging.  It is never nil.
+	logger *slog.Logger
 
 	// getDialer either returns an initialized dial handler or creates a new
 	// one.
@@ -58,6 +62,7 @@ func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
 
 	return &plainDNS{
 		addr:      addr,
+		logger:    opts.Logger,
 		getDialer: newDialerInitializer(addr, opts),
 		net:       addr.Scheme,
 		timeout:   opts.Timeout,
@@ -153,12 +158,20 @@ func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 	if errors.Is(err, errQuestion) {
 		// The upstream responds with malformed messages, so try TCP.
-		log.Debug("plain %s: %s, using tcp", addr, err)
+		p.logger.Debug(
+			"plain response is malformed, using tcp",
+			"addr", addr,
+			slogutil.KeyError, err,
+		)
 
 		return p.dialExchange(networkTCP, dial, req)
 	} else if resp.Truncated {
 		// Fallback to TCP on truncated responses.
-		log.Debug("plain %s: resp for %s is truncated, using tcp", &req.Question[0], addr)
+		p.logger.Debug(
+			"plain response is truncated, using tcp",
+			"question", &req.Question[0],
+			"addr", addr,
+		)
 
 		return p.dialExchange(networkTCP, dial, req)
 	}

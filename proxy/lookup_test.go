@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +15,10 @@ func TestLookupNetIP(t *testing.T) {
 	// Use AdGuard DNS here.
 	dnsUpstream, err := upstream.AddressToUpstream(
 		"94.140.14.14",
-		&upstream.Options{Timeout: defaultTimeout},
+		&upstream.Options{
+			Logger:  slogutil.NewDiscardLogger(),
+			Timeout: defaultTimeout,
+		},
 	)
 	require.NoError(t, err)
 

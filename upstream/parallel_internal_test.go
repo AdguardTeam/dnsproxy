@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,10 @@ func TestExchangeParallel(t *testing.T) {
 	upstreamList := []string{"1.2.3.4:55", "8.8.8.1", "8.8.8.8:53"}
 
 	for _, s := range upstreamList {
-		u, err := AddressToUpstream(s, &Options{Timeout: timeout})
+		u, err := AddressToUpstream(s, &Options{
+			Logger:  slogutil.NewDiscardLogger(),
+			Timeout: timeout,
+		})
 		if err != nil {
 			t.Fatalf("cannot create upstream: %s", err)
 		}

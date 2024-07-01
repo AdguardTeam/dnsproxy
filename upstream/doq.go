@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -87,6 +88,9 @@ type dnsOverQUIC struct {
 	// bytesPoolGuard protects bytesPool.
 	bytesPoolMu *sync.Mutex
 
+	// logger is used for exchange logging.  It is never nil.
+	logger *slog.Logger
+
 	// timeout is the timeout for the upstream connection.
 	timeout time.Duration
 }
@@ -122,6 +126,7 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 		quicConfigMu: &sync.Mutex{},
 		connMu:       &sync.Mutex{},
 		bytesPoolMu:  &sync.Mutex{},
+		logger:       opts.Logger,
 		timeout:      opts.Timeout,
 	}
 
@@ -163,7 +168,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	// connection could have been closed by the server or simply be broken due
 	// to how UDP NAT works.  In this case the connection should be re-created.
 	if cached && err != nil {
-		log.Debug("dnsproxy: re-creating the QUIC connection and retrying due to %v", err)
+		p.logger.Debug("recreating the quic connection and retrying", slogutil.KeyError, err)
 
 		// Close the active connection to make sure the cached connection is
 		// cleaned up.
@@ -239,7 +244,7 @@ func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg, conn quic.Connection) (resp *dn
 	// of the stream, but does not prevent reading from it.
 	err = stream.Close()
 	if err != nil {
-		log.Debug("dnsproxy: closing quic stream: %s", err)
+		p.logger.Debug("closing quic stream", slogutil.KeyError, err)
 	}
 
 	return p.readMsg(stream)
@@ -334,7 +339,7 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 	// It's never actually used.
 	err = rawConn.Close()
 	if err != nil {
-		log.Debug("dnsproxy: closing raw connection for %s: %s", p.addr, err)
+		p.logger.Debug("closing raw connection", "addr", p.addr, slogutil.KeyError, err)
 	}
 
 	udpConn, ok := rawConn.(*net.UDPConn)
@@ -374,7 +379,7 @@ func (p *dnsOverQUIC) closeConnWithError(conn quic.Connection, err error) {
 
 	err = conn.CloseWithError(code, "")
 	if err != nil {
-		log.Error("dnsproxy: failed to close the conn: %v", err)
+		p.logger.Error("failed to close the conn", slogutil.KeyError, err)
 	}
 
 	// If the connection that's being closed is cached, reset the cache.

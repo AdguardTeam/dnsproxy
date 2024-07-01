@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,7 +16,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -62,6 +63,9 @@ type dnsOverHTTPS struct {
 
 	// clientMu protects client.
 	clientMu *sync.Mutex
+
+	// logger is used for exchange logging.  It is never nil.
+	logger *slog.Logger
 
 	// quicConf is the QUIC configuration that is used if HTTP/3 is enabled
 	// for this upstream.
@@ -115,6 +119,7 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 			VerifyConnection:      opts.VerifyConnection,
 		},
 		clientMu:     &sync.Mutex{},
+		logger:       opts.Logger,
 		addrRedacted: addr.Redacted(),
 		timeout:      opts.Timeout,
 	}
@@ -268,7 +273,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	if err != nil {
 		return nil, fmt.Errorf("requesting %s: %w", p.addrRedacted, err)
 	}
-	defer log.OnCloserError(httpResp.Body, log.DEBUG)
+	defer slogutil.CloseAndLog(httpReq.Context(), p.logger, httpResp.Body, slog.LevelDebug)
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
@@ -342,11 +347,11 @@ func (p *dnsOverHTTPS) resetClient(resetErr error) (client *http.Client, err err
 	if oldClient != nil {
 		closeErr := p.closeClient(oldClient)
 		if closeErr != nil {
-			log.Info("warning: failed to close the old http client: %v", closeErr)
+			p.logger.Warn("failed to close the old http client", slogutil.KeyError, closeErr)
 		}
 	}
 
-	log.Debug("re-creating the http client due to %v", resetErr)
+	p.logger.Debug("recreating the http client", slogutil.KeyError, resetErr)
 	p.client, err = p.createClient()
 
 	return p.client, err
@@ -390,7 +395,7 @@ func (p *dnsOverHTTPS) getClient() (c *http.Client, isCached bool, err error) {
 		return nil, false, fmt.Errorf("timeout exceeded: %s", elapsed)
 	}
 
-	log.Debug("creating a new http client")
+	p.logger.Debug("creating a new http client")
 	p.client, err = p.createClient()
 
 	return p.client, false, err
@@ -437,11 +442,12 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 	tlsConf := p.tlsConf.Clone()
 	transportH3, err := p.createTransportH3(tlsConf, dialContext)
 	if err == nil {
-		log.Debug("using HTTP/3 for this upstream: QUIC was faster")
+		p.logger.Debug("using http/3 for this upstream, quic was faster")
+
 		return transportH3, nil
 	}
 
-	log.Debug("using HTTP/2 for this upstream: %v", err)
+	p.logger.Debug("got error, switching to http/2 for this upstream", slogutil.KeyError, err)
 
 	if !p.supportsHTTP() {
 		return nil, errors.Error("HTTP1/1 and HTTP2 are not supported by this upstream")
@@ -621,7 +627,8 @@ func (p *dnsOverHTTPS) probeH3(
 	case tlsErr := <-chTLS:
 		if tlsErr != nil {
 			// Return immediately, TLS failed.
-			log.Debug("probing TLS: %v", tlsErr)
+			p.logger.Debug("probing tls", slogutil.KeyError, tlsErr)
+
 			return addr, nil
 		}
 
@@ -653,7 +660,7 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
 	ch <- nil
 
 	elapsed := time.Since(startTime)
-	log.Debug("elapsed on establishing a QUIC connection: %s", elapsed)
+	p.logger.Debug("quic connection established", "elapsed", elapsed)
 }
 
 // probeTLS attempts to establish a TLS connection to the specified address. We
@@ -673,7 +680,7 @@ func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tl
 	ch <- nil
 
 	elapsed := time.Since(startTime)
-	log.Debug("elapsed on establishing a TLS connection: %s", elapsed)
+	p.logger.Debug("tls connection established", "elapsed", elapsed)
 }
 
 // supportsH3 returns true if HTTP/3 is supported by this upstream.

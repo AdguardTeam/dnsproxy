@@ -220,7 +220,10 @@ func newTestUpstreamConfigWithBoot(
 ) (u *UpstreamConfig) {
 	googleRslv, err := upstream.NewUpstreamResolver(
 		"8.8.8.8:53",
-		&upstream.Options{Timeout: timeout},
+		&upstream.Options{
+			Logger:  slogutil.NewDiscardLogger(),
+			Timeout: timeout,
+		},
 	)
 	require.NoError(t, err)
 
@@ -826,6 +829,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	t.Parallel()
 
 	invalidRslv, err := upstream.NewUpstreamResolver("8.8.8.8:555", &upstream.Options{
+		Logger:  slogutil.NewDiscardLogger(),
 		Timeout: testTimeout,
 	})
 	require.NoError(t, err)

@@ -3,13 +3,13 @@ package upstream
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 )
@@ -28,6 +28,9 @@ type dnsCrypt struct {
 	// addr is the DNSCrypt server URL.
 	addr *url.URL
 
+	// logger is used for exchange logging.  It is never nil.
+	logger *slog.Logger
+
 	// verifyCert is a callback that verifies the resolver's certificate.
 	verifyCert func(cert *dnscrypt.Cert) (err error)
 
@@ -40,6 +43,7 @@ func newDNSCrypt(addr *url.URL, opts *Options) (u *dnsCrypt) {
 	return &dnsCrypt{
 		mu:         &sync.RWMutex{},
 		addr:       addr,
+		logger:     opts.Logger,
 		verifyCert: opts.VerifyDNSCryptCertificate,
 		timeout:    opts.Timeout,
 	}
@@ -107,7 +111,11 @@ func (p *dnsCrypt) exchangeDNSCrypt(m *dns.Msg) (resp *dns.Msg, err error) {
 	resp, err = client.Exchange(m, resolverInfo)
 	if resp != nil && resp.Truncated {
 		q := &m.Question[0]
-		log.Debug("dnscrypt %s: received truncated, falling back to tcp with %s", p.addr, q)
+		p.logger.Debug(
+			"dnscrypt received truncated, falling back to tcp",
+			"addr", p.addr,
+			"question", q,
+		)
 
 		tcpClient := &dnscrypt.Client{Timeout: p.timeout, Net: networkTCP}
 		resp, err = tcpClient.Exchange(m, resolverInfo)

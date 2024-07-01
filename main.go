@@ -507,6 +507,7 @@ func (opts *Options) initUpstreams(
 
 	timeout := opts.Timeout.Duration
 	bootOpts := &upstream.Options{
+		Logger:             l,
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: opts.Insecure,
 		Timeout:            timeout,

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -15,7 +16,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -32,6 +33,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	var lastState tls.ConnectionState
 	opts := &Options{
+		Logger: slogutil.NewDiscardLogger(),
 		VerifyConnection: func(state tls.ConnectionState) error {
 			lastState = state
 
@@ -86,7 +88,10 @@ func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
 
 	// Create a DNS-over-QUIC upstream.
 	address := fmt.Sprintf("quic://%s", srv.addr)
-	u, err := AddressToUpstream(address, &Options{RootCAs: rootCAs})
+	u, err := AddressToUpstream(address, &Options{
+		Logger:  slogutil.NewDiscardLogger(),
+		RootCAs: rootCAs,
+	})
 
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -148,7 +153,11 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 		var err error
 		u, err = AddressToUpstream(
 			upsStr,
-			&Options{RootCAs: rootCAs, Timeout: 100 * time.Millisecond},
+			&Options{
+				Logger:  slogutil.NewDiscardLogger(),
+				RootCAs: rootCAs,
+				Timeout: 100 * time.Millisecond,
+			},
 		)
 		require.NoError(t, err)
 
@@ -182,6 +191,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	tracer := &quicTracer{}
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
+		Logger:     slogutil.NewDiscardLogger(),
 		QUICTracer: tracer.TracerForConnection,
 		RootCAs:    rootCAs,
 	})
@@ -228,6 +238,9 @@ type testDoQServer struct {
 	// listener is the QUIC connections listener.
 	listener *quic.EarlyListener
 
+	// logger is used for serving errors logging.
+	logger *slog.Logger
+
 	// conns is the list of connections that are currently active.
 	conns map[quic.EarlyConnection]struct{}
 
@@ -258,9 +271,9 @@ func (s *testDoQServer) Serve() {
 		}()
 		if err != nil {
 			if errors.Is(err, quic.ErrServerClosed) {
-				log.Debug("test doq: accepting: %s", err)
+				s.logger.Debug("accept failed", slogutil.KeyError, err)
 			} else {
-				log.Error("test doq: accepting: %s", err)
+				s.logger.Error("accept failed", slogutil.KeyError, err)
 			}
 
 			return
@@ -276,15 +289,17 @@ func (s *testDoQServer) handleQUICConnection(conn quic.EarlyConnection) {
 	defer s.closeConn(conn)
 
 	for {
-		stream, err := conn.AcceptStream(context.Background())
+		ctx := context.Background()
+
+		stream, err := conn.AcceptStream(ctx)
 		if err != nil {
 			return
 		}
 
 		go func() {
-			qErr := s.handleQUICStream(stream)
+			qErr := s.handleQUICStream(ctx, stream)
 			if qErr != nil {
-				log.Error("test doq: handling from %s: %s", conn.RemoteAddr(), qErr)
+				s.logger.Error("handling", "raddr", conn.RemoteAddr(), slogutil.KeyError, qErr)
 
 				_ = conn.CloseWithError(QUICCodeNoError, "")
 			}
@@ -294,8 +309,8 @@ func (s *testDoQServer) handleQUICConnection(conn quic.EarlyConnection) {
 
 // handleQUICStream handles new QUIC streams, reads DNS messages and responds to
 // them.
-func (s *testDoQServer) handleQUICStream(stream quic.Stream) (err error) {
-	defer log.OnCloserError(stream, log.DEBUG)
+func (s *testDoQServer) handleQUICStream(ctx context.Context, stream quic.Stream) (err error) {
+	defer slogutil.CloseAndLog(ctx, s.logger, stream, slog.LevelDebug)
 
 	buf := make([]byte, dns.MaxMsgSize+2)
 	_, err = stream.Read(buf)
@@ -340,7 +355,7 @@ func (s *testDoQServer) closeConn(conn quic.EarlyConnection) {
 
 	err := conn.CloseWithError(QUICCodeNoError, "")
 	if err != nil {
-		log.Debug("failed to close conn: %v", err)
+		s.logger.Debug("failed to close conn", slogutil.KeyError, err)
 	}
 
 	delete(s.conns, conn)
@@ -365,7 +380,6 @@ func (s *testDoQServer) closeConns() (err error) {
 	return errors.Join(errs...)
 }
 
-// startDoQServer starts a test DoQ server.
 // startDoQServer starts a test DoQ server.  Note that it adds its own shutdown
 // to cleanup of t.
 func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServer) {
@@ -398,8 +412,11 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 	s = &testDoQServer{
 		addr:     listen.Addr().String(),
 		listener: listen,
-		conns:    map[quic.EarlyConnection]struct{}{},
-		connsMu:  &sync.Mutex{},
+		// TODO(d.kolyshev): Add a concurrent safe [slog.Handler] wrapper for
+		// [testing.TB] log function.
+		logger:  slogutil.NewDiscardLogger(),
+		conns:   map[quic.EarlyConnection]struct{}{},
+		connsMu: &sync.Mutex{},
 	}
 
 	go s.Serve()

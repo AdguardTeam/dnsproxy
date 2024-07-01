@@ -53,9 +53,8 @@ type QUICTraceFunc func(
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
 type Options struct {
-	// Logger is used for logging during parsing.
-	//
-	// TODO(d.kolyshev): Use logger in this package.
+	// Logger is used for logging during parsing and upstream exchange.  If nil,
+	// [slog.Default] is used.
 	Logger *slog.Logger
 
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
@@ -117,6 +116,7 @@ func (o *Options) Clone() (clone *Options) {
 		QUICTracer:                o.QUICTracer,
 		RootCAs:                   o.RootCAs,
 		CipherSuites:              o.CipherSuites,
+		Logger:                    o.Logger,
 	}
 }
 
@@ -181,6 +181,10 @@ const (
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 	if opts == nil {
 		opts = &Options{}
+	}
+
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
 	}
 
 	var uu *url.URL

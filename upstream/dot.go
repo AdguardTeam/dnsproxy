@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -14,7 +15,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 )
 
@@ -36,6 +37,9 @@ type dnsOverTLS struct {
 
 	// connsMu protects conns.
 	connsMu *sync.Mutex
+
+	// logger is used for exchange logging.  It is never nil.
+	logger *slog.Logger
 
 	// conns stores the connections ready for reuse.  Don't use [sync.Pool]
 	// here, since there is no need to deallocate these connections.
@@ -70,6 +74,7 @@ func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 			VerifyConnection:      opts.VerifyConnection,
 		},
 		connsMu: &sync.Mutex{},
+		logger:  opts.Logger,
 	}
 
 	runtime.SetFinalizer(tlsUps, (*dnsOverTLS).Close)
@@ -102,7 +107,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 		// connection from pool may also be malformed, so dial a new one.
 
 		err = errors.WithDeferred(err, conn.Close())
-		log.Debug("dot %s: bad conn from pool: %s", p.addr, err)
+		p.logger.Debug("dot got bad conn from pool", "addr", p.addr, slogutil.KeyError, err)
 
 		// Retry.
 		conn, err = tlsDial(h, p.tlsConf.Clone())
@@ -167,14 +172,14 @@ func (p *dnsOverTLS) conn(h bootstrap.DialHandler) (conn net.Conn, err error) {
 
 	err = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err != nil {
-		log.Debug("dot upstream: setting deadline to conn from pool: %s", err)
+		p.logger.Debug("dot upstream setting deadline to conn from pool", slogutil.KeyError, err)
 
 		// If deadLine can't be updated it means that connection was already
 		// closed.
 		return nil, nil
 	}
 
-	log.Debug("dot upstream: using existing conn %s", conn.RemoteAddr())
+	p.logger.Debug("dot upstream using existing conn", "raddr", conn.RemoteAddr())
 
 	return conn, nil
 }

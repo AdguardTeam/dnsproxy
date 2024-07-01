@@ -13,7 +13,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
 
@@ -55,12 +54,12 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 		upsOpts.Timeout = opts.Timeout
 		upsOpts.VerifyServerCertificate = opts.VerifyServerCertificate
 		upsOpts.PreferIPv6 = opts.PreferIPv6
+		upsOpts.Logger = opts.Logger
 	}
 
 	ups, err := AddressToUpstream(resolverAddress, upsOpts)
 	if err != nil {
-		err = fmt.Errorf("creating upstream: %w", err)
-		log.Error("upstream bootstrap: %s", err)
+		err = fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
 
 		return nil, err
 	}

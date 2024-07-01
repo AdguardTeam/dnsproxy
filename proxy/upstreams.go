@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"cmp"
 	"fmt"
 	"io"
 	"log/slog"
@@ -98,9 +97,13 @@ func ParseUpstreamsConfig(
 		opts = &upstream.Options{}
 	}
 
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
+
 	p := &configParser{
 		options:                  opts,
-		logger:                   cmp.Or(opts.Logger, slog.Default()),
+		logger:                   opts.Logger,
 		upstreamsIndex:           map[string]upstream.Upstream{},
 		domainReservedUpstreams:  map[string][]upstream.Upstream{},
 		specifiedDomainUpstreams: map[string][]upstream.Upstream{},

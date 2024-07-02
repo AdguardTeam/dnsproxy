@@ -4,6 +4,7 @@
 package fastip
 
 import (
+	"log/slog"
 	"net"
 	"net/netip"
 	"strings"
@@ -13,10 +14,13 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/container"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
+
+// LogPrefix is a prefix for logging.
+const LogPrefix = "fastip"
 
 // DefaultPingWaitTimeout is the default period of time for waiting ping
 // operations to finish.
@@ -24,6 +28,9 @@ const DefaultPingWaitTimeout = 1 * time.Second
 
 // FastestAddr provides methods to determine the fastest network addresses.
 type FastestAddr struct {
+	// logger is used for logging during the process.  It is never nil.
+	logger *slog.Logger
+
 	// pinger is the dialer with predefined timeout for pinging TCP connections.
 	pinger *net.Dialer
 
@@ -36,25 +43,66 @@ type FastestAddr struct {
 	// pingPorts are the ports to ping on.
 	pingPorts []uint
 
-	// PingWaitTimeout is the timeout for waiting all the resolved addresses to
+	// pingWaitTimeout is the timeout for waiting all the resolved addresses to
 	// be pinged.  Any ping results received after that moment are cached, but
-	// won't be used.  It should be configured right after the FastestAddr
-	// initialization since it isn't protected for concurrent usage.
-	PingWaitTimeout time.Duration
+	// won't be used.
+	pingWaitTimeout time.Duration
 }
 
 // NewFastestAddr initializes a new instance of *FastestAddr.
+//
+// Deprecated: Use [New] instead.
 func NewFastestAddr() (f *FastestAddr) {
 	return &FastestAddr{
+		logger:      slog.Default().With(slogutil.KeyPrefix, LogPrefix),
 		ipCacheLock: &sync.Mutex{},
 		ipCache: cache.New(cache.Config{
 			MaxSize:   64 * 1024,
 			EnableLRU: true,
 		}),
 		pingPorts:       []uint{80, 443},
-		PingWaitTimeout: DefaultPingWaitTimeout,
+		pingWaitTimeout: DefaultPingWaitTimeout,
 		pinger:          &net.Dialer{Timeout: pingTCPTimeout},
 	}
+}
+
+// Config contains all the fields necessary for proxy configuration.
+type Config struct {
+	// Logger is used as the base logger for the service.  If nil,
+	// [slog.Default] with [LogPrefix] is used.
+	Logger *slog.Logger
+
+	// PingWaitTimeout is the timeout for waiting all the resolved addresses to
+	// be pinged.  Any ping results received after that moment are cached, but
+	// won't be used.  If zero, [DefaultPingWaitTimeout] is used.
+	PingWaitTimeout time.Duration
+}
+
+// New initializes a new instance of *FastestAddr.
+func New(c *Config) (f *FastestAddr) {
+	f = &FastestAddr{
+		ipCacheLock: &sync.Mutex{},
+		ipCache: cache.New(cache.Config{
+			MaxSize:   64 * 1024,
+			EnableLRU: true,
+		}),
+		pingPorts: []uint{80, 443},
+		pinger:    &net.Dialer{Timeout: pingTCPTimeout},
+	}
+
+	if c.PingWaitTimeout > 0 {
+		f.pingWaitTimeout = c.PingWaitTimeout
+	} else {
+		f.pingWaitTimeout = DefaultPingWaitTimeout
+	}
+
+	if c.Logger != nil {
+		f.logger = c.Logger
+	} else {
+		f.logger = slog.Default().With(slogutil.KeyPrefix, LogPrefix)
+	}
+
+	return f
 }
 
 // ExchangeFastest queries each specified upstream and returns the response with
@@ -85,7 +133,7 @@ func (f *FastestAddr) ExchangeFastest(
 		return f.prepareReply(pingRes, replies)
 	}
 
-	log.Debug("fastip: %s: no fastest IP found, using the first response", host)
+	f.logger.Debug("no fastest ip found, using the first response", "host", host)
 
 	return replies[0].Resp, replies[0].Upstream, nil
 }
@@ -107,7 +155,7 @@ func (f *FastestAddr) prepareReply(
 	}
 
 	if resp == nil {
-		log.Error("fastip: found no replies with IP %s, most likely this is a bug", ip)
+		f.logger.Error("found no replies, most likely this is a bug", "ip", ip)
 
 		// TODO(d.kolyshev): Consider returning error?
 		return replies[0].Resp, replies[0].Upstream, nil

@@ -10,6 +10,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
@@ -53,6 +54,8 @@ func TestResolveDialContext(t *testing.T) {
 
 	ipp := newListener(t, "tcp", sig)
 	port := ipp.Port()
+
+	l := slogutil.NewDiscardLogger()
 
 	testCases := []struct {
 		name       string
@@ -100,6 +103,7 @@ func TestResolveDialContext(t *testing.T) {
 				testTimeout,
 				bootstrap.ParallelResolver{r},
 				tc.preferIPv6,
+				l,
 			)
 			require.NoError(t, err)
 
@@ -132,6 +136,7 @@ func TestResolveDialContext(t *testing.T) {
 			testTimeout,
 			bootstrap.ParallelResolver{r},
 			false,
+			l,
 		)
 		require.NoError(t, err)
 
@@ -148,6 +153,7 @@ func TestResolveDialContext(t *testing.T) {
 			testTimeout,
 			nil,
 			false,
+			l,
 		)
 		testutil.AssertErrorMsg(t, errMsg, err)
 
@@ -160,6 +166,7 @@ func TestResolveDialContext(t *testing.T) {
 			testTimeout,
 			nil,
 			false,
+			l,
 		)
 		assert.ErrorIs(t, err, bootstrap.ErrNoResolvers)
 		assert.Nil(t, dialContext)

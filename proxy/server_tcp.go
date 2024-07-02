@@ -9,6 +9,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -21,7 +22,11 @@ func (p *Proxy) createTCPListeners(ctx context.Context) (err error) {
 	for _, a := range p.TCPListenAddr {
 		p.logger.Info("creating tcp server socket", "addr", a)
 
-		lsnr, lErr := proxynetutil.ListenConfig().Listen(ctx, "tcp", a.String())
+		lsnr, lErr := proxynetutil.ListenConfig(p.logger).Listen(
+			ctx,
+			bootstrap.NetworkTCP,
+			a.String(),
+		)
 		if lErr != nil {
 			return fmt.Errorf("listening to tcp socket: %w", lErr)
 		}

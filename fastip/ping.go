@@ -4,7 +4,8 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 )
 
 // pingTCPTimeout is a TCP connection timeout.  It's higher than pingWaitTimeout
@@ -73,9 +74,13 @@ func (f *FastestAddr) pingAll(host string, ips []netip.Addr) (pr *pingResult) {
 	pr, scheduled := f.schedulePings(resCh, ips, host)
 	if !scheduled {
 		if pr != nil {
-			log.Debug("fastip: pingAll: %s: return cached response: %s", host, pr.addrPort)
+			f.logger.Debug(
+				"pinging all returns cached response",
+				"host", host,
+				"addr", pr.addrPort,
+			)
 		} else {
-			log.Debug("fastip: pingAll: %s: returning nothing", host)
+			f.logger.Debug("pinging all returns nothing", "host", host)
 		}
 
 		return pr
@@ -99,15 +104,15 @@ func (f *FastestAddr) pingAll(host string, ips []netip.Addr) (pr *pingResult) {
 // firstSuccessRes waits and returns the first successful ping result or nil in
 // case of timeout.
 func (f *FastestAddr) firstSuccessRes(resCh chan *pingResult, host string) (res *pingResult) {
-	after := time.After(f.PingWaitTimeout)
+	after := time.After(f.pingWaitTimeout)
 	for {
 		select {
 		case res = <-resCh:
-			log.Debug(
-				"fastip: pingAll: %s: got result for %s status %v",
-				host,
-				res.addrPort,
-				res.success,
+			f.logger.Debug(
+				"pinging all got result",
+				"host", host,
+				"addr", res.addrPort,
+				"status", res.success,
 			)
 
 			if !res.success {
@@ -116,7 +121,7 @@ func (f *FastestAddr) firstSuccessRes(resCh chan *pingResult, host string) (res 
 
 			return res
 		case <-after:
-			log.Debug("fastip: pingAll: %s: pinging timed out", host)
+			f.logger.Debug("pinging all timed out", "host", host)
 
 			return nil
 		}
@@ -125,16 +130,17 @@ func (f *FastestAddr) firstSuccessRes(resCh chan *pingResult, host string) (res 
 
 // pingDoTCP sends the result of dialing the specified address into resCh.
 func (f *FastestAddr) pingDoTCP(host string, addrPort netip.AddrPort, resCh chan *pingResult) {
-	log.Debug("pingDoTCP: %s: connecting to %s", host, addrPort)
+	l := f.logger.With("host", host, "addr", addrPort)
+	l.Debug("open tcp connection")
 
 	start := time.Now()
-	conn, err := f.pinger.Dial("tcp", addrPort.String())
+	conn, err := f.pinger.Dial(bootstrap.NetworkTCP, addrPort.String())
 	elapsed := time.Since(start)
 
 	success := err == nil
 	if success {
 		if cErr := conn.Close(); cErr != nil {
-			log.Debug("fastip: closing tcp connection: %s", cErr)
+			l.Debug("closing tcp connection", slogutil.KeyError, cErr)
 		}
 	}
 
@@ -148,16 +154,10 @@ func (f *FastestAddr) pingDoTCP(host string, addrPort netip.AddrPort, resCh chan
 
 	addr := addrPort.Addr().Unmap()
 	if success {
-		log.Debug("fastip: pingDoTCP: %s: elapsed %s ms on %s", host, elapsed, addrPort)
+		l.Debug("tcp ping success", "elapsed", elapsed)
 		f.cacheAddSuccessful(addr, latency)
 	} else {
-		log.Debug(
-			"fastip: pingDoTCP: %s: failed to connect to %s, elapsed %s ms: %v",
-			host,
-			addrPort,
-			elapsed,
-			err,
-		)
+		l.Debug("tcp ping failed to connect", "elapsed", elapsed, slogutil.KeyError, err)
 		f.cacheAddFailure(addr)
 	}
 }

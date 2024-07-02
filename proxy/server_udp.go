@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -33,7 +34,11 @@ func (p *Proxy) createUDPListeners(ctx context.Context) (err error) {
 func (p *Proxy) udpCreate(ctx context.Context, udpAddr *net.UDPAddr) (*net.UDPConn, error) {
 	p.logger.InfoContext(ctx, "creating udp server socket", "addr", udpAddr)
 
-	packetConn, err := proxynetutil.ListenConfig().ListenPacket(ctx, "udp", udpAddr.String())
+	packetConn, err := proxynetutil.ListenConfig(p.logger).ListenPacket(
+		ctx,
+		bootstrap.NetworkUDP,
+		udpAddr.String(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listening to udp socket: %w", err)
 	}

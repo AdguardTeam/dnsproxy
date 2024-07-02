@@ -1,9 +1,12 @@
 package netutil
 
-import "net"
+import (
+	"log/slog"
+	"net"
+)
 
 // ListenConfig returns the default [net.ListenConfig] used by the plain-DNS
-// servers in this module.
+// servers in this module.  l must not be nil.
 //
 // TODO(a.garipov): Add tests.
 //
@@ -13,8 +16,13 @@ import "net"
 // See https://github.com/AdguardTeam/AdGuardHome/issues/5872.
 //
 // TODO(a.garipov): DRY with AdGuard DNS when we can.
-func ListenConfig() (lc *net.ListenConfig) {
+func ListenConfig(l *slog.Logger) (lc *net.ListenConfig) {
 	return &net.ListenConfig{
-		Control: defaultListenControl,
+		Control: listenControl{logger: l}.defaultListenControl,
 	}
+}
+
+// listenControl is a wrapper struct with logger.
+type listenControl struct {
+	logger *slog.Logger
 }

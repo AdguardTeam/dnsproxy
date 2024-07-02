@@ -2,13 +2,14 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"slices"
-	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 )
 
 // Resolver resolves the hostnames to IP addresses.  Note, that [net.Resolver]
@@ -41,7 +42,7 @@ func (r ParallelResolver) LookupNetIP(
 	case 0:
 		return nil, ErrNoResolvers
 	case 1:
-		return lookup(ctx, r[0], network, host)
+		return r[0].LookupNetIP(ctx, network, host)
 	default:
 		// Go on.
 	}
@@ -66,35 +67,46 @@ func (r ParallelResolver) LookupNetIP(
 	return nil, errors.Join(errs...)
 }
 
+// recoverAndLog is a deferred helper that recovers from a panic and logs the
+// panic value with the logger from context or with a default logger.  Sends the
+// recovered value into resCh.
+//
+// TODO(a.garipov): Move this helper to golibs.
+func recoverAndLog(ctx context.Context, resCh chan<- any) {
+	v := recover()
+	if v == nil {
+		return
+	}
+
+	err, ok := v.(error)
+	if !ok {
+		err = fmt.Errorf("error value: %v", v)
+	}
+
+	l, ok := slogutil.LoggerFromContext(ctx)
+	if !ok {
+		l = slog.Default()
+	}
+
+	l.ErrorContext(ctx, "recovered panic", slogutil.KeyError, err)
+	slogutil.PrintStack(ctx, l, slog.LevelError)
+
+	resCh <- err
+}
+
 // lookupAsync performs a lookup for ip of host with r and sends the result into
 // resCh.  It is intended to be used as a goroutine.
 func lookupAsync(ctx context.Context, r Resolver, network, host string, resCh chan<- any) {
-	defer log.OnPanic("parallel lookup")
+	// TODO(d.kolyshev): Propose better solution to recover without requiring
+	// logger in the context.
+	defer recoverAndLog(ctx, resCh)
 
-	addrs, err := lookup(ctx, r, network, host)
+	addrs, err := r.LookupNetIP(ctx, network, host)
 	if err != nil {
 		resCh <- err
 	} else {
 		resCh <- addrs
 	}
-}
-
-// lookup tries to lookup ip of host with r.
-//
-// TODO(e.burkov):  Get rid of this function?  It only wraps the actual lookup
-// with dubious logging.
-func lookup(ctx context.Context, r Resolver, network, host string) (addrs []netip.Addr, err error) {
-	start := time.Now()
-	addrs, err = r.LookupNetIP(ctx, network, host)
-	elapsed := time.Since(start)
-
-	if err != nil {
-		log.Debug("parallel lookup: lookup for %s failed in %s: %s", host, elapsed, err)
-	} else {
-		log.Debug("parallel lookup: lookup for %s succeeded in %s: %s", host, elapsed, addrs)
-	}
-
-	return addrs, err
 }
 
 // ConsequentResolver is a slice of resolvers that are queried in order until

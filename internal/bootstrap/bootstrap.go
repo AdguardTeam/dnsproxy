@@ -5,6 +5,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 )
 
@@ -43,12 +44,13 @@ const (
 type DialHandler func(ctx context.Context, network Network, addr string) (conn net.Conn, err error)
 
 // ResolveDialContext returns a DialHandler that uses addresses resolved from u
-// using resolver.  u must not be nil.
+// using resolver.  l and u must not be nil.
 func ResolveDialContext(
 	u *url.URL,
 	timeout time.Duration,
 	r Resolver,
 	preferV6 bool,
+	l *slog.Logger,
 ) (h DialHandler, err error) {
 	defer func() { err = errors.Annotate(err, "dialing %q: %w", u.Host) }()
 
@@ -87,15 +89,16 @@ func ResolveDialContext(
 		addrs = append(addrs, netip.AddrPortFrom(ip, port).String())
 	}
 
-	return NewDialContext(timeout, addrs...), nil
+	return NewDialContext(timeout, l, addrs...), nil
 }
 
 // NewDialContext returns a DialHandler that dials addrs and returns the first
-// successful connection.  At least a single addr should be specified.
-func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
-	l := len(addrs)
-	if l == 0 {
-		log.Debug("bootstrap: no addresses to dial")
+// successful connection.  At least a single addr should be specified.  l must
+// not be nil.
+func NewDialContext(timeout time.Duration, l *slog.Logger, addrs ...string) (h DialHandler) {
+	addrLen := len(addrs)
+	if addrLen == 0 {
+		l.Debug("no addresses to dial")
 
 		return func(_ context.Context, _, _ string) (conn net.Conn, err error) {
 			return nil, errors.Error("no addresses")
@@ -112,19 +115,20 @@ func NewDialContext(timeout time.Duration, addrs ...string) (h DialHandler) {
 		// Return first succeeded connection.  Note that we're using addrs
 		// instead of what's passed to the function.
 		for i, addr := range addrs {
-			log.Debug("bootstrap: dialing %s (%d/%d)", addr, i+1, l)
+			a := l.With("addr", addr)
+			a.DebugContext(ctx, "dialing", "idx", i+1, "total", addrLen)
 
 			start := time.Now()
 			conn, err = dialer.DialContext(ctx, network, addr)
 			elapsed := time.Since(start)
 			if err != nil {
-				log.Debug("bootstrap: connection to %s failed in %s: %s", addr, elapsed, err)
+				a.DebugContext(ctx, "connection failed", "elapsed", elapsed, slogutil.KeyError, err)
 				errs = append(errs, err)
 
 				continue
 			}
 
-			log.Debug("bootstrap: connection to %s succeeded in %s", addr, elapsed)
+			a.DebugContext(ctx, "connection succeeded", "elapsed", elapsed)
 
 			return conn, nil
 		}

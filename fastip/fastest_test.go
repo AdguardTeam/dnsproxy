@@ -6,19 +6,25 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestFastestAddr_ExchangeFastest(t *testing.T) {
+	l := slogutil.NewDiscardLogger()
+
 	t.Run("error", func(t *testing.T) {
 		const errDesired errors.Error = "this is expected"
 
 		u := &errUpstream{
 			err: errDesired,
 		}
-		f := NewFastestAddr()
+		f := New(&Config{
+			Logger:          l,
+			PingWaitTimeout: DefaultPingWaitTimeout,
+		})
 
 		resp, up, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{u})
 		require.Error(t, err)
@@ -31,7 +37,10 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	t.Run("one_dead", func(t *testing.T) {
 		port := listen(t, netip.IPv4Unspecified())
 
-		f := NewFastestAddr()
+		f := New(&Config{
+			Logger:          l,
+			PingWaitTimeout: DefaultPingWaitTimeout,
+		})
 		f.pingPorts = []uint{port}
 
 		// The alive IP is the just created local listener's address.  The dead
@@ -60,7 +69,10 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	})
 
 	t.Run("all_dead", func(t *testing.T) {
-		f := NewFastestAddr()
+		f := New(&Config{
+			Logger:          l,
+			PingWaitTimeout: DefaultPingWaitTimeout,
+		})
 		f.pingPorts = []uint{getFreePort(t)}
 
 		firstIP := netip.MustParseAddr("127.0.0.1")

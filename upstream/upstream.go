@@ -20,6 +20,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
@@ -373,9 +374,16 @@ type DialerInitializer func() (handler bootstrap.DialHandler, err error)
 // newDialerInitializer creates an initializer of the dialer that will dial the
 // addresses resolved from u using opts.
 func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
+	var l *slog.Logger
+	if opts.Logger != nil {
+		l = opts.Logger.With(slogutil.KeyPrefix, "bootstrap")
+	} else {
+		l = slog.Default()
+	}
+
 	if _, err := netip.ParseAddrPort(u.Host); err == nil {
 		// Don't resolve the address of the server since it's already an IP.
-		handler := bootstrap.NewDialContext(opts.Timeout, u.Host)
+		handler := bootstrap.NewDialContext(opts.Timeout, l, u.Host)
 
 		return func() (h bootstrap.DialHandler, dialerErr error) {
 			return handler, nil
@@ -389,6 +397,6 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
 	}
 
 	return func() (h bootstrap.DialHandler, err error) {
-		return bootstrap.ResolveDialContext(u, opts.Timeout, boot, opts.PreferIPv6)
+		return bootstrap.ResolveDialContext(u, opts.Timeout, boot, opts.PreferIPv6, l)
 	}
 }

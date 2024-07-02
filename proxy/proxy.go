@@ -265,10 +265,10 @@ func New(c *Config) (p *Proxy, err error) {
 	if p.UpstreamMode == UModeFastestAddr {
 		p.logger.Info("fastest ip is enabled")
 
-		p.fastestAddr = fastip.NewFastestAddr()
-		if timeout := p.FastestPingTimeout; timeout > 0 {
-			p.fastestAddr.PingWaitTimeout = timeout
-		}
+		p.fastestAddr = fastip.New(&fastip.Config{
+			Logger:          p.Logger,
+			PingWaitTimeout: p.FastestPingTimeout,
+		})
 	}
 
 	err = p.setupDNS64()

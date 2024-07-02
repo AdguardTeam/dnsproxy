@@ -6,4 +6,6 @@ import "syscall"
 
 // defaultListenControl is nil on Windows, because it doesn't support
 // SO_REUSEPORT.
-var defaultListenControl func(_, _ string, _ syscall.RawConn) (_ error)
+func (listenControl) defaultListenControl(_, _ string, _ syscall.RawConn) (err error) {
+	return nil
+}

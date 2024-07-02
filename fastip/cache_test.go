@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCacheAdd(t *testing.T) {
-	f := NewFastestAddr()
+	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
 		status:      0,
 		latencyMsec: 111,
@@ -24,7 +25,7 @@ func TestCacheAdd(t *testing.T) {
 }
 
 func TestCacheTtl(t *testing.T) {
-	f := NewFastestAddr()
+	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
 		status:      0,
 		latencyMsec: 111,
@@ -44,7 +45,7 @@ func TestCacheTtl(t *testing.T) {
 }
 
 func TestCacheAddSuccessfulOverwrite(t *testing.T) {
-	f := NewFastestAddr()
+	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 
 	ip := netip.MustParseAddr("1.1.1.1")
 	f.cacheAddFailure(ip)
@@ -65,7 +66,7 @@ func TestCacheAddSuccessfulOverwrite(t *testing.T) {
 }
 
 func TestCacheAddFailureNoOverwrite(t *testing.T) {
-	f := NewFastestAddr()
+	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 
 	ip := netip.MustParseAddr("1.1.1.1")
 	f.cacheAddSuccessful(ip, 11)
@@ -87,7 +88,7 @@ func TestCacheAddFailureNoOverwrite(t *testing.T) {
 
 // TODO(ameshkov): Actually test something.
 func TestCache(_ *testing.T) {
-	f := NewFastestAddr()
+	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
 		status:      0,
 		latencyMsec: 111,

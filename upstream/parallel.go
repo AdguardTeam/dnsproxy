@@ -1,9 +1,7 @@
 package upstream
 
 import (
-	"context"
 	"fmt"
-	"net/netip"
 	"slices"
 	"time"
 
@@ -169,16 +167,4 @@ func exchangeAndLog(u Upstream, req *dns.Msg) (resp *dns.Msg, err error) {
 	}
 
 	return reply, err
-}
-
-// LookupParallel tries to lookup for ip of host with all resolvers
-// concurrently.
-//
-// Deprecated:  Use [ParallelResolver] instead.
-func LookupParallel(
-	ctx context.Context,
-	resolvers []Resolver,
-	host string,
-) (addrs []netip.Addr, err error) {
-	return ParallelResolver(resolvers).LookupNetIP(ctx, "ip", host)
 }

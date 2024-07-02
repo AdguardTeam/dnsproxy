@@ -22,7 +22,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
@@ -218,14 +217,11 @@ const (
 func main() {
 	opts, exitCode, err := parseOptions()
 	if err != nil {
-		log.Fatalf("parsing options: %s", err)
-	} else if opts == nil {
-		os.Exit(exitCode)
+		_, _ = fmt.Fprintln(os.Stderr, err)
 	}
 
-	// TODO(d.kolyshev): Remove after migration to slog.
-	if opts.Verbose {
-		log.SetLevel(log.DEBUG)
+	if opts == nil {
+		os.Exit(exitCode)
 	}
 
 	logOutput := os.Stdout
@@ -234,11 +230,12 @@ func main() {
 		// configuration.
 		logOutput, err = os.OpenFile(opts.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
-			log.Fatalf("cannot create a log file: %s", err)
+			_, _ = fmt.Fprintln(os.Stderr, fmt.Errorf("cannot create a log file: %s", err))
+
+			os.Exit(osutil.ExitCodeArgumentError)
 		}
 
 		defer func() { _ = logOutput.Close() }()
-		log.SetOutput(logOutput)
 	}
 
 	l := slogutil.New(&slogutil.Config{

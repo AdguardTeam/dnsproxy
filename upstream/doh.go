@@ -224,8 +224,8 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 		n = networkUDP
 	}
 
-	logBegin(p.addrRedacted, n, req)
-	defer func() { logFinish(p.addrRedacted, n, err) }()
+	logBegin(p.logger, p.addrRedacted, n, req)
+	defer func() { logFinish(p.logger, p.addrRedacted, n, err) }()
 
 	return p.exchangeHTTPSClient(client, req)
 }

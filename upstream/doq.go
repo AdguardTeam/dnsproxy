@@ -213,8 +213,8 @@ func (p *dnsOverQUIC) Close() (err error) {
 func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg, conn quic.Connection) (resp *dns.Msg, err error) {
 	addr := p.Address()
 
-	logBegin(addr, networkUDP, req)
-	defer func() { logFinish(addr, networkUDP, err) }()
+	logBegin(p.logger, addr, networkUDP, req)
+	defer func() { logFinish(p.logger, addr, networkUDP, err) }()
 
 	buf, err := req.Pack()
 	if err != nil {

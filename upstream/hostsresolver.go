@@ -9,7 +9,6 @@ import (
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/hostsfile"
-	"github.com/AdguardTeam/golibs/log"
 )
 
 // HostsResolver is a [Resolver] that looks into system hosts files, see
@@ -52,8 +51,7 @@ func parseHostsFile(fsys fs.FS, hosts hostsfile.Set, filename string) (err error
 	f, err := fsys.Open(filename)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			log.Debug("hosts file %q doesn't exist", filename)
-
+			// Ignore this case.
 			return nil
 		}
 

@@ -3,10 +3,8 @@ package upstream
 import (
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/miekg/dns"
 )
 
@@ -19,7 +17,7 @@ const (
 	ErrNoReply errors.Error = "no reply"
 )
 
-// ExchangeParallel returns the dirst successful response from one of u.  It
+// ExchangeParallel returns the first successful response from one of u.  It
 // returns an error if all upstreams failed to exchange the request.
 func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Upstream, err error) {
 	upsNum := len(ups)
@@ -27,7 +25,7 @@ func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Up
 	case 0:
 		return nil, nil, ErrNoUpstreams
 	case 1:
-		reply, err = exchangeAndLog(ups[0], req)
+		reply, err = ups[0].Exchange(req)
 
 		return reply, ups[0], err
 	default:
@@ -81,7 +79,7 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 		return nil, ErrNoUpstreams
 	case 1:
 		var reply *dns.Msg
-		reply, err = exchangeAndLog(ups[0], req)
+		reply, err = ups[0].Exchange(req)
 		if err != nil {
 			return nil, err
 		} else if reply == nil {
@@ -141,30 +139,10 @@ func receiveAsyncResult(resCh chan any) (res *ExchangeAllResult, err error) {
 // exchangeAsync tries to resolve DNS request with one upstream and sends the
 // result to respCh.
 func exchangeAsync(u Upstream, req *dns.Msg, resCh chan any) {
-	reply, err := exchangeAndLog(u, req)
+	reply, err := u.Exchange(req)
 	if err != nil {
 		resCh <- err
 	} else {
 		resCh <- &ExchangeAllResult{Resp: reply, Upstream: u}
 	}
-}
-
-// exchangeAndLog wraps the [Upstream.Exchange] method with logging.
-func exchangeAndLog(u Upstream, req *dns.Msg) (resp *dns.Msg, err error) {
-	addr := u.Address()
-	req = req.Copy()
-
-	start := time.Now()
-	reply, err := u.Exchange(req)
-	dur := time.Since(start)
-
-	if len(req.Question) > 0 {
-		if q := &req.Question[0]; err == nil {
-			log.Debug("dnsproxy: upstream %s exchanged %s successfully in %s", addr, q, dur)
-		} else {
-			log.Debug("dnsproxy: upstream %s failed to exchange %s in %s: %s", addr, q, dur, err)
-		}
-	}
-
-	return reply, err
 }

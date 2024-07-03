@@ -262,9 +262,8 @@ func New(c *Config) (p *Proxy, err error) {
 		p.requestsSema = syncutil.EmptySemaphore{}
 	}
 
-	if p.UpstreamMode == UModeFastestAddr {
-		p.logger.Info("fastest ip is enabled")
-
+	p.logger.Info("upstream mode is set", "mode", p.UpstreamMode)
+	if p.UpstreamMode == UpstreamModeFastestAddr {
 		p.fastestAddr = fastip.New(&fastip.Config{
 			Logger:          p.Logger,
 			PingWaitTimeout: p.FastestPingTimeout,

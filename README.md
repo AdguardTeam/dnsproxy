@@ -86,8 +86,7 @@ Application Options:
       --insecure                   Disable secure TLS certificate validation
       --ipv6-disabled              If specified, all AAAA requests will be replied with NoError RCode and empty answer
       --http3                      Enable HTTP/3 support
-      --all-servers                If specified, parallel queries to all configured upstream servers are enabled
-      --fastest-addr               Respond to A or AAAA requests only with the fastest IP address
+      --upstream-mode              If specified, determines the upstream usage logic.
       --cache-optimistic           If specified, optimistic DNS cache is enabled
       --cache                      If specified, DNS cache is enabled
       --refuse-any                 If specified, refuse ANY requests
@@ -267,17 +266,19 @@ specified and enabled if DNS64 is enabled.
 ### Fastest addr + cache-min-ttl
 
 This option would be useful to the users with problematic network connection.
-In this mode, `dnsproxy` would detect the fastest IP address among all that were returned,
-and it will return only it.
+In this mode, `dnsproxy` would detect the fastest IP address among all that were
+returned, and it will return only it.
 
-Additionally, for those with problematic network connection, it makes sense to override `cache-min-ttl`.
-In this case, `dnsproxy` will make sure that DNS responses are cached for at least the specified amount of time.
+Additionally, for those with problematic network connection, it makes sense to
+override `cache-min-ttl`.  In this case, `dnsproxy` will make sure that DNS
+responses are cached for at least the specified amount of time.
 
 It makes sense to run it with multiple upstream servers only.
 
-Run a DNS proxy with two upstreams, min-TTL set to 10 minutes, fastest address detection is enabled:
+Run a DNS proxy with two upstreams, min-TTL set to 10 minutes, fastest address
+detection is enabled:
 ```
-./dnsproxy -u 8.8.8.8 -u 1.1.1.1 --cache --cache-min-ttl=600 --fastest-addr
+./dnsproxy -u 8.8.8.8 -u 1.1.1.1 --cache --cache-min-ttl=600 --upstream-mode=fastest_addr
 ```
 
  who run `dnsproxy` with multiple upstreams

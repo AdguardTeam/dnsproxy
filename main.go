@@ -66,6 +66,9 @@ type Options struct {
 	// EDNSAddr is the custom EDNS Client Address to send.
 	EDNSAddr string `yaml:"edns-addr" long:"edns-addr" description:"Send EDNS Client Address"`
 
+	// UpstreamMode determines the logic through which upstreams will be used.
+	UpstreamMode string `yaml:"upstream-mode" long:"upstream-mode" description:"" optional:"yes" optional-value:"load_balance"`
+
 	// ListenAddrs is the list of server's listen addresses.
 	ListenAddrs []string `yaml:"listen-addrs" short:"l" long:"listen" description:"Listening addresses"`
 
@@ -173,15 +176,6 @@ type Options struct {
 	// HTTP3 controls whether HTTP/3 is enabled for this instance of dnsproxy.
 	// It enables HTTP/3 support for both the DoH upstreams and the DoH server.
 	HTTP3 bool `yaml:"http3" long:"http3" description:"Enable HTTP/3 support" optional:"yes" optional-value:"false"`
-
-	// AllServers makes server to query all configured upstream servers in
-	// parallel.
-	AllServers bool `yaml:"all-servers" long:"all-servers" description:"If specified, parallel queries to all configured upstream servers are enabled" optional:"yes" optional-value:"true"`
-
-	// FastestAddress controls whether the server should respond to A or AAAA
-	// requests only with the fastest IP address detected by ICMP response time
-	// or TCP connection time.
-	FastestAddress bool `yaml:"fastest-addr" long:"fastest-addr" description:"Respond to A or AAAA requests only with the fastest IP address" optional:"yes" optional-value:"true"`
 
 	// CacheOptimistic, if set to true, enables the optimistic DNS cache. That
 	// means that cached results will be served even if their cache TTL has
@@ -555,13 +549,16 @@ func (opts *Options) initUpstreams(
 		config.Fallbacks = fallbacks
 	}
 
-	if opts.AllServers {
-		config.UpstreamMode = proxy.UModeParallel
-	} else if opts.FastestAddress {
-		config.UpstreamMode = proxy.UModeFastestAddr
-	} else {
-		config.UpstreamMode = proxy.UModeLoadBalance
+	if opts.UpstreamMode != "" {
+		err = config.UpstreamMode.UnmarshalText([]byte(opts.UpstreamMode))
+		if err != nil {
+			return fmt.Errorf("parsing upstream mode: %w", err)
+		}
+
+		return nil
 	}
+
+	config.UpstreamMode = proxy.UpstreamModeLoadBalance
 
 	return nil
 }

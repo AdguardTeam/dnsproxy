@@ -1,6 +1,6 @@
 module github.com/AdguardTeam/dnsproxy/internal/tools
 
-go 1.22.4
+go 1.22.5
 
 require (
 	github.com/fzipp/gocyclo v0.6.0
@@ -26,10 +26,10 @@ require (
 	github.com/kyoh86/nolint v0.0.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20240604190554-fc45aab8b7f8 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20240613232115-7f521ea00fb8 // indirect
 	golang.org/x/mod v0.18.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/sys v0.21.0 // indirect
-	golang.org/x/telemetry v0.0.0-20240607193123-221703e18637 // indirect
+	golang.org/x/telemetry v0.0.0-20240701175443-4e29c7872ac1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

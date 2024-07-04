@@ -106,6 +106,7 @@ type Config struct {
 	HTTPSServerName string
 
 	// UpstreamMode determines the logic through which upstreams will be used.
+	// If not specified the [proxy.UpstreamModeLoadBalance] is used.
 	UpstreamMode UpstreamMode
 
 	// UDPListenAddr is the set of UDP addresses to listen for plain
@@ -270,6 +271,15 @@ func (p *Proxy) validateConfig() (err error) {
 		return fmt.Errorf("validating ratelimit: %w", err)
 	}
 
+	switch p.UpstreamMode {
+	case "":
+		// Go on.
+	case UpstreamModeFastestAddr, UpstreamModeLoadBalance, UpstreamModeParallel:
+		// Go on.
+	default:
+		return fmt.Errorf("bad upstream mode: %q", p.UpstreamMode)
+	}
+
 	p.logConfigInfo()
 
 	return nil
@@ -332,6 +342,10 @@ func (p *Proxy) logConfigInfo() {
 
 	if len(p.BogusNXDomain) > 0 {
 		p.logger.Info("bogus-nxdomain ip specified", "prefix_len", len(p.BogusNXDomain))
+	}
+
+	if p.UpstreamMode != "" {
+		p.logger.Info("upstream mode is set", "mode", p.UpstreamMode)
 	}
 }
 

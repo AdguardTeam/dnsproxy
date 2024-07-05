@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/netip"
 	"slices"
 
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/hostsfile"
-	"github.com/AdguardTeam/golibs/log"
 )
 
 // HostsResolver is a [Resolver] that looks into system hosts files, see
@@ -27,8 +27,14 @@ func NewHostsResolver(hosts hostsfile.Storage) (hr *HostsResolver) {
 }
 
 // NewDefaultHostsResolver returns a resolver based on system hosts files
-// provided by the [hostsfile.DefaultHostsPaths] and read from rootFSys.
-func NewDefaultHostsResolver(rootFSys fs.FS) (hr *HostsResolver, err error) {
+// provided by the [hostsfile.DefaultHostsPaths] and read from rootFSys.  In
+// case the file by any default path doesn't exist it adds a log debug record.
+// If l is nil, [slog.Default] is used.
+func NewDefaultHostsResolver(rootFSys fs.FS, l *slog.Logger) (hr *HostsResolver, err error) {
+	if l == nil {
+		l = slog.Default()
+	}
+
 	paths, err := hostsfile.DefaultHostsPaths()
 	if err != nil {
 		return nil, fmt.Errorf("getting default hosts paths: %w", err)
@@ -37,7 +43,7 @@ func NewDefaultHostsResolver(rootFSys fs.FS) (hr *HostsResolver, err error) {
 	// The error is always nil here since no readers passed.
 	strg, _ := hostsfile.NewDefaultStorage()
 	for _, filename := range paths {
-		err = parseHostsFile(rootFSys, strg, filename)
+		err = parseHostsFile(rootFSys, strg, filename, l)
 		if err != nil {
 			// Don't wrap the error since it's already informative enough as is.
 			return nil, err
@@ -48,11 +54,11 @@ func NewDefaultHostsResolver(rootFSys fs.FS) (hr *HostsResolver, err error) {
 }
 
 // parseHostsFile reads a single hosts file from fsys and parses it into hosts.
-func parseHostsFile(fsys fs.FS, hosts hostsfile.Set, filename string) (err error) {
+func parseHostsFile(fsys fs.FS, hosts hostsfile.Set, filename string, l *slog.Logger) (err error) {
 	f, err := fsys.Open(filename)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			log.Debug("hosts file %q doesn't exist", filename)
+			l.Debug("hosts file does not exist", "filename", filename)
 
 			return nil
 		}

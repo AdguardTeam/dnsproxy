@@ -63,12 +63,12 @@ set -f -u
 # schemas, which use package reflect.  If your project needs more exceptions,
 # add and document them.
 #
-# TODO(a.garipov): Add golibs/log.
 # TODO(a.garipov): Add deprecated package golang.org/x/exp/maps once all
 # projects switch to Go 1.23.
 blocklist_imports() {
 	git grep\
 		-e '[[:space:]]"errors"$'\
+		-e '[[:space:]]"github.com/AdguardTeam/golibs/log"$'\
 		-e '[[:space:]]"golang.org/x/exp/slices"$'\
 		-e '[[:space:]]"golang.org/x/net/context"$'\
 		-e '[[:space:]]"io/ioutil"$'\

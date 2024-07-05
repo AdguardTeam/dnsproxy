@@ -19,7 +19,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -321,7 +320,7 @@ func addPort(u *url.URL, port uint16) {
 // logBegin logs the start of DNS request resolution.  It should be called right
 // before dialing the connection to the upstream.  n is the [network] that will
 // be used to send the request.
-func logBegin(addr string, n network, req *dns.Msg) {
+func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
 	var qtype dns.Type
 	var qname string
 	if len(req.Question) != 0 {
@@ -329,25 +328,25 @@ func logBegin(addr string, n network, req *dns.Msg) {
 		qname = req.Question[0].Name
 	}
 
-	log.Debug("dnsproxy: sending request to %s over %s: %s %q", addr, n, qtype, qname)
+	l.Debug("sending request", "addr", addr, "proto", n, "qtype", qtype, "qname", qname)
 }
 
 // logFinish logs the end of DNS request resolution.  It should be called right
 // after receiving the response from the upstream or the failing action.  n is
 // the [network] that was used to send the request.
-func logFinish(addr string, n network, err error) {
-	logRoutine := log.Debug
-
+func logFinish(l *slog.Logger, addr string, n network, err error) {
+	lvl := slog.LevelDebug
 	status := "ok"
+
 	if err != nil {
 		status = err.Error()
 		if isTimeout(err) {
 			// Notify user about the timeout.
-			logRoutine = log.Error
+			lvl = slog.LevelError
 		}
 	}
 
-	logRoutine("dnsproxy: %s: response received over %s: %q", addr, n, status)
+	l.Log(context.TODO(), lvl, "response received", "addr", addr, "proto", n, "status", status)
 }
 
 // isTimeout returns true if err is a timeout error.

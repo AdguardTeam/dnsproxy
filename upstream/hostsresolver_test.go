@@ -8,6 +8,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/hostsfile"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func TestHostsResolver_LookupNetIP(t *testing.T) {
 		},
 	}
 
-	hr, err := upstream.NewDefaultHostsResolver(fsys)
+	hr, err := upstream.NewDefaultHostsResolver(fsys, slogutil.NewDiscardLogger())
 	require.NoError(t, err)
 
 	testCases := []struct {

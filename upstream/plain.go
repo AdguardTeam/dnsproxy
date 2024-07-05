@@ -99,8 +99,8 @@ func (p *plainDNS) dialExchange(
 		conn.UDPSize = dns.MinMsgSize
 	}
 
-	logBegin(addr, network, req)
-	defer func() { logFinish(addr, network, err) }()
+	logBegin(p.logger, addr, network, req)
+	defer func() { logFinish(p.logger, addr, network, err) }()
 
 	ctx := context.Background()
 	conn.Conn, err = dial(ctx, network, "")

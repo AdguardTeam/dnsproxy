@@ -235,7 +235,7 @@ func main() {
 
 	l := slogutil.New(&slogutil.Config{
 		Output: logOutput,
-		Format: slogutil.FormatAdGuardLegacy,
+		Format: slogutil.FormatDefault,
 		// TODO(d.kolyshev): Consider making configurable.
 		AddTimestamp: true,
 		Verbose:      opts.Verbose,
@@ -587,7 +587,7 @@ func initBootstrap(
 
 	switch len(resolvers) {
 	case 0:
-		etcHosts, hostsErr := upstream.NewDefaultHostsResolver(osutil.RootDirFS())
+		etcHosts, hostsErr := upstream.NewDefaultHostsResolver(osutil.RootDirFS(), l)
 		if hostsErr != nil {
 			l.ErrorContext(ctx, "creating default hosts resolver", slogutil.KeyError, hostsErr)
 

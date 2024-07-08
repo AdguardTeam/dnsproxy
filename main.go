@@ -68,7 +68,7 @@ type Options struct {
 
 	// UpstreamMode determines the logic through which upstreams will be used.
 	// If not specified the [proxy.UpstreamModeLoadBalance] is used.
-	UpstreamMode string `yaml:"upstream-mode" long:"upstream-mode" description:"Upstreams logic mode" optional:"yes" optional-value:"load_balance"`
+	UpstreamMode string `yaml:"upstream-mode" long:"upstream-mode" description:"Defines the upstreams logic mode, possible values: load_balance, parallel, fastest_addr (default: load_balance)" optional:"yes" optional-value:"load_balance"`
 
 	// ListenAddrs is the list of server's listen addresses.
 	ListenAddrs []string `yaml:"listen-addrs" short:"l" long:"listen" description:"Listening addresses"`

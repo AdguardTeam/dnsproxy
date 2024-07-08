@@ -56,6 +56,7 @@ Application Options:
       --https-userinfo=            If set, all DoH queries are required to have this basic authentication information.
   -g, --dnscrypt-config=           Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
       --edns-addr=                 Send EDNS Client Address
+      --upstream-mode=             Defines the upstreams logic mode, possible values: load_balance, parallel, fastest_addr (default: load_balance)
   -l, --listen=                    Listening addresses
   -p, --port=                      Listening ports. Zero value disables TCP and UDP listeners
   -s, --https-port=                Listening ports for DNS-over-HTTPS
@@ -86,7 +87,6 @@ Application Options:
       --insecure                   Disable secure TLS certificate validation
       --ipv6-disabled              If specified, all AAAA requests will be replied with NoError RCode and empty answer
       --http3                      Enable HTTP/3 support
-      --upstream-mode              If specified, determines the upstream usage logic.
       --cache-optimistic           If specified, optimistic DNS cache is enabled
       --cache                      If specified, DNS cache is enabled
       --refuse-any                 If specified, refuse ANY requests

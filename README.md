@@ -56,6 +56,7 @@ Application Options:
       --https-userinfo=            If set, all DoH queries are required to have this basic authentication information.
   -g, --dnscrypt-config=           Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
       --edns-addr=                 Send EDNS Client Address
+      --upstream-mode=             Defines the upstreams logic mode, possible values: load_balance, parallel, fastest_addr (default: load_balance)
   -l, --listen=                    Listening addresses
   -p, --port=                      Listening ports. Zero value disables TCP and UDP listeners
   -s, --https-port=                Listening ports for DNS-over-HTTPS
@@ -86,7 +87,6 @@ Application Options:
       --insecure                   Disable secure TLS certificate validation
       --ipv6-disabled              If specified, all AAAA requests will be replied with NoError RCode and empty answer
       --http3                      Enable HTTP/3 support
-      --upstream-mode              If specified, determines the upstream usage logic.
       --cache-optimistic           If specified, optimistic DNS cache is enabled
       --cache                      If specified, DNS cache is enabled
       --refuse-any                 If specified, refuse ANY requests
@@ -221,7 +221,7 @@ Runs a DNS proxy on `0.0.0.0:53` with rate limit set to `10 rps`, enabled DNS ca
 
 Runs a DNS proxy on 127.0.0.1:5353 with multiple upstreams and enable parallel queries to all configured upstream servers.
 ```shell
-./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53 -u tls://dns.adguard.com --all-servers
+./dnsproxy -l 127.0.0.1 -p 5353 -u 8.8.8.8:53 -u 1.1.1.1:53 -u tls://dns.adguard.com --upstream-mode parallel
 ```
 
 Loads upstreams list from a file.

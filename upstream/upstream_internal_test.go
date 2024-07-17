@@ -28,6 +28,7 @@ import (
 
 // TODO(ameshkov): Make tests here not depend on external servers.
 
+// TODO(d.kolyshev): Remove this after migrating dnscrypt to slog.
 func TestMain(m *testing.M) {
 	testutil.DiscardLogOutput(m)
 }

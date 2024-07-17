@@ -32,6 +32,7 @@ var upstreamWithAddr = &fakeUpstream{
 
 func TestServeCached(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
 		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
@@ -288,6 +289,7 @@ func TestCacheExpiration(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
 		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
@@ -347,6 +349,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	u := testUpstream{}
 
 	dnsProxy := mustNew(t, &Config{
+		Logger:        slogutil.NewDiscardLogger(),
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{

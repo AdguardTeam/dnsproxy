@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +20,7 @@ func TestFilteringHandler(t *testing.T) {
 
 	// Prepare the proxy server
 	dnsProxy := mustNew(t, &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
 		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),

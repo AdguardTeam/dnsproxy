@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -28,6 +29,7 @@ func TestQuicProxy(t *testing.T) {
 	}
 
 	conf := &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
 		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TLSConfig:              serverConfig,
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
@@ -89,6 +91,7 @@ func TestQuicProxy(t *testing.T) {
 func TestQuicProxy_largePackets(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
 	dnsProxy := mustNew(t, &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
 		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},

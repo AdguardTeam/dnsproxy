@@ -7,12 +7,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TODO(d.kolyshev): Remove this after migrating dnscrypt to slog.
+func TestMain(m *testing.M) {
+	testutil.DiscardLogOutput(m)
+}
 
 func getFreePort() uint {
 	l, _ := net.Listen("tcp", "127.0.0.1:0")
@@ -35,6 +41,7 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 
 	port := getFreePort()
 	p := mustNew(t, &Config{
+		Logger: slogutil.NewDiscardLogger(),
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{
 			Port: int(port), IP: net.ParseIP(listenIP),
 		}},

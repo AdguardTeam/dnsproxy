@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -215,6 +216,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		}
 
 		p := mustNew(t, &Config{
+			Logger:        slogutil.NewDiscardLogger(),
 			UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 			TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 			UpstreamConfig: &UpstreamConfig{

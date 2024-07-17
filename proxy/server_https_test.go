@@ -39,6 +39,7 @@ func TestHttpsProxy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tlsConf, caPem := newTLSConfig(t)
 			dnsProxy := mustNew(t, &Config{
+				Logger:                 slogutil.NewDiscardLogger(),
 				TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 				HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 				QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
@@ -80,6 +81,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 		// Prepare the proxy server.
 		tlsConf, caPem := newTLSConfig(t)
 		dnsProxy := mustNew(t, &Config{
+			Logger:                 slogutil.NewDiscardLogger(),
 			TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 			HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 			QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},

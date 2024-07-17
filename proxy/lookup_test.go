@@ -23,6 +23,7 @@ func TestLookupNetIP(t *testing.T) {
 	require.NoError(t, err)
 
 	conf := &Config{
+		Logger: slogutil.NewDiscardLogger(),
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{dnsUpstream},
 		},

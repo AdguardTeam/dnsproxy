@@ -142,14 +142,20 @@ var _ Upstream = (*dnsOverQUIC)(nil)
 func (p *dnsOverQUIC) Address() string { return p.addr.String() }
 
 // Exchange implements the [Upstream] interface for *dnsOverQUIC.
-func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+	// TODO(e.burkov):  Use some smarter cloning approach.
+	req = req.Copy()
+
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be
-	// set to zero.
-	id := m.Id
-	m.Id = 0
+	// set to 0.  The stream mapping for DoQ allows for unambiguous correlation
+	// of queries and responses, so the Message ID field is not required.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc9250#section-4.2.1.
+	id := req.Id
+	req.Id = 0
 	defer func() {
 		// Restore the original ID to not break compatibility with proxies.
-		m.Id = id
+		req.Id = id
 		if resp != nil {
 			resp.Id = id
 		}
@@ -162,7 +168,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	}
 
 	// Make the first attempt to send the DNS query.
-	resp, err = p.exchangeQUIC(m, conn)
+	resp, err = p.exchangeQUIC(req, conn)
 
 	// Failure to use a cached connection should be handled gracefully as this
 	// connection could have been closed by the server or simply be broken due
@@ -182,7 +188,7 @@ func (p *dnsOverQUIC) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 		}
 
 		// Retry sending the request through the new connection.
-		resp, err = p.exchangeQUIC(m, conn)
+		resp, err = p.exchangeQUIC(req, conn)
 	}
 
 	if err != nil {

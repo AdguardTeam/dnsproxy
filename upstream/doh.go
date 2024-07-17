@@ -16,6 +16,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/httphdr"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -140,19 +141,21 @@ var _ Upstream = (*dnsOverHTTPS)(nil)
 // password, the password is replaced with "xxxxx".
 func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
-// Exchange implements the Upstream interface for *dnsOverHTTPS.
-func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+// Exchange implements the [Upstream] interface for *dnsOverHTTPS.
+func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+	// TODO(e.burkov):  Use some smarter cloning approach.
+	req = req.Copy()
+
 	// In order to maximize HTTP cache friendliness, DoH clients using media
-	// formats that include the ID field from the DNS message header, such
-	// as "application/dns-message", SHOULD use a DNS ID of 0 in every DNS
-	// request.
+	// formats that include the ID field from the DNS message header, such as
+	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
 	//
 	// See https://www.rfc-editor.org/rfc/rfc8484.html.
-	id := m.Id
-	m.Id = 0
+	id := req.Id
+	req.Id = 0
 	defer func() {
 		// Restore the original ID to not break compatibility with proxies.
-		m.Id = id
+		req.Id = id
 		if resp != nil {
 			resp.Id = id
 		}
@@ -166,7 +169,7 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 	}
 
 	// Make the first attempt to send the DNS query.
-	resp, err = p.exchangeHTTPS(client, m)
+	resp, err = p.exchangeHTTPS(client, req)
 
 	// Make up to 2 attempts to re-create the HTTP client and send the request
 	// again.  There are several cases (mostly, with QUIC) where this workaround
@@ -179,7 +182,7 @@ func (p *dnsOverHTTPS) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
 			return nil, fmt.Errorf("failed to reset http client: %w", err)
 		}
 
-		resp, err = p.exchangeHTTPS(client, m)
+		resp, err = p.exchangeHTTPS(client, req)
 	}
 
 	if err != nil {
@@ -266,8 +269,10 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 		return nil, fmt.Errorf("creating http request to %s: %w", p.addrRedacted, err)
 	}
 
-	httpReq.Header.Set("Accept", "application/dns-message")
-	httpReq.Header.Set("User-Agent", "")
+	// Prevent the client from sending User-Agent header, see
+	// https://github.com/AdguardTeam/dnsproxy/issues/211.
+	httpReq.Header.Set(httphdr.UserAgent, "")
+	httpReq.Header.Set(httphdr.Accept, "application/dns-message")
 
 	httpResp, err := client.Do(httpReq)
 	if err != nil {

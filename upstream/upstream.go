@@ -28,17 +28,20 @@ import (
 	"github.com/quic-go/quic-go/logging"
 )
 
-// Upstream is an interface for a DNS resolver.
+// Upstream is an interface for a DNS resolver.  All the methods must be safe
+// for concurrent use.
 type Upstream interface {
-	// Exchange sends the DNS query req to this upstream and returns the
-	// response that has been received or an error if something went wrong.
+	// Exchange sends req to this upstream and returns the response that has
+	// been received or an error if something went wrong.  The implementations
+	// must not modify req as well as the caller must not modify it until the
+	// method returns.  It shouldn't be called after closing.
 	Exchange(req *dns.Msg) (resp *dns.Msg, err error)
 
-	// Address returns the address of the upstream DNS resolver.
+	// Address returns the human-readable address of the upstream DNS resolver.
+	// It may differ from what was passed to [AddressToUpstream].
 	Address() (addr string)
 
-	// Closer used to close the upstreams properly.  Exchange shouldn't be
-	// called after calling Close.
+	// Closer used to close the upstreams properly.
 	io.Closer
 }
 

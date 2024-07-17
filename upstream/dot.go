@@ -89,7 +89,7 @@ var _ Upstream = (*dnsOverTLS)(nil)
 func (p *dnsOverTLS) Address() string { return p.addr.String() }
 
 // Exchange implements the [Upstream] interface for *dnsOverTLS.
-func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
+func (p *dnsOverTLS) Exchange(req *dns.Msg) (reply *dns.Msg, err error) {
 	h, err := p.getDialer()
 	if err != nil {
 		return nil, fmt.Errorf("getting conn to %s: %w", p.addr, err)
@@ -100,7 +100,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 		return nil, fmt.Errorf("getting conn to %s: %w", p.addr, err)
 	}
 
-	reply, err = p.exchangeWithConn(conn, m)
+	reply, err = p.exchangeWithConn(conn, req)
 	if err != nil {
 		// The pooled connection might have been closed already, see
 		// https://github.com/AdguardTeam/dnsproxy/issues/3.  The following
@@ -120,7 +120,7 @@ func (p *dnsOverTLS) Exchange(m *dns.Msg) (reply *dns.Msg, err error) {
 			)
 		}
 
-		reply, err = p.exchangeWithConn(conn, m)
+		reply, err = p.exchangeWithConn(conn, req)
 		if err != nil {
 			return reply, errors.WithDeferred(err, conn.Close())
 		}
@@ -192,15 +192,15 @@ func (p *dnsOverTLS) putBack(conn net.Conn) {
 }
 
 // exchangeWithConn tries to exchange the query using conn.
-func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg, err error) {
+func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, req *dns.Msg) (reply *dns.Msg, err error) {
 	addr := p.Address()
 
-	logBegin(p.logger, addr, networkTCP, m)
+	logBegin(p.logger, addr, networkTCP, req)
 	defer func() { logFinish(p.logger, addr, networkTCP, err) }()
 
 	dnsConn := dns.Conn{Conn: conn}
 
-	err = dnsConn.WriteMsg(m)
+	err = dnsConn.WriteMsg(req)
 	if err != nil {
 		return nil, fmt.Errorf("sending request to %s: %w", addr, err)
 	}
@@ -208,7 +208,7 @@ func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, m *dns.Msg) (reply *dns.Msg
 	reply, err = dnsConn.ReadMsg()
 	if err != nil {
 		return nil, fmt.Errorf("reading response from %s: %w", addr, err)
-	} else if reply.Id != m.Id {
+	} else if reply.Id != req.Id {
 		return reply, dns.ErrId
 	}
 

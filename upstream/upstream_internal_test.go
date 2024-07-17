@@ -106,7 +106,7 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 func TestUpstreams(t *testing.T) {
 	t.Parallel()
 
-	const upsTimeout = 500 * time.Second
+	const upsTimeout = 10 * time.Second
 
 	l := slogutil.NewDiscardLogger()
 
@@ -209,6 +209,8 @@ func TestUpstreams(t *testing.T) {
 
 	for _, test := range upstreams {
 		t.Run(test.address, func(t *testing.T) {
+			t.Parallel()
+
 			u, upsErr := AddressToUpstream(
 				test.address,
 				&Options{Logger: l, Bootstrap: test.bootstrap, Timeout: upsTimeout},

@@ -231,15 +231,18 @@ func validateUpstreamURL(u *url.URL) (err error) {
 		host = h
 	}
 
-	// If it's an IPv6 address enclosed in square brackets with no port.
-	//
-	// See https://github.com/AdguardTeam/dnsproxy/issues/379.
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-		_, err = netip.ParseAddr(host[1 : len(host)-1])
-	} else {
-		_, err = netip.ParseAddr(host)
+	// minEnclosedIPv6Len is the minimum length of an IP address enclosed in
+	// square brackets.
+	const minEnclosedIPv6Len = len("[::]")
+
+	possibleIP := host
+	if l := len(host); l >= minEnclosedIPv6Len && host[0] == '[' && host[l-1] == ']' {
+		// Might be an IPv6 address enclosed in square brackets with no port.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/379.
+		possibleIP = host[1 : l-1]
 	}
-	if err == nil {
+	if netutil.IsValidIPString(possibleIP) {
 		return nil
 	}
 
@@ -383,6 +386,7 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
 		l = slog.Default()
 	}
 
+	// TODO(e.burkov):  Add netutil.IsValidIPPortString.
 	if _, err := netip.ParseAddrPort(u.Host); err == nil {
 		// Don't resolve the address of the server since it's already an IP.
 		handler := bootstrap.NewDialContext(opts.Timeout, l, u.Host)

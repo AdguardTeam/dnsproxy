@@ -1,5 +1,5 @@
-github.com/AdguardTeam/golibs v0.25.1 h1:po5dBbFCoZAySsbsMN/ZRB0WTLYDA1d8BxPgvriu/EA=
-github.com/AdguardTeam/golibs v0.25.1/go.mod h1:HaTyS2wCbxFudjht9N/+/Qf1b5cMad2BAYSwe7DPCXI=
+github.com/AdguardTeam/golibs v0.25.2 h1:4+c9LjAIdd9trRk71hXghJ5OL/VRosBm+/0dKH+H39U=
+github.com/AdguardTeam/golibs v0.25.2/go.mod h1:HaTyS2wCbxFudjht9N/+/Qf1b5cMad2BAYSwe7DPCXI=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da h1:KjTM2ks9d14ZYCvmHS9iAKVt9AyzRSqNU1qabPih5BY=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da/go.mod h1:eHEWzANqSiWQsof+nXEI9bUVUyV6F53Fp89EuCh2EAA=
 github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635 h1:52m0LGchQBBVqJRyYYufQuIbVqRawmubW3OFGqK1ekw=

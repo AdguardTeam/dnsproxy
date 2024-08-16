@@ -17,7 +17,6 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/osutil"
-	"github.com/miekg/dns"
 )
 
 // Main is the entrypoint of dnsproxy CLI.  Main may accept arguments, such as
@@ -106,15 +105,6 @@ func runProxy(ctx context.Context, l *slog.Logger, options *Options) (err error)
 		return fmt.Errorf("creating proxy: %w", err)
 	}
 
-	// Add extra handler if needed.
-	if options.IPv6Disabled {
-		ipv6Config := ipv6Configuration{
-			logger:       l,
-			ipv6Disabled: options.IPv6Disabled,
-		}
-		dnsProxy.RequestHandler = ipv6Config.handleDNSRequest
-	}
-
 	// Start the proxy server.
 	err = dnsProxy.Start(ctx)
 	if err != nil {
@@ -168,46 +158,4 @@ func runPprof(l *slog.Logger) {
 			l.Error("pprof failed to listen %v", "addr", pprofAddr, slogutil.KeyError, err)
 		}
 	}()
-}
-
-// ipv6Configuration represents IPv6 configuration.
-//
-// TODO(e.burkov):  Refactor and move to separate handler package.
-type ipv6Configuration struct {
-	// logger is used for logging during requests handling.  It is never nil.
-	logger *slog.Logger
-
-	// ipv6Disabled set all AAAA requests to be replied with NoError RCode and
-	// an empty answer.
-	ipv6Disabled bool
-}
-
-// handleDNSRequest checks the IPv6 configuration for current session before
-// resolving.
-func (c *ipv6Configuration) handleDNSRequest(p *proxy.Proxy, ctx *proxy.DNSContext) (err error) {
-	if !c.isIPv6Enabled(ctx, !c.ipv6Disabled) {
-		return nil
-	}
-
-	return p.Resolve(ctx)
-}
-
-// retryNoError is the time for NoError SOA.
-const retryNoError = 60
-
-// isIPv6Enabled checks if AAAA requests should be enabled or not and sets
-// NoError empty response to the given DNSContext if needed.
-func (c *ipv6Configuration) isIPv6Enabled(ctx *proxy.DNSContext, ipv6Enabled bool) (enabled bool) {
-	if !ipv6Enabled && ctx.Req.Question[0].Qtype == dns.TypeAAAA {
-		c.logger.Debug(
-			"ipv6 is disabled; replying with empty response",
-			"req", ctx.Req.Question[0].Name,
-		)
-
-		ctx.Res = proxy.GenEmptyMessage(ctx.Req, dns.RcodeSuccess, retryNoError)
-
-		return false
-	}
-
-	return true
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -1514,35 +1515,6 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
 }
 
-// testMessageConstructor is a mock message constructor implementation to
-// simplify testing.
-type testMessageConstructor struct {
-	onNewMsgNXDOMAIN       func(req *dns.Msg) (resp *dns.Msg)
-	onNewMsgSERVFAIL       func(req *dns.Msg) (resp *dns.Msg)
-	onNewMsgNOTIMPLEMENTED func(req *dns.Msg) (resp *dns.Msg)
-}
-
-// type check
-var _ MessageConstructor = (*testMessageConstructor)(nil)
-
-// NewMsgNXDOMAIN implements the [MessageConstructor] interface for
-// *testMessageConstructor.
-func (c *testMessageConstructor) NewMsgNXDOMAIN(req *dns.Msg) (resp *dns.Msg) {
-	return c.onNewMsgNXDOMAIN(req)
-}
-
-// NewMsgSERVFAIL implements the [MessageConstructor] interface for
-// *testMessageConstructor.
-func (c *testMessageConstructor) NewMsgSERVFAIL(req *dns.Msg) (resp *dns.Msg) {
-	return c.onNewMsgSERVFAIL(req)
-}
-
-// NewMsgNOTIMPLEMENTED implements the [MessageConstructor] interface for
-// *testMessageConstructor.
-func (c *testMessageConstructor) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.Msg) {
-	return c.onNewMsgNOTIMPLEMENTED(req)
-}
-
 func TestProxy_HandleDNSRequest_private(t *testing.T) {
 	t.Parallel()
 
@@ -1579,12 +1551,10 @@ func TestProxy_HandleDNSRequest_private(t *testing.T) {
 		onAddress: func() (addr string) { return "private" },
 		onClose:   func() (err error) { return nil },
 	}
-	messages := &testMessageConstructor{
-		onNewMsgNXDOMAIN: func(req *dns.Msg) (resp *dns.Msg) {
-			return nxdomainResp
-		},
-		onNewMsgSERVFAIL:       func(_ *dns.Msg) (_ *dns.Msg) { panic("not implemented") },
-		onNewMsgNOTIMPLEMENTED: func(_ *dns.Msg) (_ *dns.Msg) { panic("not implemented") },
+
+	messages := dnsproxytest.NewTestMessageConstructor()
+	messages.OnNewMsgNXDOMAIN = func(_ *dns.Msg) (resp *dns.Msg) {
+		return nxdomainResp
 	}
 
 	p := mustNew(t, &Config{

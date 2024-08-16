@@ -7,63 +7,6 @@ import (
 	"github.com/miekg/dns"
 )
 
-const retryNoError = 60 // Retry time for NoError SOA
-
-// CheckDisabledAAAARequest checks if AAAA requests should be disabled or not
-// and sets NoError empty response to given DNSContext if needed.
-//
-// Deprecated: Use [RequestHandler] instead.
-func CheckDisabledAAAARequest(ctx *DNSContext, ipv6Disabled bool) bool {
-	if ipv6Disabled && ctx.Req.Question[0].Qtype == dns.TypeAAAA {
-		ctx.Res = GenEmptyMessage(ctx.Req, dns.RcodeSuccess, retryNoError)
-
-		return true
-	}
-
-	return false
-}
-
-// GenEmptyMessage generates empty message with given response code and retry time
-func GenEmptyMessage(request *dns.Msg, rCode int, retry uint32) *dns.Msg {
-	resp := dns.Msg{}
-	resp.SetRcode(request, rCode)
-	resp.RecursionAvailable = true
-	resp.Ns = genSOA(request, retry)
-	return &resp
-}
-
-// genSOA returns SOA for an authority section
-func genSOA(request *dns.Msg, retry uint32) []dns.RR {
-	zone := ""
-	if len(request.Question) > 0 {
-		zone = request.Question[0].Name
-	}
-
-	soa := dns.SOA{
-		// values copied from verisign's nonexistent .com domain
-		// their exact values are not important in our use case because they are used for domain transfers between primary/secondary DNS servers
-		Refresh: 1800,
-		Retry:   retry,
-		Expire:  604800,
-		Minttl:  86400,
-		// copied from AdGuard DNS
-		Ns:     "fake-for-negative-caching.adguard.com.",
-		Serial: 100500,
-		// rest is request-specific
-		Hdr: dns.RR_Header{
-			Name:   zone,
-			Rrtype: dns.TypeSOA,
-			Ttl:    10,
-			Class:  dns.ClassINET,
-		},
-	}
-	soa.Mbox = "hostmaster."
-	if len(zone) > 0 && zone[0] != '.' {
-		soa.Mbox += zone
-	}
-	return []dns.RR{&soa}
-}
-
 // ecsFromMsg returns the subnet from EDNS Client Subnet option of m if any.
 func ecsFromMsg(m *dns.Msg) (subnet *net.IPNet, scope int) {
 	opt := m.IsEdns0()

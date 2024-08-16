@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/fastip"
+	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
@@ -228,7 +229,7 @@ func New(c *Config) (p *Proxy, err error) {
 		time:       realClock{},
 		messages: cmp.Or[MessageConstructor](
 			c.MessageConstructor,
-			defaultMessageConstructor{},
+			dnsmsg.DefaultMessageConstructor{},
 		),
 		recDetector: newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
 	}

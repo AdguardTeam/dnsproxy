@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
+	"github.com/AdguardTeam/dnsproxy/internal/handler"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -47,6 +49,13 @@ func createProxyConfig(
 	l *slog.Logger,
 	options *Options,
 ) (conf *proxy.Config, err error) {
+	reqHdlr := handler.NewDefault(&handler.DefaultConfig{
+		Logger: l.With(slogutil.KeyPrefix, "default_handler"),
+		// TODO(e.burkov):  Use the configured message constructor.
+		MessageConstructor: dnsmsg.DefaultMessageConstructor{},
+		HaltIPv6:           options.IPv6Disabled,
+	})
+
 	conf = &proxy.Config{
 		Logger: l.With(slogutil.KeyPrefix, proxy.LogPrefix),
 
@@ -74,6 +83,7 @@ func createProxyConfig(
 		MaxGoroutines:          options.MaxGoRoutines,
 		UsePrivateRDNS:         options.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		RequestHandler:         reqHdlr.HandleRequest,
 	}
 
 	if uiStr := options.HTTPSUserinfo; uiStr != "" {

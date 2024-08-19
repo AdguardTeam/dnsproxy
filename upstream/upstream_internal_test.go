@@ -318,14 +318,14 @@ func TestAddressToUpstream_bads(t *testing.T) {
 		wantErrMsg: `invalid port : strconv.ParseUint: parsing "": invalid syntax`,
 	}, {
 		addr:       ":53",
-		wantErrMsg: `invalid address : bad hostname "": hostname is empty`,
+		wantErrMsg: `invalid address : bad domain name "": domain name is empty`,
 	}, {
 		addr: "!!!",
-		wantErrMsg: `invalid address !!!: bad hostname "!!!": bad top-level domain name ` +
+		wantErrMsg: `invalid address !!!: bad domain name "!!!": bad top-level domain name ` +
 			`label "!!!": bad top-level domain name label rune '!'`,
 	}, {
 		addr: "123",
-		wantErrMsg: `invalid address 123: bad hostname "123": bad top-level domain name ` +
+		wantErrMsg: `invalid address 123: bad domain name "123": bad top-level domain name ` +
 			`label "123": all octets are numeric`,
 	}, {
 		addr: "tcp://12345.1.1.1:1234567",
@@ -340,14 +340,14 @@ func TestAddressToUpstream_bads(t *testing.T) {
 		wantErrMsg: `invalid port : strconv.ParseUint: parsing "": invalid syntax`,
 	}, {
 		addr:       "tcp://:53",
-		wantErrMsg: `invalid address : bad hostname "": hostname is empty`,
+		wantErrMsg: `invalid address : bad domain name "": domain name is empty`,
 	}, {
 		addr: "tcp://!!!",
-		wantErrMsg: `invalid address !!!: bad hostname "!!!": bad top-level domain name ` +
+		wantErrMsg: `invalid address !!!: bad domain name "!!!": bad top-level domain name ` +
 			`label "!!!": bad top-level domain name label rune '!'`,
 	}, {
 		addr: "tcp://123",
-		wantErrMsg: `invalid address 123: bad hostname "123": bad top-level domain name ` +
+		wantErrMsg: `invalid address 123: bad domain name "123": bad top-level domain name ` +
 			`label "123": all octets are numeric`,
 	}}
 

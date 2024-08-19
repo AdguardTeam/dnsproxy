@@ -246,7 +246,7 @@ func validateUpstreamURL(u *url.URL) (err error) {
 		return nil
 	}
 
-	err = netutil.ValidateHostname(host)
+	err = netutil.ValidateDomainName(host)
 	if err != nil {
 		return fmt.Errorf("invalid address %s: %w", host, err)
 	}

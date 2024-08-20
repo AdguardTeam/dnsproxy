@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding"
 	"fmt"
 	"log/slog"
 	"os"
@@ -19,8 +20,9 @@ import (
 const (
 	defaultLocalTimeout = 1 * time.Second
 
-	argConfigPath = "--config-path="
-	argVersion    = "--version"
+	argConfigPath   = "--config-path="
+	argVersion      = "--version"
+	argHostsEnabled = "--hosts-file-enabled"
 )
 
 // decodableBool is a boolean that can be unmarshaled from a flags.
@@ -42,11 +44,23 @@ func (b *decodableBool) UnmarshalFlag(text string) (err error) {
 	return err
 }
 
+// type check
+var _ encoding.TextUnmarshaler = (*decodableBool)(nil)
+
+// UnmarshalText implements the [encoding.TextUnmarshaler] interface for
+// *decodableBool.
+func (b *decodableBool) UnmarshalText(text []byte) (err error) {
+	b.value, err = strconv.ParseBool(string(text))
+
+	return err
+}
+
 // decodableDuration is a duration that can be unmarshaled from a flags.
 //
 // TODO(e.burkov):  This is a workaround for go-flags, see
 // https://github.com/AdguardTeam/dnsproxy/issues/182.
 type decodableDuration struct {
+	// Duration is embedded to avoid reimplementing its UnmarshalText method.
 	timeutil.Duration
 }
 
@@ -65,6 +79,10 @@ func (d *decodableDuration) UnmarshalFlag(text string) (err error) {
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Options struct {
+	// HostsFileEnabled controls whether hosts files are used for resolving or
+	// not.
+	HostsFileEnabled *decodableBool `yaml:"hosts-file-enabled" long:"hosts-file-enabled" description:"If specified, use hosts files for resolving" default:"true"`
+
 	// Configuration file path (yaml), the config path should be read without
 	// using goFlags in order not to have default values overriding yaml
 	// options.
@@ -229,39 +247,15 @@ type Options struct {
 	// lookups of private addresses, including the requests for authority
 	// records, such as SOA and NS.
 	UsePrivateRDNS bool `yaml:"use-private-rdns" long:"use-private-rdns" description:"If specified, use private upstreams for reverse DNS lookups of private addresses" optional:"yes" optional-value:"true"`
-
-	// HostsFileEnabled controls whether hosts files are used for resolving or
-	// not.
-	HostsFileEnabled decodableBool `yaml:"hosts-file-enabled" long:"hosts-file-enabled" description:"If specified, use hosts files for resolving" default:"true"`
 }
 
 // parseOptions returns options parsed from the command args or config file.
 // If no options have been parsed returns a suitable exit code and an error.
 func parseOptions() (opts *Options, exitCode int, err error) {
-	opts = &Options{}
-
-	// TODO(e.burkov, a.garipov):  Use flag package and remove the manual
-	// options parsing.
-	//
-	// See https://github.com/AdguardTeam/dnsproxy/issues/182.
-	for _, arg := range os.Args {
-		if arg == argVersion {
-			fmt.Printf("dnsproxy version: %s\n", version.Version())
-
-			return nil, osutil.ExitCodeSuccess, nil
-		} else if strings.HasPrefix(arg, argConfigPath) {
-			confPath := strings.TrimPrefix(arg, argConfigPath)
-			fmt.Printf("dnsproxy config path: %s\n", confPath)
-
-			err = parseConfigFile(opts, confPath)
-			if err != nil {
-				return nil, osutil.ExitCodeFailure, fmt.Errorf(
-					"parsing config file %s: %w",
-					confPath,
-					err,
-				)
-			}
-		}
+	opts, hasHostsFlag, hostsEnabledByConf, exitCode, err := parseArgs()
+	if opts == nil {
+		// Don't wrap the error since it's informative enough as is.
+		return nil, exitCode, err
 	}
 
 	parser := goFlags.NewParser(opts, goFlags.Default)
@@ -274,13 +268,62 @@ func parseOptions() (opts *Options, exitCode int, err error) {
 		return nil, osutil.ExitCodeArgumentError, nil
 	}
 
+	if !hasHostsFlag {
+		opts.HostsFileEnabled = &decodableBool{value: hostsEnabledByConf}
+	}
+
 	return opts, osutil.ExitCodeSuccess, nil
+}
+
+// parseArgs returns options parsed from the config file.  It returns nil opts
+// if it meets [argVersion] flag or an error.  hasHosts is true if the hosts are
+// specified in the command line.  hostsInConf is the value of the same option
+// from the config file.
+func parseArgs() (opts *Options, hasHosts, hostsInConf bool, exitCode int, err error) {
+	opts = &Options{}
+
+	// TODO(e.burkov):  Get rid of this crutch as the go-flags package is gone.
+	// See the issue in the TODO below.
+	hasHosts = false
+	hostsInConf = true
+
+	// TODO(e.burkov, a.garipov):  Use flag package and remove the manual
+	// options parsing.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/182.
+	for _, arg := range os.Args {
+		if arg == argVersion {
+			fmt.Printf("dnsproxy version: %s\n", version.Version())
+
+			return nil, false, false, osutil.ExitCodeSuccess, nil
+		} else if strings.HasPrefix(arg, argConfigPath) {
+			confPath := strings.TrimPrefix(arg, argConfigPath)
+			fmt.Printf("dnsproxy config path: %s\n", confPath)
+
+			err = parseConfigFile(opts, confPath)
+			if err != nil {
+				return nil, false, false, osutil.ExitCodeFailure, fmt.Errorf(
+					"parsing config file %s: %w",
+					confPath,
+					err,
+				)
+			}
+
+			if opts.HostsFileEnabled != nil {
+				hostsInConf = opts.HostsFileEnabled.value
+			}
+		} else {
+			hasHosts = hasHosts || strings.HasPrefix(arg, argHostsEnabled)
+		}
+	}
+
+	return opts, hasHosts, hostsInConf, osutil.ExitCodeSuccess, nil
 }
 
 // hostsFiles returns the list of hosts files to resolve from.  It's empty if
 // resolving from hosts files is disabled.
 func (opts *Options) hostsFiles(ctx context.Context, l *slog.Logger) (paths []string, err error) {
-	if !opts.HostsFileEnabled.value {
+	if opts.HostsFileEnabled != nil && !opts.HostsFileEnabled.value {
 		l.DebugContext(ctx, "hosts files are disabled")
 
 		return nil, nil

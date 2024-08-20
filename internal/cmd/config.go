@@ -49,12 +49,23 @@ func createProxyConfig(
 	l *slog.Logger,
 	options *Options,
 ) (conf *proxy.Config, err error) {
-	reqHdlr := handler.NewDefault(&handler.DefaultConfig{
+	hostsFiles, err := options.hostsFiles(ctx, l)
+	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return nil, err
+	}
+
+	reqHdlr, err := handler.NewDefault(&handler.DefaultConfig{
 		Logger: l.With(slogutil.KeyPrefix, "default_handler"),
 		// TODO(e.burkov):  Use the configured message constructor.
 		MessageConstructor: dnsmsg.DefaultMessageConstructor{},
 		HaltIPv6:           options.IPv6Disabled,
+		HostsFiles:         hostsFiles,
+		FileSystem:         osutil.RootDirFS(),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("creating default handler: %w", err)
+	}
 
 	conf = &proxy.Config{
 		Logger: l.With(slogutil.KeyPrefix, proxy.LogPrefix),
@@ -141,7 +152,7 @@ func (opts *Options) initUpstreams(
 		Logger:             l,
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: opts.Insecure,
-		Timeout:            timeout,
+		Timeout:            timeout.Duration,
 	}
 	boot, err := initBootstrap(ctx, l, opts.BootstrapDNS, bootOpts)
 	if err != nil {
@@ -153,7 +164,7 @@ func (opts *Options) initUpstreams(
 		HTTPVersions:       httpVersions,
 		InsecureSkipVerify: opts.Insecure,
 		Bootstrap:          boot,
-		Timeout:            timeout,
+		Timeout:            timeout.Duration,
 	}
 	upstreams := loadServersList(opts.Upstreams)
 
@@ -166,7 +177,7 @@ func (opts *Options) initUpstreams(
 		Logger:       l,
 		HTTPVersions: httpVersions,
 		Bootstrap:    boot,
-		Timeout:      min(defaultLocalTimeout, timeout),
+		Timeout:      min(defaultLocalTimeout, timeout.Duration),
 	}
 	privateUpstreams := loadServersList(opts.PrivateRDNSUpstreams)
 

@@ -8,7 +8,7 @@
 # Makefile.  Bump this number every time a significant change is made to
 # this Makefile.
 #
-# AdGuard-Project-Version: 5
+# AdGuard-Project-Version: 6
 
 # Don't name these macros "GO" etc., because GNU Make apparently makes
 # them exported environment variables with the literal value of
@@ -24,7 +24,8 @@ BRANCH = $$( git rev-parse --abbrev-ref HEAD )
 DIST_DIR = build
 GOAMD64 = v1
 GOPROXY = https://proxy.golang.org|direct
-GOTOOLCHAIN = go1.22.5
+GOTOOLCHAIN = go1.22.6
+GOTELEMETRY = off
 OUT = dnsproxy
 RACE = 0
 REVISION = $$( git rev-parse --short HEAD )
@@ -32,11 +33,11 @@ VERSION = 0
 
 ENV = env\
 	BRANCH="$(BRANCH)"\
-	COMMIT='$(COMMIT)'\
 	DIST_DIR='$(DIST_DIR)'\
 	GO="$(GO.MACRO)"\
 	GOAMD64='$(GOAMD64)'\
 	GOPROXY='$(GOPROXY)'\
+	GOTELEMETRY='$(GOTELEMETRY)'\
 	GOTOOLCHAIN='$(GOTOOLCHAIN)'\
 	OUT='$(OUT)'\
 	PATH="$${PWD}/bin:$$( "$(GO.MACRO)" env GOPATH )/bin:$${PATH}"\
@@ -44,6 +45,11 @@ ENV = env\
 	REVISION="$(REVISION)"\
 	VERBOSE="$(VERBOSE.MACRO)"\
 	VERSION="$(VERSION)"\
+
+# Keep the line above blank.
+
+ENV_MISC = env\
+	VERBOSE="$(VERBOSE.MACRO)"\
 
 # Keep the line above blank.
 
@@ -55,13 +61,13 @@ init: ; git config core.hooksPath ./scripts/hooks
 
 test: go-test
 
-go-build: ; $(ENV)          "$(SHELL)" ./scripts/make/go-build.sh
-go-deps:  ; $(ENV)          "$(SHELL)" ./scripts/make/go-deps.sh
-go-lint:  ; $(ENV)          "$(SHELL)" ./scripts/make/go-lint.sh
-go-test:  ; $(ENV) RACE='1' "$(SHELL)" ./scripts/make/go-test.sh
-go-tools: ; $(ENV)          "$(SHELL)" ./scripts/make/go-tools.sh
-
-go-upd-tools: ; $(ENV) "$(SHELL)" ./scripts/make/go-upd-tools.sh
+go-build:     ; $(ENV)          "$(SHELL)" ./scripts/make/go-build.sh
+go-deps:      ; $(ENV)          "$(SHELL)" ./scripts/make/go-deps.sh
+go-env:       ; $(ENV)          "$(GO.MACRO)" env
+go-lint:      ; $(ENV)          "$(SHELL)" ./scripts/make/go-lint.sh
+go-test:      ; $(ENV) RACE='1' "$(SHELL)" ./scripts/make/go-test.sh
+go-tools:     ; $(ENV)          "$(SHELL)" ./scripts/make/go-tools.sh
+go-upd-tools: ; $(ENV)          "$(SHELL)" ./scripts/make/go-upd-tools.sh
 
 go-check: go-tools go-lint go-test
 
@@ -75,6 +81,9 @@ go-os-check:
 	env GOOS='windows' "$(GO.MACRO)" vet ./...
 
 txt-lint: ; $(ENV) "$(SHELL)" ./scripts/make/txt-lint.sh
+
+md-lint:  ; $(ENV_MISC) "$(SHELL)" ./scripts/make/md-lint.sh
+sh-lint:  ; $(ENV_MISC) "$(SHELL)" ./scripts/make/sh-lint.sh
 
 clean:   ; $(ENV) $(GO.MACRO) clean && rm -f -r '$(DIST_DIR)'
 

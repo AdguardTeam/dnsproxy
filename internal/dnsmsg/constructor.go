@@ -37,19 +37,19 @@ type DefaultMessageConstructor struct{}
 var _ MessageConstructor = DefaultMessageConstructor{}
 
 // NewMsgNXDOMAIN implements the [MessageConstructor] interface for
-// defaultMessageConstructor.
+// DefaultMessageConstructor.
 func (DefaultMessageConstructor) NewMsgNXDOMAIN(req *dns.Msg) (resp *dns.Msg) {
 	return reply(req, dns.RcodeNameError)
 }
 
 // NewMsgSERVFAIL implements the [MessageConstructor] interface for
-// defaultMessageConstructor.
+// DefaultMessageConstructor.
 func (DefaultMessageConstructor) NewMsgSERVFAIL(req *dns.Msg) (resp *dns.Msg) {
 	return reply(req, dns.RcodeServerFailure)
 }
 
 // NewMsgNOTIMPLEMENTED implements the [MessageConstructor] interface for
-// defaultMessageConstructor.
+// DefaultMessageConstructor.
 func (DefaultMessageConstructor) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.Msg) {
 	resp = reply(req, dns.RcodeNotImplemented)
 
@@ -68,7 +68,7 @@ func (DefaultMessageConstructor) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.M
 }
 
 // NewMsgNODATA implements the [MessageConstructor] interface for
-// defaultMessageConstructor.
+// DefaultMessageConstructor.
 func (DefaultMessageConstructor) NewMsgNODATA(req *dns.Msg) (resp *dns.Msg) {
 	resp = reply(req, dns.RcodeSuccess)
 

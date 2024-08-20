@@ -4,19 +4,30 @@ package handler
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
-	"github.com/miekg/dns"
+	"github.com/AdguardTeam/golibs/hostsfile"
 )
 
 // DefaultConfig is the configuration for [Default].
 type DefaultConfig struct {
+	// MessageConstructor constructs DNS messages.  It must not be nil.
+	MessageConstructor proxy.MessageConstructor
+
+	// FileSystem is the file system for reading files from.  It must not be
+	// nil.
+	FileSystem fs.FS
+
 	// Logger is the logger.  It must not be nil.
 	Logger *slog.Logger
 
-	// MessageConstructor constructs DNS messages.  It must not be nil.
-	MessageConstructor proxy.MessageConstructor
+	// HostsFiles is the list of paths to the hosts files.  The hosts files
+	// aren't used if the list is empty.
+	//
+	// TODO(e.burkov):  Consider passing just a [hostsfile.Storage].
+	HostsFiles []string
 
 	// HaltIPv6 halts the processing of AAAA requests and makes the handler
 	// reply with NODATA to them.
@@ -25,46 +36,51 @@ type DefaultConfig struct {
 
 // Default implements the default configurable [proxy.RequestHandler].
 type Default struct {
-	logger             *slog.Logger
-	messageConstructor proxy.MessageConstructor
-	isIPv6Halted       bool
+	messages     messageConstructor
+	hosts        hostsfile.Storage
+	logger       *slog.Logger
+	isIPv6Halted bool
 }
 
 // NewDefault creates a new [Default] handler.
-func NewDefault(conf *DefaultConfig) (d *Default) {
-	return &Default{
-		logger:             conf.Logger,
-		isIPv6Halted:       conf.HaltIPv6,
-		messageConstructor: conf.MessageConstructor,
+func NewDefault(conf *DefaultConfig) (d *Default, err error) {
+	hosts, err := readHosts(conf.FileSystem, conf.HostsFiles)
+	if err != nil {
+		return nil, err
 	}
+
+	mc, ok := conf.MessageConstructor.(messageConstructor)
+	if !ok {
+		mc = defaultConstructor{
+			MessageConstructor: conf.MessageConstructor,
+		}
+	}
+
+	return &Default{
+		logger:       conf.Logger,
+		isIPv6Halted: conf.HaltIPv6,
+		messages:     mc,
+		hosts:        hosts,
+	}, nil
 }
 
-// HandleRequest checks the IPv6 configuration for current session before
-// resolving.
-func (h Default) HandleRequest(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
+// HandleRequest resolves the DNS request within proxyCtx.  It only calls
+// [proxy.Proxy.Resolve] if the request isn't handled by any of the internal
+// handlers.
+func (h *Default) HandleRequest(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
 	// TODO(e.burkov):  Use the [*context.Context] instead of
 	// [*proxy.DNSContext] when the interface-based handler is implemented.
 	ctx := context.TODO()
+
+	h.logger.DebugContext(ctx, "handling request", "req", &proxyCtx.Req.Question[0])
 
 	if proxyCtx.Res = h.haltAAAA(ctx, proxyCtx.Req); proxyCtx.Res != nil {
 		return nil
 	}
 
-	return p.Resolve(proxyCtx)
-}
-
-// haltAAAA halts the processing of AAAA requests if IPv6 is disabled.  req must
-// not be nil.
-func (h *Default) haltAAAA(ctx context.Context, req *dns.Msg) (resp *dns.Msg) {
-	if h.isIPv6Halted && req.Question[0].Qtype == dns.TypeAAAA {
-		h.logger.DebugContext(
-			ctx,
-			"ipv6 is disabled; replying with empty response",
-			"req", req.Question[0].Name,
-		)
-
-		return h.messageConstructor.NewMsgNODATA(req)
+	if proxyCtx.Res = h.resolveFromHosts(ctx, proxyCtx.Req); proxyCtx.Res != nil {
+		return nil
 	}
 
-	return nil
+	return p.Resolve(proxyCtx)
 }

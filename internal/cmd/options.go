@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/version"
+	"github.com/AdguardTeam/golibs/hostsfile"
 	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	goFlags "github.com/jessevdk/go-flags"
@@ -18,6 +22,42 @@ const (
 	argConfigPath = "--config-path="
 	argVersion    = "--version"
 )
+
+// decodableBool is a boolean that can be unmarshaled from a flags.
+//
+// TODO(e.burkov):  This is a workaround for go-flags, see
+// https://github.com/AdguardTeam/dnsproxy/issues/182.
+type decodableBool struct {
+	value bool
+}
+
+// type check
+var _ goFlags.Unmarshaler = (*decodableBool)(nil)
+
+// UnmarshalFlag implements the [goFlags.Unmarshaler] interface for
+// *decodableBool.
+func (b *decodableBool) UnmarshalFlag(text string) (err error) {
+	b.value, err = strconv.ParseBool(text)
+
+	return err
+}
+
+// decodableDuration is a duration that can be unmarshaled from a flags.
+//
+// TODO(e.burkov):  This is a workaround for go-flags, see
+// https://github.com/AdguardTeam/dnsproxy/issues/182.
+type decodableDuration struct {
+	timeutil.Duration
+}
+
+// type check
+var _ goFlags.Unmarshaler = (*decodableDuration)(nil)
+
+// UnmarshalFlag implements the [goFlags.Unmarshaler] interface for
+// *decodableDuration.
+func (d *decodableDuration) UnmarshalFlag(text string) (err error) {
+	return d.UnmarshalText([]byte(text))
+}
 
 // Options represents console arguments.  For further additions, please do not
 // use the default option since it will cause some problems when config files
@@ -105,9 +145,12 @@ type Options struct {
 	// go-flags doesn't support text unmarshalers.
 	BogusNXDomain []string `yaml:"bogus-nxdomain" long:"bogus-nxdomain" description:"Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times."`
 
+	// HostsFiles is the list of paths to the hosts files to resolve from.
+	HostsFiles []string `yaml:"hosts-files" long:"hosts-files" description:"List of paths to the hosts files relative to the root, can be specified multiple times"`
+
 	// Timeout for outbound DNS queries to remote upstream servers in a
 	// human-readable form.  Default is 10s.
-	Timeout timeutil.Duration `yaml:"timeout" long:"timeout" description:"Timeout for outbound DNS queries to remote upstream servers in a human-readable form" default:"10s"`
+	Timeout decodableDuration `yaml:"timeout" long:"timeout" description:"Timeout for outbound DNS queries to remote upstream servers in a human-readable form" default:"10s"`
 
 	// CacheMinTTL is the minimum TTL value for caching DNS entries, in seconds.
 	// It overrides the TTL value from the upstream server, if the one is less.
@@ -186,6 +229,10 @@ type Options struct {
 	// lookups of private addresses, including the requests for authority
 	// records, such as SOA and NS.
 	UsePrivateRDNS bool `yaml:"use-private-rdns" long:"use-private-rdns" description:"If specified, use private upstreams for reverse DNS lookups of private addresses" optional:"yes" optional-value:"true"`
+
+	// HostsFileEnabled controls whether hosts files are used for resolving or
+	// not.
+	HostsFileEnabled decodableBool `yaml:"hosts-file-enabled" long:"hosts-file-enabled" description:"If specified, use hosts files for resolving" default:"true"`
 }
 
 // parseOptions returns options parsed from the command args or config file.
@@ -228,4 +275,29 @@ func parseOptions() (opts *Options, exitCode int, err error) {
 	}
 
 	return opts, osutil.ExitCodeSuccess, nil
+}
+
+// hostsFiles returns the list of hosts files to resolve from.  It's empty if
+// resolving from hosts files is disabled.
+func (opts *Options) hostsFiles(ctx context.Context, l *slog.Logger) (paths []string, err error) {
+	if !opts.HostsFileEnabled.value {
+		l.DebugContext(ctx, "hosts files are disabled")
+
+		return nil, nil
+	}
+
+	l.DebugContext(ctx, "hosts files are enabled")
+
+	if len(opts.HostsFiles) > 0 {
+		return opts.HostsFiles, nil
+	}
+
+	paths, err = hostsfile.DefaultHostsPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting default hosts files: %w", err)
+	}
+
+	l.DebugContext(ctx, "hosts files are not specified, using default", "paths", paths)
+
+	return paths, nil
 }

@@ -48,7 +48,8 @@ Usage:
   dnsproxy [OPTIONS]
 
 Application Options:
-      --config-path=               yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
+      --config-path=               yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command
+                                   line will override the ones from this file.
   -o, --output=                    Path to the log file. If not set, write to stdout.
   -c, --tls-crt=                   Path to a file with the certificate chain
   -k, --tls-key=                   Path to a file with the private key
@@ -56,22 +57,29 @@ Application Options:
       --https-userinfo=            If set, all DoH queries are required to have this basic authentication information.
   -g, --dnscrypt-config=           Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
       --edns-addr=                 Send EDNS Client Address
-      --upstream-mode=             Defines the upstreams logic mode, possible values: load_balance, parallel, fastest_addr (default: load_balance)
+      --upstream-mode=             Defines the upstreams logic mode, possible values: load_balance, parallel, fastest_addr (default:
+                                   load_balance)
   -l, --listen=                    Listening addresses
   -p, --port=                      Listening ports. Zero value disables TCP and UDP listeners
   -s, --https-port=                Listening ports for DNS-over-HTTPS
   -t, --tls-port=                  Listening ports for DNS-over-TLS
   -q, --quic-port=                 Listening ports for DNS-over-QUIC
   -y, --dnscrypt-port=             Listening ports for DNSCrypt
-  -u, --upstream=                  An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers
+  -u, --upstream=                  An upstream to be used (can be specified multiple times). You can also specify path to a file with the
+                                   list of servers
   -b, --bootstrap=                 Bootstrap DNS for DoH and DoT, can be specified multiple times (default: use system-provided)
-  -f, --fallback=                  Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers
+  -f, --fallback=                  Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also
+                                   specify path to a file with the list of servers
       --private-rdns-upstream=     Private DNS upstreams to use for reverse DNS lookups of private addresses, can be specified multiple times
-      --dns64-prefix=              Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times
+      --dns64-prefix=              Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be
+                                   specified multiple times
       --private-subnets=           Private subnets to use for reverse DNS lookups of private addresses
-      --bogus-nxdomain=            Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times.
+      --bogus-nxdomain=            Transform the responses containing at least a single IP that matches specified addresses and CIDRs into
+                                   NXDOMAIN.  Can be specified multiple times.
+      --hosts-files=               List of paths to the hosts files relative to the root, can be specified multiple times
       --timeout=                   Timeout for outbound DNS queries to remote upstream servers in a human-readable form (default: 10s)
-      --cache-min-ttl=             Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration.
+      --cache-min-ttl=             Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be
+                                   done with careful consideration.
       --cache-max-ttl=             Maximum TTL value for DNS entries, in seconds.
       --cache-size=                Cache size (in bytes). Default: 64k
   -r, --ratelimit=                 Ratelimit (requests per second)
@@ -93,6 +101,7 @@ Application Options:
       --edns                       Use EDNS Client Subnet extension
       --dns64                      If specified, dnsproxy will act as a DNS64 server
       --use-private-rdns           If specified, use private upstreams for reverse DNS lookups of private addresses
+      --hosts-file-enabled=        If specified, use hosts files for resolving (default: true)
 
 Help Options:
   -h, --help                       Show this help message

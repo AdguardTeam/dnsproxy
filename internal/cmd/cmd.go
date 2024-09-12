@@ -22,20 +22,20 @@ import (
 // Main is the entrypoint of dnsproxy CLI.  Main may accept arguments, such as
 // embedded assets and command-line arguments.
 func Main() {
-	opts, exitCode, err := parseOptions()
+	conf, exitCode, err := parseConfig()
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+		_, _ = fmt.Fprintln(os.Stderr, fmt.Errorf("parsing options: %w", err))
 	}
 
-	if opts == nil {
+	if conf == nil {
 		os.Exit(exitCode)
 	}
 
 	logOutput := os.Stdout
-	if opts.LogOutput != "" {
+	if conf.LogOutput != "" {
 		// #nosec G302 -- Trust the file path that is given in the
 		// configuration.
-		logOutput, err = os.OpenFile(opts.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		logOutput, err = os.OpenFile(conf.LogOutput, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, fmt.Errorf("cannot create a log file: %s", err))
 
@@ -50,16 +50,16 @@ func Main() {
 		Format: slogutil.FormatDefault,
 		// TODO(d.kolyshev): Consider making configurable.
 		AddTimestamp: true,
-		Verbose:      opts.Verbose,
+		Verbose:      conf.Verbose,
 	})
 
 	ctx := context.Background()
 
-	if opts.Pprof {
+	if conf.Pprof {
 		runPprof(l)
 	}
 
-	err = runProxy(ctx, l, opts)
+	err = runProxy(ctx, l, conf)
 	if err != nil {
 		l.ErrorContext(ctx, "running dnsproxy", slogutil.KeyError, err)
 
@@ -77,7 +77,7 @@ func Main() {
 // runProxy starts and runs the proxy.  l must not be nil.
 //
 // TODO(e.burkov):  Move into separate dnssvc package.
-func runProxy(ctx context.Context, l *slog.Logger, options *Options) (err error) {
+func runProxy(ctx context.Context, l *slog.Logger, conf *configuration) (err error) {
 	var (
 		buildVersion = version.Version()
 		revision     = version.Revision()
@@ -95,12 +95,12 @@ func runProxy(ctx context.Context, l *slog.Logger, options *Options) (err error)
 	)
 
 	// Prepare the proxy server and its configuration.
-	conf, err := createProxyConfig(ctx, l, options)
+	proxyConf, err := createProxyConfig(ctx, l, conf)
 	if err != nil {
 		return fmt.Errorf("configuring proxy: %w", err)
 	}
 
-	dnsProxy, err := proxy.New(conf)
+	dnsProxy, err := proxy.New(proxyConf)
 	if err != nil {
 		return fmt.Errorf("creating proxy: %w", err)
 	}

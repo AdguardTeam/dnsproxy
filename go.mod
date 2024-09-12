@@ -8,7 +8,6 @@ require (
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 	github.com/bluele/gcache v0.0.2
-	github.com/jessevdk/go-flags v1.6.1
 	github.com/miekg/dns v1.1.58
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/quic-go/quic-go v0.44.0

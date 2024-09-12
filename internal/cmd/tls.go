@@ -9,12 +9,12 @@ import (
 // NewTLSConfig returns the TLS config that includes a certificate.  Use it for
 // server TLS configuration or for a client certificate.  If caPath is empty,
 // system CAs will be used.
-func newTLSConfig(options *Options) (c *tls.Config, err error) {
+func newTLSConfig(conf *configuration) (c *tls.Config, err error) {
 	// Set default TLS min/max versions
 	tlsMinVersion := tls.VersionTLS10
 	tlsMaxVersion := tls.VersionTLS13
 
-	switch options.TLSMinVersion {
+	switch conf.TLSMinVersion {
 	case 1.1:
 		tlsMinVersion = tls.VersionTLS11
 	case 1.2:
@@ -23,7 +23,7 @@ func newTLSConfig(options *Options) (c *tls.Config, err error) {
 		tlsMinVersion = tls.VersionTLS13
 	}
 
-	switch options.TLSMaxVersion {
+	switch conf.TLSMaxVersion {
 	case 1.0:
 		tlsMaxVersion = tls.VersionTLS10
 	case 1.1:
@@ -32,7 +32,7 @@ func newTLSConfig(options *Options) (c *tls.Config, err error) {
 		tlsMaxVersion = tls.VersionTLS12
 	}
 
-	cert, err := loadX509KeyPair(options.TLSCertPath, options.TLSKeyPath)
+	cert, err := loadX509KeyPair(conf.TLSCertPath, conf.TLSKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading TLS cert: %s", err)
 	}

@@ -45,12 +45,17 @@ func Main() {
 		defer func() { _ = logOutput.Close() }()
 	}
 
+	lvl := slog.LevelInfo
+	if conf.Verbose {
+		lvl = slog.LevelDebug
+	}
+
 	l := slogutil.New(&slogutil.Config{
 		Output: logOutput,
 		Format: slogutil.FormatDefault,
+		Level:  lvl,
 		// TODO(d.kolyshev): Consider making configurable.
 		AddTimestamp: true,
-		Verbose:      conf.Verbose,
 	})
 
 	ctx := context.Background()

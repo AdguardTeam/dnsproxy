@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/mapsutil"
 	"github.com/AdguardTeam/golibs/netutil"
 )
 
@@ -353,7 +353,7 @@ func ValidatePrivateConfig(uc *UpstreamConfig, privateSubnets netutil.SubnetSet)
 	}
 
 	var errs []error
-	rangeFunc := func(domain string, _ []upstream.Upstream) (ok bool) {
+	for _, domain := range slices.Sorted(maps.Keys(uc.DomainReservedUpstreams)) {
 		pref, extErr := netutil.ExtractReversedAddr(domain)
 		switch {
 		case extErr != nil:
@@ -366,11 +366,7 @@ func ValidatePrivateConfig(uc *UpstreamConfig, privateSubnets netutil.SubnetSet)
 		default:
 			// Go on.
 		}
-
-		return true
 	}
-
-	mapsutil.SortedRange(uc.DomainReservedUpstreams, rangeFunc)
 
 	return errors.Join(errs...)
 }

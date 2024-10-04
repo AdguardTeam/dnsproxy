@@ -172,7 +172,7 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Sema
 
 		err = reqSema.Acquire(ctx)
 		if err != nil {
-			p.logger.ErrorContext(ctx, "acquiring semaphore: %s", err)
+			p.logger.ErrorContext(ctx, "acquiring semaphore", slogutil.KeyError, err)
 
 			// Close the connection to make sure resources are freed.
 			closeQUICConn(conn, DoQCodeNoError, p.logger)

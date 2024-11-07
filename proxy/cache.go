@@ -161,9 +161,6 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 	}, expired
 }
 
-// CacheLogPrefix is a prefix for logging cache operations.
-const CacheLogPrefix = "cache"
-
 // initCache initializes cache if it's enabled.
 func (p *Proxy) initCache() {
 	if !p.CacheEnabled {

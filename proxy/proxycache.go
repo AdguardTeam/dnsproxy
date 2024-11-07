@@ -3,8 +3,6 @@ package proxy
 import (
 	"net"
 	"slices"
-
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 )
 
 // cacheForContext returns cache object for the given context.
@@ -44,7 +42,6 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 
 	p.logger.Debug(
 		"replying from cache",
-		slogutil.KeyPrefix, CacheLogPrefix,
 		"source", cacheSource,
 		"ecs_enabled", p.Config.EnableEDNSClientSubnet,
 	)
@@ -106,8 +103,7 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 		// doesn't correspond.
 		if !ecs.IP.Mask(ecs.Mask).Equal(d.ReqECS.IP.Mask(d.ReqECS.Mask)) || ones != reqOnes {
 			p.logger.Debug(
-				"ecs does not match",
-				slogutil.KeyPrefix, CacheLogPrefix,
+				"not caching response; subnet mismatch",
 				"ecs", ecs,
 				"req_ecs", d.ReqECS,
 			)
@@ -125,7 +121,7 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 			ecs.IP = ecs.IP.Mask(ecs.Mask)
 		}
 
-		p.logger.Debug("ecs option in response", slogutil.KeyPrefix, CacheLogPrefix, "ecs", ecs)
+		p.logger.Debug("caching response", "ecs", ecs)
 
 		dctxCache.setWithSubnet(d.Res, d.Upstream, ecs, p.logger)
 	case d.ReqECS != nil:
@@ -139,9 +135,11 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 
 // ClearCache clears the DNS cache of p.
 func (p *Proxy) ClearCache() {
-	if p.cache != nil {
-		p.cache.clearItems()
-		p.cache.clearItemsWithSubnet()
-		p.logger.Debug("cleared", slogutil.KeyPrefix, CacheLogPrefix)
+	if p.cache == nil {
+		return
 	}
+
+	p.cache.clearItems()
+	p.cache.clearItemsWithSubnet()
+	p.logger.Debug("cache cleared")
 }

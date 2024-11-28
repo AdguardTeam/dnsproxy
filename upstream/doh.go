@@ -75,6 +75,9 @@ type dnsOverHTTPS struct {
 	// quicConfMu protects quicConf.
 	quicConfMu *sync.Mutex
 
+	// transportH2 is an HTTP/2 transport if any.
+	transportH2 *http2.Transport
+
 	// addrRedacted is the redacted string representation of addr.  It is saved
 	// separately to reduce allocations during logging and error reporting.
 	addrRedacted string
@@ -209,12 +212,14 @@ func (p *dnsOverHTTPS) Close() (err error) {
 	return err
 }
 
-// closeClient cleans up resources used by client if necessary.  Note, that at
-// this point it should only be done for HTTP/3 as it may leak due to keep-alive
-// connections.
+// closeClient cleans up resources used by client if necessary.  Note that this
+// should be done for HTTP/3, as it can lead to resource leaks due to keep-alive
+// connections, and for HTTP/2 due to idle connections.
 func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
 	if isHTTP3(client) {
 		return client.Transport.(io.Closer).Close()
+	} else if p.transportH2 != nil {
+		p.transportH2.CloseIdleConnections()
 	}
 
 	return nil
@@ -474,14 +479,13 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 	// Explicitly configure transport to use HTTP/2.
 	//
 	// See https://github.com/AdguardTeam/dnsproxy/issues/11.
-	var transportH2 *http2.Transport
-	transportH2, err = http2.ConfigureTransports(transport)
+	p.transportH2, err = http2.ConfigureTransports(transport)
 	if err != nil {
 		return nil, err
 	}
 
 	// Enable HTTP/2 pings on idle connections.
-	transportH2.ReadIdleTimeout = transportDefaultReadIdleTimeout
+	p.transportH2.ReadIdleTimeout = transportDefaultReadIdleTimeout
 
 	return transport, nil
 }

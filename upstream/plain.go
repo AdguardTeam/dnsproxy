@@ -137,9 +137,6 @@ func isExpectedConnErr(err error) (is bool) {
 
 // Exchange implements the [Upstream] interface for *plainDNS.
 func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	// TODO(e.burkov):  Use some smarter cloning approach.
-	req = req.Copy()
-
 	dial, err := p.getDialer()
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.

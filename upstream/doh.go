@@ -146,9 +146,6 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
 // Exchange implements the [Upstream] interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	// TODO(e.burkov):  Use some smarter cloning approach.
-	req = req.Copy()
-
 	// In order to maximize HTTP cache friendliness, DoH clients using media
 	// formats that include the ID field from the DNS message header, such as
 	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.

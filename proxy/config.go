@@ -246,6 +246,8 @@ type Config struct {
 
 // validateConfig verifies that the supplied configuration is valid and returns
 // an error if it's not.
+//
+// TODO(s.chzhen):  Use [validate.Interface] from golibs.
 func (p *Proxy) validateConfig() (err error) {
 	err = p.UpstreamConfig.validate()
 	if err != nil {

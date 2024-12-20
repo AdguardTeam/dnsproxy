@@ -143,9 +143,6 @@ func (p *dnsOverQUIC) Address() string { return p.addr.String() }
 
 // Exchange implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	// TODO(e.burkov):  Use some smarter cloning approach.
-	req = req.Copy()
-
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be
 	// set to 0.  The stream mapping for DoQ allows for unambiguous correlation
 	// of queries and responses, so the Message ID field is not required.

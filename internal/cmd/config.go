@@ -196,7 +196,7 @@ func parseConfig() (conf *configuration, exitCode int, err error) {
 		HTTPSServerName:        "dnsproxy",
 		UpstreamMode:           string(proxy.UpstreamModeLoadBalance),
 		CacheSizeBytes:         64 * 1024,
-		Timeout:                timeutil.Duration{Duration: 10 * time.Second},
+		Timeout:                timeutil.Duration(10 * time.Second),
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 56,
 		HostsFileEnabled:       true,

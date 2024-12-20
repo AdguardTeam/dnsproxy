@@ -1,6 +1,6 @@
 module github.com/AdguardTeam/dnsproxy/internal/tools
 
-go 1.23.3
+go 1.23.4
 
 require (
 	github.com/fzipp/gocyclo v0.6.0

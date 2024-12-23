@@ -34,7 +34,12 @@ func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Up
 
 	resCh := make(chan any, upsNum)
 	for _, f := range ups {
-		go exchangeAsync(f, req, resCh)
+		// Use a copy to prevent data races, as [dns.Client] can modify the DNS
+		// request during the exchange.
+		//
+		// TODO(s.chzhen):  Consider using buffer pool.
+		copyReq := req.Copy()
+		go exchangeAsync(f, copyReq, resCh)
 	}
 
 	errs := []error{}
@@ -98,7 +103,12 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 
 	// Start exchanging concurrently.
 	for _, u := range ups {
-		go exchangeAsync(u, req, resCh)
+		// Use a copy to prevent data races, as [dns.Client] can modify the DNS
+		// request during the exchange.
+		//
+		// TODO(s.chzhen):  Consider using buffer pool.
+		copyReq := req.Copy()
+		go exchangeAsync(u, copyReq, resCh)
 	}
 
 	// Wait for all exchanges to finish.

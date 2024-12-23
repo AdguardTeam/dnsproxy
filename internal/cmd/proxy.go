@@ -135,7 +135,7 @@ func (conf *configuration) initUpstreams(
 		}
 	}
 
-	timeout := conf.Timeout.Duration
+	timeout := time.Duration(conf.Timeout)
 	bootOpts := &upstream.Options{
 		Logger:             l,
 		HTTPVersions:       httpVersions,

@@ -146,9 +146,6 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
 // Exchange implements the [Upstream] interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	// TODO(e.burkov):  Use some smarter cloning approach.
-	req = req.Copy()
-
 	// In order to maximize HTTP cache friendliness, DoH clients using media
 	// formats that include the ID field from the DNS message header, such as
 	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
@@ -490,12 +487,12 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
 	return transport, nil
 }
 
-// http3Transport is a wrapper over *http3.RoundTripper that tries to optimize
+// http3Transport is a wrapper over [*http3.Transport] that tries to optimize
 // its behavior.  The main thing that it does is trying to force use a single
 // connection to a host instead of creating a new one all the time.  It also
 // helps mitigate race issues with quic-go.
 type http3Transport struct {
-	baseTransport *http3.RoundTripper
+	baseTransport *http3.Transport
 
 	closed bool
 	mu     sync.RWMutex
@@ -537,11 +534,11 @@ func (h *http3Transport) Close() (err error) {
 	return h.baseTransport.Close()
 }
 
-// createTransportH3 tries to create an HTTP/3 transport for this upstream.
-// We should be able to fall back to H1/H2 in case if HTTP/3 is unavailable or
-// if it is too slow.  In order to do that, this method will run two probes
-// in parallel (one for TLS, the other one for QUIC) and if QUIC is faster it
-// will create the *http3.RoundTripper instance.
+// createTransportH3 tries to create an HTTP/3 transport for this upstream.  We
+// should be able to fall back to H1/H2 in case if HTTP/3 is unavailable or if
+// it is too slow.  In order to do that, this method will run two probes in
+// parallel (one for TLS, the other one for QUIC) and if QUIC is faster it will
+// create the [*http3.Transport] instance.
 func (p *dnsOverHTTPS) createTransportH3(
 	tlsConfig *tls.Config,
 	dialContext bootstrap.DialHandler,
@@ -555,7 +552,7 @@ func (p *dnsOverHTTPS) createTransportH3(
 		return nil, err
 	}
 
-	rt := &http3.RoundTripper{
+	rt := &http3.Transport{
 		Dial: func(
 			ctx context.Context,
 

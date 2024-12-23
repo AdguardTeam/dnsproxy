@@ -380,7 +380,7 @@ func sendTestDoHMessage(
 	}
 
 	method := http.MethodGet
-	if _, ok := client.Transport.(*http3.RoundTripper); ok {
+	if _, ok := client.Transport.(*http3.Transport); ok {
 		// If we're using HTTP/3, use http3.MethodGet0RTT to force using 0-RTT.
 		method = http3.MethodGet0RTT
 	}
@@ -432,7 +432,7 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 	if http3Enabled {
 		tlsClientConfig.NextProtos = []string{"h3"}
 
-		transport = &http3.RoundTripper{
+		transport = &http3.Transport{
 			Dial: func(
 				ctx context.Context,
 				_ string,

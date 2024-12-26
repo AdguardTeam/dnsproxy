@@ -76,7 +76,7 @@ Application Options:
       --private-subnets=           Private subnets to use for reverse DNS lookups of private addresses
       --bogus-nxdomain=            Transform the responses containing at least a single IP that matches specified addresses and CIDRs into
                                    NXDOMAIN.  Can be specified multiple times.
-      --hosts-files=               List of paths to the hosts files relative to the root, can be specified multiple times
+      --hosts-files=               List of paths to the hosts files, can be specified multiple times
       --timeout=                   Timeout for outbound DNS queries to remote upstream servers in a human-readable form (default: 10s)
       --cache-min-ttl=             Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be
                                    done with careful consideration.

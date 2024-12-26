@@ -40,17 +40,18 @@ func createProxyConfig(
 		return nil, err
 	}
 
-	reqHdlr, err := handler.NewDefault(&handler.DefaultConfig{
+	hosts, err := handler.ReadHosts(hostsFiles)
+	if err != nil {
+		return nil, fmt.Errorf("reading hosts files: %w", err)
+	}
+
+	reqHdlr := handler.NewDefault(&handler.DefaultConfig{
 		Logger: l.With(slogutil.KeyPrefix, "default_handler"),
 		// TODO(e.burkov):  Use the configured message constructor.
 		MessageConstructor: dnsmsg.DefaultMessageConstructor{},
 		HaltIPv6:           conf.IPv6Disabled,
-		HostsFiles:         hostsFiles,
-		FileSystem:         osutil.RootDirFS(),
+		HostsFiles:         hosts,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("creating default handler: %w", err)
-	}
 
 	proxyConf = &proxy.Config{
 		Logger: l.With(slogutil.KeyPrefix, proxy.LogPrefix),

@@ -3,8 +3,8 @@ package handler
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"net/netip"
+	"os"
 	"slices"
 	"strings"
 
@@ -33,15 +33,15 @@ func (emptyStorage) ByName(_ string) (addrs []netip.Addr) {
 	return nil
 }
 
-// readHosts reads the hosts files from the file system and returns a storage
+// ReadHosts reads the hosts files from the file system and returns a storage
 // with parsed records.  strg is always usable even if an error occurred.
-func readHosts(fsys fs.FS, paths []string) (strg hostsfile.Storage, err error) {
+func ReadHosts(paths []string) (strg hostsfile.Storage, err error) {
 	// Don't check the error since it may only appear when any readers used.
 	defaultStrg, _ := hostsfile.NewDefaultStorage()
 
 	var errs []error
 	for _, path := range paths {
-		err = readHostsFile(defaultStrg, fsys, path)
+		err = readHostsFile(defaultStrg, path)
 		if err != nil {
 			// Don't wrap the error since it's informative enough as is.
 			errs = append(errs, err)
@@ -63,13 +63,15 @@ func readHosts(fsys fs.FS, paths []string) (strg hostsfile.Storage, err error) {
 	return defaultStrg, errors.Join(errs...)
 }
 
-// readHostsFile reads the hosts file at path from fsys and parses it into strg.
-func readHostsFile(strg *hostsfile.DefaultStorage, fsys fs.FS, path string) (err error) {
-	f, err := fsys.Open(path)
+// readHostsFile reads the hosts file at path and parses it into strg.
+func readHostsFile(strg *hostsfile.DefaultStorage, path string) (err error) {
+	// #nosec G304 -- Trust the file path from the configuration file.
+	f, err := os.Open(path)
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.
 		return err
 	}
+
 	defer func() { err = errors.WithDeferred(err, f.Close()) }()
 
 	err = hostsfile.Parse(strg, f, nil)

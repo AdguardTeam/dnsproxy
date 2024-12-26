@@ -221,11 +221,10 @@ var commandLineOptions = []*commandLineOption{
 		valueType: "subnet",
 	},
 	hostsFilesIdx: {
-		description: "List of paths to the hosts files relative to the root, can be specified " +
-			"multiple times.",
-		long:      "hosts-files",
-		short:     "",
-		valueType: "path",
+		description: "List of paths to the hosts files, can be specified multiple times.",
+		long:        "hosts-files",
+		short:       "",
+		valueType:   "path",
 	},
 	timeoutIdx: {
 		description: "Timeout for outbound DNS queries to remote upstream servers in a " +

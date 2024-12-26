@@ -1,10 +1,7 @@
-// Package handler provides some customizable DNS request handling logic used in
-// the proxy.
 package handler
 
 import (
 	"context"
-	"io/fs"
 	"log/slog"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
@@ -16,18 +13,11 @@ type DefaultConfig struct {
 	// MessageConstructor constructs DNS messages.  It must not be nil.
 	MessageConstructor proxy.MessageConstructor
 
-	// FileSystem is the file system for reading files from.  It must not be
-	// nil.
-	FileSystem fs.FS
-
 	// Logger is the logger.  It must not be nil.
 	Logger *slog.Logger
 
-	// HostsFiles is the list of paths to the hosts files.  The hosts files
-	// aren't used if the list is empty.
-	//
-	// TODO(e.burkov):  Consider passing just a [hostsfile.Storage].
-	HostsFiles []string
+	// HostsFiles is the index containing the records of the hosts files.
+	HostsFiles hostsfile.Storage
 
 	// HaltIPv6 halts the processing of AAAA requests and makes the handler
 	// reply with NODATA to them.
@@ -43,12 +33,7 @@ type Default struct {
 }
 
 // NewDefault creates a new [Default] handler.
-func NewDefault(conf *DefaultConfig) (d *Default, err error) {
-	hosts, err := readHosts(conf.FileSystem, conf.HostsFiles)
-	if err != nil {
-		return nil, err
-	}
-
+func NewDefault(conf *DefaultConfig) (d *Default) {
 	mc, ok := conf.MessageConstructor.(messageConstructor)
 	if !ok {
 		mc = defaultConstructor{
@@ -60,8 +45,8 @@ func NewDefault(conf *DefaultConfig) (d *Default, err error) {
 		logger:       conf.Logger,
 		isIPv6Halted: conf.HaltIPv6,
 		messages:     mc,
-		hosts:        hosts,
-	}, nil
+		hosts:        conf.HostsFiles,
+	}
 }
 
 // HandleRequest resolves the DNS request within proxyCtx.  It only calls

@@ -117,7 +117,7 @@ func (h *Default) resolveFromHosts(ctx context.Context, req *dns.Msg) (resp *dns
 		resp = h.messages.NewCompressedResponse(req, dns.RcodeSuccess)
 		name = req.Question[0].Name
 		for _, ptr := range ptrs {
-			resp.Answer = append(resp.Answer, h.messages.NewPTRAnswer(name, ptr))
+			resp.Answer = append(resp.Answer, h.messages.NewPTRAnswer(name, dns.Fqdn(ptr)))
 		}
 	default:
 		h.logger.DebugContext(ctx, "no hosts records found", "name", name, "qtype", q.Qtype)

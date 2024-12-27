@@ -18,7 +18,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/hostsfile"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
@@ -518,7 +517,7 @@ func (conf *configuration) hostsFiles(ctx context.Context, l *slog.Logger) (path
 		return conf.HostsFiles, nil
 	}
 
-	paths, err = hostsfile.DefaultHostsPaths()
+	paths, err = proxynetutil.DefaultHostsPaths()
 	if err != nil {
 		return nil, fmt.Errorf("getting default hosts files: %w", err)
 	}

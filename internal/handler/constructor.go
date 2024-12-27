@@ -17,8 +17,9 @@ type messageConstructor interface {
 	NewCompressedResponse(req *dns.Msg, code int) (resp *dns.Msg)
 
 	// NewPTRAnswer creates a new resource record for PTR response with the
-	// given FQDN and PTR domain.
-	NewPTRAnswer(fqdn, ptrDomain string) (ans *dns.PTR)
+	// given FQDN and PTR domain.  Arguments must be fully qualified domain
+	// names.
+	NewPTRAnswer(fqdn, ptrFQDN string) (ans *dns.PTR)
 
 	// NewIPResponse creates a new A/AAAA response message for req with the
 	// given IP addresses.  All IP addresses must be of the same family.
@@ -48,10 +49,10 @@ func (defaultConstructor) NewCompressedResponse(req *dns.Msg, code int) (resp *d
 
 // NewPTRAnswer implements the [messageConstructor] interface for
 // [defaultConstructor].
-func (defaultConstructor) NewPTRAnswer(fqdn, ptrDomain string) (ans *dns.PTR) {
+func (defaultConstructor) NewPTRAnswer(fqdn, ptrFQDN string) (ans *dns.PTR) {
 	return &dns.PTR{
 		Hdr: hdr(fqdn, dns.TypePTR),
-		Ptr: ptrDomain,
+		Ptr: dns.Fqdn(ptrFQDN),
 	}
 }
 

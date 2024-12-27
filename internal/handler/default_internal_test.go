@@ -98,8 +98,8 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 	})
 
 	const (
-		domainV4 = "ipv4.domain.example"
-		domainV6 = "ipv6.domain.example"
+		fqdnV4 = "ipv4.domain.example."
+		fqdnV6 = "ipv6.domain.example."
 	)
 
 	var (
@@ -118,26 +118,26 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 	}{{
 		wantAns: &dns.A{
 			Hdr: dns.RR_Header{
-				Name:   domainV4,
+				Name:   fqdnV4,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
 				Ttl:    10,
 			},
 			A: addrV4.AsSlice(),
 		},
-		req:  (&dns.Msg{}).SetQuestion(domainV4, dns.TypeA),
+		req:  (&dns.Msg{}).SetQuestion(fqdnV4, dns.TypeA),
 		name: "success_a",
 	}, {
 		wantAns: &dns.AAAA{
 			Hdr: dns.RR_Header{
-				Name:   domainV6,
+				Name:   fqdnV6,
 				Rrtype: dns.TypeAAAA,
 				Class:  dns.ClassINET,
 				Ttl:    10,
 			},
 			AAAA: addrV6.AsSlice(),
 		},
-		req:  (&dns.Msg{}).SetQuestion(domainV6, dns.TypeAAAA),
+		req:  (&dns.Msg{}).SetQuestion(fqdnV6, dns.TypeAAAA),
 		name: "success_aaaa",
 	}, {
 		wantAns: &dns.PTR{
@@ -147,7 +147,7 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 				Class:  dns.ClassINET,
 				Ttl:    10,
 			},
-			Ptr: domainV4,
+			Ptr: fqdnV4,
 		},
 		req:  (&dns.Msg{}).SetQuestion(reversedV4, dns.TypePTR),
 		name: "success_ptr_v4",
@@ -159,7 +159,7 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 				Class:  dns.ClassINET,
 				Ttl:    10,
 			},
-			Ptr: domainV6,
+			Ptr: fqdnV6,
 		},
 		req:  (&dns.Msg{}).SetQuestion(reversedV6, dns.TypePTR),
 		name: "success_ptr_v6",

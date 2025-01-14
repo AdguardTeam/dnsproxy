@@ -450,6 +450,12 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		return err
 	}
 
+	nonFlags := flags.Args()
+	if len(nonFlags) > 0 {
+		return fmt.Errorf("positional arguments are not allowed, please check your command line "+
+			"arguments; detected positional arguments: %s", nonFlags)
+	}
+
 	return nil
 }
 

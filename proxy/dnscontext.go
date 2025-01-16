@@ -4,7 +4,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -47,16 +46,18 @@ type DNSContext struct {
 	// servers if it's not nil.
 	CustomUpstreamConfig *CustomUpstreamConfig
 
+	// queryStatistics contains the DNS query statistics for both the upstream
+	// and fallback DNS servers.
+	queryStatistics *QueryStatistics
+
 	// Req is the request message.
 	Req *dns.Msg
+
 	// Res is the response message.
 	Res *dns.Msg
 
+	// Proto is the DNS protocol of the query.
 	Proto Proto
-
-	// CachedUpstreamAddr is the address of the upstream which the answer was
-	// cached with.  It's empty for responses resolved by the upstream server.
-	CachedUpstreamAddr string
 
 	// RequestedPrivateRDNS is the subnet extracted from the ARPA domain of
 	// request's question if it's a PTR, SOA, or NS query for a private IP
@@ -68,10 +69,6 @@ type DNSContext struct {
 
 	// Addr is the address of the client.
 	Addr netip.AddrPort
-
-	// QueryDuration is the duration of a successful query to an upstream
-	// server or, if the upstream server is unavailable, to a fallback server.
-	QueryDuration time.Duration
 
 	// DoQVersion is the DoQ protocol version. It can (and should) be read from
 	// ALPN, but in the current version we also use the way DNS messages are
@@ -113,6 +110,16 @@ func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg, addr netip.AddrPort) (d
 
 		RequestID: p.counter.Add(1),
 	}
+}
+
+// QueryStatistics returns the DNS query statistics for both the upstream and
+// fallback DNS servers.
+func (dctx *DNSContext) QueryStatistics() (s *QueryStatistics) {
+	if dctx == nil {
+		return nil
+	}
+
+	return dctx.queryStatistics
 }
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.

@@ -29,10 +29,7 @@ type upstreamWithStats struct {
 }
 
 // newUpstreamWithStats returns a new initialized *upstreamWithStats.
-func newUpstreamWithStats(
-	upstream upstream.Upstream,
-	isFallback bool,
-) (u *upstreamWithStats) {
+func newUpstreamWithStats(upstream upstream.Upstream, isFallback bool) (u *upstreamWithStats) {
 	return &upstreamWithStats{
 		upstream:   upstream,
 		mu:         &sync.Mutex{},
@@ -55,12 +52,13 @@ var _ upstream.Upstream = (*upstreamWithStats)(nil)
 func (u *upstreamWithStats) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	start := time.Now()
 	resp, err = u.upstream.Exchange(req)
+	dur := time.Since(start)
 
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
 	u.err = err
-	u.queryDuration = time.Since(start)
+	u.queryDuration = dur
 
 	return resp, err
 }
@@ -119,13 +117,13 @@ func (s *QueryStatistics) Fallback() (us []*UpstreamStatistics) {
 
 // collectQueryStats gathers the statistics from the wrapped upstreams,
 // considering the upstream mode.  resolver is an upstream DNS resolver that
-// successfully resolved the request, and it will be unwrapped.  Provided
-// upstreams must be of type *upstreamWithStats.
-//
-// If the DNS query was not resolved (i.e., if resolver is nil) or upstream mode
-// is [UpstreamModeFastestAddr], the function returns the gathered statistics
-// for both the upstream and fallback DNS servers.  Otherwise, it returns the
-// query statistics specifically for resolver.
+// successfully resolved the request, and it will be unwrapped.  If resolver is
+// nil (i.e. the DNS query was not resolved) or upstream mode is
+// [UpstreamModeFastestAddr], the function returns the gathered statistics for
+// both the upstream and fallback DNS servers.  If resolver is fallback, it also
+// gathers the statistics for the upstreams.  Otherwise, it returns the query
+// statistics specifically for upstream resolver.  Provided upstreams must be of
+// type *upstreamWithStats.
 func collectQueryStats(
 	mode UpstreamMode,
 	resolver upstream.Upstream,
@@ -152,12 +150,17 @@ func collectQueryStats(
 		}
 	}
 
-	return unwrapped, collectResolverQueryStats(wrapped)
+	return unwrapped, collectResolverQueryStats(upstreams, wrapped)
 }
 
 // collectResolverQueryStats gathers the statistics from an upstream DNS
-// resolver that successfully resolved the request.  resolver must be not nil.
-func collectResolverQueryStats(resolver *upstreamWithStats) (stats *QueryStatistics) {
+// resolver that successfully resolved the request.  If resolver is the fallback
+// DNS resolver, it also gathers the statistics for the upstream DNS resolvers.
+// resolver must be not nil.
+func collectResolverQueryStats(
+	upstreams []upstream.Upstream,
+	resolver *upstreamWithStats,
+) (stats *QueryStatistics) {
 	dur, err := resolver.stats()
 	s := &UpstreamStatistics{
 		Address:       resolver.upstream.Address(),
@@ -167,6 +170,7 @@ func collectResolverQueryStats(resolver *upstreamWithStats) (stats *QueryStatist
 
 	if resolver.isFallback {
 		return &QueryStatistics{
+			main:     collectUpstreamStats(upstreams),
 			fallback: []*UpstreamStatistics{s},
 		}
 	}

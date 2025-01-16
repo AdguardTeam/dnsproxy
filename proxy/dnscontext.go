@@ -115,10 +115,6 @@ func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg, addr netip.AddrPort) (d
 // QueryStatistics returns the DNS query statistics for both the upstream and
 // fallback DNS servers.
 func (dctx *DNSContext) QueryStatistics() (s *QueryStatistics) {
-	if dctx == nil {
-		return nil
-	}
-
 	return dctx.queryStatistics
 }
 

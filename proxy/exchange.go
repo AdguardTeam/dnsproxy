@@ -35,7 +35,11 @@ func (p *Proxy) exchangeUpstreams(
 	if len(ups) == 1 {
 		u = ups[0]
 		resp, _, err = p.exchange(u, req, p.time)
-		// TODO(e.burkov):  p.updateRTT(u.Address(), elapsed)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// TODO(e.burkov):  Consider updating the RTT of a single upstream.
 
 		return resp, u, err
 	}

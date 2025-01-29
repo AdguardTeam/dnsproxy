@@ -554,30 +554,30 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 		p.recDetector.add(d.Req)
 	}
 
-	start := time.Now()
 	src := "upstream"
+	wrapped := upstreamsWithStats(upstreams)
 
 	// Perform the DNS request.
-	resp, u, err := p.exchangeUpstreams(req, upstreams)
-	if dns64Ups := p.performDNS64(req, resp, upstreams); dns64Ups != nil {
+	resp, u, err := p.exchangeUpstreams(req, wrapped)
+	if dns64Ups := p.performDNS64(req, resp, wrapped); dns64Ups != nil {
 		u = dns64Ups
 	} else if p.isBogusNXDomain(resp) {
 		p.logger.Debug("response contains bogus-nxdomain ip")
 		resp = p.messages.NewMsgNXDOMAIN(req)
 	}
 
+	var wrappedFallbacks []upstream.Upstream
 	if err != nil && !isPrivate && p.Fallbacks != nil {
 		p.logger.Debug("using fallback", slogutil.KeyError, err)
 
-		// Reset the timer.
-		start = time.Now()
 		src = "fallback"
 
 		// upstreams mustn't appear empty since they have been validated when
 		// creating proxy.
 		upstreams = p.Fallbacks.getUpstreamsForDomain(req.Question[0].Name)
 
-		resp, u, err = upstream.ExchangeParallel(upstreams, req)
+		wrappedFallbacks = upstreamsWithStats(upstreams)
+		resp, u, err = upstream.ExchangeParallel(wrappedFallbacks, req)
 	}
 
 	if err != nil {
@@ -585,11 +585,13 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	if resp != nil {
-		d.QueryDuration = time.Since(start)
-		p.logger.Debug("resolved", "src", src, "rtt", d.QueryDuration)
+		p.logger.Debug("resolved", "src", src)
 	}
 
-	p.handleExchangeResult(d, req, resp, u)
+	unwrapped, stats := collectQueryStats(p.UpstreamMode, u, wrapped, wrappedFallbacks)
+	d.queryStatistics = stats
+
+	p.handleExchangeResult(d, req, resp, unwrapped)
 
 	return resp != nil, err
 }

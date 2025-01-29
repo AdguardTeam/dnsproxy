@@ -38,7 +38,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	}
 
 	d.Res = ci.m
-	d.CachedUpstreamAddr = ci.u
+	d.queryStatistics = cachedQueryStatistics(ci.u)
 
 	p.logger.Debug(
 		"replying from cache",

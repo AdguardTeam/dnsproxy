@@ -141,6 +141,12 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 		return nil, expired
 	}
 
+	// Don't return expired ServFail response from cache, otherwise it may stop
+	// future refresh.
+	if m.Rcode == dns.RcodeServerFailure && expired {
+		return nil, expired
+	}
+
 	res := (&dns.Msg{}).SetRcode(req, m.Rcode)
 	res.AuthenticatedData = m.AuthenticatedData
 	res.RecursionAvailable = m.RecursionAvailable

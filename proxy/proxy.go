@@ -585,7 +585,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	if resp != nil {
-		p.logger.Debug("resolved", "src", src)
+		p.logger.Debug("resolved", "upstream", u.Address(), "src", src)
 	}
 
 	unwrapped, stats := collectQueryStats(p.UpstreamMode, u, wrapped, wrappedFallbacks)

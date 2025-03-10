@@ -1,20 +1,18 @@
-# Keep the Makefile POSIX-compliant.  We currently allow hyphens in
-# target names, but that may change in the future.
+# Keep the Makefile POSIX-compliant.  We currently allow hyphens in target
+# names, but that may change in the future.
 #
 # See https://pubs.opengroup.org/onlinepubs/9799919799/utilities/make.html.
 .POSIX:
 
-# This comment is used to simplify checking local copies of the
-# Makefile.  Bump this number every time a significant change is made to
-# this Makefile.
+# This comment is used to simplify checking local copies of the Makefile.  Bump
+# this number every time a significant change is made to this Makefile.
 #
 # AdGuard-Project-Version: 9
 
-# Don't name these macros "GO" etc., because GNU Make apparently makes
-# them exported environment variables with the literal value of
-# "${GO:-go}" and so on, which is not what we need.  Use a dot in the
-# name to make sure that users don't have an environment variable with
-# the same name.
+# Don't name these macros "GO" etc., because GNU Make apparently makes them
+# exported environment variables with the literal value of "${GO:-go}" and so
+# on, which is not what we need.  Use a dot in the name to make sure that users
+# don't have an environment variable with the same name.
 #
 # See https://unix.stackexchange.com/q/646255/105635.
 GO.MACRO = $${GO:-go}
@@ -24,8 +22,8 @@ BRANCH = $${BRANCH:-$$(git rev-parse --abbrev-ref HEAD)}
 DIST_DIR = build
 GOAMD64 = v1
 GOPROXY = https://proxy.golang.org|direct
-GOTOOLCHAIN = go1.23.6
 GOTELEMETRY = off
+GOTOOLCHAIN = go1.24.1
 OUT = dnsproxy
 RACE = 0
 REVISION = $${REVISION:-$$(git rev-parse --short HEAD)}
@@ -54,8 +52,7 @@ ENV_MISC = env\
 
 # Keep the line above blank.
 
-# Keep this target first, so that a naked make invocation triggers a
-# full build.
+# Keep this target first, so that a naked make invocation triggers a full build.
 build: go-deps go-build
 
 init: ; git config core.hooksPath ./scripts/hooks
@@ -83,10 +80,10 @@ go-os-check:
 
 txt-lint: ; $(ENV) "$(SHELL)" ./scripts/make/txt-lint.sh
 
-md-lint:  ; $(ENV_MISC) "$(SHELL)" ./scripts/make/md-lint.sh
-sh-lint:  ; $(ENV_MISC) "$(SHELL)" ./scripts/make/sh-lint.sh
+md-lint: ; $(ENV_MISC) "$(SHELL)" ./scripts/make/md-lint.sh
+sh-lint: ; $(ENV_MISC) "$(SHELL)" ./scripts/make/sh-lint.sh
 
-clean:   ; $(ENV) $(GO.MACRO) clean && rm -f -r '$(DIST_DIR)'
+clean: ; $(ENV) $(GO.MACRO) clean && rm -f -r '$(DIST_DIR)'
 
 release: clean
 	$(ENV) "$(SHELL)" ./scripts/make/build-release.sh

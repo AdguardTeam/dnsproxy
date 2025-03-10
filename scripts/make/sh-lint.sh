@@ -3,7 +3,7 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a remarkable change is made to this script.
 #
-# AdGuard-Project-Version: 2
+# AdGuard-Project-Version: 3
 
 verbose="${VERBOSE:-0}"
 readonly verbose
@@ -11,13 +11,19 @@ readonly verbose
 # Don't use -f, because we use globs in this script.
 set -e -u
 
-if [ "$verbose" -gt '0' ]
-then
+if [ "$verbose" -gt '0' ]; then
 	set -x
 fi
 
-# NOTE: Adjust for your project.
-shellcheck -e 'SC2250' -f 'gcc' -o 'all' -x --\
-	./scripts/hooks/*\
-	./scripts/make/*\
+# Source the common helpers, including not_found and run_linter.
+. ./scripts/make/helper.sh
+
+run_linter -e shfmt --binary-next-line -d -p -s \
+	./scripts/hooks/* \
+	./scripts/make/*.sh \
+	;
+
+shellcheck -e 'SC2250' -f 'gcc' -o 'all' -x -- \
+	./scripts/hooks/* \
+	./scripts/make/*.sh \
 	;

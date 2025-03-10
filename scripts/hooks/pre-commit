@@ -6,7 +6,7 @@ set -e -f -u
 # Bump this number every time a significant change is made to this
 # script.
 #
-# AdGuard-Project-Version: 2
+# AdGuard-Project-Version: 4
 
 # TODO(a.garipov): Add pre-merge-commit.
 
@@ -15,8 +15,7 @@ set -e -f -u
 # /dev/tty works, this should work reasonably well on all of our
 # supported development systems and in most terminal emulators.
 is_tty='0'
-if [ -t '1' ]
-then
+if [ -t '1' ]; then
 	is_tty='1'
 fi
 readonly is_tty
@@ -26,27 +25,24 @@ readonly is_tty
 # seconds, giving the programmer some time to react, and returns with
 # a zero exit code.
 prompt() {
-	if [ "$is_tty" -eq '0' ]
-	then
+	if [ "$is_tty" -eq '0' ]; then
 		sleep 2
 
 		return 0
 	fi
 
-	while true
-	do
+	while true; do
 		printf 'commit anyway? y/[n]: '
-		read -r ans < /dev/tty
+		read -r ans </dev/tty
 
-		case "$ans"
-		in
-		('y'|'Y')
+		case "$ans" in
+		'y' | 'Y')
 			break
 			;;
-		(''|'n'|'N')
+		'' | 'n' | 'N')
 			exit 1
 			;;
-		(*)
+		*)
 			continue
 			;;
 		esac
@@ -56,25 +52,27 @@ prompt() {
 # Warn the programmer about unstaged changes and untracked files, but do
 # not fail the commit, because those changes might be temporary or for
 # a different branch.
+#
+# shellcheck disable=SC2016
 awk_prog='substr($2, 2, 1) != "." { print $9; } $1 == "?" { print $2; }'
 readonly awk_prog
 
-unstaged="$( git status --porcelain=2 | awk "$awk_prog" )"
+unstaged="$(git status --porcelain=2 | awk "$awk_prog")"
 readonly unstaged
 
-if [ "$unstaged" != "" ]
-then
+if [ "$unstaged" != '' ]; then
 	printf 'WARNING: you have unstaged changes:\n\n%s\n\n' "$unstaged"
 	prompt
 fi
 
-# Warn the programmer about temporary todos, but do not fail the commit,
-# because the commit could be in a temporary branch.
-temp_todos="$( git grep -e 'TODO.*!!' -- ':!scripts/hooks/pre-commit' || : )"
+# Warn the programmer about temporary todos and skel FIXMEs, but do not
+# fail the commit, because the commit could be in a temporary branch.
+temp_todos="$(
+	git grep -e 'FIXME' -e 'TODO.*!!' -- ':!scripts/hooks/pre-commit' || :
+)"
 readonly temp_todos
 
-if [ "$temp_todos" != "" ]
-then
+if [ "$temp_todos" != '' ]; then
 	printf 'WARNING: you have temporary todos:\n\n%s\n\n' "$temp_todos"
 	prompt
 fi
@@ -82,12 +80,18 @@ fi
 verbose="${VERBOSE:-0}"
 readonly verbose
 
-if [ "$( git diff --cached --name-only -- '*.md' '*.yaml' '*.yml' )" ]
-then
+if [ "$(git diff --cached --name-only -- '*.md' || true)" != '' ]; then
+	make VERBOSE="$verbose" md-lint
+fi
+
+if [ "$(git diff --cached --name-only -- '*.sh' || true)" != '' ]; then
+	make VERBOSE="$verbose" sh-lint
+fi
+
+if [ "$(git diff --cached --name-only -- '*.md' '*.yaml' '*.yml' || true)" != '' ]; then
 	make VERBOSE="$verbose" txt-lint
 fi
 
-if [ "$( git diff --cached --name-only -- '*.go' '*.mod' '*.sh' 'Makefile' )" ]
-then
+if [ "$(git diff --cached --name-only -- '*.go' '*.mod' 'Makefile' || true)" != '' ]; then
 	make VERBOSE="$verbose" go-os-check go-lint go-test
 fi

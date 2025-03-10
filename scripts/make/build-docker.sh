@@ -2,8 +2,7 @@
 
 verbose="${VERBOSE:-0}"
 
-if [ "$verbose" -gt '0' ]
-then
+if [ "$verbose" -gt '0' ]; then
 	set -x
 	debug_flags='--debug=1'
 else
@@ -33,7 +32,7 @@ linux/arm64,\
 linux/ppc64le"
 readonly docker_platforms
 
-build_date="$( date -u +'%Y-%m-%dT%H:%M:%SZ' )"
+build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 readonly build_date
 
 # Set DOCKER_IMAGE_NAME to 'adguard/dnsproxy' if you want (and are allowed)
@@ -56,9 +55,8 @@ docker_channel_tag="--tag=${docker_image_name}:latest"
 
 # If version is set to 'dev' or empty, only set the version tag and avoid
 # polluting the "latest" tag.
-if [ "${version:-}" = 'dev' ] || [ "${version:-}" = '' ]
-then
-  docker_channel_tag=""
+if [ "${version:-}" = 'dev' ] || [ "${version:-}" = '' ]; then
+	docker_channel_tag=""
 fi
 
 readonly docker_version_tag docker_channel_tag
@@ -70,17 +68,17 @@ dist_docker="${dist_dir}/docker"
 readonly dist_docker
 
 mkdir -p "$dist_docker"
-cp "${dist_dir}/linux-386/dnsproxy"\
+cp "${dist_dir}/linux-386/dnsproxy" \
 	"${dist_docker}/dnsproxy_linux_386_"
-cp "${dist_dir}/linux-amd64/dnsproxy"\
+cp "${dist_dir}/linux-amd64/dnsproxy" \
 	"${dist_docker}/dnsproxy_linux_amd64_"
-cp "${dist_dir}/linux-arm64/dnsproxy"\
+cp "${dist_dir}/linux-arm64/dnsproxy" \
 	"${dist_docker}/dnsproxy_linux_arm64_"
-cp "${dist_dir}/linux-arm6/dnsproxy"\
+cp "${dist_dir}/linux-arm6/dnsproxy" \
 	"${dist_docker}/dnsproxy_linux_arm_v6"
-cp "${dist_dir}/linux-arm7/dnsproxy"\
+cp "${dist_dir}/linux-arm7/dnsproxy" \
 	"${dist_docker}/dnsproxy_linux_arm_v7"
-cp "${dist_dir}/linux-ppc64le/dnsproxy"\
+cp "${dist_dir}/linux-ppc64le/dnsproxy" \
 	"${dist_docker}/dnsproxy_linux_ppc64le_"
 
 # Prepare the default configuration for the Docker image.
@@ -91,16 +89,19 @@ cp ./config.yaml.dist "${dist_docker}/config.yaml"
 #
 # TODO(a.garipov): Once flag --tag of docker buildx build supports commas, use
 # them instead.
-$sudo_cmd docker\
-	"$debug_flags"\
-	buildx build\
-	--build-arg BUILD_DATE="$build_date"\
-	--build-arg DIST_DIR="$dist_dir"\
-	--build-arg VCS_REF="$commit"\
-	--build-arg VERSION="$version"\
-	--output "$docker_output"\
-	--platform "$docker_platforms"\
-	$docker_version_tag\
-	$docker_channel_tag\
-	-f ./docker/Dockerfile\
-	.
+#
+# shellcheck disable=SC2086
+$sudo_cmd docker \
+	"$debug_flags" \
+	buildx build \
+	--build-arg BUILD_DATE="$build_date" \
+	--build-arg DIST_DIR="$dist_dir" \
+	--build-arg VCS_REF="$commit" \
+	--build-arg VERSION="$version" \
+	--output "$docker_output" \
+	--platform "$docker_platforms" \
+	$docker_version_tag \
+	$docker_channel_tag \
+	-f ./docker/Dockerfile \
+	. \
+	;

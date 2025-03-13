@@ -178,6 +178,13 @@ type Proxy struct {
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int
 
+	// bindRetryNum is the number of retries for binding to an address for
+	// listening.
+	bindRetryNum uint
+
+	// bindRetryIvl is the interval between retries to bind to an address for
+	bindRetryIvl time.Duration
+
 	// counter counts message contexts created with [Proxy.newDNSContext].
 	counter atomic.Uint64
 
@@ -263,13 +270,17 @@ func New(c *Config) (p *Proxy, err error) {
 		p.requestsSema = syncutil.EmptySemaphore{}
 	}
 
-	if p.UpstreamMode == "" {
-		p.UpstreamMode = UpstreamModeLoadBalance
-	} else if p.UpstreamMode == UpstreamModeFastestAddr {
+	p.UpstreamMode = cmp.Or(p.UpstreamMode, UpstreamModeLoadBalance)
+	if p.UpstreamMode == UpstreamModeFastestAddr {
 		p.fastestAddr = fastip.New(&fastip.Config{
 			Logger:          p.Logger,
 			PingWaitTimeout: p.FastestPingTimeout,
 		})
+	}
+
+	if bindRetries := c.BindRetryConfig; bindRetries != nil && bindRetries.Enabled {
+		p.bindRetryNum = bindRetries.Limit
+		p.bindRetryIvl = bindRetries.Interval
 	}
 
 	err = p.setupDNS64()

@@ -26,6 +26,8 @@ func TestWithRetry(t *testing.T) {
 			return errA
 		}
 
+		// Don't protect against concurrent access since the closure is expected
+		// to be used in a single case.
 		returnedA = false
 		badBoth   = func() (err error) {
 			if !returnedA {
@@ -37,6 +39,8 @@ func TestWithRetry(t *testing.T) {
 			return errB
 		}
 
+		// Don't protect against concurrent access since the closure is expected
+		// to be used in a single case.
 		returnedErr = false
 		badThenOk   = func() (err error) {
 			if !returnedErr {

@@ -63,19 +63,18 @@ func (p *Proxy) listenDNSCryptUDP(
 	addrStr := addr.String()
 	p.logger.InfoContext(ctx, "creating dnscrypt udp server socket", "addr", addrStr)
 
-	var udp *net.UDPConn
-	lErr := p.bindWithRetry(ctx, func() (err error) {
-		udp, err = net.ListenUDP(bootstrap.NetworkUDP, addr)
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		conn, listenErr = net.ListenUDP(bootstrap.NetworkUDP, addr)
 
-		return err
+		return listenErr
 	})
-	if lErr != nil {
-		return nil, fmt.Errorf("listening to udp socket: %w", lErr)
+	if err != nil {
+		return nil, fmt.Errorf("listening to udp socket: %w", err)
 	}
 
-	p.logger.InfoContext(ctx, "listening for dnscrypt messages on udp", "addr", udp.LocalAddr())
+	p.logger.InfoContext(ctx, "listening for dnscrypt messages on udp", "addr", conn.LocalAddr())
 
-	return udp, nil
+	return conn, nil
 }
 
 // listenDNSCryptTCP returns a new TCP listener for DNSCrypt listening on addr.
@@ -86,19 +85,18 @@ func (p *Proxy) listenDNSCryptTCP(
 	addrStr := addr.String()
 	p.logger.InfoContext(ctx, "creating dnscrypt tcp server socket", "addr", addrStr)
 
-	var tcp *net.TCPListener
-	lErr := p.bindWithRetry(ctx, func() (err error) {
-		tcp, err = net.ListenTCP(bootstrap.NetworkTCP, addr)
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		conn, listenErr = net.ListenTCP(bootstrap.NetworkTCP, addr)
 
-		return err
+		return listenErr
 	})
-	if lErr != nil {
-		return nil, fmt.Errorf("listening to tcp socket: %w", lErr)
+	if err != nil {
+		return nil, fmt.Errorf("listening to tcp socket: %w", err)
 	}
 
-	p.logger.InfoContext(ctx, "listening for dnscrypt messages on tcp", "addr", tcp.Addr())
+	p.logger.InfoContext(ctx, "listening for dnscrypt messages on tcp", "addr", conn.Addr())
 
-	return tcp, nil
+	return conn, nil
 }
 
 // dnsCryptHandler - dnscrypt.Handler implementation

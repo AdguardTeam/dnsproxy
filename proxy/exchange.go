@@ -34,7 +34,7 @@ func (p *Proxy) exchangeUpstreams(
 
 	if len(ups) == 1 {
 		u = ups[0]
-		resp, _, err = p.exchange(u, req, p.time)
+		resp, _, err = p.exchange(u, req)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -50,7 +50,7 @@ func (p *Proxy) exchangeUpstreams(
 		u = ups[i]
 
 		var elapsed time.Duration
-		resp, elapsed, err = p.exchange(u, req, p.time)
+		resp, elapsed, err = p.exchange(u, req)
 		if err == nil {
 			p.updateRTT(u.Address(), elapsed)
 
@@ -75,13 +75,12 @@ func (p *Proxy) exchangeUpstreams(
 func (p *Proxy) exchange(
 	u upstream.Upstream,
 	req *dns.Msg,
-	c clock,
 ) (resp *dns.Msg, dur time.Duration, err error) {
-	startTime := c.Now()
+	startTime := p.time.Now()
 	resp, err = u.Exchange(req)
 
 	// Don't use [time.Since] because it uses [time.Now].
-	dur = c.Now().Sub(startTime)
+	dur = p.time.Now().Sub(startTime)
 
 	addr := u.Address()
 	q := &req.Question[0]

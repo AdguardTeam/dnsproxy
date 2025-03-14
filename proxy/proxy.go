@@ -25,11 +25,14 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/service"
 	"github.com/AdguardTeam/golibs/syncutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+
+	//lint:ignore SA1019 See TODO for the gonum.org/v1/gonum import in go.mod.
 	"golang.org/x/exp/rand"
 )
 
@@ -77,7 +80,7 @@ type Proxy struct {
 	// time provides the current time.
 	//
 	// TODO(e.burkov):  Consider configuring it.
-	time clock
+	time timeutil.Clock
 
 	// randSrc provides the source of randomness.
 	//
@@ -234,7 +237,7 @@ func New(c *Config) (p *Proxy, err error) {
 			},
 		},
 		udpOOBSize: proxynetutil.UDPGetOOBSize(),
-		time:       realClock{},
+		time:       timeutil.SystemClock{},
 		messages: cmp.Or[MessageConstructor](
 			c.MessageConstructor,
 			dnsmsg.DefaultMessageConstructor{},

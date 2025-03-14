@@ -10,21 +10,14 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil/faketime"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
+
+	//lint:ignore SA1019 See TODO for the gonum.org/v1/gonum import in go.mod.
 	"golang.org/x/exp/rand"
 )
-
-// fakeClock is the function-based implementation of the [clock] interface.
-type fakeClock struct {
-	onNow func() (now time.Time)
-}
-
-// type check
-var _ clock = (*fakeClock)(nil)
-
-// Now implements the [clock] interface for *fakeClock.
-func (c *fakeClock) Now() (now time.Time) { return c.onNow() }
 
 // newUpstreamWithErrorRate returns an [upstream.Upstream] that responds with an
 // error every [rate] requests.  The returned upstream isn't safe for concurrent
@@ -80,15 +73,15 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 	// value until currentNow is modified elsewhere.
 	zeroTime := time.Unix(0, 0)
 	currentNow := zeroTime
-	zeroingClock := &fakeClock{
-		onNow: func() (now time.Time) {
+	zeroingClock := &faketime.Clock{
+		OnNow: func() (now time.Time) {
 			now, currentNow = currentNow, zeroTime
 
 			return now
 		},
 	}
-	constClock := &fakeClock{
-		onNow: func() (now time.Time) {
+	constClock := &faketime.Clock{
+		OnNow: func() (now time.Time) {
 			now, currentNow = currentNow, currentNow.Add(testRTT/50)
 
 			return now
@@ -153,7 +146,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 
 	testCases := []struct {
 		wantStat map[string]int64
-		clock    clock
+		clock    timeutil.Clock
 		name     string
 		servers  []upstream.Upstream
 	}{{

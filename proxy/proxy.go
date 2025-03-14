@@ -179,10 +179,11 @@ type Proxy struct {
 	udpOOBSize int
 
 	// bindRetryNum is the number of retries for binding to an address for
-	// listening.
+	// listening.  Zero means one attempt and no retries.
 	bindRetryNum uint
 
-	// bindRetryIvl is the interval between retries to bind to an address for
+	// bindRetryIvl is the interval between attempts to bind to an address for
+	// listening.
 	bindRetryIvl time.Duration
 
 	// counter counts message contexts created with [Proxy.newDNSContext].
@@ -279,7 +280,7 @@ func New(c *Config) (p *Proxy, err error) {
 	}
 
 	if bindRetries := c.BindRetryConfig; bindRetries != nil && bindRetries.Enabled {
-		p.bindRetryNum = bindRetries.Limit
+		p.bindRetryNum = bindRetries.Count
 		p.bindRetryIvl = bindRetries.Interval
 	}
 

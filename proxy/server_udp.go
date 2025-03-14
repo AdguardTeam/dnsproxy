@@ -38,9 +38,12 @@ func (p *Proxy) listenUDP(ctx context.Context, addr *net.UDPAddr) (conn *net.UDP
 
 	conf := proxynetutil.ListenConfig(p.logger)
 
-	packetConn, err := withRetry(func() (conn net.PacketConn, err error) {
-		return conf.ListenPacket(ctx, bootstrap.NetworkUDP, addrStr)
-	}, p.bindRetryIvl, p.bindRetryNum)
+	var packetConn net.PacketConn
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		packetConn, listenErr = conf.ListenPacket(ctx, bootstrap.NetworkUDP, addrStr)
+
+		return listenErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listening to udp socket: %w", err)
 	}

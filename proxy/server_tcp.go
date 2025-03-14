@@ -40,9 +40,12 @@ func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln *net.TCPLi
 
 	conf := proxynetutil.ListenConfig(p.logger)
 
-	listener, err := withRetry(func() (conn net.Listener, err error) {
-		return conf.Listen(ctx, bootstrap.NetworkTCP, addrStr)
-	}, p.bindRetryIvl, p.bindRetryNum)
+	var listener net.Listener
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		listener, listenErr = conf.Listen(ctx, bootstrap.NetworkTCP, addrStr)
+
+		return listenErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listening to tcp socket: %w", err)
 	}
@@ -66,9 +69,11 @@ func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
 		p.logger.InfoContext(ctx, "creating tls server socket", "addr", addr)
 
 		var tcpListen *net.TCPListener
-		tcpListen, err = withRetry(func() (conn *net.TCPListener, err error) {
-			return net.ListenTCP("tcp", addr)
-		}, p.bindRetryIvl, p.bindRetryNum)
+		err = p.bindWithRetry(ctx, func() (listenErr error) {
+			tcpListen, listenErr = net.ListenTCP("tcp", addr)
+
+			return listenErr
+		})
 		if err != nil {
 			return fmt.Errorf("listening on tls addr %s: %w", addr, err)
 		}

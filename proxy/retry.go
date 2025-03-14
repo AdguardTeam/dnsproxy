@@ -1,10 +1,10 @@
 package proxy
 
 import (
-	"fmt"
+	"context"
 	"time"
 
-	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 )
 
 // BindRetryConfig contains configuration for the listeners binding retry
@@ -13,42 +13,35 @@ type BindRetryConfig struct {
 	// Enabled indicates whether the binding should be retried.
 	Enabled bool
 
-	// Limit is the maximum number of retries, which don't include the first
-	// attempt.
-	Limit uint
+	// Count is the maximum number of retries after the first attempt.
+	Count uint
 
-	// Interval is the minimum time to wait between retries.  It must not be
-	// negative if retrying is enabled.
+	// Interval is the minimum time to wait after the latest failure.  It must
+	// not be negative if Enabled is true.
 	Interval time.Duration
 }
 
-// withRetry calls f until it returns no error or the retries limit is reached,
-// sleeping for ivl between attempts.  retries is the number of attempts after
-// the first one.
-func withRetry[T any](
-	f func() (res T, err error),
-	ivl time.Duration,
-	retries uint,
-) (res T, err error) {
-	res, err = f()
+// bindWithRetry calls f until it returns no error or the retries limit is
+// reached, sleeping for configured interval between attempts.  bindFunc should
+// carry the result of the binding operation itself.
+func (p *Proxy) bindWithRetry(ctx context.Context, bindFunc func() (err error)) (err error) {
+	err = bindFunc()
 	if err == nil {
-		return res, nil
+		return nil
 	}
 
-	errs := []error{
-		fmt.Errorf("attempt 1: %w", err),
-	}
+	p.logger.WarnContext(ctx, "binding", "attempt", 1, slogutil.KeyError, err)
 
-	for attempt := uint(1); attempt <= retries; attempt++ {
-		time.Sleep(ivl)
+	for attempt := uint(1); attempt <= p.bindRetryNum; attempt++ {
+		time.Sleep(p.bindRetryIvl)
 
-		res, err = f()
-		if err == nil {
-			return res, nil
+		retryErr := bindFunc()
+		if retryErr == nil {
+			return nil
 		}
 
-		errs = append(errs, fmt.Errorf("attempt %d: %w", attempt+1, err))
+		p.logger.WarnContext(ctx, "binding", "attempt", attempt+1, slogutil.KeyError, retryErr)
 	}
 
-	return res, errors.Join(errs...)
+	return err
 }

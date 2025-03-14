@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -11,64 +12,79 @@ import (
 func TestWithRetry(t *testing.T) {
 	t.Parallel()
 
-	const goodRes = "good"
-
 	const (
 		errA errors.Error = "error about a"
 		errB errors.Error = "error about b"
 	)
 
 	var (
-		good = func() (res any, err error) {
-			return goodRes, nil
+		good = func() (err error) {
+			return nil
 		}
 
-		badOne = func() (res any, err error) {
-			return nil, errA
+		badOne = func() (err error) {
+			return errA
 		}
 
 		returnedA = false
-		badBoth   = func() (res any, err error) {
+		badBoth   = func() (err error) {
 			if !returnedA {
 				returnedA = true
-				return nil, errA
+
+				return errA
 			}
 
-			return nil, errB
+			return errB
+		}
+
+		returnedErr = false
+		badThenOk   = func() (err error) {
+			if !returnedErr {
+				returnedErr = true
+
+				return assert.AnError
+			}
+
+			return nil
 		}
 	)
 
 	testCases := []struct {
-		name       string
-		f          func() (res any, err error)
-		want       any
-		wantErrMsg string
+		f       func() (err error)
+		wantErr error
+		name    string
 	}{{
-		name:       "no_error",
-		f:          good,
-		want:       goodRes,
-		wantErrMsg: "",
+		f:       good,
+		wantErr: nil,
+		name:    "no_error",
 	}, {
-		name: "one_error",
-		f:    badOne,
-		want: nil,
-		wantErrMsg: "attempt 1: error about a\n" +
-			"attempt 2: error about a",
+		f:       badOne,
+		wantErr: errA,
+		name:    "one_error",
 	}, {
-		name: "two_errors",
-		f:    badBoth,
-		want: nil,
-		wantErrMsg: "attempt 1: error about a\n" +
-			"attempt 2: error about b",
+		f:       badBoth,
+		wantErr: errA,
+		name:    "two_errors",
+	}, {
+		f:       badThenOk,
+		wantErr: nil,
+		name:    "error_then_ok",
 	}}
+
+	p := &Proxy{
+		logger:       slogutil.NewDiscardLogger(),
+		bindRetryNum: 1,
+		bindRetryIvl: 0,
+	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := withRetry(tc.f, 0, 1)
-			assert.Equal(t, tc.want, got)
-			testutil.AssertErrorMsg(t, tc.wantErrMsg, err)
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+			err := p.bindWithRetry(ctx, tc.f)
+			assert.ErrorIs(t, err, tc.wantErr)
 		})
 	}
 }

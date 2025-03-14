@@ -29,9 +29,12 @@ func (p *Proxy) listenHTTP(
 	ctx context.Context,
 	addr *net.TCPAddr,
 ) (ln net.Listener, tcpAddr *net.TCPAddr, err error) {
-	tcpListen, err := withRetry(func() (conn *net.TCPListener, err error) {
-		return net.ListenTCP(bootstrap.NetworkTCP, addr)
-	}, p.bindRetryIvl, p.bindRetryNum)
+	var tcpListen *net.TCPListener
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		tcpListen, listenErr = net.ListenTCP(bootstrap.NetworkTCP, addr)
+
+		return listenErr
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("tcp listener: %w", err)
 	}

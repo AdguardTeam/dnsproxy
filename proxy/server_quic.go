@@ -89,9 +89,11 @@ func (p *Proxy) listenQUIC(
 ) (conn *net.UDPConn, l *quic.EarlyListener, tr *quic.Transport, err error) {
 	p.logger.InfoContext(ctx, "creating quic listener", "addr", addr)
 
-	conn, err = withRetry(func() (conn *net.UDPConn, err error) {
-		return net.ListenUDP(bootstrap.NetworkUDP, addr)
-	}, p.bindRetryIvl, p.bindRetryNum)
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		conn, listenErr = net.ListenUDP(bootstrap.NetworkUDP, addr)
+
+		return listenErr
+	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("listening to udp socket: %w", err)
 	}

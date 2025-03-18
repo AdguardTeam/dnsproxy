@@ -97,6 +97,10 @@ type Config struct {
 	// DNSCrypt server.
 	DNSCryptResolverCert *dnscrypt.Cert
 
+	// BindRetryConfig configures the listeners binding retrying.  If nil,
+	// retries are disabled.
+	BindRetryConfig *BindRetryConfig
+
 	// DNSCryptProviderName is the DNSCrypt provider name.  Required for
 	// DNSCrypt server.
 	DNSCryptProviderName string

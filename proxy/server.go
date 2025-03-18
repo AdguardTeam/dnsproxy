@@ -17,32 +17,32 @@ import (
 
 // configureListeners configures listeners.
 func (p *Proxy) configureListeners(ctx context.Context) (err error) {
-	err = p.createUDPListeners(ctx)
+	err = p.initUDPListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createTCPListeners(ctx)
+	err = p.initTCPListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createTLSListeners()
+	err = p.initTLSListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createHTTPSListeners()
+	err = p.initHTTPSListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createQUICListeners()
+	err = p.initQUICListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createDNSCryptListeners()
+	err = p.initDNSCryptListeners(ctx)
 	if err != nil {
 		return err
 	}

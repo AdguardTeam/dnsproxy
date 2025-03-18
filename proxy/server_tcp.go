@@ -18,46 +18,70 @@ import (
 	"github.com/miekg/dns"
 )
 
-func (p *Proxy) createTCPListeners(ctx context.Context) (err error) {
-	for _, a := range p.TCPListenAddr {
-		p.logger.Info("creating tcp server socket", "addr", a)
-
-		lsnr, lErr := proxynetutil.ListenConfig(p.logger).Listen(
-			ctx,
-			bootstrap.NetworkTCP,
-			a.String(),
-		)
-		if lErr != nil {
-			return fmt.Errorf("listening to tcp socket: %w", lErr)
+// initTCPListeners initializes TCP listeners with configured addresses.
+func (p *Proxy) initTCPListeners(ctx context.Context) (err error) {
+	for _, addr := range p.TCPListenAddr {
+		var ln *net.TCPListener
+		ln, err = p.listenTCP(ctx, addr)
+		if err != nil {
+			return fmt.Errorf("listening on tcp addr %s: %w", addr, err)
 		}
 
-		tcpListener, ok := lsnr.(*net.TCPListener)
-		if !ok {
-			return fmt.Errorf("wrong listener type on tcp addr %s: %T", a, lsnr)
-		}
-
-		p.tcpListen = append(p.tcpListen, tcpListener)
-
-		p.logger.Info("listening to tcp", "addr", tcpListener.Addr())
+		p.tcpListen = append(p.tcpListen, ln)
 	}
 
 	return nil
 }
 
-func (p *Proxy) createTLSListeners() (err error) {
-	for _, a := range p.TLSListenAddr {
-		p.logger.Info("creating tls server socket", "addr", a)
+// listenTCP returns a new TCP listener listening on addr.
+func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln *net.TCPListener, err error) {
+	addrStr := addr.String()
+	p.logger.InfoContext(ctx, "creating tcp server socket", "addr", addrStr)
+
+	conf := proxynetutil.ListenConfig(p.logger)
+
+	var listener net.Listener
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		listener, listenErr = conf.Listen(ctx, bootstrap.NetworkTCP, addrStr)
+
+		return listenErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listening to tcp socket: %w", err)
+	}
+
+	var ok bool
+	ln, ok = listener.(*net.TCPListener)
+	if !ok {
+		// TODO(e.burkov):  Close the listener.
+
+		return nil, fmt.Errorf("bad listener type: %T", listener)
+	}
+
+	p.logger.InfoContext(ctx, "listening to tcp", "addr", ln.Addr())
+
+	return ln, nil
+}
+
+// initTLSListeners initializes TLS listeners with configured addresses.
+func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
+	for _, addr := range p.TLSListenAddr {
+		p.logger.InfoContext(ctx, "creating tls server socket", "addr", addr)
 
 		var tcpListen *net.TCPListener
-		tcpListen, err = net.ListenTCP("tcp", a)
+		err = p.bindWithRetry(ctx, func() (listenErr error) {
+			tcpListen, listenErr = net.ListenTCP("tcp", addr)
+
+			return listenErr
+		})
 		if err != nil {
-			return fmt.Errorf("listening on tls addr %s: %w", a, err)
+			return fmt.Errorf("listening on tls addr %s: %w", addr, err)
 		}
 
 		l := tls.NewListener(tcpListen, p.TLSConfig)
 		p.tlsListen = append(p.tlsListen, l)
 
-		p.logger.Info("listening to tls", "addr", l.Addr())
+		p.logger.InfoContext(ctx, "listening to tls", "addr", l.Addr())
 	}
 
 	return nil

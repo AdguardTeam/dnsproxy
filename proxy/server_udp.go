@@ -16,10 +16,11 @@ import (
 	"github.com/miekg/dns"
 )
 
-func (p *Proxy) createUDPListeners(ctx context.Context) (err error) {
+// initUDPListeners initializes UDP listeners with configured addresses.
+func (p *Proxy) initUDPListeners(ctx context.Context) (err error) {
 	for _, a := range p.UDPListenAddr {
 		var pc *net.UDPConn
-		pc, sErr := p.udpCreate(ctx, a)
+		pc, sErr := p.listenUDP(ctx, a)
 		if sErr != nil {
 			return fmt.Errorf("listening on udp addr %s: %w", a, sErr)
 		}
@@ -30,39 +31,52 @@ func (p *Proxy) createUDPListeners(ctx context.Context) (err error) {
 	return nil
 }
 
-// udpCreate - create a UDP listening socket
-func (p *Proxy) udpCreate(ctx context.Context, udpAddr *net.UDPAddr) (*net.UDPConn, error) {
-	p.logger.InfoContext(ctx, "creating udp server socket", "addr", udpAddr)
+// listenUDP returns a new UDP connection listening on addr.
+func (p *Proxy) listenUDP(ctx context.Context, addr *net.UDPAddr) (conn *net.UDPConn, err error) {
+	addrStr := addr.String()
+	p.logger.InfoContext(ctx, "creating udp server socket", "addr", addrStr)
 
-	packetConn, err := proxynetutil.ListenConfig(p.logger).ListenPacket(
-		ctx,
-		bootstrap.NetworkUDP,
-		udpAddr.String(),
-	)
+	conf := proxynetutil.ListenConfig(p.logger)
+
+	var packetConn net.PacketConn
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		packetConn, listenErr = conf.ListenPacket(ctx, bootstrap.NetworkUDP, addrStr)
+
+		return listenErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listening to udp socket: %w", err)
 	}
 
-	udpListen := packetConn.(*net.UDPConn)
+	// TODO(e.burkov):  Use [errors.WithDeferred] for closing errors.
+
+	var ok bool
+	conn, ok = packetConn.(*net.UDPConn)
+	if !ok {
+		// TODO(e.burkov):  Close the connection.
+
+		return nil, fmt.Errorf("bad conn type: %T(%[1]v)", packetConn)
+	}
+
 	if p.Config.UDPBufferSize > 0 {
-		err = udpListen.SetReadBuffer(p.Config.UDPBufferSize)
+		err = conn.SetReadBuffer(p.Config.UDPBufferSize)
 		if err != nil {
-			_ = udpListen.Close()
+			p.logClose(ctx, slog.LevelDebug, conn, "closing after failed read buffer size setting")
 
 			return nil, fmt.Errorf("setting udp buf size: %w", err)
 		}
 	}
 
-	err = proxynetutil.UDPSetOptions(udpListen)
+	err = proxynetutil.UDPSetOptions(conn)
 	if err != nil {
-		_ = udpListen.Close()
+		p.logClose(ctx, slog.LevelDebug, conn, "closing after failed options setting")
 
 		return nil, fmt.Errorf("setting udp opts: %w", err)
 	}
 
-	p.logger.InfoContext(ctx, "listening to udp", "addr", udpListen.LocalAddr())
+	p.logger.InfoContext(ctx, "listening to udp", "addr", conn.LocalAddr())
 
-	return udpListen, nil
+	return conn, nil
 }
 
 // udpPacketLoop listens for incoming UDP packets.

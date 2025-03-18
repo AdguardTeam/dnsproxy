@@ -25,11 +25,14 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/service"
 	"github.com/AdguardTeam/golibs/syncutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+
+	//lint:ignore SA1019 See TODO for the gonum.org/v1/gonum import in go.mod.
 	"golang.org/x/exp/rand"
 )
 
@@ -77,7 +80,7 @@ type Proxy struct {
 	// time provides the current time.
 	//
 	// TODO(e.burkov):  Consider configuring it.
-	time clock
+	time timeutil.Clock
 
 	// randSrc provides the source of randomness.
 	//
@@ -178,6 +181,14 @@ type Proxy struct {
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int
 
+	// bindRetryNum is the number of retries for binding to an address for
+	// listening.  Zero means one attempt and no retries.
+	bindRetryNum uint
+
+	// bindRetryIvl is the interval between attempts to bind to an address for
+	// listening.
+	bindRetryIvl time.Duration
+
 	// counter counts message contexts created with [Proxy.newDNSContext].
 	counter atomic.Uint64
 
@@ -226,7 +237,7 @@ func New(c *Config) (p *Proxy, err error) {
 			},
 		},
 		udpOOBSize: proxynetutil.UDPGetOOBSize(),
-		time:       realClock{},
+		time:       timeutil.SystemClock{},
 		messages: cmp.Or[MessageConstructor](
 			c.MessageConstructor,
 			dnsmsg.DefaultMessageConstructor{},
@@ -263,13 +274,17 @@ func New(c *Config) (p *Proxy, err error) {
 		p.requestsSema = syncutil.EmptySemaphore{}
 	}
 
-	if p.UpstreamMode == "" {
-		p.UpstreamMode = UpstreamModeLoadBalance
-	} else if p.UpstreamMode == UpstreamModeFastestAddr {
+	p.UpstreamMode = cmp.Or(p.UpstreamMode, UpstreamModeLoadBalance)
+	if p.UpstreamMode == UpstreamModeFastestAddr {
 		p.fastestAddr = fastip.New(&fastip.Config{
 			Logger:          p.Logger,
 			PingWaitTimeout: p.FastestPingTimeout,
 		})
+	}
+
+	if bindRetries := c.BindRetryConfig; bindRetries != nil && bindRetries.Enabled {
+		p.bindRetryNum = bindRetries.Count
+		p.bindRetryIvl = bindRetries.Interval
 	}
 
 	err = p.setupDNS64()
@@ -335,6 +350,14 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 	p.started = true
 
 	return nil
+}
+
+// logClose closes the closer and logs the error at the specified level if it
+// occurs.
+func (p *Proxy) logClose(ctx context.Context, l slog.Level, c io.Closer, msg string, args ...any) {
+	if err := c.Close(); err != nil {
+		p.logger.Log(ctx, l, msg, append(args, slogutil.KeyError, err)...)
+	}
 }
 
 // closeAll closes all closers and appends the occurred errors to errs.

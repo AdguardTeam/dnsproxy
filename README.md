@@ -26,6 +26,11 @@ it can work as a `DNS-over-HTTPS`, `DNS-over-TLS` or `DNS-over-QUIC` server.
 
 ## How to install
 
+For Linux with systemd:
+```
+curl -fsSL https://raw.githubusercontent.com/AdguardTeam/dnsproxy/master/install_dnsproxy.sh | bash -s systemd
+```
+
 There are several options how to install `dnsproxy`.
 
 1. Grab the binary for your device/OS from the [Releases][releases] page.

@@ -529,9 +529,13 @@ func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
 // selectUpstreams returns the upstreams to use for the specified host.  It
 // firstly considers custom upstreams if those aren't empty and then the
 // configured ones.  The returned slice may be empty or nil.
-func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, isPrivate bool) {
+func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, isPrivate bool, isSkipped bool) {
 	q := d.Req.Question[0]
 	host := q.Name
+
+	if p.UpstreamConfig.checkSkipped(host) {
+		return nil, false, true
+	}
 
 	if d.RequestedPrivateRDNS != (netip.Prefix{}) || p.shouldStripDNS64(d.Req) {
 		// Use private upstreams.
@@ -541,7 +545,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 			upstreams = private.getUpstreamsForDomain(host)
 		}
 
-		return upstreams, true
+		return upstreams, true, false
 	}
 
 	getUpstreams := (*UpstreamConfig).getUpstreamsForDomain
@@ -553,12 +557,12 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 		// Try to use custom.
 		upstreams = getUpstreams(custom.upstream, host)
 		if len(upstreams) > 0 {
-			return upstreams, false
+			return upstreams, false, false
 		}
 	}
 
 	// Use configured.
-	return getUpstreams(p.UpstreamConfig, host), false
+	return getUpstreams(p.UpstreamConfig, host), false, false
 }
 
 // replyFromUpstream tries to resolve the request via configured upstream
@@ -566,7 +570,14 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	req := d.Req
 
-	upstreams, isPrivate := p.selectUpstreams(d)
+	upstreams, isPrivate, isSkipped := p.selectUpstreams(d)
+
+	if isSkipped {
+		p.logger.Debug("skipping domain", "domain", d.Req.Question[0].Name)
+		d.Res = p.messages.NewMsgNXDOMAIN(req)
+		return true, nil
+	}
+
 	if len(upstreams) == 0 {
 		d.Res = p.messages.NewMsgNXDOMAIN(req)
 

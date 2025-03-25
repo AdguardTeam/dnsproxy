@@ -928,6 +928,45 @@ func TestRefuseAny(t *testing.T) {
 	assert.Equal(t, dns.RcodeNotImplemented, r.Rcode)
 }
 
+func TestSkippedDomain(t *testing.T) {
+	dnsProxy := mustNew(t, &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr, "[/google.com/]-"),
+		TrustedProxies:         defaultTrustedProxies,
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
+		RefuseAny:              false,
+	})
+
+	// Start listening
+	ctx := context.Background()
+	err := dnsProxy.Start(ctx)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+
+	// Create a DNS-over-UDP client connection
+	addr := dnsProxy.Addr(ProtoUDP)
+	client := &dns.Client{
+		Net:     string(ProtoUDP),
+		Timeout: testTimeout,
+	}
+
+	// Create a DNS request
+	request := (&dns.Msg{
+		MsgHdr: dns.MsgHdr{
+			Id:               dns.Id(),
+			RecursionDesired: true,
+		},
+	}).SetQuestion("google.com.", dns.TypeANY)
+
+	r, _, err := client.Exchange(request, addr.String())
+	require.NoError(t, err)
+
+	assert.Equal(t, dns.RcodeNameError, r.Rcode)
+}
+
 func TestInvalidDNSRequest(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),

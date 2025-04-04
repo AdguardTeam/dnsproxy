@@ -30,17 +30,17 @@ func TestQuicProxy(t *testing.T) {
 
 	conf := &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
 		TLSConfig:              serverConfig,
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
+		TrustedProxies:         DefaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 	}
 
 	var addr *net.UDPAddr
 	t.Run("run", func(t *testing.T) {
-		dnsProxy := mustNew(t, conf)
+		dnsProxy := MustNew(t, conf)
 
 		ctx := context.Background()
 		err := dnsProxy.Start(ctx)
@@ -68,7 +68,7 @@ func TestQuicProxy(t *testing.T) {
 	conf.UpstreamConfig = newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
 
 	t.Run("rerun", func(t *testing.T) {
-		dnsProxy := mustNew(t, conf)
+		dnsProxy := MustNew(t, conf)
 
 		ctx := context.Background()
 		err := dnsProxy.Start(ctx)
@@ -90,14 +90,14 @@ func TestQuicProxy(t *testing.T) {
 
 func TestQuicProxy_largePackets(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := MustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
 		TLSConfig:              serverConfig,
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
+		TrustedProxies:         DefaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		// Make sure the request does not go to any real upstream.

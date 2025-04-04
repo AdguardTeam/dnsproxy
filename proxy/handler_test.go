@@ -19,12 +19,12 @@ func TestFilteringHandler(t *testing.T) {
 	blockResponse := false
 
 	// Prepare the proxy server
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := MustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
+		TrustedProxies:         DefaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		RequestHandler: func(p *Proxy, d *DNSContext) error {
@@ -56,7 +56,7 @@ func TestFilteringHandler(t *testing.T) {
 	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{
 		Net:     string(ProtoUDP),
-		Timeout: testTimeout,
+		Timeout: 2 * testTimeout,
 	}
 
 	// Send the first message (not blocked)

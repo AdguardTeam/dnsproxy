@@ -38,14 +38,14 @@ func TestHttpsProxy(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tlsConf, caPem := newTLSConfig(t)
-			dnsProxy := mustNew(t, &Config{
+			dnsProxy := MustNew(t, &Config{
 				Logger:                 slogutil.NewDiscardLogger(),
-				TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+				HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+				QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
 				TLSConfig:              tlsConf,
 				UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-				TrustedProxies:         defaultTrustedProxies,
+				TrustedProxies:         DefaultTrustedProxies,
 				RatelimitSubnetLenIPv4: 24,
 				RatelimitSubnetLenIPv6: 64,
 				HTTP3:                  tc.http3,
@@ -80,14 +80,14 @@ func TestProxy_trustedProxies(t *testing.T) {
 	doRequest := func(t *testing.T, addr, expectedClientIP netip.Addr) {
 		// Prepare the proxy server.
 		tlsConf, caPem := newTLSConfig(t)
-		dnsProxy := mustNew(t, &Config{
+		dnsProxy := MustNew(t, &Config{
 			Logger:                 slogutil.NewDiscardLogger(),
-			TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+			TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+			HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+			QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
 			TLSConfig:              tlsConf,
 			UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-			TrustedProxies:         defaultTrustedProxies,
+			TrustedProxies:         DefaultTrustedProxies,
 			RatelimitSubnetLenIPv4: 24,
 			RatelimitSubnetLenIPv6: 64,
 		})

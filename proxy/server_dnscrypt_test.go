@@ -40,7 +40,7 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 	assert.NoError(t, err)
 
 	port := getFreePort()
-	p := mustNew(t, &Config{
+	p := MustNew(t, &Config{
 		Logger: slogutil.NewDiscardLogger(),
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{
 			Port: int(port), IP: net.ParseIP(listenIP),
@@ -49,7 +49,7 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 			Port: int(port), IP: net.ParseIP(listenIP),
 		}},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
+		TrustedProxies:         DefaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		EnableEDNSClientSubnet: true,

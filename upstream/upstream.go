@@ -386,8 +386,7 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
 		l = slog.Default()
 	}
 
-	// TODO(e.burkov):  Add netutil.IsValidIPPortString.
-	if _, err := netip.ParseAddrPort(u.Host); err == nil {
+	if netutil.IsValidIPPortString(u.Host) {
 		// Don't resolve the address of the server since it's already an IP.
 		handler := bootstrap.NewDialContext(opts.Timeout, l, u.Host)
 

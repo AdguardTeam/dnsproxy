@@ -39,10 +39,10 @@ func TestDNS64Race(t *testing.T) {
 		OnClose:    func() (err error) { return nil },
 	}
 
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:         slogutil.NewDiscardLogger(),
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{ups},
@@ -50,7 +50,7 @@ func TestDNS64Race(t *testing.T) {
 		PrivateRDNSUpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{localUps},
 		},
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 
@@ -357,17 +357,17 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := MustNew(t, &Config{
+			p := mustNew(t, &Config{
 				Logger:        slogutil.NewDiscardLogger(),
-				UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-				TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+				UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 				UpstreamConfig: &UpstreamConfig{
 					Upstreams: []upstream.Upstream{newUps(tc.upsAns)},
 				},
 				PrivateRDNSUpstreamConfig: &UpstreamConfig{
 					Upstreams: []upstream.Upstream{localUps},
 				},
-				TrustedProxies:         DefaultTrustedProxies,
+				TrustedProxies:         defaultTrustedProxies,
 				RatelimitSubnetLenIPv4: 24,
 				RatelimitSubnetLenIPv6: 64,
 				CacheEnabled:           true,

@@ -53,9 +53,9 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 	errorRequest.Id = errorID
 	errorResponse := (&dns.Msg{}).SetReply(errorRequest)
 
-	p := MustNew(t, &Config{
+	p := mustNew(t, &Config{
 		Logger:        slogutil.NewDiscardLogger(),
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{&dnsproxytest.FakeUpstream{
 				OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
@@ -65,7 +65,7 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 				OnClose:   func() (err error) { return nil },
 			}},
 		},
-		TrustedProxies: DefaultTrustedProxies,
+		TrustedProxies: defaultTrustedProxies,
 		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		BeforeRequestHandler: &testBeforeRequestHandler{
 			onHandleBefore: func(p *Proxy, dctx *DNSContext) (err error) {

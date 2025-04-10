@@ -26,14 +26,14 @@ func TestTcpProxy(t *testing.T) {
 
 func TestTlsProxy(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
-		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
+		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TLSConfig:              serverConfig,
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 	})

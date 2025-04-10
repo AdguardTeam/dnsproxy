@@ -46,67 +46,105 @@ make build
 ## Usage
 
 ```none
-Usage:
-  dnsproxy [OPTIONS]
-
-Application Options:
-      --config-path=               yaml configuration file. Minimal working configuration in config.yaml.dist. Options passed through command
-                                   line will override the ones from this file.
-  -o, --output=                    Path to the log file. If not set, write to stdout.
-  -c, --tls-crt=                   Path to a file with the certificate chain
-  -k, --tls-key=                   Path to a file with the private key
-      --https-server-name=         Set the Server header for the responses from the HTTPS server. (default: dnsproxy)
-      --https-userinfo=            If set, all DoH queries are required to have this basic authentication information.
-  -g, --dnscrypt-config=           Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt
-      --edns-addr=                 Send EDNS Client Address
-      --upstream-mode=             Defines the upstreams logic mode, possible values: load_balance, parallel, fastest_addr (default:
-                                   load_balance)
-  -l, --listen=                    Listening addresses
-  -p, --port=                      Listening ports. Zero value disables TCP and UDP listeners
-  -s, --https-port=                Listening ports for DNS-over-HTTPS
-  -t, --tls-port=                  Listening ports for DNS-over-TLS
-  -q, --quic-port=                 Listening ports for DNS-over-QUIC
-  -y, --dnscrypt-port=             Listening ports for DNSCrypt
-  -u, --upstream=                  An upstream to be used (can be specified multiple times). You can also specify path to a file with the
-                                   list of servers
-  -b, --bootstrap=                 Bootstrap DNS for DoH and DoT, can be specified multiple times (default: use system-provided)
-  -f, --fallback=                  Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also
-                                   specify path to a file with the list of servers
-      --private-rdns-upstream=     Private DNS upstreams to use for reverse DNS lookups of private addresses, can be specified multiple times
-      --dns64-prefix=              Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be
-                                   specified multiple times
-      --private-subnets=           Private subnets to use for reverse DNS lookups of private addresses
-      --bogus-nxdomain=            Transform the responses containing at least a single IP that matches specified addresses and CIDRs into
-                                   NXDOMAIN.  Can be specified multiple times.
-      --hosts-files=               List of paths to the hosts files, can be specified multiple times
-      --timeout=                   Timeout for outbound DNS queries to remote upstream servers in a human-readable form (default: 10s)
-      --cache-min-ttl=             Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be
-                                   done with careful consideration.
-      --cache-max-ttl=             Maximum TTL value for DNS entries, in seconds.
-      --cache-size=                Cache size (in bytes). Default: 64k
-  -r, --ratelimit=                 Ratelimit (requests per second)
-      --ratelimit-subnet-len-ipv4= Ratelimit subnet length for IPv4. (default: 24)
-      --ratelimit-subnet-len-ipv6= Ratelimit subnet length for IPv6. (default: 56)
-      --udp-buf-size=              Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
-      --max-go-routines=           Set the maximum number of go routines. A zero value will not not set a maximum.
-      --tls-min-version=           Minimum TLS version, for example 1.0
-      --tls-max-version=           Maximum TLS version, for example 1.3
-      --pprof                      If present, exposes pprof information on localhost:6060.
-      --version                    Prints the program version
-  -v, --verbose                    Verbose output (optional)
-      --insecure                   Disable secure TLS certificate validation
-      --ipv6-disabled              If specified, all AAAA requests will be replied with NoError RCode and empty answer
-      --http3                      Enable HTTP/3 support
-      --cache-optimistic           If specified, optimistic DNS cache is enabled
-      --cache                      If specified, DNS cache is enabled
-      --refuse-any                 If specified, refuse ANY requests
-      --edns                       Use EDNS Client Subnet extension
-      --dns64                      If specified, dnsproxy will act as a DNS64 server
-      --use-private-rdns           If specified, use private upstreams for reverse DNS lookups of private addresses
-      --hosts-file-enabled=        If specified, use hosts files for resolving (default: true)
-
-Help Options:
-  -h, --help                       Show this help message
+Usage of ./dnsproxy:
+  --bogus-nxdomain=subnet
+        Transform the responses containing at least a single IP that matches specified addresses and CIDRs into NXDOMAIN.  Can be specified multiple times.
+  --bootstrap/-b
+        Bootstrap DNS for DoH and DoT, can be specified multiple times (default: use system-provided).
+  --cache
+        If specified, DNS cache is enabled.
+  --cache-max-ttl=uint32
+        Maximum TTL value for DNS entries, in seconds.
+  --cache-min-ttl=uint32
+        Minimum TTL value for DNS entries, in seconds. Capped at 3600. Artificially extending TTLs should only be done with careful consideration.
+  --cache-optimistic
+        If specified, optimistic DNS cache is enabled.
+  --cache-size=int
+        Cache size (in bytes). Default: 64k.
+  --config-path=path
+        YAML configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
+  --dns64
+        If specified, dnsproxy will act as a DNS64 server.
+  --dns64-prefix=subnet
+        Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times.
+  --dnscrypt-config=path/-g path
+        Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt.
+  --dnscrypt-port=port/-y port
+        Listening ports for DNSCrypt.
+  --edns
+        Use EDNS Client Subnet extension.
+  --edns-addr=address
+        Send EDNS Client Address.
+  --fallback/-f
+        Fallback resolvers to use when regular ones are unavailable, can be specified multiple times. You can also specify path to a file with the list of servers.
+  --help/-h
+        Print this help message and quit.
+  --hosts-file-enabled
+        If specified, use hosts files for resolving.
+  --hosts-files=path
+        List of paths to the hosts files, can be specified multiple times.
+  --http3
+        Enable HTTP/3 support.
+  --https-port=port/-s port
+        Listening ports for DNS-over-HTTPS.
+  --https-server-name=name
+        Set the Server header for the responses from the HTTPS server.
+  --https-userinfo=name
+        If set, all DoH queries are required to have this basic authentication information.
+  --insecure
+        Disable secure TLS certificate validation.
+  --ipv6-disabled
+        If specified, all AAAA requests will be replied with NoError RCode and empty answer.
+  --listen=address/-l address
+        Listening addresses.
+  --max-go-routines=uint
+        Set the maximum number of go routines. A zero value will not not set a maximum.
+  --output=path/-o path
+        Path to the log file.
+  --pending-requests-enabled
+        If specified, the server will track duplicate queries and only send the first of them to the upstream server, propagating its result to others. Disabling it introduces a vulnerability to cache poisoning attacks.
+  --port=port/-p port
+        Listening ports. Zero value disables TCP and UDP listeners.
+  --pprof
+        If present, exposes pprof information on localhost:6060.
+  --private-rdns-upstream
+        Private DNS upstreams to use for reverse DNS lookups of private addresses, can be specified multiple times.
+  --private-subnets=subnet
+        Private subnets to use for reverse DNS lookups of private addresses.
+  --quic-port=port/-q port
+        Listening ports for DNS-over-QUIC.
+  --ratelimit=int/-r int
+        Ratelimit (requests per second).
+  --ratelimit-subnet-len-ipv4=int
+        Ratelimit subnet length for IPv4.
+  --ratelimit-subnet-len-ipv6=int
+        Ratelimit subnet length for IPv6.
+  --refuse-any
+        If specified, refuses ANY requests.
+  --timeout=duration
+        Timeout for outbound DNS queries to remote upstream servers in a human-readable form
+  --tls-crt=path/-c path
+        Path to a file with the certificate chain.
+  --tls-key=path/-k path
+        Path to a file with the private key.
+  --tls-max-version=version
+        Maximum TLS version, for example 1.3.
+  --tls-min-version=version
+        Minimum TLS version, for example 1.0.
+  --tls-port=port/-t port
+        Listening ports for DNS-over-TLS.
+  --udp-buf-size=int
+        Set the size of the UDP buffer in bytes. A value <= 0 will use the system default.
+  --upstream/-u
+        An upstream to be used (can be specified multiple times). You can also specify path to a file with the list of servers.
+  --upstream-mode=mode
+        Defines the upstreams logic mode, possible values: load_balance, parallel, fastest_addr (default: load_balance).
+  --use-private-rdns
+        If specified, use private upstreams for reverse DNS lookups of private addresses.
+  --verbose/-v
+        Verbose output.
+  --version
+        Prints the program version.
 ```
 
 ## Examples

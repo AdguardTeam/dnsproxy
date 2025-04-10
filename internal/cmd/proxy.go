@@ -80,6 +80,7 @@ func createProxyConfig(
 		UsePrivateRDNS:         conf.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		RequestHandler:         reqHdlr.HandleRequest,
+		PendingRequests:        proxy.EmptyPendingRequests{},
 	}
 
 	if uiStr := conf.HTTPSUserinfo; uiStr != "" {
@@ -89,6 +90,10 @@ func createProxyConfig(
 		} else {
 			proxyConf.Userinfo = url.User(user)
 		}
+	}
+
+	if conf.PendingRequestsEnabled {
+		proxyConf.PendingRequests = proxy.NewDefaultPendingRequests()
 	}
 
 	conf.initBogusNXDomain(ctx, l, proxyConf)

@@ -40,29 +40,24 @@ const (
 	testTimeout = 500 * time.Millisecond
 )
 
-// DefaultCacheSize is the default cache size in bytes exported for tests.
+// localhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
 //
 // TODO(e.burkov):  Move into the proxytest package.
-const DefaultCacheSize = defaultCacheSize
+var localhostAnyPort = netip.MustParseAddrPort(netutil.JoinHostPort(listenIP, 0))
 
-// LocalhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
-//
-// TODO(e.burkov):  Move into the proxytest package.
-var LocalhostAnyPort = netip.MustParseAddrPort(netutil.JoinHostPort(listenIP, 0))
-
-// DefaultTrustedProxies is a set of trusted proxies that includes all possible
+// defaultTrustedProxies is a set of trusted proxies that includes all possible
 // IP addresses.
 //
 // TODO(e.burkov):  Move into the proxytest package.
-var DefaultTrustedProxies netutil.SubnetSet = netutil.SliceSubnetSet{
+var defaultTrustedProxies netutil.SubnetSet = netutil.SliceSubnetSet{
 	netip.MustParsePrefix("0.0.0.0/0"),
 	netip.MustParsePrefix("::0/0"),
 }
 
-// MustNew wraps [New] function failing the test on error.
+// mustNew wraps [New] function failing the test on error.
 //
 // TODO(e.burkov):  Move into the proxytest package.
-func MustNew(t *testing.T, conf *Config) (p *Proxy) {
+func mustNew(t *testing.T, conf *Config) (p *Proxy) {
 	t.Helper()
 
 	p, err := New(conf)
@@ -272,12 +267,12 @@ func newTestUpstreamConfig(
 func mustStartDefaultProxy(t *testing.T) (p *Proxy) {
 	t.Helper()
 
-	p = MustNew(t, &Config{
+	p = mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 	})
@@ -300,12 +295,12 @@ func TestProxyRace(t *testing.T) {
 		testDefaultUpstreamAddr,
 		testDefaultUpstreamAddr,
 	)
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         upsConf,
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 	})
@@ -500,12 +495,12 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	p := MustNew(t, &Config{
+	p := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		CacheEnabled:           true,
@@ -597,10 +592,10 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 func TestExchangeWithReservedDomains(t *testing.T) {
 	t.Parallel()
 
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:        slogutil.NewDiscardLogger(),
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfigWithBoot(
 			t,
 			testTimeout,
@@ -609,7 +604,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 			"[/maps.google.ru/]#",
 			"1.1.1.1",
 		),
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 	})
@@ -667,10 +662,10 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 func TestOneByOneUpstreamsExchange(t *testing.T) {
 	t.Parallel()
 
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:        slogutil.NewDiscardLogger(),
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfigWithBoot(
 			t,
 			testTimeout,
@@ -678,7 +673,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 			"tls://fake-dns.com",
 			"1.1.1.1",
 		),
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		Fallbacks:              newTestUpstreamConfig(t, testTimeout, "1.2.3.4:567"),
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
@@ -761,10 +756,10 @@ func TestFallback(t *testing.T) {
 		Host:   newLocalUpstreamListener(t, 0, failHandler).String(),
 	}).String()
 
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:        slogutil.NewDiscardLogger(),
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfig(
 			t,
 			testTimeout,
@@ -773,7 +768,7 @@ func TestFallback(t *testing.T) {
 			// almost.failing.example will fall here first.
 			"[/failing.example/]"+failAddr,
 		),
-		TrustedProxies: DefaultTrustedProxies,
+		TrustedProxies: defaultTrustedProxies,
 		Fallbacks: newTestUpstreamConfig(
 			t,
 			testTimeout,
@@ -859,12 +854,12 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:         slogutil.NewDiscardLogger(),
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: upsConf,
-		TrustedProxies: DefaultTrustedProxies,
+		TrustedProxies: defaultTrustedProxies,
 		Fallbacks: newTestUpstreamConfig(
 			t,
 			testTimeout,
@@ -901,12 +896,12 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 }
 
 func TestRefuseAny(t *testing.T) {
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		RefuseAny:              true,
@@ -940,12 +935,12 @@ func TestRefuseAny(t *testing.T) {
 }
 
 func TestInvalidDNSRequest(t *testing.T) {
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		RefuseAny:              true,
@@ -1091,12 +1086,12 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 }
 
 func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
-	prx := MustNew(t, &Config{
+	prx := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		CacheEnabled:           true,
@@ -1223,14 +1218,14 @@ func TestECSProxy(t *testing.T) {
 		ecsIP: ip1230,
 	}
 
-	prx := MustNew(t, &Config{
+	prx := mustNew(t, &Config{
 		Logger:        slogutil.NewDiscardLogger(),
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{u},
 		},
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		EnableEDNSClientSubnet: true,
@@ -1333,12 +1328,12 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 		ecsIP: clientIP,
 	}
 
-	prx := MustNew(t, &Config{
+	prx := mustNew(t, &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-		TrustedProxies:         DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
 		EnableEDNSClientSubnet: true,
@@ -1547,9 +1542,9 @@ func TestProxy_HandleDNSRequest_private(t *testing.T) {
 		return nxdomainResp
 	}
 
-	p := MustNew(t, &Config{
+	p := mustNew(t, &Config{
 		Logger:        slogutil.NewDiscardLogger(),
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(LocalhostAnyPort)},
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{generalUps},
 		},

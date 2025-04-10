@@ -698,13 +698,16 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	// desired result for user specifying CD flag.
 	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
-		// TODO(e.burkov):  !! perhaps earlier
+		// Only add pending requests if the cache is enabled, since this is a
+		// mitigation against cache poisoning.
+		//
+		// TODO(e.burkov):  Consider tracking all requests.
 		var exists bool
-		exists, err = p.pendingRequests.Queue(ctx, dctx)
+		exists, err = p.pendingRequests.queue(ctx, dctx)
 		if exists {
 			return err
 		}
-		defer func() { p.pendingRequests.Done(ctx, dctx, err) }()
+		defer func() { p.pendingRequests.done(ctx, dctx, err) }()
 
 		if p.replyFromCache(dctx) {
 			// Complete the response from cache.

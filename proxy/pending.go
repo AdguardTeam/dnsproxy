@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/AdguardTeam/golibs/errors"
 )
 
 // PendingRequests handles identical requests that are in progress.  It is used
@@ -12,32 +14,27 @@ import (
 //   - [DefaultPendingRequests].
 //   - [EmptyPendingRequests].
 type PendingRequests interface {
-	// Queue is called for each request.  It returns false if there are no
+	// queue is called for each request.  It returns false if there are no
 	// identical requests in progress.  Otherwise it blocks until the first
 	// request is completed and returns the error that occurred during its
 	// resolution.
-	Queue(ctx context.Context, dctx *DNSContext) (exists bool, err error)
+	queue(ctx context.Context, dctx *DNSContext) (exists bool, err error)
 
-	// Done must be called after the request is completed, if queue returned
+	// done must be called after the request is completed, if queue returned
 	// false for it.
-	Done(ctx context.Context, dctx *DNSContext, err error)
+	done(ctx context.Context, dctx *DNSContext, err error)
 }
-
-// TODO(e.burkov):  !! doc
-
-// type check
-var _ PendingRequests = (*DefaultPendingRequests)(nil)
 
 // DefaultPendingRequests is a default implementation of the [PendingRequests]
-// interface.
+// interface.  It must be created with [NewDefaultPendingRequests].
 type DefaultPendingRequests struct {
 	storage *sync.Map
-
-	// TODO(e.burkov):  !! add logger
 }
 
-// pendingRequest is a structure that stores the request and response results.
+// pendingRequest is a structure that stores the query state and result.
 type pendingRequest struct {
+	// finish is a channel that is closed when the request is completed.  It is
+	// used to block request processing for any but the first one.
 	finish chan struct{}
 
 	// resolveErr is the error that occurred during the request processing.  It
@@ -46,8 +43,8 @@ type pendingRequest struct {
 	resolveErr error
 
 	// cloneCtx is a clone of the DNSContext that was used to create the
-	// pendingRequest.  It is used to store the response message.  It must only
-	// be accessed for reading after the finish channel is closed.
+	// pendingRequest and store its result.  It must only be accessed for
+	// reading after the finish channel is closed.
 	cloneCtx *DNSContext
 }
 
@@ -58,9 +55,15 @@ func NewDefaultPendingRequests() (pr *DefaultPendingRequests) {
 	}
 }
 
-// Queue implements the [PendingRequests] interface for
+// type check
+var _ PendingRequests = (*DefaultPendingRequests)(nil)
+
+// queue implements the [PendingRequests] interface for
 // [DefaultPendingRequests].
-func (pr *DefaultPendingRequests) Queue(ctx context.Context, dctx *DNSContext) (exists bool, err error) {
+func (pr *DefaultPendingRequests) queue(
+	ctx context.Context,
+	dctx *DNSContext,
+) (exists bool, err error) {
 	var key []byte
 	if dctx.ReqECS != nil {
 		ones, _ := dctx.ReqECS.Mask.Size()
@@ -79,8 +82,12 @@ func (pr *DefaultPendingRequests) Queue(ctx context.Context, dctx *DNSContext) (
 		<-pending.finish
 
 		if pending.cloneCtx != nil {
-			dctx.Res = pending.cloneCtx.Res.Copy()
-			dctx.Res.Id = dctx.Req.Id
+			// TODO(e.burkov):  Add cloner for DNS messages.
+			dctx.Res = pending.cloneCtx.Res.Copy().SetReply(dctx.Req)
+			dctx.Upstream = pending.cloneCtx.Upstream
+
+			// TODO(a.garipov):  !! Decide how to treat query durations.
+			dctx.queryStatistics = pending.cloneCtx.queryStatistics
 		}
 
 		return exists, pending.resolveErr
@@ -89,8 +96,8 @@ func (pr *DefaultPendingRequests) Queue(ctx context.Context, dctx *DNSContext) (
 	return false, nil
 }
 
-// Done implements the [PendingRequests] interface for [DefaultPendingRequests].
-func (pr *DefaultPendingRequests) Done(ctx context.Context, dctx *DNSContext, err error) {
+// done implements the [PendingRequests] interface for [DefaultPendingRequests].
+func (pr *DefaultPendingRequests) done(ctx context.Context, dctx *DNSContext, err error) {
 	var key []byte
 	if dctx.ReqECS != nil {
 		ones, _ := dctx.ReqECS.Mask.Size()
@@ -101,18 +108,20 @@ func (pr *DefaultPendingRequests) Done(ctx context.Context, dctx *DNSContext, er
 
 	pendingVal, ok := pr.storage.Load(string(key))
 	if !ok {
-		// TODO(e.burkov):  !! debug log
-		panic(fmt.Errorf("pending request not found for key %x", key))
+		panic(fmt.Errorf("loading pending request: key %x: %w", key, errors.ErrNoValue))
 	}
 
 	pending := pendingVal.(*pendingRequest)
 	pending.resolveErr = err
+
+	cloneCtx := &DNSContext{}
 	if dctx.Res != nil {
-		// TODO(e.burkov):  !! clone properly
-		pending.cloneCtx = &DNSContext{
-			Res: dctx.Res.Copy(),
-		}
+		cloneCtx.Res = dctx.Res.Copy()
+		cloneCtx.Upstream = dctx.Upstream
+		cloneCtx.queryStatistics = dctx.queryStatistics
 	}
+
+	pending.cloneCtx = cloneCtx
 
 	pr.storage.Delete(string(key))
 	close(pending.finish)
@@ -125,11 +134,11 @@ type EmptyPendingRequests struct{}
 // type check
 var _ PendingRequests = EmptyPendingRequests{}
 
-// Queue implements the [PendingRequests] interface for [EmptyPendingRequests].
+// queue implements the [PendingRequests] interface for [EmptyPendingRequests].
 // It always returns false and does not block.
-func (EmptyPendingRequests) Queue(_ context.Context, _ *DNSContext) (exists bool, err error) {
+func (EmptyPendingRequests) queue(_ context.Context, _ *DNSContext) (exists bool, err error) {
 	return false, nil
 }
 
-// Done implements the [PendingRequests] interface for [EmptyPendingRequests].
-func (EmptyPendingRequests) Done(_ context.Context, _ *DNSContext, _ error) {}
+// done implements the [PendingRequests] interface for [EmptyPendingRequests].
+func (EmptyPendingRequests) done(_ context.Context, _ *DNSContext, _ error) {}

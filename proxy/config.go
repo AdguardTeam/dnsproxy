@@ -59,8 +59,9 @@ type Config struct {
 	MessageConstructor MessageConstructor
 
 	// PendingRequests limits the number of identical requests sent to the
-	// upstream server.  If nil, the default implementation will be used.  See
-	// [PendingRequests] for all available implementations.
+	// upstream server.  If nil, the default implementation will be used.  Use:
+	//  - [DefaultPendingRequests] to enable the pending requests feature.
+	//  - [EmptyPendingRequests] to disable the pending requests feature.
 	PendingRequests PendingRequests
 
 	// BeforeRequestHandler is an optional custom handler called before each DNS

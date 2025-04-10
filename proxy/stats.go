@@ -57,6 +57,8 @@ func upstreamsWithStats(upstreams []upstream.Upstream) (wrapped []upstream.Upstr
 
 // QueryStatistics contains the DNS query statistics for both the upstream and
 // fallback DNS servers.
+//
+// TODO(e.burkov):  Consider adding Clone method.
 type QueryStatistics struct {
 	main     []*UpstreamStatistics
 	fallback []*UpstreamStatistics

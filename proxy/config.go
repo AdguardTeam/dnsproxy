@@ -58,10 +58,12 @@ type Config struct {
 	// constructor will be used.
 	MessageConstructor MessageConstructor
 
-	// PendingRequests limits the number of identical requests sent to the
-	// upstream server.  If nil, the default implementation will be used.  Use:
-	//  - [DefaultPendingRequests] to enable the pending requests feature.
-	//  - [EmptyPendingRequests] to disable the pending requests feature.
+	// PendingRequests is used to mitigate the cache poisoning attacks by
+	// tracking identical requests and returning the same response for them,
+	// peforming a single lookup.  If nil, the default implementation will be
+	// used.  Use:
+	//  - [DefaultPendingRequests] to enable pending identical requests.
+	//  - [EmptyPendingRequests] to disable pending identical requests.
 	PendingRequests PendingRequests
 
 	// BeforeRequestHandler is an optional custom handler called before each DNS

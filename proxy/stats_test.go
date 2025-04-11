@@ -17,10 +17,6 @@ import (
 )
 
 func TestCollectQueryStats(t *testing.T) {
-	const (
-		listenIP = "127.0.0.1"
-	)
-
 	var (
 		testReq = &dns.Msg{
 			Question: []dns.Question{{
@@ -34,8 +30,6 @@ func TestCollectQueryStats(t *testing.T) {
 			netip.MustParsePrefix("0.0.0.0/0"),
 			netip.MustParsePrefix("::0/0"),
 		}
-
-		localhostAnyPort = netip.MustParseAddrPort(netutil.JoinHostPort(listenIP, 0))
 	)
 
 	ups := &dnsproxytest.FakeUpstream{

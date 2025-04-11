@@ -74,12 +74,14 @@ func cachedQueryStatistics(addr string) (s *QueryStatistics) {
 	}
 }
 
-// Main returns the DNS query statistics for the upstream DNS servers.
+// Main returns the DNS query statistics for the upstream DNS servers.  us and
+// its items must not be modified.
 func (s *QueryStatistics) Main() (us []*UpstreamStatistics) {
 	return s.main
 }
 
-// Fallback returns the DNS query statistics for the fallback DNS servers.
+// Fallback returns the DNS query statistics for the fallback DNS servers. us
+// and its items must not be modified.
 func (s *QueryStatistics) Fallback() (us []*UpstreamStatistics) {
 	return s.fallback
 }

@@ -693,9 +693,6 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 
 	dctx.calcFlagsAndSize()
 
-	// Also don't lookup the cache for responses with DNSSEC checking disabled
-	// since only validated responses are cached and those may be not the
-	// desired result for user specifying CD flag.
 	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
 		// Only add pending requests if the cache is enabled, since this is a
@@ -771,6 +768,9 @@ func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 		// TODO(e.burkov):  It probably should be decided after resolve.
 		reason = "custom upstreams cache is not configured"
 	case dctx.Req.CheckingDisabled:
+		// Also don't lookup the cache for responses with DNSSEC checking
+		// disabled since only validated responses are cached and those may be
+		// not the desired result for user specifying CD flag.
 		reason = "dnssec check disabled"
 	default:
 		return true

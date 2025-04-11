@@ -181,8 +181,8 @@ type configuration struct {
 	EnableEDNSSubnet bool `yaml:"edns"`
 
 	// PendingRequestsEnabled controls whether the server should track duplicate
-	// queries and only send the first of them to the upstream server.  It used
-	// to mitigate the cache poisoning attacks.
+	// queries and only send the first of them to the upstream server.  It is
+	// used to mitigate the cache poisoning attacks.
 	PendingRequestsEnabled bool `yaml:"pending-requests-enabled"`
 
 	// DNS64 defines whether DNS64 functionality is enabled or not.

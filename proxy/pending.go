@@ -42,10 +42,10 @@ type pendingRequest struct {
 	// channel is closed.
 	resolveErr error
 
-	// cloneCtx is a clone of the DNSContext that was used to create the
+	// cloneDNSCtx is a clone of the DNSContext that was used to create the
 	// pendingRequest and store its result.  It must only be accessed for
 	// reading after the finish channel is closed.
-	cloneCtx *DNSContext
+	cloneDNSCtx *DNSContext
 }
 
 // NewDefaultPendingRequests creates a new instance of DefaultPendingRequests.
@@ -77,23 +77,25 @@ func (pr *DefaultPendingRequests) queue(
 	}
 
 	pendingVal, exists := pr.storage.LoadOrStore(string(key), req)
-	if exists {
-		pending := pendingVal.(*pendingRequest)
-		<-pending.finish
-
-		if pending.cloneCtx != nil {
-			// TODO(e.burkov):  Add cloner for DNS messages.
-			dctx.Res = pending.cloneCtx.Res.Copy().SetReply(dctx.Req)
-			dctx.Upstream = pending.cloneCtx.Upstream
-
-			// TODO(a.garipov):  !! Decide how to treat query durations.
-			dctx.queryStatistics = pending.cloneCtx.queryStatistics
-		}
-
-		return exists, pending.resolveErr
+	if !exists {
+		return false, nil
 	}
 
-	return false, nil
+	pending := pendingVal.(*pendingRequest)
+	<-pending.finish
+
+	origDNSCtx := pending.cloneDNSCtx
+
+	// TODO(a.garipov):  Perhaps, statistics should be calculated separately for
+	// each request.
+	dctx.queryStatistics = origDNSCtx.queryStatistics
+	dctx.Upstream = origDNSCtx.Upstream
+	if origDNSCtx.Res != nil {
+		// TODO(e.burkov):  Add cloner for DNS messages.
+		dctx.Res = origDNSCtx.Res.Copy().SetReply(dctx.Req)
+	}
+
+	return exists, pending.resolveErr
 }
 
 // done implements the [PendingRequests] interface for [DefaultPendingRequests].
@@ -114,14 +116,16 @@ func (pr *DefaultPendingRequests) done(ctx context.Context, dctx *DNSContext, er
 	pending := pendingVal.(*pendingRequest)
 	pending.resolveErr = err
 
-	cloneCtx := &DNSContext{}
-	if dctx.Res != nil {
-		cloneCtx.Res = dctx.Res.Copy()
-		cloneCtx.Upstream = dctx.Upstream
-		cloneCtx.queryStatistics = dctx.queryStatistics
+	cloneCtx := &DNSContext{
+		Upstream:        dctx.Upstream,
+		queryStatistics: dctx.queryStatistics,
 	}
 
-	pending.cloneCtx = cloneCtx
+	if dctx.Res != nil {
+		cloneCtx.Res = dctx.Res.Copy()
+	}
+
+	pending.cloneDNSCtx = cloneCtx
 
 	pr.storage.Delete(string(key))
 	close(pending.finish)

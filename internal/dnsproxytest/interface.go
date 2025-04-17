@@ -4,7 +4,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-// FakeUpstream is a fake [Upstream] implementation for tests.
+// FakeUpstream is a fake [proxy.Upstream] implementation for tests.
 //
 // TODO(e.burkov):  Move this to the golibs some time later.
 type FakeUpstream struct {
@@ -13,22 +13,22 @@ type FakeUpstream struct {
 	OnClose    func() (err error)
 }
 
-// Address implements the [Upstream] interface for *FakeUpstream.
+// Address implements the [proxy.Upstream] interface for *FakeUpstream.
 func (u *FakeUpstream) Address() (addr string) {
 	return u.OnAddress()
 }
 
-// Exchange implements the [Upstream] interface for *FakeUpstream.
+// Exchange implements the [proxy.Upstream] interface for *FakeUpstream.
 func (u *FakeUpstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	return u.OnExchange(req)
 }
 
-// Close implements the [Upstream] interface for *FakeUpstream.
+// Close implements the [proxy.Upstream] interface for *FakeUpstream.
 func (u *FakeUpstream) Close() (err error) {
 	return u.OnClose()
 }
 
-// TestMessageConstructor is a fake [dnsmsg.MessageConstructor] implementation
+// TestMessageConstructor is a fake [proxy.MessageConstructor] implementation
 // for tests.
 type TestMessageConstructor struct {
 	OnNewMsgNXDOMAIN       func(req *dns.Msg) (resp *dns.Msg)
@@ -56,19 +56,19 @@ func NewTestMessageConstructor() (c *TestMessageConstructor) {
 	}
 }
 
-// NewMsgNXDOMAIN implements the [MessageConstructor] interface for
+// NewMsgNXDOMAIN implements the [proxy.MessageConstructor] interface for
 // *TestMessageConstructor.
 func (c *TestMessageConstructor) NewMsgNXDOMAIN(req *dns.Msg) (resp *dns.Msg) {
 	return c.OnNewMsgNXDOMAIN(req)
 }
 
-// NewMsgSERVFAIL implements the [MessageConstructor] interface for
+// NewMsgSERVFAIL implements the [proxy.MessageConstructor] interface for
 // *TestMessageConstructor.
 func (c *TestMessageConstructor) NewMsgSERVFAIL(req *dns.Msg) (resp *dns.Msg) {
 	return c.OnNewMsgSERVFAIL(req)
 }
 
-// NewMsgNOTIMPLEMENTED implements the [MessageConstructor] interface for
+// NewMsgNOTIMPLEMENTED implements the [proxy.MessageConstructor] interface for
 // *TestMessageConstructor.
 func (c *TestMessageConstructor) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.Msg) {
 	return c.OnNewMsgNOTIMPLEMENTED(req)

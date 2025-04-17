@@ -62,6 +62,7 @@ const (
 	cacheIdx
 	refuseAnyIdx
 	enableEDNSSubnetIdx
+	pendingRequestsEnabledIdx
 	dns64Idx
 	usePrivateRDNSIdx
 )
@@ -369,6 +370,14 @@ var commandLineOptions = []*commandLineOption{
 		short:       "",
 		valueType:   "",
 	},
+	pendingRequestsEnabledIdx: {
+		description: "If specified, the server will track duplicate queries and only send the " +
+			"first of them to the upstream server, propagating its result to others. " +
+			"Disabling it introduces a vulnerability to cache poisoning attacks.",
+		long:      "pending-requests-enabled",
+		short:     "",
+		valueType: "",
+	},
 	dns64Idx: {
 		description: "If specified, dnsproxy will act as a DNS64 server.",
 		long:        "dns64",
@@ -436,6 +445,7 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		cacheIdx:                  &conf.Cache,
 		refuseAnyIdx:              &conf.RefuseAny,
 		enableEDNSSubnetIdx:       &conf.EnableEDNSSubnet,
+		pendingRequestsEnabledIdx: &conf.PendingRequestsEnabled,
 		dns64Idx:                  &conf.DNS64,
 		usePrivateRDNSIdx:         &conf.UsePrivateRDNS,
 	} {

@@ -118,6 +118,10 @@ type Proxy struct {
 	// requests for private addresses.
 	recDetector *recursionDetector
 
+	// pendingRequests is a storage for duplicated requests.  It is used to
+	// prevent sending the same request to upstreams multiple times.
+	pendingRequests pendingRequests
+
 	// bytesPool is a pool of byte slices used to read DNS packets.
 	//
 	// TODO(e.burkov):  Use [syncutil.Pool].
@@ -242,13 +246,9 @@ func New(c *Config) (p *Proxy, err error) {
 			c.MessageConstructor,
 			dnsmsg.DefaultMessageConstructor{},
 		),
-		recDetector: newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
-	}
-
-	if c.Logger != nil {
-		p.logger = c.Logger
-	} else {
-		p.logger = slog.Default().With(slogutil.KeyPrefix, LogPrefix)
+		recDetector:     newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
+		pendingRequests: pendingRequestsOrDefault(c.PendingRequests),
+		logger:          loggerOrDefault(c.Logger),
 	}
 
 	// TODO(e.burkov):  Validate config separately and add the contract to the
@@ -296,6 +296,26 @@ func New(c *Config) (p *Proxy, err error) {
 	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
 
 	return p, nil
+}
+
+// pendingRequestsOrDefault returns the pending requests if it's not nil,
+// otherwise it returns the default pending requests.
+func pendingRequestsOrDefault(conf *PendingRequestsConfig) (pr pendingRequests) {
+	if conf != nil && conf.Enabled {
+		return newDefaultPendingRequests()
+	}
+
+	return emptyPendingRequests{}
+}
+
+// loggerOrDefault returns the logger if it's not nil, otherwise it returns the
+// default logger.
+func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
+	if l != nil {
+		return l
+	}
+
+	return slog.Default().With(slogutil.KeyPrefix, LogPrefix)
 }
 
 // validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
@@ -662,18 +682,30 @@ const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
 // upstream servers.  It expects dctx is filled with the request, the client's
+//
+// TODO(e.burkov):  Add [context.Context].
 func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
+	ctx := context.Background()
+
 	if p.EnableEDNSClientSubnet {
 		dctx.processECS(p.EDNSAddr, p.logger)
 	}
 
 	dctx.calcFlagsAndSize()
 
-	// Also don't lookup the cache for responses with DNSSEC checking disabled
-	// since only validated responses are cached and those may be not the
-	// desired result for user specifying CD flag.
 	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
+		// Only add pending requests if the cache is enabled, since this is a
+		// mitigation against cache poisoning.
+		//
+		// TODO(e.burkov):  Consider tracking all requests.
+		var loaded bool
+		loaded, err = p.pendingRequests.queue(ctx, dctx)
+		if loaded {
+			return err
+		}
+		defer func() { p.pendingRequests.done(ctx, dctx, err) }()
+
 		if p.replyFromCache(dctx) {
 			// Complete the response from cache.
 			dctx.scrub()
@@ -736,6 +768,9 @@ func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 		// TODO(e.burkov):  It probably should be decided after resolve.
 		reason = "custom upstreams cache is not configured"
 	case dctx.Req.CheckingDisabled:
+		// Also don't lookup the cache for responses with DNSSEC checking
+		// disabled since only validated responses are cached and those may be
+		// not the desired result for user specifying CD flag.
 		reason = "dnssec check disabled"
 	default:
 		return true

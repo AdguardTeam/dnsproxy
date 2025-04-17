@@ -41,16 +41,22 @@ const (
 )
 
 // localhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
+//
+// TODO(e.burkov):  Move into the proxytest package.
 var localhostAnyPort = netip.MustParseAddrPort(netutil.JoinHostPort(listenIP, 0))
 
 // defaultTrustedProxies is a set of trusted proxies that includes all possible
 // IP addresses.
+//
+// TODO(e.burkov):  Move into the proxytest package.
 var defaultTrustedProxies netutil.SubnetSet = netutil.SliceSubnetSet{
 	netip.MustParsePrefix("0.0.0.0/0"),
 	netip.MustParsePrefix("::0/0"),
 }
 
 // mustNew wraps [New] function failing the test on error.
+//
+// TODO(e.burkov):  Move into the proxytest package.
 func mustNew(t *testing.T, conf *Config) (p *Proxy) {
 	t.Helper()
 
@@ -456,8 +462,8 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		Signature:   "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm",
 	}
 
-	u := &fakeUpstream{
-		onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+	u := &dnsproxytest.FakeUpstream{
+		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 
 			q := m.Question[0]
@@ -485,8 +491,8 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 
 			return resp, nil
 		},
-		onAddress: func() (addr string) { return "" },
-		onClose:   func() (err error) { return nil },
+		OnAddress: func() (addr string) { return "" },
+		OnClose:   func() (err error) { return nil },
 	}
 
 	p := mustNew(t, &Config{
@@ -1004,33 +1010,11 @@ func TestNoQuestion(t *testing.T) {
 	assert.Equal(t, dns.RcodeServerFailure, r.Rcode)
 }
 
-// fakeUpstream is a mock upstream implementation to simplify testing.  It
-// allows assigning custom Exchange and Address methods.
-//
-// TODO(e.burkov):  Use dnsproxytest.FakeUpstream instead.
-type fakeUpstream struct {
-	onExchange func(m *dns.Msg) (resp *dns.Msg, err error)
-	onAddress  func() (addr string)
-	onClose    func() (err error)
-}
-
-// type check
-var _ upstream.Upstream = (*fakeUpstream)(nil)
-
-// Exchange implements upstream.Upstream interface for *funcUpstream.
-func (u *fakeUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) { return u.onExchange(m) }
-
-// Address implements upstream.Upstream interface for *funcUpstream.
-func (u *fakeUpstream) Address() (addr string) { return u.onAddress() }
-
-// Close implements upstream.Upstream interface for *funcUpstream.
-func (u *fakeUpstream) Close() (err error) { return u.onClose() }
-
 func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
-	u := &fakeUpstream{
-		onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+	u := &dnsproxytest.FakeUpstream{
+		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 			resp.Answer = append(resp.Answer, &dns.A{
 				Hdr: dns.RR_Header{
@@ -1045,8 +1029,8 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 
 			return resp, nil
 		},
-		onAddress: func() (addr string) { return "stub" },
-		onClose:   func() error { panic("not implemented") },
+		OnAddress: func() (addr string) { return "stub" },
+		OnClose:   func() error { panic("not implemented") },
 	}
 
 	d := &DNSContext{
@@ -1138,10 +1122,10 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 
 		return resp, nil
 	}
-	u := &fakeUpstream{
-		onExchange: exchangeFunc,
-		onAddress:  func() (addr string) { return "stub" },
-		onClose:    func() error { panic("not implemented") },
+	u := &dnsproxytest.FakeUpstream{
+		OnExchange: exchangeFunc,
+		OnAddress:  func() (addr string) { return "stub" },
+		OnClose:    func() error { panic("not implemented") },
 	}
 
 	customUpstreamConfig := NewCustomUpstreamConfig(
@@ -1445,7 +1429,8 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			CacheEnabled:    true,
 			CacheOptimistic: true,
 		},
-		logger: slogutil.NewDiscardLogger(),
+		logger:          slogutil.NewDiscardLogger(),
+		pendingRequests: newDefaultPendingRequests(),
 	}
 
 	p.initCache()
@@ -1537,19 +1522,19 @@ func TestProxy_HandleDNSRequest_private(t *testing.T) {
 	nxdomainResp := (&dns.Msg{}).SetReply(privateReq)
 	nxdomainResp.Rcode = dns.RcodeNameError
 
-	generalUps := &fakeUpstream{
-		onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+	generalUps := &dnsproxytest.FakeUpstream{
+		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 			return externalResp.Copy(), nil
 		},
-		onAddress: func() (addr string) { return "general" },
-		onClose:   func() (err error) { return nil },
+		OnAddress: func() (addr string) { return "general" },
+		OnClose:   func() (err error) { return nil },
 	}
-	privateUps := &fakeUpstream{
-		onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+	privateUps := &dnsproxytest.FakeUpstream{
+		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 			return privateResp.Copy(), nil
 		},
-		onAddress: func() (addr string) { return "private" },
-		onClose:   func() (err error) { return nil },
+		OnAddress: func() (addr string) { return "private" },
+		OnClose:   func() (err error) { return nil },
 	}
 
 	messages := dnsproxytest.NewTestMessageConstructor()

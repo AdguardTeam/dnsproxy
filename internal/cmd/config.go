@@ -180,6 +180,11 @@ type configuration struct {
 	// EnableEDNSSubnet uses EDNS Client Subnet extension.
 	EnableEDNSSubnet bool `yaml:"edns"`
 
+	// PendingRequestsEnabled controls whether the server should track duplicate
+	// queries and only send the first of them to the upstream server.  It is
+	// used to mitigate the cache poisoning attacks.
+	PendingRequestsEnabled bool `yaml:"pending-requests-enabled"`
+
 	// DNS64 defines whether DNS64 functionality is enabled or not.
 	DNS64 bool `yaml:"dns64"`
 
@@ -200,6 +205,7 @@ func parseConfig() (conf *configuration, exitCode int, err error) {
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 56,
 		HostsFileEnabled:       true,
+		PendingRequestsEnabled: true,
 	}
 
 	err = parseCmdLineOptions(conf)

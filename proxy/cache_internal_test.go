@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -24,10 +25,10 @@ const testCacheSize = 4096
 
 const testUpsAddr = "https://upstream.address"
 
-var upstreamWithAddr = &fakeUpstream{
-	onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) { panic("not implemented") },
-	onClose:    func() (err error) { panic("not implemented") },
-	onAddress:  func() (addr string) { return testUpsAddr },
+var upstreamWithAddr = &dnsproxytest.FakeUpstream{
+	OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) { panic("not implemented") },
+	OnClose:    func() (err error) { panic("not implemented") },
+	OnAddress:  func() (addr string) { return testUpsAddr },
 }
 
 func TestServeCached(t *testing.T) {

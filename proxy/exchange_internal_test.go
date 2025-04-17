@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -25,8 +26,8 @@ import (
 func newUpstreamWithErrorRate(rate uint, name string) (u upstream.Upstream) {
 	var n uint
 
-	return &fakeUpstream{
-		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+	return &dnsproxytest.FakeUpstream{
+		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			n++
 			if n%rate == 0 {
 				return nil, assert.AnError
@@ -34,8 +35,8 @@ func newUpstreamWithErrorRate(rate uint, name string) (u upstream.Upstream) {
 
 			return (&dns.Msg{}).SetReply(req), nil
 		},
-		onAddress: func() (addr string) { return name },
-		onClose:   func() (_ error) { panic("not implemented") },
+		OnAddress: func() (addr string) { return name },
+		OnClose:   func() (_ error) { panic("not implemented") },
 	}
 }
 
@@ -88,56 +89,56 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		},
 	}
 
-	fastUps := &fakeUpstream{
-		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+	fastUps := &dnsproxytest.FakeUpstream{
+		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 100)
 
 			return (&dns.Msg{}).SetReply(req), nil
 		},
-		onAddress: func() (addr string) { return "fast" },
-		onClose:   func() (_ error) { panic("not implemented") },
+		OnAddress: func() (addr string) { return "fast" },
+		OnClose:   func() (_ error) { panic("not implemented") },
 	}
-	slowerUps := &fakeUpstream{
-		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+	slowerUps := &dnsproxytest.FakeUpstream{
+		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 10)
 
 			return (&dns.Msg{}).SetReply(req), nil
 		},
-		onAddress: func() (addr string) { return "slower" },
-		onClose:   func() (_ error) { panic("not implemented") },
+		OnAddress: func() (addr string) { return "slower" },
+		OnClose:   func() (_ error) { panic("not implemented") },
 	}
-	slowestUps := &fakeUpstream{
-		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+	slowestUps := &dnsproxytest.FakeUpstream{
+		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 2)
 
 			return (&dns.Msg{}).SetReply(req), nil
 		},
-		onAddress: func() (addr string) { return "slowest" },
-		onClose:   func() (_ error) { panic("not implemented") },
+		OnAddress: func() (addr string) { return "slowest" },
+		OnClose:   func() (_ error) { panic("not implemented") },
 	}
 
-	err1Ups := &fakeUpstream{
-		onExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
-		onAddress:  func() (addr string) { return "error1" },
-		onClose:    func() (_ error) { panic("not implemented") },
+	err1Ups := &dnsproxytest.FakeUpstream{
+		OnExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
+		OnAddress:  func() (addr string) { return "error1" },
+		OnClose:    func() (_ error) { panic("not implemented") },
 	}
-	err2Ups := &fakeUpstream{
-		onExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
-		onAddress:  func() (addr string) { return "error2" },
-		onClose:    func() (_ error) { panic("not implemented") },
+	err2Ups := &dnsproxytest.FakeUpstream{
+		OnExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
+		OnAddress:  func() (addr string) { return "error2" },
+		OnClose:    func() (_ error) { panic("not implemented") },
 	}
 
 	singleError := &sync.Once{}
 	// fastestUps responds with an error on the first request.
-	fastestUps := &fakeUpstream{
-		onExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+	fastestUps := &dnsproxytest.FakeUpstream{
+		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			singleError.Do(func() { err = assert.AnError })
 			currentNow = zeroTime.Add(testRTT / 200)
 
 			return (&dns.Msg{}).SetReply(req), err
 		},
-		onAddress: func() (addr string) { return "fastest" },
-		onClose:   func() (_ error) { panic("not implemented") },
+		OnAddress: func() (addr string) { return "fastest" },
+		OnClose:   func() (_ error) { panic("not implemented") },
 	}
 
 	each200 := newUpstreamWithErrorRate(200, "each_200")

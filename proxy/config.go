@@ -58,6 +58,11 @@ type Config struct {
 	// constructor will be used.
 	MessageConstructor MessageConstructor
 
+	// PendingRequests is used to mitigate the cache poisoning attacks by
+	// tracking identical requests and returning the same response for them,
+	// performing a single lookup.  If nil, it will be enabled by default.
+	PendingRequests *PendingRequestsConfig
+
 	// BeforeRequestHandler is an optional custom handler called before each DNS
 	// request is started processing, see [BeforeRequestHandler].  The default
 	// no-op implementation is used, if it's nil.
@@ -246,6 +251,12 @@ type Config struct {
 	// PreferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
 	// upstreams that use hostnames.
 	PreferIPv6 bool
+}
+
+// PendingRequestsConfig is the configuration for tracking identical requests.
+type PendingRequestsConfig struct {
+	// Enabled defines if the duplicate requests should be tracked.
+	Enabled bool
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns

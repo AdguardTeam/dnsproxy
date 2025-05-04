@@ -80,7 +80,7 @@ type commandLineOption struct {
 // binary.
 var commandLineOptions = []*commandLineOption{
 	configPathIdx: {
-		description: "YAML configuration file. Minimal working configuration in config.yaml.dist." +
+		description: "YAML configuration file. Minimal working configuration in /etc/dnsproxy/dnsproxy.yaml." +
 			" Options passed through command line will override the ones from this file.",
 		long:      "config-path",
 		short:     "",

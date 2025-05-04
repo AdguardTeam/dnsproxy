@@ -70,7 +70,7 @@ Usage of dnsproxy:
   --cache-size=int
         Cache size (in bytes). Default: 64k.
   --config-path=path
-        YAML configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
+        YAML configuration file. Minimal working configuration in /etc/dnsproxy/dnsproxy.yaml. Options passed through command line will override the ones from this file.
   --dns64
         If specified, dnsproxy will act as a DNS64 server.
   --dns64-prefix=subnet

@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -392,6 +393,7 @@ func startDoHServer(
 	server := &http.Server{
 		Handler:     handler,
 		ReadTimeout: time.Second,
+		ErrorLog:    slog.NewLogLogger(slog.DiscardHandler, slog.LevelDebug),
 	}
 
 	// Listen TCP first.

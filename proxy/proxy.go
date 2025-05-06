@@ -752,21 +752,20 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 	var reason string
 	switch {
-	case p.cache == nil:
-		reason = "disabled"
+	case dctx.CustomUpstreamConfig != nil && dctx.CustomUpstreamConfig.cache == nil:
+		// If custom upstreams are used but the custom upstream cache is
+		// disabled, return false to prevent storing results in the global
+		// cache.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/169.
+		reason = "custom upstreams cache is not configured"
+	case p.cache == nil &&
+		(dctx.CustomUpstreamConfig == nil || dctx.CustomUpstreamConfig.cache == nil):
+		reason = "caching disabled: neither global cache nor custom upstreams cache is configured"
 	case dctx.RequestedPrivateRDNS != netip.Prefix{}:
 		// Don't cache the requests intended for local upstream servers, those
 		// should be fast enough as is.
 		reason = "requested address is private"
-	case dctx.CustomUpstreamConfig != nil && dctx.CustomUpstreamConfig.cache == nil:
-		// In case of custom upstream cache is not configured, the global proxy
-		// cache cannot be used because different upstreams can return different
-		// results.
-		//
-		// See https://github.com/AdguardTeam/dnsproxy/issues/169.
-		//
-		// TODO(e.burkov):  It probably should be decided after resolve.
-		reason = "custom upstreams cache is not configured"
 	case dctx.Req.CheckingDisabled:
 		// Also don't lookup the cache for responses with DNSSEC checking
 		// disabled since only validated responses are cached and those may be

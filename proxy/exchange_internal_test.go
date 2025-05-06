@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"math/rand/v2"
 	"net"
 	"net/netip"
 	"sync"
@@ -15,9 +16,6 @@ import (
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
-
-	//lint:ignore SA1019 See TODO for the gonum.org/v1/gonum import in go.mod.
-	"golang.org/x/exp/rand"
 )
 
 // newUpstreamWithErrorRate returns an [upstream.Upstream] that responds with an
@@ -62,7 +60,7 @@ func (u measuredUpstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 func TestProxy_Exchange_loadBalance(t *testing.T) {
 	// Make the test deterministic.
-	randSrc := rand.NewSource(42)
+	randSrc := rand.New(rand.NewPCG(42, 42))
 
 	const (
 		testRTT     = 1 * time.Second
@@ -152,18 +150,18 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		servers  []upstream.Upstream
 	}{{
 		wantStat: map[string]int64{
-			fastUps.Address():    8917,
-			slowerUps.Address():  911,
-			slowestUps.Address(): 172,
+			fastUps.Address():    8910,
+			slowerUps.Address():  902,
+			slowestUps.Address(): 188,
 		},
 		clock:   zeroingClock,
 		name:    "all_good",
 		servers: []upstream.Upstream{slowestUps, slowerUps, fastUps},
 	}, {
 		wantStat: map[string]int64{
-			fastUps.Address():   9081,
-			slowerUps.Address(): 919,
-			err1Ups.Address():   7,
+			fastUps.Address():   9110,
+			slowerUps.Address(): 890,
+			err1Ups.Address():   6,
 		},
 		clock:   zeroingClock,
 		name:    "one_bad",
@@ -178,18 +176,18 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		servers: []upstream.Upstream{err2Ups, err1Ups},
 	}, {
 		wantStat: map[string]int64{
-			fastUps.Address():    7803,
-			slowerUps.Address():  833,
-			fastestUps.Address(): 1365,
+			fastUps.Address():    7222,
+			slowerUps.Address():  748,
+			fastestUps.Address(): 2031,
 		},
 		clock:   zeroingClock,
 		name:    "error_once",
 		servers: []upstream.Upstream{fastUps, slowerUps, fastestUps},
 	}, {
 		wantStat: map[string]int64{
-			each200.Address(): 5316,
-			each100.Address(): 3090,
-			each50.Address():  1683,
+			each200.Address(): 5258,
+			each100.Address(): 3142,
+			each50.Address():  1690,
 		},
 		clock:   constClock,
 		name:    "error_each_nth",

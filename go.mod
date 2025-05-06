@@ -3,21 +3,21 @@ module github.com/AdguardTeam/dnsproxy
 go 1.24.2
 
 require (
-	github.com/AdguardTeam/golibs v0.32.7
-	github.com/ameshkov/dnscrypt/v2 v2.3.0
+	github.com/AdguardTeam/golibs v0.32.9
+	github.com/ameshkov/dnscrypt/v2 v2.4.0
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 	github.com/bluele/gcache v0.0.2
-	github.com/miekg/dns v1.1.62
+	github.com/miekg/dns v1.1.65
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	// TODO(s.chzhen):  Update after investigation of the 0-RTT bug/behavior
+	// when TestUpstreamDoH_serverRestart/http3/second_try keeps failing.
 	github.com/quic-go/quic-go v0.48.2
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
+	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/net v0.39.0
-	golang.org/x/sys v0.32.0
-	// TODO(e.burkov):  Either find a better maintained dependency or implement
-	// the weighted random algorithm yourself.
-	gonum.org/v1/gonum v0.15.1
+	golang.org/x/sys v0.33.0
+	gonum.org/v1/gonum v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -29,8 +29,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/longrunning v0.6.6 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
-	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
-	github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -41,7 +39,7 @@ require (
 	github.com/golangci/misspell v0.6.0 // indirect
 	github.com/google/generative-ai-go v0.19.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
+	github.com/google/pprof v0.0.0-20250501235452-c0086092b71a // indirect
 	github.com/google/renameio/v2 v2.0.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -51,7 +49,7 @@ require (
 	github.com/gordonklaus/ineffassign v0.1.0 // indirect
 	github.com/jstemmer/go-junit-report/v2 v2.1.0 // indirect
 	github.com/kisielk/errcheck v1.9.0 // indirect
-	github.com/onsi/ginkgo/v2 v2.23.3 // indirect
+	github.com/onsi/ginkgo/v2 v2.23.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
@@ -65,12 +63,13 @@ require (
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
-	go.uber.org/mock v0.5.0 // indirect
+	go.uber.org/automaxprocs v1.6.0 // indirect
+	go.uber.org/mock v0.5.2 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/oauth2 v0.29.0 // indirect
-	golang.org/x/sync v0.13.0 // indirect
+	golang.org/x/sync v0.14.0 // indirect
 	golang.org/x/telemetry v0.0.0-20250406004356-f593adaf3fc1 // indirect
 	golang.org/x/term v0.31.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
@@ -84,7 +83,7 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 	honnef.co/go/tools v0.6.1 // indirect
 	mvdan.cc/editorconfig v0.3.0 // indirect
-	mvdan.cc/gofumpt v0.7.0 // indirect
+	mvdan.cc/gofumpt v0.8.0 // indirect
 	mvdan.cc/sh/v3 v3.11.0 // indirect
 	mvdan.cc/unparam v0.0.0-20250301125049-0df0534333a4 // indirect
 )

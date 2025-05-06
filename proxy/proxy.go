@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/netip"
@@ -31,9 +32,6 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-
-	//lint:ignore SA1019 See TODO for the gonum.org/v1/gonum import in go.mod.
-	"golang.org/x/exp/rand"
 )
 
 const (

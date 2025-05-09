@@ -124,11 +124,6 @@ underscores() {
 			-o -name '*_test.go' \
 			-o -name '*_unix.go' \
 			-o -name '*_windows.go' \
-			-o -name '*_dnscrypt.go' \
-			-o -name '*_https.go' \
-			-o -name '*_quic.go' \
-			-o -name '*_tcp.go' \
-			-o -name '*_udp.go' \
 			')' \
 			-exec 'printf' '\t%s\n' '{}' ';'
 	)"

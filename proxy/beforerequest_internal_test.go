@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -56,12 +57,12 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 		Logger:        slogutil.NewDiscardLogger(),
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
-			Upstreams: []upstream.Upstream{&fakeUpstream{
-				onExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+			Upstreams: []upstream.Upstream{&dnsproxytest.FakeUpstream{
+				OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 					return allowedResponse.Copy(), nil
 				},
-				onAddress: func() (addr string) { return "general" },
-				onClose:   func() (err error) { return nil },
+				OnAddress: func() (addr string) { return "general" },
+				OnClose:   func() (err error) { return nil },
 			}},
 		},
 		TrustedProxies: defaultTrustedProxies,

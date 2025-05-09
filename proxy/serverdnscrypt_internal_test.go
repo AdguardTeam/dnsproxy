@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO(d.kolyshev): Remove this after migrating dnscrypt to slog.
+// TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
 func TestMain(m *testing.M) {
 	testutil.DiscardLogOutput(m)
 }

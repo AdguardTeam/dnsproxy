@@ -31,6 +31,7 @@ func (p *Proxy) initDNSCryptListeners(ctx context.Context) (err error) {
 			proxy:   p,
 			reqSema: p.requestsSema,
 		},
+		Logger: p.logger,
 	}
 
 	for _, addr := range p.DNSCryptUDPListenAddr {

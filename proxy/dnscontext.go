@@ -136,6 +136,8 @@ func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg, addr netip.AddrPort) (d
 //
 //   - If the query was not resolved at all, the statistics contain the DNS
 //     lookup errors for each main and fallback resolvers.
+//
+// Both s and any data returned from its methods must not be modified.
 func (dctx *DNSContext) QueryStatistics() (s *QueryStatistics) {
 	return dctx.queryStatistics
 }

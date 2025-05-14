@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"net"
@@ -399,9 +400,19 @@ func (p *dnsOverQUIC) readMsg(stream quic.Stream) (m *dns.Msg, err error) {
 	defer pool.Put(bufPtr)
 
 	respBuf := *bufPtr
-	n, err := stream.Read(respBuf)
+	n, err := stream.Read(respBuf[0:2])
 	if err != nil && n == 0 {
-		return nil, fmt.Errorf("reading response from %s: %w", p.addr, err)
+		return nil, fmt.Errorf("reading response header from %s: %w", p.addr, err)
+	}
+	packetLen := binary.BigEndian.Uint16(respBuf[0:2])
+
+	off := 2
+	for uint16(off) < packetLen {
+		n, err := stream.Read(respBuf[off:])
+		if err != nil && n == 0 {
+			return nil, fmt.Errorf("reading response from %s: %w", p.addr, err)
+		}
+		off += n
 	}
 
 	stream.CancelRead(0)

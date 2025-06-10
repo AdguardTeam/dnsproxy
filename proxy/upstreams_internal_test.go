@@ -188,7 +188,7 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 		},
 	}, {
 		name:    "no_default",
-		wantErr: errors.Error("no default upstreams specified"),
+		wantErr: errors.ErrNoValue,
 		in: []string{
 			"[/domain.example/]udp://upstream.example:53",
 			"[/another.domain.example/]#",
@@ -205,7 +205,9 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 	}
 
 	t.Run("actual_nil", func(t *testing.T) {
-		assert.ErrorIs(t, (*UpstreamConfig)(nil).validate(), errors.Error("upstream config is nil"))
+		var c *UpstreamConfig
+
+		assert.Equal(t, c.validate(), errors.ErrNoValue)
 	})
 }
 

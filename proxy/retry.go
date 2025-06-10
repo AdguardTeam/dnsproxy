@@ -32,7 +32,7 @@ func (p *Proxy) bindWithRetry(ctx context.Context, bindFunc func() (err error)) 
 
 	p.logger.WarnContext(ctx, "binding", "attempt", 1, slogutil.KeyError, err)
 
-	for attempt := uint(1); attempt <= p.bindRetryNum; attempt++ {
+	for attempt := uint(1); attempt <= p.bindRetryCount; attempt++ {
 		time.Sleep(p.bindRetryIvl)
 
 		retryErr := bindFunc()

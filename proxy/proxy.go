@@ -27,6 +27,7 @@ import (
 	"github.com/AdguardTeam/golibs/service"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/golibs/timeutil"
+	"github.com/AdguardTeam/golibs/validate"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
@@ -183,9 +184,9 @@ type Proxy struct {
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int
 
-	// bindRetryNum is the number of retries for binding to an address for
+	// bindRetryCount is the number of retries for binding to an address for
 	// listening.  Zero means one attempt and no retries.
-	bindRetryNum uint
+	bindRetryCount uint
 
 	// bindRetryIvl is the interval between attempts to bind to an address for
 	// listening.
@@ -215,6 +216,8 @@ type Proxy struct {
 // New creates a new Proxy with the specified configuration.  c must not be nil.
 //
 // TODO(e.burkov):  Cover with tests.
+//
+// TODO(e.burkov):  Add context.
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
 		Config: *c,
@@ -256,12 +259,6 @@ func New(c *Config) (p *Proxy, err error) {
 		return nil, err
 	}
 
-	// TODO(s.chzhen):  Consider moving to [Proxy.validateConfig].
-	err = p.validateBasicAuth()
-	if err != nil {
-		return nil, fmt.Errorf("basic auth: %w", err)
-	}
-
 	p.initCache()
 
 	if p.MaxGoroutines > 0 {
@@ -281,7 +278,7 @@ func New(c *Config) (p *Proxy, err error) {
 	}
 
 	if bindRetries := c.BindRetryConfig; bindRetries != nil && bindRetries.Enabled {
-		p.bindRetryNum = bindRetries.Count
+		p.bindRetryCount = bindRetries.Count
 		p.bindRetryIvl = bindRetries.Interval
 	}
 
@@ -290,6 +287,7 @@ func New(c *Config) (p *Proxy, err error) {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
 	}
 
+	// TODO(e.burkov):  Clone all mutable fields of Config.
 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
 	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
 
@@ -324,11 +322,7 @@ func (p *Proxy) validateBasicAuth() (err error) {
 		return nil
 	}
 
-	if len(conf.HTTPSListenAddr) == 0 {
-		return errors.Error("no https addrs")
-	}
-
-	return nil
+	return validate.NotEmptySlice("HTTPSListenAddr", conf.HTTPSListenAddr)
 }
 
 // Returns true if proxy is started.  It is safe for concurrent use.
@@ -359,12 +353,15 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 		return err
 	}
 
-	err = p.configureListeners(ctx)
+	err = p.startListeners(ctx)
 	if err != nil {
-		return fmt.Errorf("configuring listeners: %w", err)
+		closeErr := errors.Join(p.closeListeners(nil)...)
+
+		return fmt.Errorf("configuring listeners: %w", errors.WithDeferred(err, closeErr))
 	}
 
-	p.startListeners()
+	p.serveListeners()
+
 	p.started = true
 
 	return nil
@@ -390,7 +387,8 @@ func closeAll[C io.Closer](errs []error, closers ...C) (appended []error) {
 	return errs
 }
 
-// Shutdown implements the [service.Interface] for *Proxy.
+// Shutdown implements the [service.Interface] for *Proxy.  It also closes the
+// configured upstream configurations.
 func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 	p.logger.InfoContext(ctx, "stopping server")
 
@@ -404,45 +402,7 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 		return nil
 	}
 
-	errs := closeAll(nil, p.tcpListen...)
-	p.tcpListen = nil
-
-	errs = closeAll(errs, p.udpListen...)
-	p.udpListen = nil
-
-	errs = closeAll(errs, p.tlsListen...)
-	p.tlsListen = nil
-
-	if p.httpsServer != nil {
-		errs = closeAll(errs, p.httpsServer)
-		p.httpsServer = nil
-
-		// No need to close these since they're closed by httpsServer.Close().
-		p.httpsListen = nil
-	}
-
-	if p.h3Server != nil {
-		errs = closeAll(errs, p.h3Server)
-		p.h3Server = nil
-	}
-
-	errs = closeAll(errs, p.h3Listen...)
-	p.h3Listen = nil
-
-	errs = closeAll(errs, p.quicListen...)
-	p.quicListen = nil
-
-	errs = closeAll(errs, p.quicTransports...)
-	p.quicTransports = nil
-
-	errs = closeAll(errs, p.quicConns...)
-	p.quicConns = nil
-
-	errs = closeAll(errs, p.dnsCryptUDPListen...)
-	p.dnsCryptUDPListen = nil
-
-	errs = closeAll(errs, p.dnsCryptTCPListen...)
-	p.dnsCryptTCPListen = nil
+	errs := p.closeListeners(nil)
 
 	for _, u := range []*UpstreamConfig{
 		p.UpstreamConfig,
@@ -458,11 +418,61 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 
 	p.logger.InfoContext(ctx, "stopped dns proxy server")
 
-	if len(errs) > 0 {
-		return fmt.Errorf("stopping dns proxy server: %w", errors.Join(errs...))
+	err = errors.Join(errs...)
+	if err != nil {
+		return fmt.Errorf("stopping dns proxy server: %w", err)
 	}
 
 	return nil
+}
+
+// closeListeners closes all acrive listeners and returns the occurred errors.
+//
+// TODO(e.burkov):  Remove the argument if it remains unused.
+func (p *Proxy) closeListeners(errs []error) (res []error) {
+	res = errs
+
+	res = closeAll(res, p.tcpListen...)
+	p.tcpListen = nil
+
+	res = closeAll(res, p.udpListen...)
+	p.udpListen = nil
+
+	res = closeAll(res, p.tlsListen...)
+	p.tlsListen = nil
+
+	if p.httpsServer != nil {
+		res = closeAll(res, p.httpsServer)
+		p.httpsServer = nil
+
+		// No need to close these since they're closed by httpsServer.Close().
+		p.httpsListen = nil
+	}
+
+	if p.h3Server != nil {
+		res = closeAll(res, p.h3Server)
+		p.h3Server = nil
+	}
+
+	res = closeAll(res, p.h3Listen...)
+	p.h3Listen = nil
+
+	res = closeAll(res, p.quicListen...)
+	p.quicListen = nil
+
+	res = closeAll(res, p.quicTransports...)
+	p.quicTransports = nil
+
+	res = closeAll(res, p.quicConns...)
+	p.quicConns = nil
+
+	res = closeAll(res, p.dnsCryptUDPListen...)
+	p.dnsCryptUDPListen = nil
+
+	res = closeAll(res, p.dnsCryptTCPListen...)
+	p.dnsCryptTCPListen = nil
+
+	return res
 }
 
 // addrFunc provides the address from the given A.

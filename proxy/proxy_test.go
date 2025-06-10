@@ -4,6 +4,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -142,4 +143,53 @@ func TestProxy_Resolve_cache(t *testing.T) {
 			tc.wantCachedGlobal(t, res)
 		})
 	}
+}
+
+func TestProxy_Start_closeOnFail(t *testing.T) {
+	t.Parallel()
+
+	l, err := net.ListenTCP(bootstrap.NetworkTCP, net.TCPAddrFromAddrPort(localhostAnyPort))
+	require.NoError(t, err)
+
+	tcpAddr := testutil.RequireTypeAssert[*net.TCPAddr](t, l.Addr())
+
+	ups := &dnsproxytest.FakeUpstream{
+		OnExchange: func(_ *dns.Msg) (_ *dns.Msg, _ error) { panic("not implemented") },
+		OnAddress:  func() (_ string) { panic("not implemented") },
+		OnClose:    func() (_ error) { panic("not implemented") },
+	}
+
+	p, err := proxy.New(&proxy.Config{
+		// Add a free address.
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		// Add a bound address.
+		TCPListenAddr:  []*net.TCPAddr{tcpAddr},
+		UpstreamConfig: &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{ups}},
+	})
+	require.NoError(t, err)
+
+	require.True(t, t.Run("start_fail", func(t *testing.T) {
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		err = p.Start(ctx)
+
+		var netErr net.Error
+		require.ErrorAs(t, err, &netErr)
+	}))
+
+	// Don't panic anymore.
+	ups.OnClose = func() (err error) { return nil }
+
+	require.True(t, t.Run("restart_success", func(t *testing.T) {
+		require.NoError(t, l.Close())
+
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		err = p.Start(ctx)
+		require.NoError(t, err)
+
+		testutil.CleanupAndRequireSuccess(t, func() (err error) {
+			ctx = testutil.ContextWithTimeout(t, testTimeout)
+
+			return p.Shutdown(ctx)
+		})
+	}))
 }

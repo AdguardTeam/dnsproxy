@@ -76,9 +76,9 @@ func TestWithRetry(t *testing.T) {
 	}}
 
 	p := &Proxy{
-		logger:       slogutil.NewDiscardLogger(),
-		bindRetryNum: 1,
-		bindRetryIvl: 0,
+		logger:         slogutil.NewDiscardLogger(),
+		bindRetryCount: 1,
+		bindRetryIvl:   0,
 	}
 
 	for _, tc := range testCases {

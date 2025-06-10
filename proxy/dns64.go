@@ -37,6 +37,8 @@ const (
 // is specified explicitly.  Each prefix also validated to be a valid IPv6 CIDR
 // with a maximum length of 96 bits.  The first specified prefix is then used to
 // synthesize AAAA records.
+//
+// TODO(e.burkov):  Split validation and initialization.
 func (p *Proxy) setupDNS64() (err error) {
 	if !p.Config.UseDNS64 {
 		return nil

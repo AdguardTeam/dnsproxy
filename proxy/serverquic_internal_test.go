@@ -161,7 +161,7 @@ func TestQuicProxy_largePackets(t *testing.T) {
 func sendQUICMessage(
 	t *testing.T,
 	msg *dns.Msg,
-	conn quic.Connection,
+	conn *quic.Conn,
 	doqVersion DoQVersion,
 ) (resp *dns.Msg) {
 	// Open a new QUIC stream to write there a test DNS query.
@@ -207,7 +207,7 @@ func sendQUICMessage(
 
 // writeQUICStream writes buf to the specified QUIC stream in chunks.  This way
 // it is possible to test how the server deals with chunked DNS messages.
-func writeQUICStream(buf []byte, stream quic.Stream) (err error) {
+func writeQUICStream(buf []byte, stream *quic.Stream) (err error) {
 	// Send the DNS query to the stream and split it into chunks of up
 	// to 400 bytes.  400 is an arbitrary chosen value.
 	chunkSize := 400
@@ -233,7 +233,7 @@ func writeQUICStream(buf []byte, stream quic.Stream) (err error) {
 }
 
 // sendTestQUICMessage send a test message to the specified QUIC connection.
-func sendTestQUICMessage(t *testing.T, conn quic.Connection, doqVersion DoQVersion) {
+func sendTestQUICMessage(t *testing.T, conn *quic.Conn, doqVersion DoQVersion) {
 	msg := newTestMessage()
 	resp := sendQUICMessage(t, msg, conn, doqVersion)
 	requireResponse(t, msg, resp)

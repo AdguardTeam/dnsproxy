@@ -46,7 +46,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	uq := u.(*dnsOverQUIC)
-	var conn quic.Connection
+	var conn *quic.Conn
 
 	// Test that it responds properly
 	for range 10 {
@@ -114,7 +114,7 @@ func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(parallelQueries)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		pt := testutil.PanicT{}
 
 		go func(t assert.TestingT) {
@@ -242,7 +242,7 @@ type testDoQServer struct {
 	logger *slog.Logger
 
 	// conns is the list of connections that are currently active.
-	conns map[quic.EarlyConnection]struct{}
+	conns map[*quic.Conn]struct{}
 
 	// connsMu protects conns.
 	connsMu *sync.Mutex
@@ -262,7 +262,7 @@ func (s *testDoQServer) Shutdown() (err error) {
 // Serve serves DoQ requests.
 func (s *testDoQServer) Serve() {
 	for {
-		var conn quic.EarlyConnection
+		var conn *quic.Conn
 		var err error
 		func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -284,7 +284,7 @@ func (s *testDoQServer) Serve() {
 }
 
 // handleQUICConnection handles incoming QUIC connection.
-func (s *testDoQServer) handleQUICConnection(conn quic.EarlyConnection) {
+func (s *testDoQServer) handleQUICConnection(conn *quic.Conn) {
 	s.addConn(conn)
 	defer s.closeConn(conn)
 
@@ -309,7 +309,7 @@ func (s *testDoQServer) handleQUICConnection(conn quic.EarlyConnection) {
 
 // handleQUICStream handles new QUIC streams, reads DNS messages and responds to
 // them.
-func (s *testDoQServer) handleQUICStream(ctx context.Context, stream quic.Stream) (err error) {
+func (s *testDoQServer) handleQUICStream(ctx context.Context, stream *quic.Stream) (err error) {
 	defer slogutil.CloseAndLog(ctx, s.logger, stream, slog.LevelDebug)
 
 	buf := make([]byte, dns.MaxMsgSize+2)
@@ -341,7 +341,7 @@ func (s *testDoQServer) handleQUICStream(ctx context.Context, stream quic.Stream
 }
 
 // addConn adds conn to the list of active connections.
-func (s *testDoQServer) addConn(conn quic.EarlyConnection) {
+func (s *testDoQServer) addConn(conn *quic.Conn) {
 	s.connsMu.Lock()
 	defer s.connsMu.Unlock()
 
@@ -349,7 +349,7 @@ func (s *testDoQServer) addConn(conn quic.EarlyConnection) {
 }
 
 // closeConn closes the specified QUIC connection.
-func (s *testDoQServer) closeConn(conn quic.EarlyConnection) {
+func (s *testDoQServer) closeConn(conn *quic.Conn) {
 	s.connsMu.Lock()
 	defer s.connsMu.Unlock()
 
@@ -415,7 +415,7 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 		// TODO(d.kolyshev): Add a concurrent safe [slog.Handler] wrapper for
 		// [testing.TB] log function.
 		logger:  slogutil.NewDiscardLogger(),
-		conns:   map[quic.EarlyConnection]struct{}{},
+		conns:   map[*quic.Conn]struct{}{},
 		connsMu: &sync.Mutex{},
 	}
 

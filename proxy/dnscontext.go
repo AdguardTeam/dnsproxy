@@ -19,11 +19,11 @@ type DNSContext struct {
 
 	// QUICConnection is the QUIC session from which we got the query.  For
 	// ProtoQUIC only.
-	QUICConnection quic.Connection
+	QUICConnection *quic.Conn
 
 	// QUICStream is the QUIC stream from which we got the query.  For
 	// [ProtoQUIC] only.
-	QUICStream quic.Stream
+	QUICStream *quic.Stream
 
 	// Upstream is the upstream that resolved the request.  In case of cached
 	// response it's nil.

@@ -171,7 +171,7 @@ func logQUICError(ctx context.Context, prefix string, err error, l *slog.Logger)
 // and passes them to handleQUICStream.
 //
 // See also the comment on Proxy.requestsSema.
-func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Semaphore) {
+func (p *Proxy) handleQUICConnection(conn *quic.Conn, reqSema syncutil.Semaphore) {
 	for {
 		ctx := context.Background()
 
@@ -214,7 +214,7 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Sema
 
 // handleQUICStream reads DNS queries from the stream, processes them,
 // and writes back the response.
-func (p *Proxy) handleQUICStream(ctx context.Context, stream quic.Stream, conn quic.Connection) {
+func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn *quic.Conn) {
 	bufPtr := p.bytesPool.Get().(*[]byte)
 	defer p.bytesPool.Put(bufPtr)
 
@@ -431,7 +431,7 @@ func isQUICErrorForDebugLog(err error) (ok bool) {
 }
 
 // closeQUICConn quietly closes the QUIC connection.
-func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode, l *slog.Logger) {
+func closeQUICConn(conn *quic.Conn, code quic.ApplicationErrorCode, l *slog.Logger) {
 	l.Debug("closing quic conn", "addr", conn.LocalAddr(), "code", code)
 
 	err := conn.CloseWithError(code, "")

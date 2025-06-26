@@ -49,23 +49,6 @@ type FastestAddr struct {
 	pingWaitTimeout time.Duration
 }
 
-// NewFastestAddr initializes a new instance of *FastestAddr.
-//
-// Deprecated: Use [New] instead.
-func NewFastestAddr() (f *FastestAddr) {
-	return &FastestAddr{
-		logger:      slog.Default().With(slogutil.KeyPrefix, LogPrefix),
-		ipCacheLock: &sync.Mutex{},
-		ipCache: cache.New(cache.Config{
-			MaxSize:   64 * 1024,
-			EnableLRU: true,
-		}),
-		pingPorts:       []uint{80, 443},
-		pingWaitTimeout: DefaultPingWaitTimeout,
-		pinger:          &net.Dialer{Timeout: pingTCPTimeout},
-	}
-}
-
 // Config contains all the fields necessary for proxy configuration.
 type Config struct {
 	// Logger is used as the base logger for the service.  If nil,

@@ -8,7 +8,9 @@ import (
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/optslog"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
@@ -227,15 +229,38 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 }
 
-// Set TTL value of all records according to our settings
-func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
-	for _, rr := range r.Answer {
-		originalTTL := rr.Header().Ttl
-		newTTL := respectTTLOverrides(originalTTL, p.CacheMinTTL, p.CacheMaxTTL)
+// setMinMaxTTL sets the TTL values of all records according to the proxy
+// settings.  r must not be nil.
+func (p *Proxy) setMinMaxTTL(ctx context.Context, r *dns.Msg) {
+	rrSets := container.KeyValues[string, []dns.RR]{{
+		Key:   "answer",
+		Value: r.Answer,
+	}, {
+		Key:   "extra",
+		Value: r.Extra,
+	}, {
+		Key:   "ns",
+		Value: r.Ns,
+	}}
 
-		if originalTTL != newTTL {
-			p.logger.Debug("ttl overwritten", "old", originalTTL, "new", newTTL)
-			rr.Header().Ttl = newTTL
+	for _, rrSet := range rrSets {
+		for _, rr := range rrSet.Value {
+			original := rr.Header().Ttl
+			overridden := respectTTLOverrides(original, p.CacheMinTTL, p.CacheMaxTTL)
+
+			if original == overridden {
+				continue
+			}
+
+			optslog.Trace3(
+				ctx,
+				p.logger,
+				"ttl overwritten",
+				"section", rrSet.Key,
+				"old", original,
+				"new", overridden,
+			)
+			rr.Header().Ttl = overridden
 		}
 	}
 }

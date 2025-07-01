@@ -426,7 +426,7 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 	return nil
 }
 
-// closeListeners closes all acrive listeners and returns the occurred errors.
+// closeListeners closes all active listeners and returns the occurred errors.
 //
 // TODO(e.burkov):  Remove the argument if it remains unused.
 func (p *Proxy) closeListeners(errs []error) (res []error) {
@@ -642,15 +642,22 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	unwrapped, stats := collectQueryStats(p.UpstreamMode, u, wrapped, wrappedFallbacks)
 	d.queryStatistics = stats
 
-	p.handleExchangeResult(d, req, resp, unwrapped)
+	ctx := context.TODO()
+	p.handleExchangeResult(ctx, d, req, resp, unwrapped)
 
 	return resp != nil, err
 }
 
 // handleExchangeResult handles the result after the upstream exchange.  It sets
-// the response to d and sets the upstream that have resolved the request.  If
-// the response is nil, it generates a server failure response.
-func (p *Proxy) handleExchangeResult(d *DNSContext, req, resp *dns.Msg, u upstream.Upstream) {
+// resp and the upstream that has resolved the request in d.  If resp is nil, it
+// generates a server failure response.  req must not be nil.
+func (p *Proxy) handleExchangeResult(
+	ctx context.Context,
+	d *DNSContext,
+	req *dns.Msg,
+	resp *dns.Msg,
+	u upstream.Upstream,
+) {
 	if resp == nil {
 		d.Res = p.messages.NewMsgSERVFAIL(req)
 		d.hasEDNS0 = false
@@ -661,7 +668,7 @@ func (p *Proxy) handleExchangeResult(d *DNSContext, req, resp *dns.Msg, u upstre
 	d.Upstream = u
 	d.Res = resp
 
-	p.setMinMaxTTL(resp)
+	p.setMinMaxTTL(ctx, resp)
 	if len(req.Question) > 0 && len(resp.Question) == 0 {
 		// Explicitly construct the question section since some upstreams may
 		// respond with invalidly constructed messages which cause out-of-range

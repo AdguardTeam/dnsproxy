@@ -73,7 +73,7 @@ type dnsOverQUIC struct {
 
 	// conn is the current active QUIC connection.  It can be closed and
 	// re-opened when needed.
-	conn quic.Connection
+	conn *quic.Conn
 
 	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
 	// buffers are used to read responses from the upstream.
@@ -213,7 +213,7 @@ func (p *dnsOverQUIC) Close() (err error) {
 
 // exchangeQUIC attempts to open a new QUIC stream, send the DNS message
 // through it and return the response it got from the server.
-func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg, conn quic.Connection) (resp *dns.Msg, err error) {
+func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg, conn *quic.Conn) (resp *dns.Msg, err error) {
 	addr := p.Address()
 
 	logBegin(p.logger, addr, networkUDP, req)
@@ -271,9 +271,9 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 	return p.bytesPool
 }
 
-// getConnection opens or returns an existing quic.Connection and indicates
-// whether it opened a new connection or used an existing cached one.
-func (p *dnsOverQUIC) getConnection() (conn quic.Connection, cached bool, err error) {
+// getConnection opens or returns an existing *quic.Conn and indicates whether
+// it opened a new connection or used an existing cached one.
+func (p *dnsOverQUIC) getConnection() (conn *quic.Conn, cached bool, err error) {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
 
@@ -312,7 +312,7 @@ func (p *dnsOverQUIC) resetQUICConfig() {
 }
 
 // openStream opens a new QUIC stream for the specified connection.
-func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
+func (p *dnsOverQUIC) openStream(conn *quic.Conn) (*quic.Stream, error) {
 	ctx, cancel := p.withDeadline(context.Background())
 	defer cancel()
 
@@ -325,7 +325,7 @@ func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
 }
 
 // openConnection dials a new QUIC connection.
-func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
+func (p *dnsOverQUIC) openConnection() (conn *quic.Conn, err error) {
 	dialContext, err := p.getDialer()
 	if err != nil {
 		return nil, fmt.Errorf("bootstrapping %s: %w", p.addr, err)
@@ -366,7 +366,7 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
 // closeConnWithError closes the active connection with error to make sure that
 // new queries were processed in another connection.  We can do that in the case
 // of a fatal error.
-func (p *dnsOverQUIC) closeConnWithError(conn quic.Connection, err error) {
+func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
 
@@ -392,7 +392,7 @@ func (p *dnsOverQUIC) closeConnWithError(conn quic.Connection, err error) {
 }
 
 // readMsg reads the incoming DNS message from the QUIC stream.
-func (p *dnsOverQUIC) readMsg(stream quic.Stream) (m *dns.Msg, err error) {
+func (p *dnsOverQUIC) readMsg(stream *quic.Stream) (m *dns.Msg, err error) {
 	pool := p.getBytesPool()
 	bufPtr := pool.Get().(*[]byte)
 

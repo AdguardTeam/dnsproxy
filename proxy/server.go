@@ -8,41 +8,44 @@ import (
 	"net"
 	"time"
 
+	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/optslog"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 )
 
-// configureListeners configures listeners.
-func (p *Proxy) configureListeners(ctx context.Context) (err error) {
-	err = p.createUDPListeners(ctx)
+// startListeners configures listeners and starts listening each configured
+// address.  If it returns an error, all listeners should be closed manually.
+func (p *Proxy) startListeners(ctx context.Context) (err error) {
+	err = p.initUDPListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createTCPListeners(ctx)
+	err = p.initTCPListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createTLSListeners()
+	err = p.initTLSListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createHTTPSListeners()
+	err = p.initHTTPSListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createQUICListeners()
+	err = p.initQUICListeners(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = p.createDNSCryptListeners()
+	err = p.initDNSCryptListeners(ctx)
 	if err != nil {
 		return err
 	}
@@ -50,8 +53,8 @@ func (p *Proxy) configureListeners(ctx context.Context) (err error) {
 	return nil
 }
 
-// startListeners starts listener loops.
-func (p *Proxy) startListeners() {
+// serveListeners starts serving the configured listeners.
+func (p *Proxy) serveListeners() {
 	for _, l := range p.udpListen {
 		go p.udpPacketLoop(l, p.requestsSema)
 	}
@@ -226,15 +229,38 @@ func (p *Proxy) respond(d *DNSContext) {
 	}
 }
 
-// Set TTL value of all records according to our settings
-func (p *Proxy) setMinMaxTTL(r *dns.Msg) {
-	for _, rr := range r.Answer {
-		originalTTL := rr.Header().Ttl
-		newTTL := respectTTLOverrides(originalTTL, p.CacheMinTTL, p.CacheMaxTTL)
+// setMinMaxTTL sets the TTL values of all records according to the proxy
+// settings.  r must not be nil.
+func (p *Proxy) setMinMaxTTL(ctx context.Context, r *dns.Msg) {
+	rrSets := container.KeyValues[string, []dns.RR]{{
+		Key:   "answer",
+		Value: r.Answer,
+	}, {
+		Key:   "extra",
+		Value: r.Extra,
+	}, {
+		Key:   "ns",
+		Value: r.Ns,
+	}}
 
-		if originalTTL != newTTL {
-			p.logger.Debug("ttl overwritten", "old", originalTTL, "new", newTTL)
-			rr.Header().Ttl = newTTL
+	for _, rrSet := range rrSets {
+		for _, rr := range rrSet.Value {
+			original := rr.Header().Ttl
+			overridden := respectTTLOverrides(original, p.CacheMinTTL, p.CacheMaxTTL)
+
+			if original == overridden {
+				continue
+			}
+
+			optslog.Trace3(
+				ctx,
+				p.logger,
+				"ttl overwritten",
+				"section", rrSet.Key,
+				"old", original,
+				"new", overridden,
+			)
+			rr.Header().Ttl = overridden
 		}
 	}
 }

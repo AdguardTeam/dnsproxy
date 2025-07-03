@@ -19,11 +19,11 @@ type DNSContext struct {
 
 	// QUICConnection is the QUIC session from which we got the query.  For
 	// ProtoQUIC only.
-	QUICConnection quic.Connection
+	QUICConnection *quic.Conn
 
 	// QUICStream is the QUIC stream from which we got the query.  For
 	// [ProtoQUIC] only.
-	QUICStream quic.Stream
+	QUICStream *quic.Stream
 
 	// Upstream is the upstream that resolved the request.  In case of cached
 	// response it's nil.
@@ -136,6 +136,8 @@ func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg, addr netip.AddrPort) (d
 //
 //   - If the query was not resolved at all, the statistics contain the DNS
 //     lookup errors for each main and fallback resolvers.
+//
+// Both s and any data returned from its methods must not be modified.
 func (dctx *DNSContext) QueryStatistics() (s *QueryStatistics) {
 	return dctx.queryStatistics
 }

@@ -8,6 +8,8 @@ import (
 	"github.com/miekg/dns"
 )
 
+// TODO(e.burkov):  Consider using wrapped [errors.ErrNoValue] and
+// [errors.ErrEmptyValue] instead.
 const (
 	// ErrNoUpstreams is returned from the methods that expect at least a single
 	// upstream to work with when no upstreams specified.

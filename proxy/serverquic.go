@@ -62,41 +62,61 @@ const (
 	DoQCodeProtocolError quic.ApplicationErrorCode = 2
 )
 
-// createQUICListeners creates QUIC listeners for the DoQ server.
-func (p *Proxy) createQUICListeners() error {
+// initQUICListeners creates QUIC listeners for the DoQ server.
+func (p *Proxy) initQUICListeners(ctx context.Context) (err error) {
 	for _, a := range p.QUICListenAddr {
-		p.logger.Info("creating quic listener", "addr", a)
-
-		conn, err := net.ListenUDP(bootstrap.NetworkUDP, a)
+		var conn *net.UDPConn
+		var ln *quic.EarlyListener
+		var tr *quic.Transport
+		conn, ln, tr, err = p.listenQUIC(ctx, a)
 		if err != nil {
-			return fmt.Errorf("listening to %s: %w", a, err)
+			return fmt.Errorf("listening on quic addr %s: %w", a, err)
 		}
 
 		p.quicConns = append(p.quicConns, conn)
-
-		v := newQUICAddrValidator(quicAddrValidatorCacheSize, quicAddrValidatorCacheTTL)
-		transport := &quic.Transport{
-			Conn:                conn,
-			VerifySourceAddress: v.requiresValidation,
-		}
-
-		tlsConfig := p.TLSConfig.Clone()
-		tlsConfig.NextProtos = compatProtoDQ
-		quicListen, err := transport.ListenEarly(
-			tlsConfig,
-			newServerQUICConfig(),
-		)
-		if err != nil {
-			return fmt.Errorf("quic listener: %w", err)
-		}
-
-		p.quicTransports = append(p.quicTransports, transport)
-		p.quicListen = append(p.quicListen, quicListen)
-
-		p.logger.Info("listening quic", "addr", quicListen.Addr())
+		p.quicTransports = append(p.quicTransports, tr)
+		p.quicListen = append(p.quicListen, ln)
 	}
 
 	return nil
+}
+
+// listenQUIC returns a new UDP connection listening on addr, the QUIC listener
+// utilizing it, and the associated QUIC transport.
+func (p *Proxy) listenQUIC(
+	ctx context.Context,
+	addr *net.UDPAddr,
+) (conn *net.UDPConn, l *quic.EarlyListener, tr *quic.Transport, err error) {
+	p.logger.InfoContext(ctx, "creating quic listener", "addr", addr)
+
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		conn, listenErr = net.ListenUDP(bootstrap.NetworkUDP, addr)
+
+		return listenErr
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("listening to udp socket: %w", err)
+	}
+
+	v := newQUICAddrValidator(quicAddrValidatorCacheSize, quicAddrValidatorCacheTTL)
+	tr = &quic.Transport{
+		Conn:                conn,
+		VerifySourceAddress: v.requiresValidation,
+	}
+
+	tlsConfig := p.TLSConfig.Clone()
+	tlsConfig.NextProtos = compatProtoDQ
+	l, err = tr.ListenEarly(
+		tlsConfig,
+		newServerQUICConfig(),
+	)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("listening early: %w", err)
+	}
+
+	p.logger.InfoContext(ctx, "listening quic", "addr", l.Addr())
+
+	return conn, l, tr, nil
 }
 
 // quicPacketLoop listens for incoming QUIC packets.
@@ -151,7 +171,7 @@ func logQUICError(ctx context.Context, prefix string, err error, l *slog.Logger)
 // and passes them to handleQUICStream.
 //
 // See also the comment on Proxy.requestsSema.
-func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Semaphore) {
+func (p *Proxy) handleQUICConnection(conn *quic.Conn, reqSema syncutil.Semaphore) {
 	for {
 		ctx := context.Background()
 
@@ -194,7 +214,7 @@ func (p *Proxy) handleQUICConnection(conn quic.Connection, reqSema syncutil.Sema
 
 // handleQUICStream reads DNS queries from the stream, processes them,
 // and writes back the response.
-func (p *Proxy) handleQUICStream(ctx context.Context, stream quic.Stream, conn quic.Connection) {
+func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn *quic.Conn) {
 	bufPtr := p.bytesPool.Get().(*[]byte)
 	defer p.bytesPool.Put(bufPtr)
 
@@ -411,7 +431,7 @@ func isQUICErrorForDebugLog(err error) (ok bool) {
 }
 
 // closeQUICConn quietly closes the QUIC connection.
-func closeQUICConn(conn quic.Connection, code quic.ApplicationErrorCode, l *slog.Logger) {
+func closeQUICConn(conn *quic.Conn, code quic.ApplicationErrorCode, l *slog.Logger) {
 	l.Debug("closing quic conn", "addr", conn.LocalAddr(), "code", code)
 
 	err := conn.CloseWithError(code, "")

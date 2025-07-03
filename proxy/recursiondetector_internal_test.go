@@ -115,9 +115,6 @@ func TestRecursionDetector_Suspect(t *testing.T) {
 	}
 }
 
-// byteSink is a typed sink for benchmark results.
-var byteSink []byte
-
 func BenchmarkMsgToSignature(b *testing.B) {
 	const name = "some.not.very.long.host.name"
 
@@ -131,38 +128,42 @@ func BenchmarkMsgToSignature(b *testing.B) {
 		}},
 	}
 
+	var sigData []byte
+
 	b.Run("efficient", func(b *testing.B) {
 		b.ReportAllocs()
 
-		for range b.N {
-			byteSink = msgToSignature(msg)
+		for b.Loop() {
+			sigData = msgToSignature(msg)
 		}
 
-		assert.NotEmpty(b, byteSink)
+		assert.NotEmpty(b, sigData)
 	})
 
 	b.Run("inefficient", func(b *testing.B) {
 		b.ReportAllocs()
 
-		for range b.N {
-			byteSink = msgToSignatureSlow(msg)
+		for b.Loop() {
+			sigData = msgToSignatureSlow(msg)
 		}
 
-		assert.NotEmpty(b, byteSink)
+		assert.NotEmpty(b, sigData)
 	})
 
-	// goos: darwin
-	// goarch: amd64
-	// pkg: github.com/AdguardTeam/dnsproxy/proxy
-	// cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-	// BenchmarkMsgToSignature/efficient-12		17155314	68.84 ns/op		288 B/op	1 allocs/op
-	// BenchmarkMsgToSignature/inefficient-12	460803		2367 ns/op		648 B/op	6 allocs/op
+	// Most recent results:
+	//
+	//	goos: darwin
+	//	goarch: amd64
+	//	pkg: github.com/AdguardTeam/dnsproxy/proxy
+	//	cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
+	//	BenchmarkMsgToSignature/efficient-12         	18789852	        61.07 ns/op	     288 B/op	       1 allocs/op
+	//	BenchmarkMsgToSignature/inefficient-12       	  582990	      2016 ns/op	     624 B/op	       3 allocs/op
 }
 
 // msgToSignatureSlow converts msg into it's signature represented in bytes in
 // the less efficient way.
 //
-// See BenchmarkMsgToSignature.
+// See [BenchmarkMsgToSignature].
 func msgToSignatureSlow(msg *dns.Msg) (sig []byte) {
 	type msgSignature struct {
 		name  [netutil.MaxDomainNameLen]byte

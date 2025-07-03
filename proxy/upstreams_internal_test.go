@@ -188,7 +188,7 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 		},
 	}, {
 		name:    "no_default",
-		wantErr: errors.Error("no default upstreams specified"),
+		wantErr: errors.ErrNoValue,
 		in: []string{
 			"[/domain.example/]udp://upstream.example:53",
 			"[/another.domain.example/]#",
@@ -205,7 +205,9 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 	}
 
 	t.Run("actual_nil", func(t *testing.T) {
-		assert.ErrorIs(t, (*UpstreamConfig)(nil).validate(), errors.Error("upstream config is nil"))
+		var c *UpstreamConfig
+
+		assert.Equal(t, c.validate(), errors.ErrNoValue)
 	})
 }
 
@@ -437,18 +439,16 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 	}
 }
 
-// upsSink is the typed sink variable for the result of benchmarked function.
-var upsSink []upstream.Upstream
-
 func BenchmarkGetUpstreamsForDomain(b *testing.B) {
-	upstreams := []string{
+	upstreamsAddrs := []string{
 		"[/google.com/local/]4.3.2.1",
 		"[/www.google.com//]1.2.3.4",
 		"[/maps.google.com/]#",
 		"[/www.google.com/]tls://1.1.1.1",
+		"192.0.2.1",
 	}
 
-	config, _ := ParseUpstreamsConfig(upstreams, &upstream.Options{
+	config, _ := ParseUpstreamsConfig(upstreamsAddrs, &upstream.Options{
 		Logger:             slogutil.NewDiscardLogger(),
 		InsecureSkipVerify: false,
 		Bootstrap:          nil,
@@ -463,10 +463,26 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		"maps.google.com.",
 	}
 
+	var upstreams []upstream.Upstream
 	l := len(domains)
-	for i := range b.N {
-		upsSink = config.getUpstreamsForDomain(domains[i%l])
-	}
+
+	b.Run("get", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for i := 0; b.Loop(); i++ {
+			upstreams = config.getUpstreamsForDomain(domains[i%l])
+		}
+
+		assert.NotEmpty(b, upstreams)
+	})
+
+	// Most recent results:
+	//
+	//	goos: darwin
+	//	goarch: amd64
+	//	pkg: github.com/AdguardTeam/dnsproxy/proxy
+	//	cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
+	//	BenchmarkGetUpstreamsForDomain/get-12         	22438213	        46.05 ns/op	       0 B/op	       0 allocs/op
 }
 
 // assertUpstreamsAddrs checks the addresses of ups to exactly match want.

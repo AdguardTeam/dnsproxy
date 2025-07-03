@@ -561,9 +561,8 @@ func (p *dnsOverHTTPS) createTransportH3(
 			_ string,
 			tlsCfg *tls.Config,
 			cfg *quic.Config,
-		) (c quic.EarlyConnection, err error) {
-			c, err = quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
-			return c, err
+		) (c *quic.Conn, err error) {
+			return quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
 		},
 		DisableCompression: true,
 		TLSClientConfig:    tlsConfig,

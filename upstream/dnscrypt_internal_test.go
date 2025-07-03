@@ -45,6 +45,7 @@ func startTestDNSCryptServer(
 		ProviderName: rc.ProviderName,
 		ResolverCert: cert,
 		Handler:      h,
+		Logger:       slogutil.NewDiscardLogger(),
 	}
 	testutil.CleanupAndRequireSuccess(t, func() (err error) {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)

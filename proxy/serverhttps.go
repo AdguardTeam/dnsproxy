@@ -25,42 +25,56 @@ import (
 // listenHTTP creates instances of TLS listeners that will be used to run an
 // H1/H2 server.  Returns the address the listener actually listens to (useful
 // in the case if port 0 is specified).
-func (p *Proxy) listenHTTP(addr *net.TCPAddr) (laddr *net.TCPAddr, err error) {
-	tcpListen, err := net.ListenTCP(bootstrap.NetworkTCP, addr)
+func (p *Proxy) listenHTTP(
+	ctx context.Context,
+	addr *net.TCPAddr,
+) (ln net.Listener, tcpAddr *net.TCPAddr, err error) {
+	var tcpListen *net.TCPListener
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		tcpListen, listenErr = net.ListenTCP(bootstrap.NetworkTCP, addr)
+
+		return listenErr
+	})
 	if err != nil {
-		return nil, fmt.Errorf("tcp listener: %w", err)
+		return nil, nil, fmt.Errorf("tcp listener: %w", err)
 	}
 
-	p.logger.Info("listening to https", "addr", tcpListen.Addr())
+	laddr := tcpListen.Addr()
+	tcpAddr, ok := laddr.(*net.TCPAddr)
+	if !ok {
+		return nil, nil, fmt.Errorf("bad listener address type: %T", laddr)
+	}
+
+	p.logger.InfoContext(ctx, "listening to https", "addr", tcpAddr)
 
 	tlsConfig := p.TLSConfig.Clone()
 	tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 
 	tlsListen := tls.NewListener(tcpListen, tlsConfig)
-	p.httpsListen = append(p.httpsListen, tlsListen)
 
-	return tcpListen.Addr().(*net.TCPAddr), nil
+	return tlsListen, tcpAddr, nil
 }
 
 // listenH3 creates instances of QUIC listeners that will be used for running
 // an HTTP/3 server.
-func (p *Proxy) listenH3(addr *net.UDPAddr) (err error) {
+func (p *Proxy) listenH3(
+	ctx context.Context,
+	addr *net.UDPAddr,
+) (ln *quic.EarlyListener, err error) {
 	tlsConfig := p.TLSConfig.Clone()
 	tlsConfig.NextProtos = []string{"h3"}
 	quicListen, err := quic.ListenAddrEarly(addr.String(), tlsConfig, newServerQUICConfig())
 	if err != nil {
-		return fmt.Errorf("quic listener: %w", err)
+		return nil, fmt.Errorf("quic listener: %w", err)
 	}
 
-	p.logger.Info("listening to h3", "addr", quicListen.Addr())
+	p.logger.InfoContext(ctx, "listening to h3", "addr", quicListen.Addr())
 
-	p.h3Listen = append(p.h3Listen, quicListen)
-
-	return nil
+	return quicListen, nil
 }
 
-// createHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
-func (p *Proxy) createHTTPSListeners() (err error) {
+// initHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
+func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
 	p.httpsServer = &http.Server{
 		Handler:           p,
 		ReadHeaderTimeout: defaultTimeout,
@@ -74,21 +88,27 @@ func (p *Proxy) createHTTPSListeners() (err error) {
 	}
 
 	for _, addr := range p.HTTPSListenAddr {
-		p.logger.Info("creating an https server")
+		p.logger.InfoContext(ctx, "creating an https server")
 
-		tcpAddr, lErr := p.listenHTTP(addr)
+		ln, tcpAddr, lErr := p.listenHTTP(ctx, addr)
 		if lErr != nil {
 			return fmt.Errorf("failed to start HTTPS server on %s: %w", addr, lErr)
 		}
+
+		p.httpsListen = append(p.httpsListen, ln)
 
 		if p.HTTP3 {
 			// HTTP/3 server listens to the same pair IP:port as the one HTTP/2
 			// server listens to.
 			udpAddr := &net.UDPAddr{IP: tcpAddr.IP, Port: tcpAddr.Port}
-			err = p.listenH3(udpAddr)
+
+			var quicListen *quic.EarlyListener
+			quicListen, err = p.listenH3(ctx, udpAddr)
 			if err != nil {
 				return fmt.Errorf("failed to start HTTP/3 server on %s: %w", udpAddr, err)
 			}
+
+			p.h3Listen = append(p.h3Listen, quicListen)
 		}
 	}
 

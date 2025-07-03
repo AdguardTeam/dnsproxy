@@ -58,6 +58,11 @@ type Config struct {
 	// constructor will be used.
 	MessageConstructor MessageConstructor
 
+	// PendingRequests is used to mitigate the cache poisoning attacks by
+	// tracking identical requests and returning the same response for them,
+	// performing a single lookup.  If nil, it will be enabled by default.
+	PendingRequests *PendingRequestsConfig
+
 	// BeforeRequestHandler is an optional custom handler called before each DNS
 	// request is started processing, see [BeforeRequestHandler].  The default
 	// no-op implementation is used, if it's nil.
@@ -81,7 +86,10 @@ type Config struct {
 	PrivateRDNSUpstreamConfig *UpstreamConfig
 
 	// Fallbacks is a list of fallback resolvers.  Those will be used if the
-	// general set fails responding.
+	// general set fails responding.  It isn't allowed to be empty, but can be
+	// nil, which means not to use fallbacks.
+	//
+	// TODO(e.burkov):  Add explicit boolean for disabling fallbacks.
 	Fallbacks *UpstreamConfig
 
 	// Userinfo is the sole permitted userinfo for the DoH basic authentication.
@@ -96,6 +104,10 @@ type Config struct {
 	// DNSCryptResolverCert is the DNSCrypt resolver certificate.  Required for
 	// DNSCrypt server.
 	DNSCryptResolverCert *dnscrypt.Cert
+
+	// BindRetryConfig configures the listeners binding retrying.  If nil,
+	// retries are disabled.
+	BindRetryConfig *BindRetryConfig
 
 	// DNSCryptProviderName is the DNSCrypt provider name.  Required for
 	// DNSCrypt server.
@@ -244,6 +256,12 @@ type Config struct {
 	PreferIPv6 bool
 }
 
+// PendingRequestsConfig is the configuration for tracking identical requests.
+type PendingRequestsConfig struct {
+	// Enabled defines if the duplicate requests should be tracked.
+	Enabled bool
+}
+
 // validateConfig verifies that the supplied configuration is valid and returns
 // an error if it's not.
 //
@@ -251,35 +269,42 @@ type Config struct {
 func (p *Proxy) validateConfig() (err error) {
 	err = p.UpstreamConfig.validate()
 	if err != nil {
-		return fmt.Errorf("validating general upstreams: %w", err)
+		return fmt.Errorf("general upstreams: %w", err)
 	}
 
 	err = ValidatePrivateConfig(p.PrivateRDNSUpstreamConfig, p.privateNets)
 	if err != nil {
 		if p.UsePrivateRDNS || errors.Is(err, upstream.ErrNoUpstreams) {
-			return fmt.Errorf("validating private RDNS upstreams: %w", err)
+			return fmt.Errorf("private rdns upstreams: %w", err)
 		}
 	}
 
+	err = p.Fallbacks.validate()
 	// Allow [Proxy.Fallbacks] to be nil, but not empty.  nil means not to use
 	// fallbacks at all.
-	err = p.Fallbacks.validate()
 	if errors.Is(err, upstream.ErrNoUpstreams) {
-		return fmt.Errorf("validating fallbacks: %w", err)
+		return fmt.Errorf("fallbacks: %w", err)
 	}
 
 	err = p.validateRatelimit()
 	if err != nil {
-		return fmt.Errorf("validating ratelimit: %w", err)
+		return fmt.Errorf("ratelimit: %w", err)
 	}
 
 	switch p.UpstreamMode {
-	case "":
-		// Go on.
-	case UpstreamModeFastestAddr, UpstreamModeLoadBalance, UpstreamModeParallel:
+	case
+		"",
+		UpstreamModeFastestAddr,
+		UpstreamModeLoadBalance,
+		UpstreamModeParallel:
 		// Go on.
 	default:
-		return fmt.Errorf("bad upstream mode: %q", p.UpstreamMode)
+		return fmt.Errorf("upstream mode: %w: %q", errors.ErrBadEnumValue, p.UpstreamMode)
+	}
+
+	err = p.validateBasicAuth()
+	if err != nil {
+		return fmt.Errorf("basic auth: %w", err)
 	}
 
 	p.logConfigInfo()
@@ -353,9 +378,11 @@ func (p *Proxy) logConfigInfo() {
 
 // validateListenAddrs returns an error if the addresses are not configured
 // properly.
+//
+// TODO(e.burkov):  Move to configuration validation.
 func (p *Proxy) validateListenAddrs() (err error) {
 	if !p.hasListenAddrs() {
-		return errors.Error("no listen address specified")
+		return fmt.Errorf("listen addresses: %w", errors.ErrNoValue)
 	}
 
 	err = p.validateTLSConfig()

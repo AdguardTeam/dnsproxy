@@ -438,7 +438,7 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 				_ string,
 				tlsCfg *tls.Config,
 				cfg *quic.Config,
-			) (quic.EarlyConnection, error) {
+			) (*quic.Conn, error) {
 				addr := dnsProxy.Addr(ProtoHTTPS).String()
 				return quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
 			},

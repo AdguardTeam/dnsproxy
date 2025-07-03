@@ -3,20 +3,17 @@
 verbose="${VERBOSE:-0}"
 readonly verbose
 
-if [ "$verbose" -gt '2' ]
-then
+if [ "$verbose" -gt '2' ]; then
 	env
 	set -x
-elif [ "$verbose" -gt '1' ]
-then
+elif [ "$verbose" -gt '1' ]; then
 	set -x
 fi
 
 set -e -f -u
 
 log() {
-	if [ "$verbose" -gt '0' ]
-	then
+	if [ "$verbose" -gt '0' ]; then
 		# Don't use quotes to get word splitting.
 		echo "$1" 1>&2
 	fi
@@ -36,10 +33,8 @@ out="${OUT:-dnsproxy}"
 
 log "checking tools"
 
-for tool in tar zip
-do
-	if ! command -v "$tool" > /dev/null
-	then
+for tool in tar zip; do
+	if ! command -v "$tool" >/dev/null; then
 		log "tool '$tool' not found"
 
 		exit 1
@@ -80,17 +75,16 @@ readonly platforms
 build() {
 	# Get the arguments.  Here and below, use the "build_" prefix for all
 	# variables local to function build.
-	build_dir="${dist}/${1}"\
-		build_name="$1"\
-		build_os="$2"\
-		build_arch="$3"\
-		build_arm="$4"\
-		build_mips="$5"\
+	build_dir="${dist}/${1}" \
+		build_name="$1" \
+		build_os="$2" \
+		build_arch="$3" \
+		build_arm="$4" \
+		build_mips="$5" \
 		;
 
 	# Use the ".exe" filename extension if we build a Windows release.
-	if [ "$build_os" = 'windows' ]
-	then
+	if [ "$build_os" = 'windows' ]; then
 		build_output="./${build_dir}/${out}.exe"
 	else
 		build_output="./${build_dir}/${out}"
@@ -105,16 +99,14 @@ build() {
 	#
 	# Don't use quotes with $build_par because we want an empty space if
 	# parallelism wasn't set.
-	env\
-		GOARCH="$build_arch"\
-		GOARM="${build_arm#0}"\
-		GOMIPS="${build_mips#0}"\
-		GOOS="$os"\
-		VERBOSE="$(( verbose - 1 ))"\
-		VERSION="$version"\
-		OUT="$build_output"\
-		sh ./scripts/make/go-build.sh\
-		;
+	env GOARCH="$build_arch" \
+		GOARM="${build_arm#0}" \
+		GOMIPS="${build_mips#0}" \
+		GOOS="$os" \
+		VERBOSE="$((verbose - 1))" \
+		VERSION="$version" \
+		OUT="$build_output" \
+		sh ./scripts/make/go-build.sh
 
 	log "$build_output"
 
@@ -122,17 +114,16 @@ build() {
 	cp ./LICENSE ./README.md "$build_dir"
 
 	# Make archives.  Windows prefers ZIP archives; the rest, gzipped tarballs.
-	case "$build_os"
-	in
-	('windows')
+	case "$build_os" in
+	'windows')
 		build_archive="./${dist}/${out}-${build_name}-${version}.zip"
 		# TODO(a.garipov): Find an option similar to the -C option of tar for
 		# zip.
-		( cd "${dist}" && zip -9 -q -r "../${build_archive}" "./${build_name}" )
+		(cd "${dist}" && zip -9 -q -r "../${build_archive}" "./${build_name}")
 		;;
-	(*)
+	*)
 		build_archive="./${dist}/${out}-${build_name}-${version}.tar.gz"
-		tar -C "./${dist}" -c -f - "./${build_name}" | gzip -9 - > "$build_archive"
+		tar -C "./${dist}" -c -f - "./${build_name}" | gzip -9 - >"$build_archive"
 		;;
 	esac
 
@@ -143,14 +134,12 @@ log "starting builds"
 
 # Go over all platforms defined in the space-separated table above, tweak the
 # values where necessary, and feed to build.
-echo "$platforms" | while read -r os arch arm mips
-do
-	case "$arch"
-	in
-	(arm)
+echo "$platforms" | while read -r os arch arm mips; do
+	case "$arch" in
+	arm)
 		name="${os}-${arch}${arm}"
 		;;
-	(*)
+	*)
 		name="${os}-${arch}"
 		;;
 	esac

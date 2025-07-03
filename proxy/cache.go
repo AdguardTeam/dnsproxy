@@ -21,6 +21,8 @@ import (
 const defaultCacheSize = 64 * 1024
 
 // cache is used to cache requests and used upstreams.
+//
+// TODO(a.garipov):  Add [timeutil.Clock] and make tests less flaky.
 type cache struct {
 	// itemsLock protects requests cache.
 	itemsLock *sync.RWMutex

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/netip"
@@ -25,12 +26,13 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/service"
 	"github.com/AdguardTeam/golibs/syncutil"
+	"github.com/AdguardTeam/golibs/timeutil"
+	"github.com/AdguardTeam/golibs/validate"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	"golang.org/x/exp/rand"
 )
 
 const (
@@ -77,7 +79,7 @@ type Proxy struct {
 	// time provides the current time.
 	//
 	// TODO(e.burkov):  Consider configuring it.
-	time clock
+	time timeutil.Clock
 
 	// randSrc provides the source of randomness.
 	//
@@ -114,6 +116,10 @@ type Proxy struct {
 	// recDetector detects recursive requests that may appear when resolving
 	// requests for private addresses.
 	recDetector *recursionDetector
+
+	// pendingRequests is a storage for duplicated requests.  It is used to
+	// prevent sending the same request to upstreams multiple times.
+	pendingRequests pendingRequests
 
 	// bytesPool is a pool of byte slices used to read DNS packets.
 	//
@@ -178,6 +184,14 @@ type Proxy struct {
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int
 
+	// bindRetryCount is the number of retries for binding to an address for
+	// listening.  Zero means one attempt and no retries.
+	bindRetryCount uint
+
+	// bindRetryIvl is the interval between attempts to bind to an address for
+	// listening.
+	bindRetryIvl time.Duration
+
 	// counter counts message contexts created with [Proxy.newDNSContext].
 	counter atomic.Uint64
 
@@ -202,6 +216,8 @@ type Proxy struct {
 // New creates a new Proxy with the specified configuration.  c must not be nil.
 //
 // TODO(e.burkov):  Cover with tests.
+//
+// TODO(e.burkov):  Add context.
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
 		Config: *c,
@@ -226,18 +242,14 @@ func New(c *Config) (p *Proxy, err error) {
 			},
 		},
 		udpOOBSize: proxynetutil.UDPGetOOBSize(),
-		time:       realClock{},
+		time:       timeutil.SystemClock{},
 		messages: cmp.Or[MessageConstructor](
 			c.MessageConstructor,
 			dnsmsg.DefaultMessageConstructor{},
 		),
-		recDetector: newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
-	}
-
-	if c.Logger != nil {
-		p.logger = c.Logger
-	} else {
-		p.logger = slog.Default().With(slogutil.KeyPrefix, LogPrefix)
+		recDetector:     newRecursionDetector(recursionTTL, cachedRecurrentReqNum),
+		pendingRequests: pendingRequestsOrDefault(c.PendingRequests),
+		logger:          loggerOrDefault(c.Logger),
 	}
 
 	// TODO(e.burkov):  Validate config separately and add the contract to the
@@ -245,12 +257,6 @@ func New(c *Config) (p *Proxy, err error) {
 	err = p.validateConfig()
 	if err != nil {
 		return nil, err
-	}
-
-	// TODO(s.chzhen):  Consider moving to [Proxy.validateConfig].
-	err = p.validateBasicAuth()
-	if err != nil {
-		return nil, fmt.Errorf("basic auth: %w", err)
 	}
 
 	p.initCache()
@@ -263,13 +269,17 @@ func New(c *Config) (p *Proxy, err error) {
 		p.requestsSema = syncutil.EmptySemaphore{}
 	}
 
-	if p.UpstreamMode == "" {
-		p.UpstreamMode = UpstreamModeLoadBalance
-	} else if p.UpstreamMode == UpstreamModeFastestAddr {
+	p.UpstreamMode = cmp.Or(p.UpstreamMode, UpstreamModeLoadBalance)
+	if p.UpstreamMode == UpstreamModeFastestAddr {
 		p.fastestAddr = fastip.New(&fastip.Config{
 			Logger:          p.Logger,
 			PingWaitTimeout: p.FastestPingTimeout,
 		})
+	}
+
+	if bindRetries := c.BindRetryConfig; bindRetries != nil && bindRetries.Enabled {
+		p.bindRetryCount = bindRetries.Count
+		p.bindRetryIvl = bindRetries.Interval
 	}
 
 	err = p.setupDNS64()
@@ -277,10 +287,31 @@ func New(c *Config) (p *Proxy, err error) {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
 	}
 
+	// TODO(e.burkov):  Clone all mutable fields of Config.
 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
 	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
 
 	return p, nil
+}
+
+// pendingRequestsOrDefault returns the pending requests if it's not nil,
+// otherwise it returns the default pending requests.
+func pendingRequestsOrDefault(conf *PendingRequestsConfig) (pr pendingRequests) {
+	if conf != nil && conf.Enabled {
+		return newDefaultPendingRequests()
+	}
+
+	return emptyPendingRequests{}
+}
+
+// loggerOrDefault returns the logger if it's not nil, otherwise it returns the
+// default logger.
+func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
+	if l != nil {
+		return l
+	}
+
+	return slog.Default().With(slogutil.KeyPrefix, LogPrefix)
 }
 
 // validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
@@ -291,11 +322,7 @@ func (p *Proxy) validateBasicAuth() (err error) {
 		return nil
 	}
 
-	if len(conf.HTTPSListenAddr) == 0 {
-		return errors.Error("no https addrs")
-	}
-
-	return nil
+	return validate.NotEmptySlice("HTTPSListenAddr", conf.HTTPSListenAddr)
 }
 
 // Returns true if proxy is started.  It is safe for concurrent use.
@@ -326,15 +353,26 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 		return err
 	}
 
-	err = p.configureListeners(ctx)
+	err = p.startListeners(ctx)
 	if err != nil {
-		return fmt.Errorf("configuring listeners: %w", err)
+		closeErr := errors.Join(p.closeListeners(nil)...)
+
+		return fmt.Errorf("configuring listeners: %w", errors.WithDeferred(err, closeErr))
 	}
 
-	p.startListeners()
+	p.serveListeners()
+
 	p.started = true
 
 	return nil
+}
+
+// logClose closes the closer and logs the error at the specified level if it
+// occurs.
+func (p *Proxy) logClose(ctx context.Context, l slog.Level, c io.Closer, msg string, args ...any) {
+	if err := c.Close(); err != nil {
+		p.logger.Log(ctx, l, msg, append(args, slogutil.KeyError, err)...)
+	}
 }
 
 // closeAll closes all closers and appends the occurred errors to errs.
@@ -349,7 +387,8 @@ func closeAll[C io.Closer](errs []error, closers ...C) (appended []error) {
 	return errs
 }
 
-// Shutdown implements the [service.Interface] for *Proxy.
+// Shutdown implements the [service.Interface] for *Proxy.  It also closes the
+// configured upstream configurations.
 func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 	p.logger.InfoContext(ctx, "stopping server")
 
@@ -363,45 +402,7 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 		return nil
 	}
 
-	errs := closeAll(nil, p.tcpListen...)
-	p.tcpListen = nil
-
-	errs = closeAll(errs, p.udpListen...)
-	p.udpListen = nil
-
-	errs = closeAll(errs, p.tlsListen...)
-	p.tlsListen = nil
-
-	if p.httpsServer != nil {
-		errs = closeAll(errs, p.httpsServer)
-		p.httpsServer = nil
-
-		// No need to close these since they're closed by httpsServer.Close().
-		p.httpsListen = nil
-	}
-
-	if p.h3Server != nil {
-		errs = closeAll(errs, p.h3Server)
-		p.h3Server = nil
-	}
-
-	errs = closeAll(errs, p.h3Listen...)
-	p.h3Listen = nil
-
-	errs = closeAll(errs, p.quicListen...)
-	p.quicListen = nil
-
-	errs = closeAll(errs, p.quicTransports...)
-	p.quicTransports = nil
-
-	errs = closeAll(errs, p.quicConns...)
-	p.quicConns = nil
-
-	errs = closeAll(errs, p.dnsCryptUDPListen...)
-	p.dnsCryptUDPListen = nil
-
-	errs = closeAll(errs, p.dnsCryptTCPListen...)
-	p.dnsCryptTCPListen = nil
+	errs := p.closeListeners(nil)
 
 	for _, u := range []*UpstreamConfig{
 		p.UpstreamConfig,
@@ -417,11 +418,61 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 
 	p.logger.InfoContext(ctx, "stopped dns proxy server")
 
-	if len(errs) > 0 {
-		return fmt.Errorf("stopping dns proxy server: %w", errors.Join(errs...))
+	err = errors.Join(errs...)
+	if err != nil {
+		return fmt.Errorf("stopping dns proxy server: %w", err)
 	}
 
 	return nil
+}
+
+// closeListeners closes all active listeners and returns the occurred errors.
+//
+// TODO(e.burkov):  Remove the argument if it remains unused.
+func (p *Proxy) closeListeners(errs []error) (res []error) {
+	res = errs
+
+	res = closeAll(res, p.tcpListen...)
+	p.tcpListen = nil
+
+	res = closeAll(res, p.udpListen...)
+	p.udpListen = nil
+
+	res = closeAll(res, p.tlsListen...)
+	p.tlsListen = nil
+
+	if p.httpsServer != nil {
+		res = closeAll(res, p.httpsServer)
+		p.httpsServer = nil
+
+		// No need to close these since they're closed by httpsServer.Close().
+		p.httpsListen = nil
+	}
+
+	if p.h3Server != nil {
+		res = closeAll(res, p.h3Server)
+		p.h3Server = nil
+	}
+
+	res = closeAll(res, p.h3Listen...)
+	p.h3Listen = nil
+
+	res = closeAll(res, p.quicListen...)
+	p.quicListen = nil
+
+	res = closeAll(res, p.quicTransports...)
+	p.quicTransports = nil
+
+	res = closeAll(res, p.quicConns...)
+	p.quicConns = nil
+
+	res = closeAll(res, p.dnsCryptUDPListen...)
+	p.dnsCryptUDPListen = nil
+
+	res = closeAll(res, p.dnsCryptTCPListen...)
+	p.dnsCryptTCPListen = nil
+
+	return res
 }
 
 // addrFunc provides the address from the given A.
@@ -585,21 +636,28 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	if resp != nil {
-		p.logger.Debug("resolved", "src", src)
+		p.logger.Debug("resolved", "upstream", u.Address(), "src", src)
 	}
 
 	unwrapped, stats := collectQueryStats(p.UpstreamMode, u, wrapped, wrappedFallbacks)
 	d.queryStatistics = stats
 
-	p.handleExchangeResult(d, req, resp, unwrapped)
+	ctx := context.TODO()
+	p.handleExchangeResult(ctx, d, req, resp, unwrapped)
 
 	return resp != nil, err
 }
 
 // handleExchangeResult handles the result after the upstream exchange.  It sets
-// the response to d and sets the upstream that have resolved the request.  If
-// the response is nil, it generates a server failure response.
-func (p *Proxy) handleExchangeResult(d *DNSContext, req, resp *dns.Msg, u upstream.Upstream) {
+// resp and the upstream that has resolved the request in d.  If resp is nil, it
+// generates a server failure response.  req must not be nil.
+func (p *Proxy) handleExchangeResult(
+	ctx context.Context,
+	d *DNSContext,
+	req *dns.Msg,
+	resp *dns.Msg,
+	u upstream.Upstream,
+) {
 	if resp == nil {
 		d.Res = p.messages.NewMsgSERVFAIL(req)
 		d.hasEDNS0 = false
@@ -610,7 +668,7 @@ func (p *Proxy) handleExchangeResult(d *DNSContext, req, resp *dns.Msg, u upstre
 	d.Upstream = u
 	d.Res = resp
 
-	p.setMinMaxTTL(resp)
+	p.setMinMaxTTL(ctx, resp)
 	if len(req.Question) > 0 && len(resp.Question) == 0 {
 		// Explicitly construct the question section since some upstreams may
 		// respond with invalidly constructed messages which cause out-of-range
@@ -639,18 +697,30 @@ const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
 // upstream servers.  It expects dctx is filled with the request, the client's
+//
+// TODO(e.burkov):  Add [context.Context].
 func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
+	ctx := context.Background()
+
 	if p.EnableEDNSClientSubnet {
 		dctx.processECS(p.EDNSAddr, p.logger)
 	}
 
 	dctx.calcFlagsAndSize()
 
-	// Also don't lookup the cache for responses with DNSSEC checking disabled
-	// since only validated responses are cached and those may be not the
-	// desired result for user specifying CD flag.
 	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
+		// Only add pending requests if the cache is enabled, since this is a
+		// mitigation against cache poisoning.
+		//
+		// TODO(e.burkov):  Consider tracking all requests.
+		var loaded bool
+		loaded, err = p.pendingRequests.queue(ctx, dctx)
+		if loaded {
+			return err
+		}
+		defer func() { p.pendingRequests.done(ctx, dctx, err) }()
+
 		if p.replyFromCache(dctx) {
 			// Complete the response from cache.
 			dctx.scrub()
@@ -697,22 +767,24 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 	var reason string
 	switch {
-	case p.cache == nil:
-		reason = "disabled"
+	case dctx.CustomUpstreamConfig != nil && dctx.CustomUpstreamConfig.cache == nil:
+		// If custom upstreams are used but the custom upstream cache is
+		// disabled, return false to prevent storing results in the global
+		// cache.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/169.
+		reason = "custom upstreams cache is not configured"
+	case p.cache == nil &&
+		(dctx.CustomUpstreamConfig == nil || dctx.CustomUpstreamConfig.cache == nil):
+		reason = "caching disabled: neither global cache nor custom upstreams cache is configured"
 	case dctx.RequestedPrivateRDNS != netip.Prefix{}:
 		// Don't cache the requests intended for local upstream servers, those
 		// should be fast enough as is.
 		reason = "requested address is private"
-	case dctx.CustomUpstreamConfig != nil && dctx.CustomUpstreamConfig.cache == nil:
-		// In case of custom upstream cache is not configured, the global proxy
-		// cache cannot be used because different upstreams can return different
-		// results.
-		//
-		// See https://github.com/AdguardTeam/dnsproxy/issues/169.
-		//
-		// TODO(e.burkov):  It probably should be decided after resolve.
-		reason = "custom upstreams cache is not configured"
 	case dctx.Req.CheckingDisabled:
+		// Also don't lookup the cache for responses with DNSSEC checking
+		// disabled since only validated responses are cached and those may be
+		// not the desired result for user specifying CD flag.
 		reason = "dnssec check disabled"
 	default:
 		return true

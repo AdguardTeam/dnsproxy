@@ -64,7 +64,7 @@ Usage of ./dnsproxy:
   --config-path=path
         YAML configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
   --dns64
-        If specified, dnsproxy will act as a DNS64 server.
+        If specified, dnsproxy will act as a DNS64 (a.k.a. NAT64) server. This is a really bad idea to do on public or out-of-house, as it will break large parts of the internet on IPv6 clients in such circumstances.
   --dns64-prefix=subnet
         Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times.
   --dnscrypt-config=path/-g path

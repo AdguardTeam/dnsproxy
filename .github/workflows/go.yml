@@ -15,7 +15,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        ref: ${{ github.ref }}  # 确保检出正确的tag
+        ref: 'v0.20.0'  # 确保检出正确的tag
 
     - name: Set up Go
       uses: actions/setup-go@v4

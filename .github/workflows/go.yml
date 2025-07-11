@@ -34,7 +34,8 @@ jobs:
 
     - name: Run Makefile (v20)
       run: |
-        cd "$(pwd)/mobile" && pwd
+        ls
+        cd mobile
         make ios
 
     - name: Upload artifacts

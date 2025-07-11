@@ -1,0 +1,44 @@
+name: Build Go Mobile for iOS (v20)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v0.20.0' ]  # 只处理v20相关的标签
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}  # 确保检出正确的tag
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Install Xcode dependencies
+      run: |
+        xcode-select --install || true
+        sudo xcodebuild -license accept
+
+    - name: Initialize Gomobile
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        gomobile init
+
+    - name: Run Makefile (v20)
+      run: |
+        cd mobile
+        make ios
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ios-v20-output
+        path: output/

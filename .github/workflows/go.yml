@@ -33,7 +33,6 @@ jobs:
         go get golang.org/x/mobile/cmd/gomobile@a42111704963f4f0d1266674e1e97489aa8dcca0
         go install golang.org/x/mobile/cmd/gomobile
         gomobile init
-        gomobile version
 
     - name: Run Makefile (v20)
       run: |

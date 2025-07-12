@@ -17,6 +17,20 @@ jobs:
       with:
         ref: 'v0.20.0'  # 确保检出正确的tag
 
+      
+    - name: Create branch from tag
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        branch_name="release-${TAG_NAME}"
+        git branch $branch_name ${{ github.sha }}
+        git push origin $branch_name
+      env:
+        TAG_NAME: ${{ steps.tag.outputs.tag_name }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        
+
     - name: Set up Go
       uses: actions/setup-go@v4
       with:

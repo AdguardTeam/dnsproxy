@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
@@ -20,12 +20,12 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.16'
+        go-version: '1.13'
 
-    - name: Install Xcode dependencies
-      run: |
-        xcode-select --install || true
-        sudo xcodebuild -license accept
+    # - name: Install Xcode dependencies
+    #   run: |
+    #     xcode-select --install || true
+    #     sudo xcodebuild -license accept
 
     - name: Initialize Gomobile
       run: |

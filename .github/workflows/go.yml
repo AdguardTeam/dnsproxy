@@ -20,7 +20,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.16'
+        go-version: '1.13'
 
     - name: Install Xcode dependencies
       run: |
@@ -29,7 +29,7 @@ jobs:
 
     - name: Initialize Gomobile
       run: |
-        go install golang.org/x/mobile/cmd/gomobile@latest
+        go install golang.org/x/mobile/cmd/gomobile@a42111704963f4f0d1266674e1e97489aa8dcca0
         gomobile init
 
     - name: Run Makefile (v20)

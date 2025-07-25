@@ -296,7 +296,8 @@ func (p *Proxy) validateConfig() (err error) {
 		"",
 		UpstreamModeFastestAddr,
 		UpstreamModeLoadBalance,
-		UpstreamModeParallel:
+		UpstreamModeParallel,
+		UpstreamModeRandom:
 		// Go on.
 	default:
 		return fmt.Errorf("upstream mode: %w: %q", errors.ErrBadEnumValue, p.UpstreamMode)

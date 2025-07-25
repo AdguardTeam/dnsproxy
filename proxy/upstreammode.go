@@ -23,6 +23,9 @@ const (
 	// or AAAA requests only with the fastest IP address detected by ICMP
 	// response time or TCP connection time.
 	UpstreamModeFastestAddr UpstreamMode = "fastest_addr"
+
+    // UpstreamModeRandom makes server to a random upstream
+	UpstreamModeRandom UpstreamMode = "random"
 )
 
 // type check
@@ -35,6 +38,7 @@ func (m *UpstreamMode) UnmarshalText(b []byte) (err error) {
 	case
 		UpstreamModeLoadBalance,
 		UpstreamModeParallel,
+		UpstreamModeRandomm,
 		UpstreamModeFastestAddr:
 		*m = um
 	default:
@@ -43,6 +47,7 @@ func (m *UpstreamMode) UnmarshalText(b []byte) (err error) {
 			b,
 			UpstreamModeLoadBalance,
 			UpstreamModeParallel,
+			UpstreamModeRandom,
 			UpstreamModeFastestAddr,
 		)
 	}

@@ -131,7 +131,7 @@ var commandLineOptions = []*commandLineOption{
 		valueType:   "address",
 	},
 	upstreamModeIdx: {
-		description: "Defines the upstreams logic mode, possible values: load_balance, parallel, " +
+		description: "Defines the upstreams logic mode, possible values: load_balance, parallel, random, " +
 			"fastest_addr (default: load_balance).",
 		long:      "upstream-mode",
 		short:     "",

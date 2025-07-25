@@ -24,9 +24,9 @@ func (p *Proxy) exchangeUpstreams(
 	case UpstreamModeRandom:
 		// Simply set ups to a random entry in ups
 		// Falls back to default behaviour as if ups <= 1 it will run UpstreamModeLoadBalance as intended
-		if len(ups) > 1 {
-		    ups = []upstream.Upstream{ups[p.randSrc.Intn(len(ups))]}
-	    }
+	if len(ups) > 1 {
+		ups = []upstream.Upstream{ups[p.randSrc.Intn(len(ups))]}
+	}
 	case UpstreamModeFastestAddr:
 		switch req.Question[0].Qtype {
 		case dns.TypeA, dns.TypeAAAA:

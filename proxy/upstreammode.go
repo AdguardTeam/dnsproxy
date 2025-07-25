@@ -38,7 +38,7 @@ func (m *UpstreamMode) UnmarshalText(b []byte) (err error) {
 	case
 		UpstreamModeLoadBalance,
 		UpstreamModeParallel,
-		UpstreamModeRandomm,
+		UpstreamModeRandom,
 		UpstreamModeFastestAddr:
 		*m = um
 	default:

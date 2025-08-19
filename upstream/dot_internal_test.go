@@ -253,7 +253,7 @@ func startDoTServer(tb testing.TB, handler dns.HandlerFunc) (s *testDoTServer) {
 		srv:       srv,
 		tlsConfig: tlsConfig,
 		rootCAs:   rootCAs,
-		port:      tcpListener.Addr().(*net.TCPAddr).Port,
+		port:      testutil.RequireTypeAssert[*net.TCPAddr](tb, tcpListener.Addr()).Port,
 	}
 	testutil.CleanupAndRequireSuccess(tb, s.Close)
 

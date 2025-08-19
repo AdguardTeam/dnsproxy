@@ -156,19 +156,19 @@ type testDNSServer struct {
 var _ io.Closer = (*testDNSServer)(nil)
 
 // startDNSServer a test DNS server.
-func startDNSServer(t *testing.T, handler dns.HandlerFunc) (s *testDNSServer) {
-	t.Helper()
+func startDNSServer(tb testing.TB, handler dns.HandlerFunc) (s *testDNSServer) {
+	tb.Helper()
 
 	s = &testDNSServer{}
 
 	udpListener, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	s.port = udpListener.LocalAddr().(*net.UDPAddr).Port
+	s.port = testutil.RequireTypeAssert[*net.UDPAddr](tb, udpListener.LocalAddr()).Port
 	s.udpListener = udpListener
 
 	s.tcpListener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", s.port))
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	s.udpSrv = &dns.Server{
 		PacketConn: s.udpListener,
@@ -198,5 +198,5 @@ func (s *testDNSServer) Close() (err error) {
 	udpErr := s.udpSrv.Shutdown()
 	tcpErr := s.tcpSrv.Shutdown()
 
-	return errors.WithDeferred(udpErr, tcpErr)
+	return errors.Join(udpErr, tcpErr)
 }

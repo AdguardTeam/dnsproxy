@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -143,7 +144,7 @@ func TestExchangeAll(t *testing.T) {
 	require.NotEmpty(t, resp.Answer)
 	require.IsType(t, new(dns.A), resp.Answer[0])
 
-	ip := resp.Answer[0].(*dns.A).A
+	ip := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 	assert.Equal(t, ansAddr.AsSlice(), []byte(ip))
 
 	resp = res[1].Resp
@@ -151,6 +152,6 @@ func TestExchangeAll(t *testing.T) {
 	require.NotEmpty(t, resp.Answer)
 	require.IsType(t, new(dns.A), resp.Answer[0])
 
-	ip = resp.Answer[0].(*dns.A).A
+	ip = testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 	assert.Equal(t, delayedAnsAddr.AsSlice(), []byte(ip))
 }

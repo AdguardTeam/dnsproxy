@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"context"
 	"net"
 	"net/netip"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,11 +23,14 @@ import (
 // testCacheSize is the maximum size of cache for tests.
 const testCacheSize = 4096
 
+// testUpsAddr is the mock upstream address for tests.
 const testUpsAddr = "https://upstream.address"
 
-var upstreamWithAddr = &dnsproxytest.FakeUpstream{
-	OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) { panic("not implemented") },
-	OnClose:    func() (err error) { panic("not implemented") },
+// upstreamWithAddr is a [dnsproxytest.Upstream] that is only expected to be
+// used to get its address.
+var upstreamWithAddr = &dnsproxytest.Upstream{
+	OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
+	OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 	OnAddress:  func() (addr string) { return testUpsAddr },
 }
 
@@ -44,10 +47,7 @@ func TestServeCached(t *testing.T) {
 	})
 
 	// Start listening.
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Fill the cache.
 	reply := (&dns.Msg{
@@ -300,10 +300,7 @@ func TestCacheExpiration(t *testing.T) {
 		CacheEnabled:           true,
 	})
 
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	l := slogutil.NewDiscardLogger()
 
@@ -364,10 +361,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		CacheMaxTTL:            40,
 	})
 
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	d := &DNSContext{}
 
@@ -384,7 +378,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 			A: net.IP{4, 3, 2, 1},
 		}}
 
-		err = dnsProxy.Resolve(d)
+		err := dnsProxy.Resolve(d)
 		require.NoError(t, err)
 
 		ci, expired, key := dnsProxy.cache.get(d.Req)
@@ -408,7 +402,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 			A: net.IP{4, 3, 2, 1},
 		}}
 
-		err = dnsProxy.Resolve(d)
+		err := dnsProxy.Resolve(d)
 		assert.Nil(t, err)
 
 		ci, expired, key := dnsProxy.cache.get(d.Req)
@@ -576,13 +570,13 @@ func (tests testCases) run(t *testing.T) {
 
 // requireEqualMsgs asserts the messages are equal except their ID, Rdlength, and
 // the case of questions.
-func requireEqualMsgs(t *testing.T, expected, actual *dns.Msg) {
-	t.Helper()
+func requireEqualMsgs(tb testing.TB, expected, actual *dns.Msg) {
+	tb.Helper()
 
 	temp := *expected
 	temp.Id = actual.Id
 
-	require.Equal(t, len(temp.Answer), len(actual.Answer))
+	require.Equal(tb, len(temp.Answer), len(actual.Answer))
 	for i, ans := range actual.Answer {
 		temp.Answer[i].Header().Rdlength = ans.Header().Rdlength
 	}
@@ -600,7 +594,7 @@ func requireEqualMsgs(t *testing.T, expected, actual *dns.Msg) {
 		actual.Question[i].Name = strings.ToLower(actual.Question[i].Name)
 	}
 
-	assert.Equal(t, &temp, actual)
+	assert.Equal(tb, &temp, actual)
 }
 
 func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) {

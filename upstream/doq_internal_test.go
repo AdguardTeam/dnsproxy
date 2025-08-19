@@ -45,7 +45,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
-	uq := u.(*dnsOverQUIC)
+	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
 	var conn *quic.Conn
 
 	// Test that it responds properly
@@ -198,7 +198,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
-	uq := u.(*dnsOverQUIC)
+	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
 	req := createTestMessage()
 
 	// Trigger connection to a QUIC server.

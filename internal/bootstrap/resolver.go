@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -68,19 +67,12 @@ func (r ParallelResolver) LookupNetIP(
 }
 
 // recoverAndLog is a deferred helper that recovers from a panic and logs the
-// panic value with the logger from context or with a default logger.  Sends the
-// recovered value into resCh.
-//
-// TODO(a.garipov): Move this helper to golibs.
+// panic value with the logger from context or with a default one.  It sends the
+// recovered value into resCh.  resCh must not be nil.
 func recoverAndLog(ctx context.Context, resCh chan<- any) {
-	v := recover()
-	if v == nil {
+	err := errors.FromRecovered(recover())
+	if err == nil {
 		return
-	}
-
-	err, ok := v.(error)
-	if !ok {
-		err = fmt.Errorf("error value: %v", v)
 	}
 
 	l, ok := slogutil.LoggerFromContext(ctx)
@@ -95,7 +87,9 @@ func recoverAndLog(ctx context.Context, resCh chan<- any) {
 }
 
 // lookupAsync performs a lookup for ip of host with r and sends the result into
-// resCh.  It is intended to be used as a goroutine.
+// resCh.  It is intended to be used as a goroutine.  r and resCh must not be
+// nil, network should be one of [NetworkIP], [NetworkIP4] or [NetworkIP6], host
+// should not be empty.
 func lookupAsync(ctx context.Context, r Resolver, network, host string, resCh chan<- any) {
 	// TODO(d.kolyshev): Propose better solution to recover without requiring
 	// logger in the context.
@@ -147,7 +141,8 @@ type StaticResolver []netip.Addr
 // type check
 var _ Resolver = StaticResolver(nil)
 
-// LookupNetIP implements the [Resolver] interface for StaticResolver.
+// LookupNetIP implements the [Resolver] interface for StaticResolver.  It
+// always returns the cloned underlying slice of addresses.
 func (r StaticResolver) LookupNetIP(
 	_ context.Context,
 	_ Network,

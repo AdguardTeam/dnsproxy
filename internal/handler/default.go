@@ -16,11 +16,12 @@ type DefaultConfig struct {
 	// Logger is the logger.  It must not be nil.
 	Logger *slog.Logger
 
-	// HostsFiles is the index containing the records of the hosts files.
+	// HostsFiles is the index containing the records of the hosts files.  It
+	// must not be nil.
 	HostsFiles hostsfile.Storage
 
 	// HaltIPv6 halts the processing of AAAA requests and makes the handler
-	// reply with NODATA to them.
+	// reply with NODATA to them, if true.
 	HaltIPv6 bool
 }
 

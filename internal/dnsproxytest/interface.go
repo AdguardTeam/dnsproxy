@@ -1,30 +1,31 @@
 package dnsproxytest
 
 import (
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 )
 
-// FakeUpstream is a fake [proxy.Upstream] implementation for tests.
+// Upstream is a fake [proxy.Upstream] implementation for tests.
 //
 // TODO(e.burkov):  Move this to the golibs some time later.
-type FakeUpstream struct {
+type Upstream struct {
 	OnAddress  func() (addr string)
 	OnExchange func(req *dns.Msg) (resp *dns.Msg, err error)
 	OnClose    func() (err error)
 }
 
 // Address implements the [proxy.Upstream] interface for *FakeUpstream.
-func (u *FakeUpstream) Address() (addr string) {
+func (u *Upstream) Address() (addr string) {
 	return u.OnAddress()
 }
 
 // Exchange implements the [proxy.Upstream] interface for *FakeUpstream.
-func (u *FakeUpstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+func (u *Upstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	return u.OnExchange(req)
 }
 
 // Close implements the [proxy.Upstream] interface for *FakeUpstream.
-func (u *FakeUpstream) Close() (err error) {
+func (u *Upstream) Close() (err error) {
 	return u.OnClose()
 }
 
@@ -41,17 +42,17 @@ type TestMessageConstructor struct {
 // methods set to panic.
 func NewTestMessageConstructor() (c *TestMessageConstructor) {
 	return &TestMessageConstructor{
-		OnNewMsgNXDOMAIN: func(_ *dns.Msg) (_ *dns.Msg) {
-			panic("unexpected call of TestMessageConstructor.NewMsgNXDOMAIN")
+		OnNewMsgNXDOMAIN: func(req *dns.Msg) (_ *dns.Msg) {
+			panic(testutil.UnexpectedCall(req))
 		},
-		OnNewMsgSERVFAIL: func(_ *dns.Msg) (_ *dns.Msg) {
-			panic("unexpected call of TestMessageConstructor.NewMsgSERVFAIL")
+		OnNewMsgSERVFAIL: func(req *dns.Msg) (_ *dns.Msg) {
+			panic(testutil.UnexpectedCall(req))
 		},
-		OnNewMsgNOTIMPLEMENTED: func(_ *dns.Msg) (_ *dns.Msg) {
-			panic("unexpected call of TestMessageConstructor.NewMsgNOTIMPLEMENTED")
+		OnNewMsgNOTIMPLEMENTED: func(req *dns.Msg) (_ *dns.Msg) {
+			panic(testutil.UnexpectedCall(req))
 		},
-		OnNewMsgNODATA: func(_ *dns.Msg) (_ *dns.Msg) {
-			panic("unexpected call of TestMessageConstructor.NewMsgNODATA")
+		OnNewMsgNODATA: func(req *dns.Msg) (_ *dns.Msg) {
+			panic(testutil.UnexpectedCall(req))
 		},
 	}
 }

@@ -1,14 +1,13 @@
 package proxy
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"net"
 	"testing"
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
-	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 )
@@ -38,11 +37,7 @@ func TestTlsProxy(t *testing.T) {
 		RatelimitSubnetLenIPv6: 64,
 	})
 
-	// Start listening
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPem)

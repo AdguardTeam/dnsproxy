@@ -596,14 +596,14 @@ func TestAddPort(t *testing.T) {
 }
 
 // checkUpstream sends a test message to the upstream and checks the result.
-func checkUpstream(t *testing.T, u Upstream, addr string) {
-	t.Helper()
+func checkUpstream(tb testing.TB, u Upstream, addr string) {
+	tb.Helper()
 
 	req := createTestMessage()
 	reply, err := u.Exchange(req)
-	require.NoErrorf(t, err, "couldn't talk to upstream %s", addr)
+	require.NoErrorf(tb, err, "couldn't talk to upstream %s", addr)
 
-	requireResponse(t, req, reply)
+	requireResponse(tb, req, reply)
 }
 
 // checkRaceCondition runs several goroutines in parallel and each of them calls

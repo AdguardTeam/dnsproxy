@@ -3,7 +3,7 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a remarkable change is made to this script.
 #
-# AdGuard-Project-Version: 8
+# AdGuard-Project-Version: 9
 
 verbose="${VERBOSE:-0}"
 readonly verbose
@@ -33,15 +33,14 @@ trailing_newlines() (
 	nl="$(printf '\n')"
 	readonly nl
 
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		'!' '(' \
 		-name '*.out' \
 		-o -name '*.test' \
 		-o -name 'dnsproxy' \
-		-o -path './.git/*' \
-		-o -path './bin/*' \
 		')' \
+		-print \
 		| while read -r f; do
 			final_byte="$(tail -c -1 "$f")"
 			if [ "$final_byte" != "$nl" ]; then
@@ -53,15 +52,14 @@ trailing_newlines() (
 # trailing_whitespace is a simple check that makes sure that there are no
 # trailing whitespace in plain-text files.
 trailing_whitespace() {
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		'!' '(' \
 		-name '*.out' \
 		-o -name '*.test' \
 		-o -name 'dnsproxy' \
-		-o -path './.git/*' \
-		-o -path './bin/*' \
 		')' \
+		-print \
 		| while read -r f; do
 			grep -e '[[:space:]]$' -n -- "$f" \
 				| sed -e "s:^:${f}\::" -e 's/ \+$/>>>&<<</'
@@ -72,7 +70,7 @@ run_linter -e trailing_newlines
 
 run_linter -e trailing_whitespace
 
-find . \
+find_with_ignore \
 	-type 'f' \
 	'(' \
 	-name 'Makefile' \

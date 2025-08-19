@@ -32,7 +32,7 @@ func TestCollectQueryStats(t *testing.T) {
 		}
 	)
 
-	ups := &dnsproxytest.FakeUpstream{
+	ups := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			return (&dns.Msg{}).SetReply(req), nil
 		},
@@ -40,7 +40,7 @@ func TestCollectQueryStats(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	failUps := &dnsproxytest.FakeUpstream{
+	failUps := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			return nil, errors.Error("exchange error")
 		},
@@ -238,23 +238,23 @@ func TestCollectQueryStats(t *testing.T) {
 
 // assertQueryStats asserts the statistics using the provided parameters.
 func assertQueryStats(
-	t *testing.T,
+	tb testing.TB,
 	stats *proxy.QueryStatistics,
 	wantMainCount int,
 	wantMainErr assert.BoolAssertionFunc,
 	wantFallbackCount int,
 	wantFallbackErr assert.BoolAssertionFunc,
 ) {
-	t.Helper()
+	tb.Helper()
 
 	main := stats.Main()
-	assert.Lenf(t, main, wantMainCount, "main stats count")
+	assert.Lenf(tb, main, wantMainCount, "main stats count")
 
 	fallback := stats.Fallback()
-	assert.Lenf(t, fallback, wantFallbackCount, "fallback stats count")
+	assert.Lenf(tb, fallback, wantFallbackCount, "fallback stats count")
 
-	wantMainErr(t, isErrorInStats(main), "main err")
-	wantFallbackErr(t, isErrorInStats(fallback), "fallback err")
+	wantMainErr(tb, isErrorInStats(main), "main err")
+	wantFallbackErr(tb, isErrorInStats(fallback), "fallback err")
 }
 
 // isErrorInStats is a helper function for tests that returns true if the

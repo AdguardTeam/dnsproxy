@@ -1,18 +1,17 @@
 package proxy
 
 import (
-	"context"
-	"fmt"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
@@ -67,14 +66,11 @@ func TestDNSCryptProxy(t *testing.T) {
 	// Prepare the proxy server
 	dnsProxy, rc := createTestDNSCryptProxy(t)
 
-	// Start listening
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Generate a DNS stamp
-	addr := fmt.Sprintf("%s:%d", listenIP, dnsProxy.Addr(ProtoDNSCrypt).(*net.UDPAddr).Port)
+	port := testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoDNSCrypt)).Port
+	addr := netutil.JoinHostPort(listenIP, uint16(port))
 	stamp, err := rc.CreateStamp(addr)
 	assert.Nil(t, err)
 

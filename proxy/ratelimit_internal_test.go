@@ -1,15 +1,13 @@
 package proxy
 
 import (
-	"context"
 	"net"
 	"net/netip"
 	"testing"
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
-	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRatelimitingProxy(t *testing.T) {
@@ -24,11 +22,7 @@ func TestRatelimitingProxy(t *testing.T) {
 		Ratelimit:              1,
 	})
 
-	// Start listening
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr(ProtoUDP)

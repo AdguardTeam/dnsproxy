@@ -32,14 +32,14 @@ func (f dnsCryptHandlerFunc) ServeDNS(w dnscrypt.ResponseWriter, r *dns.Msg) (er
 // startTestDNSCryptServer starts a test DNSCrypt server with the specified
 // resolver config and handler.
 func startTestDNSCryptServer(
-	t testing.TB,
+	tb testing.TB,
 	rc dnscrypt.ResolverConfig,
 	h dnscrypt.Handler,
 ) (stamp dnsstamps.ServerStamp) {
-	t.Helper()
+	tb.Helper()
 
 	cert, err := rc.CreateCert()
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	s := &dnscrypt.Server{
 		ProviderName: rc.ProviderName,
@@ -47,7 +47,7 @@ func startTestDNSCryptServer(
 		Handler:      h,
 		Logger:       slogutil.NewDiscardLogger(),
 	}
-	testutil.CleanupAndRequireSuccess(t, func() (err error) {
+	testutil.CleanupAndRequireSuccess(tb, func() (err error) {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
@@ -59,15 +59,15 @@ func startTestDNSCryptServer(
 	// Prepare TCP listener.
 	tcpAddr := &net.TCPAddr{IP: localhost, Port: 0}
 	tcpConn, err := net.ListenTCP("tcp", tcpAddr)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, tcpConn.Close)
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, tcpConn.Close)
 
 	// Prepare UDP listener on the same port.
-	port := testutil.RequireTypeAssert[*net.TCPAddr](t, tcpConn.Addr()).Port
+	port := testutil.RequireTypeAssert[*net.TCPAddr](tb, tcpConn.Addr()).Port
 	udpAddr := &net.UDPAddr{IP: localhost, Port: port}
 	udpConn, err := net.ListenUDP("udp", udpAddr)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, udpConn.Close)
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, udpConn.Close)
 
 	// Start the server.
 	go func() {
@@ -81,10 +81,10 @@ func startTestDNSCryptServer(
 	}()
 
 	stamp, err = rc.CreateStamp(udpConn.LocalAddr().String())
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	_, err = net.Dial("tcp", udpAddr.String())
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	return stamp
 }

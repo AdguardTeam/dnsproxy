@@ -16,6 +16,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -51,11 +52,7 @@ func TestHttpsProxy(t *testing.T) {
 				HTTP3:                  tc.http3,
 			})
 
-			// Run the proxy.
-			ctx := context.Background()
-			err := dnsProxy.Start(ctx)
-			require.NoError(t, err)
-			testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+			servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 			// Create the HTTP client that we'll be using for this test.
 			client := createTestHTTPClient(dnsProxy, caPem, tc.http3)
@@ -105,11 +102,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 		dnsProxy.TrustedProxies = netip.PrefixFrom(addr, addr.BitLen())
 
-		// Start listening.
-		ctx := context.Background()
-		err := dnsProxy.Start(ctx)
-		require.NoError(t, err)
-		testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+		servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 		hdrs := map[string]string{
 			"X-Forwarded-For": strings.Join([]string{clientAddr.String(), proxyAddr.String()}, ","),

@@ -6,9 +6,11 @@
 #
 # Only build, run, and test outputs here.  Sorted.  With negations at the
 # bottom to make sure they take effect.
+*.exe
 *.out
 *.test
 /bin/
+/tmp/
 build
 dnsproxy
 dnsproxy.exe
@@ -16,3 +18,4 @@ example.crt
 example.key
 coverage.txt
 config.yaml
+test-reports/

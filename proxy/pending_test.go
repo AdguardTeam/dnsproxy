@@ -13,6 +13,7 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,7 +80,7 @@ func TestPendingRequests(t *testing.T) {
 	workloadWG.Add(reqsNum)
 
 	once := &sync.Once{}
-	u := &dnsproxytest.FakeUpstream{
+	u := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			once.Do(func() {
 				resp = (&dns.Msg{}).SetReply(req)
@@ -119,14 +120,7 @@ func TestPendingRequests(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	err = p.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) {
-		ctx = testutil.ContextWithTimeout(t, testTimeout)
-
-		return p.Shutdown(ctx)
-	})
+	servicetest.RequireRun(t, p, testTimeout)
 
 	addr := p.Addr(proxy.ProtoTCP).String()
 	client := &dns.Client{

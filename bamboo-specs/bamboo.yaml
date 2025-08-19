@@ -10,7 +10,7 @@
     # exact patch version as opposed to a minor one to make sure that this exact
     # version is actually used and not whatever the docker daemon on the CI has
     # cached a few months ago.
-    'dockerGo': 'golang:1.24.4'
+    'dockerGo': 'adguard/go-builder:1.24.6--1'
     'maintainer': 'Adguard Go Team'
     'name': 'dnsproxy'
 
@@ -45,6 +45,8 @@
               'interpreter': 'SHELL'
               'scripts':
                 - |
+                  #!/bin/sh
+
                   set -e -f -u -x
 
                   make VERBOSE=1 GOMAXPROCS=1 go-tools go-lint
@@ -55,6 +57,13 @@
         'volumes':
             '${system.GO_CACHE_DIR}': '${bamboo.cacheGo}'
             '${system.GO_PKG_CACHE_DIR}': '${bamboo.cacheGoPkg}'
+    'final-tasks':
+      - 'test-parser':
+          # The default pattern, '**/test-reports/*.xml', works, so don't set
+          # the test-results property.
+          'type': 'junit'
+          'ignore-time': true
+      - 'clean'
     'key': 'TEST'
     'other':
         'clean-working-dir': true
@@ -69,9 +78,22 @@
             # here as well.
             'scripts':
               - |
+                #!/bin/sh
+
                 set -e -f -u -x
 
-                make VERBOSE=1 go-deps go-test
+                make \
+                    GOMAXPROCS=1 \
+                    VERBOSE=1 \
+                    go-deps go-tools
+
+                make \
+                    TEST_REPORTS_DIR="./test-reports/" \
+                    VERBOSE=1 \
+                    go-test \
+                    ;
+
+                exit "$(cat ./test-reports/test-exit-code.txt)"
 
 'branches':
     'create': 'for-pull-request'

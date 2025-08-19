@@ -9,6 +9,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,7 +57,7 @@ func isCachedWithCustomConfig(
 func TestProxy_Resolve_cache(t *testing.T) {
 	const host = "example.test."
 
-	ups := &dnsproxytest.FakeUpstream{
+	ups := &dnsproxytest.Upstream{
 		OnAddress: func() (addr string) { return "stub" },
 		OnClose:   func() (err error) { return nil },
 	}
@@ -127,11 +128,7 @@ func TestProxy_Resolve_cache(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, p)
 
-			ctx := testutil.ContextWithTimeout(t, testTimeout)
-			err = p.Start(ctx)
-			require.NoError(t, err)
-
-			testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
+			servicetest.RequireRun(t, p, testTimeout)
 
 			res := isCachedWithCustomConfig(t, p, tc.customUpstreamConf, host)
 			assert.False(t, res)
@@ -153,10 +150,10 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 
 	tcpAddr := testutil.RequireTypeAssert[*net.TCPAddr](t, l.Addr())
 
-	ups := &dnsproxytest.FakeUpstream{
-		OnExchange: func(_ *dns.Msg) (_ *dns.Msg, _ error) { panic("not implemented") },
-		OnAddress:  func() (_ string) { panic("not implemented") },
-		OnClose:    func() (_ error) { panic("not implemented") },
+	ups := &dnsproxytest.Upstream{
+		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
+		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
 	p, err := proxy.New(&proxy.Config{
@@ -182,14 +179,6 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 	require.True(t, t.Run("restart_success", func(t *testing.T) {
 		require.NoError(t, l.Close())
 
-		ctx := testutil.ContextWithTimeout(t, testTimeout)
-		err = p.Start(ctx)
-		require.NoError(t, err)
-
-		testutil.CleanupAndRequireSuccess(t, func() (err error) {
-			ctx = testutil.ContextWithTimeout(t, testTimeout)
-
-			return p.Shutdown(ctx)
-		})
+		servicetest.RequireRun(t, p, testTimeout)
 	}))
 }

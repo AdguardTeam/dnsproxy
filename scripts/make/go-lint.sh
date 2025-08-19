@@ -65,7 +65,7 @@ blocklist_imports() {
 	import_or_tab="$(printf '^\\(import \\|\t\\)')"
 	readonly import_or_tab
 
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		'(' -name '*.go' '!' -name '*.pb.go' ')' \
 		-exec \
@@ -93,7 +93,7 @@ blocklist_imports() {
 # NOTE:  Flag -H for grep is non-POSIX but all of Busybox, GNU, macOS, and
 # OpenBSD support it.
 method_const() {
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		-name '*.go' \
 		-exec \
@@ -114,10 +114,11 @@ method_const() {
 # use of filenames like client_manager.go.
 underscores() {
 	underscore_files="$(
-		find . \
+		find_with_ignore \
 			-type 'f' \
 			-name '*_*.go' \
-			'!' '(' -name '*_darwin.go' \
+			'!' '(' \
+			-name '*_darwin.go' \
 			-o -name '*_linux.go' \
 			-o -name '*_others.go' \
 			-o -name '*_plan9.go' \
@@ -160,7 +161,7 @@ run_linter ineffassign ./...
 
 run_linter unparam ./...
 
-find . \
+find_with_ignore \
 	-type 'f' \
 	'(' \
 	-name 'Makefile' \

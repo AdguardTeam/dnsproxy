@@ -8,6 +8,6 @@ import (
 
 // type checks
 var (
-	_ upstream.Upstream         = (*dnsproxytest.FakeUpstream)(nil)
+	_ upstream.Upstream         = (*dnsproxytest.Upstream)(nil)
 	_ dnsmsg.MessageConstructor = (*dnsproxytest.TestMessageConstructor)(nil)
 )

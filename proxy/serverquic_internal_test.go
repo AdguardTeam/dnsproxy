@@ -12,6 +12,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/require"
@@ -42,10 +43,7 @@ func TestQuicProxy(t *testing.T) {
 	t.Run("run", func(t *testing.T) {
 		dnsProxy := mustNew(t, conf)
 
-		ctx := context.Background()
-		err := dnsProxy.Start(ctx)
-		require.NoError(t, err)
-		testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+		servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 		addr = testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoQUIC))
 
@@ -70,10 +68,7 @@ func TestQuicProxy(t *testing.T) {
 	t.Run("rerun", func(t *testing.T) {
 		dnsProxy := mustNew(t, conf)
 
-		ctx := context.Background()
-		err := dnsProxy.Start(ctx)
-		require.NoError(t, err)
-		testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+		servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 		conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
 		require.NoError(t, err)
@@ -118,11 +113,7 @@ func TestQuicProxy_largePackets(t *testing.T) {
 		},
 	})
 
-	// Start listening.
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPem)

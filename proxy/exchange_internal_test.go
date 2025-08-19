@@ -12,6 +12,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/faketime"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
@@ -24,7 +25,7 @@ import (
 func newUpstreamWithErrorRate(rate uint, name string) (u upstream.Upstream) {
 	var n uint
 
-	return &dnsproxytest.FakeUpstream{
+	return &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			n++
 			if n%rate == 0 {
@@ -34,7 +35,7 @@ func newUpstreamWithErrorRate(rate uint, name string) (u upstream.Upstream) {
 			return (&dns.Msg{}).SetReply(req), nil
 		},
 		OnAddress: func() (addr string) { return name },
-		OnClose:   func() (_ error) { panic("not implemented") },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 }
 
@@ -87,48 +88,48 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		},
 	}
 
-	fastUps := &dnsproxytest.FakeUpstream{
+	fastUps := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 100)
 
 			return (&dns.Msg{}).SetReply(req), nil
 		},
 		OnAddress: func() (addr string) { return "fast" },
-		OnClose:   func() (_ error) { panic("not implemented") },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
-	slowerUps := &dnsproxytest.FakeUpstream{
+	slowerUps := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 10)
 
 			return (&dns.Msg{}).SetReply(req), nil
 		},
 		OnAddress: func() (addr string) { return "slower" },
-		OnClose:   func() (_ error) { panic("not implemented") },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
-	slowestUps := &dnsproxytest.FakeUpstream{
+	slowestUps := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 2)
 
 			return (&dns.Msg{}).SetReply(req), nil
 		},
 		OnAddress: func() (addr string) { return "slowest" },
-		OnClose:   func() (_ error) { panic("not implemented") },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
-	err1Ups := &dnsproxytest.FakeUpstream{
+	err1Ups := &dnsproxytest.Upstream{
 		OnExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
 		OnAddress:  func() (addr string) { return "error1" },
-		OnClose:    func() (_ error) { panic("not implemented") },
+		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
-	err2Ups := &dnsproxytest.FakeUpstream{
+	err2Ups := &dnsproxytest.Upstream{
 		OnExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
 		OnAddress:  func() (addr string) { return "error2" },
-		OnClose:    func() (_ error) { panic("not implemented") },
+		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
 	singleError := &sync.Once{}
 	// fastestUps responds with an error on the first request.
-	fastestUps := &dnsproxytest.FakeUpstream{
+	fastestUps := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			singleError.Do(func() { err = assert.AnError })
 			currentNow = zeroTime.Add(testRTT / 200)
@@ -136,7 +137,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 			return (&dns.Msg{}).SetReply(req), err
 		},
 		OnAddress: func() (addr string) { return "fastest" },
-		OnClose:   func() (_ error) { panic("not implemented") },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
 	each200 := newUpstreamWithErrorRate(200, "each_200")

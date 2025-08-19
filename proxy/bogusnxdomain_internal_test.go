@@ -1,14 +1,13 @@
 package proxy
 
 import (
-	"context"
 	"net"
 	"net/netip"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
-	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,10 +82,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	u := testUpstream{}
 	prx.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
 
-	ctx := context.Background()
-	err := prx.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return prx.Shutdown(ctx) })
+	servicetest.RequireRun(t, prx, testTimeout)
 
 	d := &DNSContext{
 		Req: newHostTestMessage("host"),
@@ -96,7 +92,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 		u.ans = tc.ans
 
 		t.Run(tc.name, func(t *testing.T) {
-			err = prx.Resolve(d)
+			err := prx.Resolve(d)
 			require.NoError(t, err)
 			require.NotNil(t, d.Res)
 

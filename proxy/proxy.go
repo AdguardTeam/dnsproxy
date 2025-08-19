@@ -515,6 +515,7 @@ func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 		// TCP/UDP listeners.
 		return collectAddrs(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
 	default:
+		// TODO(e.burkov):  Use [errors.ErrBadEnumValue].
 		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
 	}
 }

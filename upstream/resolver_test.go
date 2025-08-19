@@ -10,15 +10,16 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewUpstreamResolver(t *testing.T) {
-	ups := &dnsproxytest.FakeUpstream{
-		OnAddress: func() (_ string) { panic("not implemented") },
-		OnClose:   func() (_ error) { panic("not implemented") },
+	ups := &dnsproxytest.Upstream{
+		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(req)
 			resp.Answer = []dns.RR{&dns.A{

@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"testing"
@@ -12,7 +11,7 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
-	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,7 +56,7 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 		Logger:        slogutil.NewDiscardLogger(),
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
-			Upstreams: []upstream.Upstream{&dnsproxytest.FakeUpstream{
+			Upstreams: []upstream.Upstream{&dnsproxytest.Upstream{
 				OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 					return allowedResponse.Copy(), nil
 				},
@@ -85,9 +84,8 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 			},
 		},
 	})
-	ctx := context.Background()
-	require.NoError(t, p.Start(ctx))
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return p.Shutdown(ctx) })
+
+	servicetest.RequireRun(t, p, testTimeout)
 
 	client := &dns.Client{
 		Net:     string(ProtoTCP),

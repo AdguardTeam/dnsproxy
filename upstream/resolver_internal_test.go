@@ -49,9 +49,9 @@ func TestCachingResolver_staleness(t *testing.T) {
 		return resp, nil
 	}
 
-	ups := &dnsproxytest.FakeUpstream{
-		OnAddress:  func() (_ string) { panic("not implemented") },
-		OnClose:    func() (_ error) { panic("not implemented") },
+	ups := &dnsproxytest.Upstream{
+		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 		OnExchange: onExchange,
 	}
 

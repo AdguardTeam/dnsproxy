@@ -379,7 +379,7 @@ var commandLineOptions = []*commandLineOption{
 		valueType: "",
 	},
 	dns64Idx: {
-		description: "If specified, dnsproxy will act as a DNS64 server.",
+		description: "If specified, dnsproxy will act as a DNS64 (a.k.a. NAT64) server. This is a really bad idea to do on public or out-of-house, as it will break large parts of the internet on IPv6 clients in such circumstances.",
 		long:        "dns64",
 		short:       "",
 		valueType:   "",

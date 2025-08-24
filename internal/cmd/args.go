@@ -57,6 +57,7 @@ const (
 	verboseIdx
 	insecureIdx
 	ipv6DisabledIdx
+	ipv4DisabledIdx
 	http3Idx
 	cacheOptimisticIdx
 	cacheIdx
@@ -340,6 +341,13 @@ var commandLineOptions = []*commandLineOption{
 		short:     "",
 		valueType: "",
 	},
+	ipv4DisabledIdx: {
+		description: "If specified, all A requests will be replied with NoError RCode and " +
+			"empty answer.",
+		long:      "ipv4-disabled",
+		short:     "",
+		valueType: "",
+	},
 	http3Idx: {
 		description: "Enable HTTP/3 support.",
 		long:        "http3",
@@ -440,6 +448,7 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		verboseIdx:                &conf.Verbose,
 		insecureIdx:               &conf.Insecure,
 		ipv6DisabledIdx:           &conf.IPv6Disabled,
+		ipv4DisabledIdx:           &conf.IPv4Disabled,
 		http3Idx:                  &conf.HTTP3,
 		cacheOptimisticIdx:        &conf.CacheOptimistic,
 		cacheIdx:                  &conf.Cache,

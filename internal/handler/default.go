@@ -23,6 +23,10 @@ type DefaultConfig struct {
 	// HaltIPv6 halts the processing of AAAA requests and makes the handler
 	// reply with NODATA to them, if true.
 	HaltIPv6 bool
+
+	// HaltIPv4 halts the processing of A requests and makes the handler
+	// reply with NODATA to them.
+	HaltIPv4 bool
 }
 
 // Default implements the default configurable [proxy.RequestHandler].
@@ -31,6 +35,7 @@ type Default struct {
 	hosts        hostsfile.Storage
 	logger       *slog.Logger
 	isIPv6Halted bool
+	isIPv4Halted bool
 }
 
 // NewDefault creates a new [Default] handler.
@@ -45,6 +50,7 @@ func NewDefault(conf *DefaultConfig) (d *Default) {
 	return &Default{
 		logger:       conf.Logger,
 		isIPv6Halted: conf.HaltIPv6,
+		isIPv4Halted: conf.HaltIPv4,
 		messages:     mc,
 		hosts:        conf.HostsFiles,
 	}
@@ -61,6 +67,10 @@ func (h *Default) HandleRequest(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err
 	h.logger.DebugContext(ctx, "handling request", "req", &proxyCtx.Req.Question[0])
 
 	if proxyCtx.Res = h.haltAAAA(ctx, proxyCtx.Req); proxyCtx.Res != nil {
+		return nil
+	}
+
+	if proxyCtx.Res = h.haltA(ctx, proxyCtx.Req); proxyCtx.Res != nil {
 		return nil
 	}
 

@@ -95,6 +95,8 @@ Usage of ./dnsproxy:
         Disable secure TLS certificate validation.
   --ipv6-disabled
         If specified, all AAAA requests will be replied with NoError RCode and empty answer.
+  --ipv4-disabled
+        If specified, all A requests will be replied with NoError RCode and empty answer.
   --listen=address/-l address
         Listening addresses.
   --max-go-routines=uint

@@ -49,6 +49,7 @@ func createProxyConfig(
 		// TODO(e.burkov):  Use the configured message constructor.
 		MessageConstructor: dnsmsg.DefaultMessageConstructor{},
 		HaltIPv6:           conf.IPv6Disabled,
+		HaltIPv4:           conf.IPv4Disabled,
 		HostsFiles:         hosts,
 	})
 

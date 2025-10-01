@@ -122,9 +122,7 @@ type Proxy struct {
 	pendingRequests pendingRequests
 
 	// bytesPool is a pool of byte slices used to read DNS packets.
-	//
-	// TODO(e.burkov):  Use [syncutil.Pool].
-	bytesPool *sync.Pool
+	bytesPool *syncutil.Pool[[]byte]
 
 	// udpListen are the listened UDP connections.
 	udpListen []*net.UDPConn
@@ -233,14 +231,8 @@ func New(c *Config) (p *Proxy, err error) {
 		rttLock:          sync.Mutex{},
 		ratelimitLock:    sync.Mutex{},
 		RWMutex:          sync.RWMutex{},
-		bytesPool: &sync.Pool{
-			New: func() any {
-				// 2 bytes may be used to store packet length (see TCP/TLS).
-				b := make([]byte, 2+dns.MaxMsgSize)
-
-				return &b
-			},
-		},
+		// 2 bytes may be used to store packet length (see TCP/TLS).
+		bytesPool:  syncutil.NewSlicePool[byte](2 + dns.MaxMsgSize),
 		udpOOBSize: proxynetutil.UDPGetOOBSize(),
 		time:       timeutil.SystemClock{},
 		messages: cmp.Or[MessageConstructor](

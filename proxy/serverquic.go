@@ -215,7 +215,7 @@ func (p *Proxy) handleQUICConnection(conn *quic.Conn, reqSema syncutil.Semaphore
 // handleQUICStream reads DNS queries from the stream, processes them,
 // and writes back the response.
 func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn *quic.Conn) {
-	bufPtr := p.bytesPool.Get().(*[]byte)
+	bufPtr := p.bytesPool.Get()
 	defer p.bytesPool.Put(bufPtr)
 
 	// One query - one stream.

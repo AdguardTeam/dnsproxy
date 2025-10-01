@@ -142,7 +142,6 @@ func TestExchangeAll(t *testing.T) {
 	resp := res[0].Resp
 	require.NotNil(t, resp)
 	require.NotEmpty(t, resp.Answer)
-	require.IsType(t, new(dns.A), resp.Answer[0])
 
 	ip := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 	assert.Equal(t, ansAddr.AsSlice(), []byte(ip))
@@ -150,7 +149,6 @@ func TestExchangeAll(t *testing.T) {
 	resp = res[1].Resp
 	require.NotNil(t, resp)
 	require.NotEmpty(t, resp.Answer)
-	require.IsType(t, new(dns.A), resp.Answer[0])
 
 	ip = testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 	assert.Equal(t, delayedAnsAddr.AsSlice(), []byte(ip))

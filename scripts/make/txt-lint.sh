@@ -1,9 +1,9 @@
 #!/bin/sh
 
 # This comment is used to simplify checking local copies of the script.  Bump
-# this number every time a remarkable change is made to this script.
+# this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 9
+# AdGuard-Project-Version: 10
 
 verbose="${VERBOSE:-0}"
 readonly verbose
@@ -36,7 +36,8 @@ trailing_newlines() (
 	find_with_ignore \
 		-type 'f' \
 		'!' '(' \
-		-name '*.out' \
+		-name '*.exe' \
+		-o -name '*.out' \
 		-o -name '*.test' \
 		-o -name 'dnsproxy' \
 		')' \
@@ -55,7 +56,8 @@ trailing_whitespace() {
 	find_with_ignore \
 		-type 'f' \
 		'!' '(' \
-		-name '*.out' \
+		-name '*.exe' \
+		-o -name '*.out' \
 		-o -name '*.test' \
 		-o -name 'dnsproxy' \
 		')' \
@@ -65,6 +67,8 @@ trailing_whitespace() {
 				| sed -e "s:^:${f}\::" -e 's/ \+$/>>>&<<</'
 		done
 }
+
+# TODO(a.garipov):  Consider using jq for JSON validation.
 
 run_linter -e trailing_newlines
 

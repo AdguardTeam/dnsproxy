@@ -21,7 +21,7 @@ type Resolver interface {
 }
 
 // type check
-var _ Resolver = &net.Resolver{}
+var _ Resolver = (*net.Resolver)(nil)
 
 // ParallelResolver is a slice of resolvers that are queried concurrently.  The
 // first successful response is returned.

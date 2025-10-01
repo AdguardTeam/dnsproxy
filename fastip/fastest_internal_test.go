@@ -7,6 +7,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,9 +63,8 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		require.NotNil(t, rep)
 		require.NotEmpty(t, rep.Answer)
-		require.IsType(t, new(dns.A), rep.Answer[0])
 
-		ip := rep.Answer[0].(*dns.A).A
+		ip := testutil.RequireTypeAssert[*dns.A](t, rep.Answer[0]).A
 		assert.Equal(t, aliveAddr.AsSlice(), []byte(ip))
 	})
 
@@ -89,9 +89,8 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		require.NotNil(t, resp)
 		require.NotEmpty(t, resp.Answer)
-		require.IsType(t, new(dns.A), resp.Answer[0])
 
-		ip := resp.Answer[0].(*dns.A).A
+		ip := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 		assert.Equal(t, firstIP.AsSlice(), []byte(ip))
 	})
 }

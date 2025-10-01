@@ -302,7 +302,7 @@ func (conf *configuration) initTLSConfig(config *proxy.Config) (err error) {
 // initDNSCryptConfig inits the DNSCrypt config.
 func (conf *configuration) initDNSCryptConfig(config *proxy.Config) (err error) {
 	if conf.DNSCryptConfigPath == "" {
-		return
+		return nil
 	}
 
 	b, err := os.ReadFile(conf.DNSCryptConfigPath)

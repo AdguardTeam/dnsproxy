@@ -1502,7 +1502,7 @@ func TestProxy_HandleDNSRequest_private(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	messages := dnsproxytest.NewTestMessageConstructor()
+	messages := dnsproxytest.NewMessageConstructor()
 	messages.OnNewMsgNXDOMAIN = func(_ *dns.Msg) (resp *dns.Msg) {
 		return nxdomainResp
 	}

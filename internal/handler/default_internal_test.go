@@ -41,7 +41,7 @@ func TestDefault_haltAAAA(t *testing.T) {
 
 	nodataResp := (&dns.Msg{}).SetReply(reqA)
 
-	messages := dnsproxytest.NewTestMessageConstructor()
+	messages := dnsproxytest.NewMessageConstructor()
 	messages.OnNewMsgNODATA = func(_ *dns.Msg) (resp *dns.Msg) {
 		return nodataResp
 	}

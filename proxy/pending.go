@@ -3,9 +3,9 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/syncutil"
 )
 
 // pendingRequests handles identical requests that are in progress.  It is used
@@ -28,7 +28,7 @@ type pendingRequests interface {
 // defaultPendingRequests is a default implementation of the [pendingRequests]
 // interface.  It must be created with [newDefaultPendingRequests].
 type defaultPendingRequests struct {
-	storage *sync.Map
+	storage *syncutil.Map[string, *pendingRequest]
 }
 
 // pendingRequest is a structure that stores the query state and result.
@@ -51,7 +51,7 @@ type pendingRequest struct {
 // newDefaultPendingRequests creates a new instance of DefaultPendingRequests.
 func newDefaultPendingRequests() (pr *defaultPendingRequests) {
 	return &defaultPendingRequests{
-		storage: &sync.Map{},
+		storage: syncutil.NewMap[string, *pendingRequest](),
 	}
 }
 
@@ -76,12 +76,11 @@ func (pr *defaultPendingRequests) queue(
 		finish: make(chan struct{}),
 	}
 
-	pendingVal, loaded := pr.storage.LoadOrStore(string(key), req)
+	pending, loaded := pr.storage.LoadOrStore(string(key), req)
 	if !loaded {
 		return false, nil
 	}
 
-	pending := pendingVal.(*pendingRequest)
 	<-pending.finish
 
 	origDNSCtx := pending.cloneDNSCtx
@@ -108,12 +107,11 @@ func (pr *defaultPendingRequests) done(ctx context.Context, dctx *DNSContext, er
 		key = msgToKey(dctx.Req)
 	}
 
-	pendingVal, ok := pr.storage.Load(string(key))
+	pending, ok := pr.storage.Load(string(key))
 	if !ok {
 		panic(fmt.Errorf("loading pending request: key %x: %w", key, errors.ErrNoValue))
 	}
 
-	pending := pendingVal.(*pendingRequest)
 	pending.resolveErr = err
 
 	cloneCtx := &DNSContext{

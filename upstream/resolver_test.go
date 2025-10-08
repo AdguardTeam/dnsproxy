@@ -10,7 +10,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -49,7 +48,7 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 	t.Parallel()
 
 	withTimeoutOpt := &upstream.Options{
-		Logger:  slogutil.NewDiscardLogger(),
+		Logger:  testLogger,
 		Timeout: 3 * time.Second,
 	}
 

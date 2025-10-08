@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -77,7 +76,7 @@ func TestUpstreamDoH(t *testing.T) {
 
 			var lastState tls.ConnectionState
 			opts := &Options{
-				Logger:             slogutil.NewDiscardLogger(),
+				Logger:             testLogger,
 				InsecureSkipVerify: true,
 				HTTPVersions:       tc.httpVersions,
 				VerifyConnection: func(state tls.ConnectionState) (err error) {
@@ -186,7 +185,7 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 			// race test.
 			address := fmt.Sprintf("https://%s/dns-query", srv.addr)
 			opts := &Options{
-				Logger:             slogutil.NewDiscardLogger(),
+				Logger:             testLogger,
 				InsecureSkipVerify: true,
 				HTTPVersions:       tc.httpVersions,
 				Timeout:            timeout,
@@ -232,7 +231,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 
 				var err error
 				u, err = AddressToUpstream(upsAddr, &Options{
-					Logger:             slogutil.NewDiscardLogger(),
+					Logger:             testLogger,
 					InsecureSkipVerify: true,
 					HTTPVersions:       tc.httpVersions,
 					Timeout:            100 * time.Millisecond,
@@ -281,7 +280,7 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	tracer := &quicTracer{}
 	address := fmt.Sprintf("h3://%s/dns-query", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: true,
 		QUICTracer:         tracer.TracerForConnection,
 	})

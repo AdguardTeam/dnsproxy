@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +23,7 @@ func TestExchangeParallel(t *testing.T) {
 
 	for _, s := range upstreamList {
 		u, err := AddressToUpstream(s, &Options{
-			Logger:  slogutil.NewDiscardLogger(),
+			Logger:  testLogger,
 			Timeout: timeout,
 		})
 		if err != nil {

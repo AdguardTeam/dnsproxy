@@ -28,6 +28,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testLogger is common logger for tests.
+var testLogger = slogutil.NewDiscardLogger()
+
 // TODO(ameshkov): Make tests here not depend on external servers.
 
 // TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
@@ -52,14 +55,14 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, udpListener.Close)
 
 	rslv, err := NewUpstreamResolver(udpListener.LocalAddr().String(), &Options{
-		Logger:  slogutil.NewDiscardLogger(),
+		Logger:  testLogger,
 		Timeout: timeout,
 	})
 	require.NoError(t, err)
 
 	// Create an upstream that uses this faulty bootstrap.
 	u, err := AddressToUpstream("tls://random-domain-name", &Options{
-		Logger:    slogutil.NewDiscardLogger(),
+		Logger:    testLogger,
 		Bootstrap: NewCachingResolver(rslv),
 		Timeout:   timeout,
 	})
@@ -114,7 +117,7 @@ func TestUpstreams(t *testing.T) {
 
 	const upsTimeout = 10 * time.Second
 
-	l := slogutil.NewDiscardLogger()
+	l := testLogger
 
 	googleRslv, err := NewUpstreamResolver("8.8.8.8:53", &Options{
 		Logger:  l,
@@ -234,7 +237,7 @@ func TestAddressToUpstream(t *testing.T) {
 	require.NoError(t, err)
 
 	opt := &Options{
-		Logger:    slogutil.NewDiscardLogger(),
+		Logger:    testLogger,
 		Bootstrap: NewCachingResolver(cloudflareRslv),
 	}
 
@@ -385,13 +388,13 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
 			rslv, err := NewUpstreamResolver(tc.bootstrap, &Options{
-				Logger:  slogutil.NewDiscardLogger(),
+				Logger:  testLogger,
 				Timeout: timeout,
 			})
 			require.NoError(t, err)
 
 			u, err := AddressToUpstream(tc.address, &Options{
-				Logger:    slogutil.NewDiscardLogger(),
+				Logger:    testLogger,
 				Bootstrap: NewCachingResolver(rslv),
 				Timeout:   timeout,
 			})
@@ -432,7 +435,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		bootstrap: []string{"1.2.3.4:55", "8.8.8.8"},
 	}}
 
-	l := slogutil.NewDiscardLogger()
+	l := testLogger
 
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
@@ -519,7 +522,7 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 			t.Parallel()
 
 			opts := &Options{
-				Logger:             slogutil.NewDiscardLogger(),
+				Logger:             testLogger,
 				Bootstrap:          tc.rslv,
 				Timeout:            timeout,
 				InsecureSkipVerify: true,

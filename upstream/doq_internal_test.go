@@ -33,7 +33,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	var lastState tls.ConnectionState
 	opts := &Options{
-		Logger: slogutil.NewDiscardLogger(),
+		Logger: testLogger,
 		VerifyConnection: func(state tls.ConnectionState) error {
 			lastState = state
 
@@ -89,7 +89,7 @@ func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
 	// Create a DNS-over-QUIC upstream.
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
-		Logger:  slogutil.NewDiscardLogger(),
+		Logger:  testLogger,
 		RootCAs: rootCAs,
 	})
 
@@ -154,7 +154,7 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 		u, err = AddressToUpstream(
 			upsStr,
 			&Options{
-				Logger:  slogutil.NewDiscardLogger(),
+				Logger:  testLogger,
 				RootCAs: rootCAs,
 				Timeout: 100 * time.Millisecond,
 			},
@@ -191,7 +191,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	tracer := &quicTracer{}
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
-		Logger:     slogutil.NewDiscardLogger(),
+		Logger:     testLogger,
 		QUICTracer: tracer.TracerForConnection,
 		RootCAs:    rootCAs,
 	})
@@ -414,7 +414,7 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 		listener: listen,
 		// TODO(d.kolyshev): Add a concurrent safe [slog.Handler] wrapper for
 		// [testing.TB] log function.
-		logger:  slogutil.NewDiscardLogger(),
+		logger:  testLogger,
 		conns:   map[*quic.Conn]struct{}{},
 		connsMu: &sync.Mutex{},
 	}

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func TestUpstream_plainDNS(t *testing.T) {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", srv.port)
 	u, err := AddressToUpstream(addr, &Options{
-		Logger: slogutil.NewDiscardLogger(),
+		Logger: testLogger,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -51,7 +50,7 @@ func TestUpstream_plainDNS_badID(t *testing.T) {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", srv.port)
 	u, err := AddressToUpstream(addr, &Options{
-		Logger: slogutil.NewDiscardLogger(),
+		Logger: testLogger,
 		// Use a shorter timeout to speed up the test.
 		Timeout: 100 * time.Millisecond,
 	})
@@ -126,7 +125,7 @@ func TestUpstream_plainDNS_fallbackToTCP(t *testing.T) {
 
 			addr := fmt.Sprintf("127.0.0.1:%d", srv.port)
 			u, err := AddressToUpstream(addr, &Options{
-				Logger: slogutil.NewDiscardLogger(),
+				Logger: testLogger,
 				// Use a shorter timeout to speed up the test.
 				Timeout: 100 * time.Millisecond,
 			})

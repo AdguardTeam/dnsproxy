@@ -3,7 +3,7 @@ module github.com/AdguardTeam/dnsproxy
 go 1.25.1
 
 require (
-	github.com/AdguardTeam/golibs v0.34.1
+	github.com/AdguardTeam/golibs v0.35.0
 	github.com/ameshkov/dnscrypt/v2 v2.4.0
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
@@ -14,7 +14,7 @@ require (
 	// when TestUpstreamDoH_serverRestart/http3/second_try keeps failing.
 	github.com/quic-go/quic-go v0.53.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
+	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
 	golang.org/x/net v0.44.0
 	golang.org/x/sys v0.36.0
 	gonum.org/v1/gonum v0.16.0

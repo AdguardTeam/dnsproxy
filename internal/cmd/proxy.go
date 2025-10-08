@@ -39,7 +39,7 @@ func createProxyConfig(
 		return nil, err
 	}
 
-	hosts, err := handler.ReadHosts(hostsFiles)
+	hosts, err := handler.ReadHosts(ctx, l, hostsFiles)
 	if err != nil {
 		return nil, fmt.Errorf("reading hosts files: %w", err)
 	}
@@ -228,7 +228,7 @@ func initBootstrap(
 
 	switch len(resolvers) {
 	case 0:
-		etcHosts, hostsErr := upstream.NewDefaultHostsResolver(osutil.RootDirFS(), l)
+		etcHosts, hostsErr := upstream.NewDefaultHostsResolver(ctx, osutil.RootDirFS(), l)
 		if hostsErr != nil {
 			l.ErrorContext(ctx, "creating default hosts resolver", slogutil.KeyError, hostsErr)
 
@@ -268,7 +268,11 @@ func (conf *configuration) initEDNS(
 }
 
 // initBogusNXDomain inits BogusNXDomain structure.
-func (conf *configuration) initBogusNXDomain(ctx context.Context, l *slog.Logger, config *proxy.Config) {
+func (conf *configuration) initBogusNXDomain(
+	ctx context.Context,
+	l *slog.Logger,
+	config *proxy.Config,
+) {
 	if len(conf.BogusNXDomain) == 0 {
 		return
 	}
@@ -507,7 +511,10 @@ func loadServersList(sources []string) []string {
 
 // hostsFiles returns the list of hosts files to resolve from.  It's empty if
 // resolving from hosts files is disabled.
-func (conf *configuration) hostsFiles(ctx context.Context, l *slog.Logger) (paths []string, err error) {
+func (conf *configuration) hostsFiles(
+	ctx context.Context,
+	l *slog.Logger,
+) (paths []string, err error) {
 	if !conf.HostsFileEnabled {
 		l.DebugContext(ctx, "hosts files are disabled")
 

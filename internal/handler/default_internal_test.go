@@ -20,6 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testLogger is a common logger for tests.
+var testLogger = slogutil.NewDiscardLogger()
+
 // TODO(e.burkov):  Remove when [hostsfile.DefaultStorage] stops using [log].
 func TestMain(m *testing.M) {
 	testutil.DiscardLogOutput(m)
@@ -87,7 +90,8 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 	absPath, err := filepath.Abs(path.Join("testdata", t.Name(), "hosts"))
 	require.NoError(t, err)
 
-	strg, err := ReadHosts([]string{absPath, relPath})
+	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
+	strg, err := ReadHosts(ctx, testLogger, []string{absPath, relPath})
 	require.NoError(t, err)
 
 	hdlr := NewDefault(&DefaultConfig{
@@ -185,7 +189,6 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx := testutil.ContextWithTimeout(t, defaultTimeout)
 			resp := hdlr.resolveFromHosts(ctx, tc.req)
 			if tc.wantAns == nil {
 				assert.Nil(t, resp)

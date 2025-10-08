@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -45,7 +44,7 @@ func startTestDNSCryptServer(
 		ProviderName: rc.ProviderName,
 		ResolverCert: cert,
 		Handler:      h,
-		Logger:       slogutil.NewDiscardLogger(),
+		Logger:       testLogger,
 	}
 	testutil.CleanupAndRequireSuccess(tb, func() (err error) {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -95,7 +94,7 @@ func TestUpstreamDNSCrypt(t *testing.T) {
 	// AdGuard DNS (DNSCrypt)
 	address := "sdns://AQMAAAAAAAAAETk0LjE0MC4xNC4xNDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20"
 	u, err := AddressToUpstream(address, &Options{
-		Logger:  slogutil.NewDiscardLogger(),
+		Logger:  testLogger,
 		Timeout: dialTimeout,
 	})
 	require.NoError(t, err)
@@ -141,7 +140,7 @@ func TestDNSCrypt_Exchange_truncated(t *testing.T) {
 	srvStamp := startTestDNSCryptServer(t, rc, h)
 
 	u, err := AddressToUpstream(srvStamp.String(), &Options{
-		Logger:  slogutil.NewDiscardLogger(),
+		Logger:  testLogger,
 		Timeout: timeout,
 	})
 	require.NoError(t, err)
@@ -173,7 +172,7 @@ func TestDNSCrypt_Exchange_deadline(t *testing.T) {
 
 	// Use a shorter timeout to speed up the test.
 	u, err := AddressToUpstream(srvStamp.String(), &Options{
-		Logger:  slogutil.NewDiscardLogger(),
+		Logger:  testLogger,
 		Timeout: 100 * time.Millisecond,
 	})
 	require.NoError(t, err)
@@ -204,7 +203,7 @@ func TestDNSCrypt_Exchange_dialFail(t *testing.T) {
 
 		// Use a shorter timeout to speed up the test.
 		u, err = AddressToUpstream(srvStamp.String(), &Options{
-			Logger:  slogutil.NewDiscardLogger(),
+			Logger:  testLogger,
 			Timeout: 100 * time.Millisecond,
 		})
 		require.NoError(t, err)
@@ -227,7 +226,7 @@ func TestDNSCrypt_Exchange_dialFail(t *testing.T) {
 
 		// Use a shorter timeout to speed up the test.
 		u, err = AddressToUpstream(srvStamp.String(), &Options{
-			Logger:  slogutil.NewDiscardLogger(),
+			Logger:  testLogger,
 			Timeout: 100 * time.Millisecond,
 			VerifyDNSCryptCertificate: func(cert *dnscrypt.Cert) (err error) {
 				return validationErr

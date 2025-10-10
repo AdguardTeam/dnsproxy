@@ -162,6 +162,9 @@ type configuration struct {
 	// IPv6Disabled makes the server to respond with NODATA to all AAAA queries.
 	IPv6Disabled bool `yaml:"ipv6-disabled"`
 
+	// IPv4Disabled makes the server to respond with NODATA to all A queries.
+	IPv4Disabled bool `yaml:"ipv4-disabled"`
+
 	// HTTP3 controls whether HTTP/3 is enabled for this instance of dnsproxy.
 	// It enables HTTP/3 support for both the DoH upstreams and the DoH server.
 	HTTP3 bool `yaml:"http3"`

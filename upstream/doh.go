@@ -104,7 +104,6 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 		quicConf: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
-			Tracer:          opts.QUICTracer,
 		},
 		quicConfMu: &sync.Mutex{},
 		tlsConf: &tls.Config{

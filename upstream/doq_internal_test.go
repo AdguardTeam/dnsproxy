@@ -20,11 +20,11 @@ import (
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// TODO(f.setrakov): Implement 0RTT tests.
 func TestUpstreamDoQ(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
@@ -181,56 +181,6 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 
 		checkUpstream(t, u, upsStr)
 	})
-}
-
-func TestUpstreamDoQ_0RTT(t *testing.T) {
-	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
-
-	srv := startDoQServer(t, tlsConf, 0)
-
-	tracer := &quicTracer{}
-	address := fmt.Sprintf("quic://%s", srv.addr)
-	u, err := AddressToUpstream(address, &Options{
-		Logger:     testLogger,
-		QUICTracer: tracer.TracerForConnection,
-		RootCAs:    rootCAs,
-	})
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, u.Close)
-
-	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
-	req := createTestMessage()
-
-	// Trigger connection to a QUIC server.
-	resp, err := uq.Exchange(req)
-	require.NoError(t, err)
-	requireResponse(t, req, resp)
-
-	// Close the active connection to make sure we'll reconnect.
-	func() {
-		uq.connMu.Lock()
-		defer uq.connMu.Unlock()
-
-		err = uq.conn.CloseWithError(QUICCodeNoError, "")
-		require.NoError(t, err)
-
-		uq.conn = nil
-	}()
-
-	// Trigger second connection.
-	resp, err = uq.Exchange(req)
-	require.NoError(t, err)
-	requireResponse(t, req, resp)
-
-	// Check traced connections info.
-	conns := tracer.getConnectionsInfo()
-	require.Len(t, conns, 2)
-
-	// Examine the first connection (no 0-RTT there).
-	require.False(t, conns[0].is0RTT())
-
-	// Examine the second connection (the one that used 0-RTT).
-	require.True(t, conns[1].is0RTT())
 }
 
 // testDoHServer is an instance of a test DNS-over-QUIC server.
@@ -423,86 +373,4 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 	testutil.CleanupAndRequireSuccess(t, s.Shutdown)
 
 	return s
-}
-
-// quicTracer implements the logging.Tracer interface.
-type quicTracer struct {
-	tracers []*quicConnTracer
-
-	// mu protects fields of *quicTracer and also protects fields of every
-	// nested *quicConnTracer.
-	mu sync.Mutex
-}
-
-// TracerForConnection implements the logging.Tracer interface for *quicTracer.
-func (q *quicTracer) TracerForConnection(
-	_ context.Context,
-	_ logging.Perspective,
-	odcid logging.ConnectionID,
-) (connTracer *logging.ConnectionTracer) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	tracer := &quicConnTracer{id: odcid, parent: q}
-	q.tracers = append(q.tracers, tracer)
-
-	return &logging.ConnectionTracer{
-		SentLongHeaderPacket: tracer.SentLongHeaderPacket,
-	}
-}
-
-// connInfo contains information about packets that we've logged.
-type connInfo struct {
-	packets []logging.Header
-	id      logging.ConnectionID
-}
-
-// is0RTT returns true if this connection's packets contain 0-RTT packets.
-func (c *connInfo) is0RTT() (ok bool) {
-	for _, packet := range c.packets {
-		hdr := packet
-		packetType := logging.PacketTypeFromHeader(&hdr)
-		if packetType == logging.PacketType0RTT {
-			return true
-		}
-	}
-
-	return false
-}
-
-// getConnectionsInfo returns the traced connections' information.
-func (q *quicTracer) getConnectionsInfo() (conns []connInfo) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	for _, tracer := range q.tracers {
-		conns = append(conns, connInfo{
-			id:      tracer.id,
-			packets: tracer.packets,
-		})
-	}
-
-	return conns
-}
-
-// quicConnTracer implements the logging.ConnectionTracer interface.
-type quicConnTracer struct {
-	parent  *quicTracer
-	packets []logging.Header
-	id      logging.ConnectionID
-}
-
-// SentLongHeaderPacket implements the logging.ConnectionTracer interface for
-// *quicConnTracer.
-func (q *quicConnTracer) SentLongHeaderPacket(
-	hdr *logging.ExtendedHeader,
-	_ logging.ByteCount,
-	_ logging.ECN,
-	_ *logging.AckFrame,
-	_ []logging.Frame,
-) {
-	q.parent.mu.Lock()
-	defer q.parent.mu.Unlock()
-
-	q.packets = append(q.packets, hdr.Header)
 }

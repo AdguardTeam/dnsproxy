@@ -105,7 +105,6 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
 			TokenStore:      newQUICTokenStore(),
-			Tracer:          opts.QUICTracer,
 		},
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),

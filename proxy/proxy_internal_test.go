@@ -38,6 +38,12 @@ const (
 
 	// testTimeout is the default timeout for tests.
 	testTimeout = 500 * time.Millisecond
+
+	// testOptimisticTTL is a common optimistic cache ttl value for tests.
+	testOptimisticTTL = 10 * time.Second
+
+	// testOptimisticMaxAge is a common optimistic max age value for tests.
+	testOptimisticMaxAge = 12 * time.Hour
 )
 
 // localhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
@@ -1391,8 +1397,10 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 	p := &Proxy{
 		Config: Config{
-			CacheEnabled:    true,
-			CacheOptimistic: true,
+			CacheEnabled:             true,
+			CacheOptimistic:          true,
+			CacheOptimisticAnswerTTL: testOptimisticTTL,
+			CacheOptimisticMaxAge:    testOptimisticMaxAge,
 		},
 		logger:          slogutil.NewDiscardLogger(),
 		pendingRequests: newDefaultPendingRequests(),
@@ -1440,7 +1448,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, firstCtx.Res.Answer, 1)
 
-	assert.EqualValues(t, optimisticTTL, firstCtx.Res.Answer[0].Header().Ttl)
+	assert.Equal(t, uint32(testOptimisticTTL.Seconds()), firstCtx.Res.Answer[0].Header().Ttl)
 
 	// Wait for optimisticResolver to reach the tested function.
 	<-out
@@ -1449,7 +1457,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, secondCtx.Res.Answer, 1)
 
-	assert.EqualValues(t, optimisticTTL, secondCtx.Res.Answer[0].Header().Ttl)
+	assert.Equal(t, uint32(testOptimisticTTL.Seconds()), secondCtx.Res.Answer[0].Header().Ttl)
 
 	// Continue and wait for it to finish.
 	in <- unit{}

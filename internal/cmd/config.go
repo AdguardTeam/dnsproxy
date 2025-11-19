@@ -107,6 +107,14 @@ type configuration struct {
 	// greater.
 	CacheMaxTTL uint32 `yaml:"cache-max-ttl"`
 
+	// OptimisticAnswerTTL is the default TTL for expired cached responses
+	// in seconds.
+	OptimisticAnswerTTL timeutil.Duration `yaml:"optimistic-answer-ttl"`
+
+	// OptimisticMaxAge is the maximum time entries remain in the cache
+	// when cache is optimistic.
+	OptimisticMaxAge timeutil.Duration `yaml:"optimistic-max-age"`
+
 	// CacheSizeBytes is the cache size in bytes.  Default is 64k.
 	CacheSizeBytes int `yaml:"cache-size"`
 
@@ -202,6 +210,8 @@ func parseConfig() (conf *configuration, exitCode int, err error) {
 		UpstreamMode:           string(proxy.UpstreamModeLoadBalance),
 		CacheSizeBytes:         64 * 1024,
 		Timeout:                timeutil.Duration(10 * time.Second),
+		OptimisticAnswerTTL:    timeutil.Duration(proxy.DefaultOptimisticAnswerTTL),
+		OptimisticMaxAge:       timeutil.Duration(proxy.DefaultOptimisticMaxAge),
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 56,
 		HostsFileEnabled:       true,

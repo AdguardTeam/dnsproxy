@@ -18,6 +18,16 @@ import (
 // LogPrefix is a prefix for logging.
 const LogPrefix = "dnsproxy"
 
+const (
+	// DefaultOptimisticMaxAge is default value for
+	// [Config.CacheOptimisticMaxAge].
+	DefaultOptimisticMaxAge = 12 * time.Hour
+
+	// DefaultOptimisticAnswerTTL is default value for
+	// [Config.CacheOptimisticAnswerTTL].
+	DefaultOptimisticAnswerTTL = 30 * time.Second
+)
+
 // RequestHandler is an optional custom handler for DNS requests.  It's used
 // instead of [Proxy.Resolve] if set.  The resulting error doesn't affect the
 // request processing.  The custom handler is responsible for calling
@@ -187,6 +197,14 @@ type Config struct {
 
 	// CacheMaxTTL is the maximum TTL for cached DNS responses in seconds.
 	CacheMaxTTL uint32
+
+	// CacheOptimisticAnswerTTL is the default TTL for expired cached responses.
+	// Default value is [DefaultOptimisticAnswerTTL].
+	CacheOptimisticAnswerTTL time.Duration
+
+	// CacheOptimisticMaxAge is the maximum time entries remain in the cache
+	// when cache is optimistic.  Default value is [DefaultOptimisticMaxAge].
+	CacheOptimisticMaxAge time.Duration
 
 	// MaxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.

@@ -58,14 +58,16 @@ func createProxyConfig(
 		RatelimitSubnetLenIPv4: conf.RatelimitSubnetLenIPv4,
 		RatelimitSubnetLenIPv6: conf.RatelimitSubnetLenIPv6,
 
-		Ratelimit:       conf.Ratelimit,
-		CacheEnabled:    conf.Cache,
-		CacheSizeBytes:  conf.CacheSizeBytes,
-		CacheMinTTL:     conf.CacheMinTTL,
-		CacheMaxTTL:     conf.CacheMaxTTL,
-		CacheOptimistic: conf.CacheOptimistic,
-		RefuseAny:       conf.RefuseAny,
-		HTTP3:           conf.HTTP3,
+		Ratelimit:                conf.Ratelimit,
+		CacheEnabled:             conf.Cache,
+		CacheSizeBytes:           conf.CacheSizeBytes,
+		CacheMinTTL:              conf.CacheMinTTL,
+		CacheMaxTTL:              conf.CacheMaxTTL,
+		CacheOptimisticAnswerTTL: time.Duration(conf.OptimisticAnswerTTL),
+		CacheOptimisticMaxAge:    time.Duration(conf.OptimisticMaxAge),
+		CacheOptimistic:          conf.CacheOptimistic,
+		RefuseAny:                conf.RefuseAny,
+		HTTP3:                    conf.HTTP3,
 		// TODO(e.burkov):  The following CIDRs are aimed to match any address.
 		// This is not quite proper approach to be used by default so think
 		// about configuring it.

@@ -99,6 +99,10 @@ Usage of ./dnsproxy:
         Listening addresses.
   --max-go-routines=uint
         Set the maximum number of go routines. A zero value will not not set a maximum.
+  --optimistic-answer-ttl
+        Default TTL value for expired DNS entries in optimistic cache.  Default: 30s
+  --optimistic-max-age
+        Period of time after which entries are removed from optimistic cache in human-readable form. Default: 12h.
   --output=path/-o path
         Path to the log file.
   --pending-requests-enabled

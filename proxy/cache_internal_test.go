@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"cmp"
 	"net"
 	"net/netip"
 	"strings"
@@ -32,6 +33,22 @@ var upstreamWithAddr = &dnsproxytest.Upstream{
 	OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
 	OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 	OnAddress:  func() (addr string) { return testUpsAddr },
+}
+
+// newTestCache is a helper that returns new cache and fills its config with
+// given values.  If conf is nil, the default configuration will be used.
+func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
+	tb.Helper()
+
+	conf = cmp.Or(conf, &cacheConfig{})
+
+	return newCache(&cacheConfig{
+		size:             cmp.Or(conf.size, testCacheSize),
+		optimisticTTL:    cmp.Or(conf.optimisticTTL, testOptimisticTTL),
+		optimisticMaxAge: cmp.Or(conf.optimisticMaxAge, testOptimisticMaxAge),
+		withECS:          conf.withECS,
+		optimistic:       conf.optimistic,
+	})
 }
 
 func TestServeCached(t *testing.T) {
@@ -96,12 +113,14 @@ func TestCache_expired(t *testing.T) {
 	}).SetQuestion(host, dns.TypeA)
 
 	testCases := []struct {
-		name       string
-		ttl        uint32
-		wantTTL    uint32
-		optimistic bool
+		name             string
+		ttl              uint32
+		wantTTL          uint32
+		optimistic       bool
+		optimisticMaxAge time.Duration
 	}{{
-		name:       "realistic_hit",
+		name: "realistic_hit",
+
 		ttl:        defaultTestTTL,
 		wantTTL:    defaultTestTTL,
 		optimistic: false,
@@ -111,18 +130,26 @@ func TestCache_expired(t *testing.T) {
 		wantTTL:    0,
 		optimistic: false,
 	}, {
-		name:       "optimistic_hit",
-		ttl:        defaultTestTTL,
-		wantTTL:    defaultTestTTL,
-		optimistic: true,
+		name:             "optimistic_hit",
+		ttl:              defaultTestTTL,
+		wantTTL:          defaultTestTTL,
+		optimistic:       true,
+		optimisticMaxAge: testOptimisticMaxAge,
 	}, {
-		name:       "optimistic_expired",
-		ttl:        0,
-		wantTTL:    optimisticTTL,
-		optimistic: true,
+		name:             "optimistic_expired",
+		ttl:              0,
+		wantTTL:          uint32(testOptimisticTTL.Seconds()),
+		optimistic:       true,
+		optimisticMaxAge: testOptimisticMaxAge,
+	}, {
+		name:             "optimistic_max_age_exceeded",
+		ttl:              0,
+		wantTTL:          0,
+		optimistic:       true,
+		optimisticMaxAge: time.Hour * -1,
 	}}
 
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newTestCache(t, nil)
 	for _, tc := range testCases {
 		ans.Hdr.Ttl = tc.ttl
 		req := (&dns.Msg{}).SetQuestion(host, dns.TypeA)
@@ -130,6 +157,7 @@ func TestCache_expired(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.optimistic {
 				testCache.optimistic = true
+				testCache.optimisticMaxAge = tc.optimisticMaxAge
 				t.Cleanup(func() { testCache.optimistic = false })
 			}
 
@@ -159,7 +187,7 @@ func TestCache_expired(t *testing.T) {
 }
 
 func TestCacheDO(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newTestCache(t, nil)
 
 	// Fill the cache.
 	reply := (&dns.Msg{
@@ -204,7 +232,7 @@ func TestCacheDO(t *testing.T) {
 func TestCacheCNAME(t *testing.T) {
 	l := slogutil.NewDiscardLogger()
 
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newTestCache(t, nil)
 
 	// Fill the cache
 	reply := (&dns.Msg{
@@ -241,7 +269,7 @@ func TestCacheCNAME(t *testing.T) {
 }
 
 func TestCache_uncacheable(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newTestCache(t, nil)
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -257,7 +285,7 @@ func TestCache_uncacheable(t *testing.T) {
 }
 
 func TestCache_concurrent(t *testing.T) {
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newTestCache(t, nil)
 
 	hosts := map[string]string{
 		dns.Fqdn("yandex.com"):     "213.180.204.62",
@@ -530,7 +558,7 @@ func TestCache(t *testing.T) {
 func (tests testCases) run(t *testing.T) {
 	l := slogutil.NewDiscardLogger()
 
-	testCache := newCache(testCacheSize, false, false)
+	testCache := newTestCache(t, nil)
 
 	for _, res := range tests.cache {
 		reply := (&dns.Msg{
@@ -637,7 +665,7 @@ func TestCache_getWithSubnet(t *testing.T) {
 	mask24 := net.CIDRMask(24, netutil.IPv4BitLen)
 	l := slogutil.NewDiscardLogger()
 
-	c := newCache(testCacheSize, true, false)
+	c := newTestCache(t, &cacheConfig{withECS: true})
 
 	t.Run("empty", func(t *testing.T) {
 		ci, expired, _ := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
@@ -723,7 +751,10 @@ func TestCache_getWithSubnet_mask(t *testing.T) {
 
 	ansIP := net.IP{4, 4, 4, 4}
 
-	c := newCache(testCacheSize, true, true)
+	c := newTestCache(t, &cacheConfig{
+		withECS:    true,
+		optimistic: true,
+	})
 
 	req := (&dns.Msg{}).SetQuestion(testFQDN, dns.TypeA)
 	resp := (&dns.Msg{

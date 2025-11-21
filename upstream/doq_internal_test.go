@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO(f.setrakov): Implement 0RTT tests.
 func TestUpstreamDoQ(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
@@ -181,6 +180,56 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 
 		checkUpstream(t, u, upsStr)
 	})
+}
+
+func TestUpstreamDoQ_0RTT(t *testing.T) {
+	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
+
+	srv := startDoQServer(t, tlsConf, 0)
+
+	tracer := &testTracer{}
+	address := fmt.Sprintf("quic://%s", srv.addr)
+	u, err := AddressToUpstream(address, &Options{
+		Logger:     testLogger,
+		QUICTracer: tracer,
+		RootCAs:    rootCAs,
+	})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
+
+	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
+	req := createTestMessage()
+
+	// Trigger connection to a QUIC server.
+	resp, err := uq.Exchange(req)
+	require.NoError(t, err)
+	requireResponse(t, req, resp)
+
+	// Close the active connection to make sure we'll reconnect.
+	func() {
+		uq.connMu.Lock()
+		defer uq.connMu.Unlock()
+
+		err = uq.conn.CloseWithError(QUICCodeNoError, "")
+		require.NoError(t, err)
+
+		uq.conn = nil
+	}()
+
+	// Trigger second connection.
+	resp, err = uq.Exchange(req)
+	require.NoError(t, err)
+	requireResponse(t, req, resp)
+
+	// Check traced connections info.
+	conns := tracer.connectionsInfo()
+	require.Len(t, conns, 2)
+
+	// Examine the first connection (no 0-RTT there).
+	require.False(t, conns[0].is0RTT())
+
+	// Examine the second connection (the one that used 0-RTT).
+	require.True(t, conns[1].is0RTT())
 }
 
 // testDoHServer is an instance of a test DNS-over-QUIC server.

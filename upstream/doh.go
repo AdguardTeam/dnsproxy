@@ -98,13 +98,19 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 		httpVersions = DefaultHTTPVersions
 	}
 
+	quicConf := &quic.Config{
+		KeepAlivePeriod: QUICKeepAlivePeriod,
+		TokenStore:      newQUICTokenStore(),
+	}
+
+	if opts.QUICTracer != nil {
+		quicConf.Tracer = opts.QUICTracer.TraceForConnection
+	}
+
 	ups := &dnsOverHTTPS{
-		getDialer: newDialerInitializer(addr, opts),
-		addr:      addr,
-		quicConf: &quic.Config{
-			KeepAlivePeriod: QUICKeepAlivePeriod,
-			TokenStore:      newQUICTokenStore(),
-		},
+		getDialer:  newDialerInitializer(addr, opts),
+		addr:       addr,
+		quicConf:   quicConf,
 		quicConfMu: &sync.Mutex{},
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),

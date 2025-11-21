@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
@@ -24,6 +25,9 @@ import (
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/qlog"
+	"github.com/quic-go/quic-go/qlogwriter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -771,4 +775,111 @@ func publicKey(priv any) (pub any) {
 	default:
 		return nil
 	}
+}
+
+// testTracer collects QUIC connection traces for testing.
+type testTracer struct {
+	tracers []*quicTracer
+}
+
+// TraceForConnection creates a tracer for a QUIC connection.
+func (t *testTracer) TraceForConnection(
+	_ context.Context,
+	_ bool,
+	_ quic.ConnectionID,
+) (tracer qlogwriter.Trace) {
+	newTracer := &quicTracer{recorder: &headerRecorder{}}
+	t.tracers = append(t.tracers, newTracer)
+
+	return newTracer
+}
+
+// connectionsInfo returns info for all traced connections.
+func (t *testTracer) connectionsInfo() (res []*connInfo) {
+	res = make([]*connInfo, 0, len(t.tracers))
+	for _, tracer := range t.tracers {
+		hdrs := tracer.recorder.headersWithLock()
+
+		res = append(res, &connInfo{
+			headers: hdrs,
+		})
+	}
+
+	return res
+}
+
+// connInfo contains all trace event headers recorded for single connection.
+type connInfo struct {
+	headers []qlog.PacketHeader
+}
+
+// is0RTT returns true if the connection used 0-RTT packets.
+func (c *connInfo) is0RTT() (ok bool) {
+	for _, hdr := range c.headers {
+		if hdr.PacketType == qlog.PacketType0RTT {
+			return true
+		}
+	}
+
+	return false
+}
+
+// quicTracer is an implementation of [qlogwriter.Trace] for testing.
+type quicTracer struct {
+	// recorder is used for recording trace events.  It must not be nil.
+	recorder *headerRecorder
+}
+
+// type check
+var _ qlogwriter.Trace = (*quicTracer)(nil)
+
+// AddProducer implements the [qlogwriter.Trace] interface for *quicTracer.
+func (q *quicTracer) AddProducer() (recorder qlogwriter.Recorder) {
+	return q.recorder
+}
+
+// SupportsSchemas implements the [qlogwriter.Trace] interface for *quicTracer.
+func (q *quicTracer) SupportsSchemas(string) (ok bool) {
+	return false
+}
+
+// Recorder is an implementation of [qlogwriter.Recorder] that records
+// [qlog.PacketSent] events headers.
+type headerRecorder struct {
+	headers []qlog.PacketHeader
+	mx      sync.Mutex
+}
+
+// type check
+var _ qlogwriter.Recorder = (*headerRecorder)(nil)
+
+// RecordEvent implements the [qlogwriter.Recorder] interface for
+// *headerRecorder.
+func (r *headerRecorder) RecordEvent(ev qlogwriter.Event) {
+	event, ok := ev.(qlog.PacketSent)
+	if !ok {
+		return
+	}
+
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	r.headers = append(r.headers, event.Header)
+}
+
+// headersWithLock returns copy of recorded headers.  It is safe for concurrent
+// use.
+func (r *headerRecorder) headersWithLock() (res []qlog.PacketHeader) {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	res = r.headers
+
+	return res
+}
+
+// Close implements the [qlogwriter.Recorder] interface for
+// *headerRecorder.
+func (*headerRecorder) Close() (err error) {
+	return nil
 }

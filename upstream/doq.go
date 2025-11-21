@@ -99,13 +99,19 @@ type dnsOverQUIC struct {
 func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 	addPort(addr, defaultPortDoQ)
 
+	quicConf := &quic.Config{
+		KeepAlivePeriod: QUICKeepAlivePeriod,
+		TokenStore:      newQUICTokenStore(),
+	}
+
+	if opts.QUICTracer != nil {
+		quicConf.Tracer = opts.QUICTracer.TraceForConnection
+	}
+
 	u = &dnsOverQUIC{
-		getDialer: newDialerInitializer(addr, opts),
-		addr:      addr,
-		quicConfig: &quic.Config{
-			KeepAlivePeriod: QUICKeepAlivePeriod,
-			TokenStore:      newQUICTokenStore(),
-		},
+		getDialer:  newDialerInitializer(addr, opts),
+		addr:       addr,
+		quicConfig: quicConf,
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
 			RootCAs:      opts.RootCAs,

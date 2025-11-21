@@ -22,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO(f.setrakov): Implement 0RTT tests.
 func TestUpstreamDoH(t *testing.T) {
 	t.Parallel()
 
@@ -267,6 +266,60 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestUpstreamDoH_0RTT(t *testing.T) {
+	t.Parallel()
+
+	// Run the first server instance.
+	srv := startDoHServer(t, testDoHServerOptions{
+		http3Enabled: true,
+	})
+
+	// Create a DNS-over-HTTPS upstream.
+	tracer := &testTracer{}
+	address := fmt.Sprintf("h3://%s/dns-query", srv.addr)
+	u, err := AddressToUpstream(address, &Options{
+		Logger:             testLogger,
+		InsecureSkipVerify: true,
+		QUICTracer:         tracer,
+	})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
+
+	uh := testutil.RequireTypeAssert[*dnsOverHTTPS](t, u)
+	req := createTestMessage()
+
+	// Trigger connection to a DoH3 server.
+	resp, err := uh.Exchange(req)
+	require.NoError(t, err)
+	requireResponse(t, req, resp)
+
+	// Close the active connection to make sure we'll reconnect.
+	func() {
+		uh.clientMu.Lock()
+		defer uh.clientMu.Unlock()
+
+		err = uh.closeClient(uh.client)
+		require.NoError(t, err)
+
+		uh.client = nil
+	}()
+
+	// Trigger second connection.
+	resp, err = uh.Exchange(req)
+	require.NoError(t, err)
+	requireResponse(t, req, resp)
+
+	// Check traced connections info.
+	conns := tracer.connectionsInfo()
+	require.Len(t, conns, 2)
+
+	// Examine the first connection (no 0-RTT there).
+	require.False(t, conns[0].is0RTT())
+
+	// Examine the second connection (the one that used 0-RTT).
+	require.True(t, conns[1].is0RTT())
 }
 
 // testDoHServerOptions allows customizing testDoHServer behavior.

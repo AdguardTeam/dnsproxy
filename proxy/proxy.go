@@ -274,6 +274,9 @@ func New(c *Config) (p *Proxy, err error) {
 		p.bindRetryIvl = bindRetries.Interval
 	}
 
+	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
+	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
+
 	err = p.setupDNS64()
 	if err != nil {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)

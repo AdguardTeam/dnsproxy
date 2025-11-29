@@ -34,6 +34,7 @@ func ReleasePrefetchItem(item *PrefetchItem) {
 	item.ExpireTime = time.Time{}
 	item.Priority = 0
 	item.HitCount = 0
+	item.AddedTime = time.Time{}
 	item.index = -1
 	prefetchItemPool.Put(item)
 }
@@ -44,9 +45,10 @@ type PrefetchItem struct {
 	QType      uint16
 	Subnet     *net.IPNet
 	ExpireTime time.Time
-	Priority   int64 // Lower value means higher priority (sooner to expire)
-	HitCount   int   // Number of hits while in queue
-	index      int   // Index in the heap, for update
+	Priority   int64     // Lower value means higher priority (sooner to expire)
+	HitCount   int       // Number of hits while in queue
+	AddedTime  time.Time // Time when the item was added to the queue
+	index      int       // Index in the heap, for update
 }
 
 // CalculatePriority calculates the priority based on remaining TTL and hit count

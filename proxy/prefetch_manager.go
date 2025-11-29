@@ -201,6 +201,7 @@ func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPN
 
 	item := AcquirePrefetchItem(domain, qtype, subnet, expireTime)
 	item.HitCount = 1
+	item.AddedTime = time.Now()
 	item.Priority = item.CalculatePriority()
 
 	pm.scheduled[key] = item
@@ -225,7 +226,22 @@ func (pm *PrefetchQueueManager) processQueue() {
 	}
 
 	now := time.Now()
-	if head.ExpireTime.Sub(now) > pm.refreshBefore {
+
+	// Smart Refresh Threshold Logic
+	// Calculate Total TTL based on AddedTime and ExpireTime
+	totalTTL := head.ExpireTime.Sub(head.AddedTime)
+
+	// Effective RefreshBefore is min(pm.refreshBefore, totalTTL/2)
+	// This prevents immediate refresh for short TTLs.
+	effectiveRefreshBefore := pm.refreshBefore
+	if totalTTL > 0 {
+		halfTTL := totalTTL / 2
+		if halfTTL < effectiveRefreshBefore {
+			effectiveRefreshBefore = halfTTL
+		}
+	}
+
+	if head.ExpireTime.Sub(now) > effectiveRefreshBefore {
 		return
 	}
 

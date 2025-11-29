@@ -411,6 +411,10 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 
 	p.started = false
 
+	if p.cache != nil && p.cache.prefetchManager != nil {
+		p.cache.prefetchManager.Stop()
+	}
+
 	p.logger.InfoContext(ctx, "stopped dns proxy server")
 
 	err = errors.Join(errs...)
@@ -818,4 +822,13 @@ func (dctx *DNSContext) processECS(cliIP net.IP, l *slog.Logger) {
 
 		l.Debug("setting ecs", "subnet", dctx.ReqECS)
 	}
+}
+
+// GetPrefetchStats returns the statistics of the prefetch manager.
+func (p *Proxy) GetPrefetchStats() *PrefetchStats {
+	if p.cache == nil || p.cache.prefetchManager == nil {
+		return nil
+	}
+
+	return p.cache.prefetchManager.Stats()
 }

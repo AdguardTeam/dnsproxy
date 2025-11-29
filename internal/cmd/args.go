@@ -18,6 +18,7 @@ import (
 const (
 	configPathIdx = iota
 	logOutputIdx
+	apiPortIdx
 	tlsCertPathIdx
 	tlsKeyPathIdx
 	httpsServerNameIdx
@@ -93,6 +94,12 @@ var commandLineOptions = []*commandLineOption{
 		long:        "output",
 		short:       "o",
 		valueType:   "path",
+	},
+	apiPortIdx: {
+		description: "Port for the HTTP API server.",
+		long:        "api-port",
+		short:       "",
+		valueType:   "port",
 	},
 	tlsCertPathIdx: {
 		description: "Path to a file with the certificate chain.",
@@ -324,13 +331,13 @@ var commandLineOptions = []*commandLineOption{
 		valueType:   "",
 	},
 	pprofIdx: {
-		description: "If present, exposes pprof information on localhost:6060.",
+		description: "Enable pprof http server.",
 		long:        "pprof",
 		short:       "",
 		valueType:   "",
 	},
 	versionIdx: {
-		description: "Prints the program version.",
+		description: "Print version and exit.",
 		long:        "version",
 		short:       "",
 		valueType:   "",
@@ -415,6 +422,7 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 	for i, fieldPtr := range []any{
 		configPathIdx:               &conf.ConfigPath,
 		logOutputIdx:                &conf.LogOutput,
+		apiPortIdx:                  &conf.APIPort,
 		tlsCertPathIdx:              &conf.TLSCertPath,
 		tlsKeyPathIdx:               &conf.TLSKeyPath,
 		httpsServerNameIdx:          &conf.HTTPSServerName,

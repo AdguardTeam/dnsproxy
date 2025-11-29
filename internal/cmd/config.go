@@ -154,8 +154,10 @@ type configuration struct {
 	// not.
 	HostsFileEnabled bool `yaml:"hosts-file-enabled"`
 
-	// Pprof defines whether the pprof information needs to be exposed via
-	// localhost:6060 or not.
+	// APIPort is the port for the HTTP API server.
+	APIPort int `yaml:"api-port"`
+
+	// Pprof defines whether the pprof debug interface should be enabled.
 	Pprof bool `yaml:"pprof"`
 
 	// Version, if true, prints the program version, and exits.
@@ -200,6 +202,9 @@ type configuration struct {
 	// lookups of private addresses, including the requests for authority
 	// records, such as SOA and NS.
 	UsePrivateRDNS bool `yaml:"use-private-rdns"`
+
+	// Prefetch is the configuration for active prefetching.
+	Prefetch *proxy.PrefetchConfig `yaml:"prefetch"`
 }
 
 // parseConfig returns options parsed from the command args or config file.  If

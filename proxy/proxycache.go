@@ -3,6 +3,7 @@ package proxy
 import (
 	"net"
 	"slices"
+	"time"
 )
 
 // cacheForContext returns cache object for the given context.
@@ -60,6 +61,16 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 		}
 
 		go p.shortFlighter.resolveOnce(minCtxClone, key, p.logger)
+	}
+
+	// Trigger prefetch check on cache hit
+	if p.Config.Prefetch != nil && p.Config.Prefetch.Enabled && p.cache.prefetchManager != nil {
+		q := d.Req.Question[0]
+		if p.cache.prefetchManager.CheckThreshold(q.Name, q.Qtype, d.ReqECS) {
+			// Calculate approximate expiration time based on current time and TTL
+			expireTime := time.Now().Add(time.Duration(ci.ttl) * time.Second)
+			p.cache.prefetchManager.Add(q.Name, q.Qtype, d.ReqECS, expireTime)
+		}
 	}
 
 	return hit

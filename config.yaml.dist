@@ -18,3 +18,8 @@ udp-buf-size: 0
 upstream:
   - "1.1.1.1:53"
 timeout: '10s'
+prefetch:
+  enabled: true
+  batch_size: 10
+  check_interval: '10s'
+  refresh_before: '5s'

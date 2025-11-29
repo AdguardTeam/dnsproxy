@@ -311,12 +311,22 @@ type PrefetchConfig struct {
 	// ThresholdWindow is the time window for tracking request counts.
 	// Default is 0 (no window, simple counter).
 	ThresholdWindow time.Duration
+
+	// MaxQueueSize is the maximum number of items in the prefetch queue.
+	// Default is 10000.
+	MaxQueueSize int
+
+	// RetentionTime is the fixed retention time in seconds.
+	// If 0, dynamic retention algorithm is used.
+	// Default is 0.
+	RetentionTime int
+
+	// DynamicRetentionMaxMultiplier is the maximum multiplier for dynamic retention.
+	// Only used when RetentionTime is 0.
+	// Default is 10.
+	DynamicRetentionMaxMultiplier int
 }
 
-// validateConfig verifies that the supplied configuration is valid and returns
-// an error if it's not.
-//
-// TODO(s.chzhen):  Use [validate.Interface] from golibs.
 func (p *Proxy) validateConfig() (err error) {
 	err = p.UpstreamConfig.validate()
 	if err != nil {

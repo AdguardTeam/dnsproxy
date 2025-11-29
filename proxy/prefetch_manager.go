@@ -25,13 +25,17 @@ type PrefetchQueueManager struct {
 	refreshBefore   time.Duration
 	threshold       int
 	thresholdWindow time.Duration
+	maxQueueSize    int
+	retentionTime   int
+	maxMultiplier   int
 	semaphore       chan struct{}
 	wakeCh          chan struct{}
 
-	totalRefreshed  atomic.Int64
-	totalFailed     atomic.Int64
-	totalProcessed  atomic.Int64
-	lastRefreshTime atomic.Int64 // Unix timestamp
+	totalRefreshed     atomic.Int64
+	totalFailed        atomic.Int64
+	totalProcessed     atomic.Int64
+	uniqueDomainsCount atomic.Int64
+	lastRefreshTime    atomic.Int64 // Unix timestamp
 
 	proxy  *Proxy
 	logger *slog.Logger
@@ -74,8 +78,18 @@ func NewPrefetchQueueManager(proxy *Proxy, config *PrefetchConfig) *PrefetchQueu
 		thresholdWindow = config.ThresholdWindow
 	}
 
+	maxQueueSize := 10000
+	if config.MaxQueueSize > 0 {
+		maxQueueSize = config.MaxQueueSize
+	}
+
+	maxMultiplier := 10
+	if config.DynamicRetentionMaxMultiplier > 0 {
+		maxMultiplier = config.DynamicRetentionMaxMultiplier
+	}
+
 	pm := &PrefetchQueueManager{
-		queue:           NewPriorityQueue(10000),
+		queue:           NewPriorityQueue(maxQueueSize),
 		refreshing:      make(map[string]bool),
 		scheduled:       make(map[string]*PrefetchItem),
 		tracker:         newHitTracker(),
@@ -84,6 +98,9 @@ func NewPrefetchQueueManager(proxy *Proxy, config *PrefetchConfig) *PrefetchQueu
 		refreshBefore:   refreshBefore,
 		threshold:       threshold,
 		thresholdWindow: thresholdWindow,
+		maxQueueSize:    maxQueueSize,
+		retentionTime:   config.RetentionTime,
+		maxMultiplier:   maxMultiplier,
 		semaphore:       make(chan struct{}, maxConcurrent),
 		wakeCh:          make(chan struct{}, 1),
 		proxy:           proxy,
@@ -152,7 +169,7 @@ func (pm *PrefetchQueueManager) run() {
 
 // Add adds a domain to the prefetch queue
 func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPNet, expireTime time.Time) {
-	if pm.queue.Len() >= 10000 {
+	if pm.queue.Len() >= pm.maxQueueSize {
 		return
 	}
 
@@ -187,6 +204,7 @@ func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPN
 	item.Priority = item.CalculatePriority()
 
 	pm.scheduled[key] = item
+	pm.uniqueDomainsCount.Add(1)
 	pm.refreshingMu.Unlock()
 
 	pm.queue.Push(item)
@@ -248,6 +266,7 @@ func (pm *PrefetchQueueManager) processQueue() {
 
 			pm.refreshingMu.Lock()
 			delete(pm.scheduled, pm.makeKey(item.Domain, item.QType, item.Subnet))
+			pm.uniqueDomainsCount.Add(-1)
 			pm.refreshingMu.Unlock()
 
 			ReleasePrefetchItem(item)
@@ -261,12 +280,14 @@ func (pm *PrefetchQueueManager) processQueue() {
 		return
 	}
 
-	var wg sync.WaitGroup
 	for _, item := range needRefresh {
-		wg.Add(1)
+		// Non-blocking dispatch: we don't wait for the batch to finish.
+		// We use the main WaitGroup to ensure Stop() waits for all in-flight requests.
+		pm.wg.Add(1)
 		go func(item *PrefetchItem) {
-			defer wg.Done()
+			defer pm.wg.Done()
 
+			// Acquire semaphore to limit concurrency
 			pm.semaphore <- struct{}{}
 			defer func() { <-pm.semaphore }()
 
@@ -274,8 +295,6 @@ func (pm *PrefetchQueueManager) processQueue() {
 			ReleasePrefetchItem(item)
 		}(item)
 	}
-
-	wg.Wait()
 }
 
 func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
@@ -288,6 +307,7 @@ func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
 	}
 	pm.refreshing[key] = true
 	delete(pm.scheduled, key)
+	pm.uniqueDomainsCount.Add(-1)
 	pm.refreshingMu.Unlock()
 
 	defer func() {
@@ -336,6 +356,59 @@ func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
 
 	pm.totalProcessed.Add(1)
 	pm.lastRefreshTime.Store(time.Now().Unix())
+
+	// Clear refreshing flag explicitly before retention logic
+	// so that pm.Add() doesn't reject the re-addition.
+	pm.refreshingMu.Lock()
+	delete(pm.refreshing, key)
+	pm.refreshingMu.Unlock()
+
+	// Hybrid Retention Logic
+	var retentionTime time.Duration
+	var shouldCheck bool
+
+	if pm.retentionTime > 0 {
+		// Fixed Retention Mode
+		retentionTime = time.Duration(pm.retentionTime) * time.Second
+		shouldCheck = true
+	} else if pm.thresholdWindow > 0 && pm.threshold > 0 {
+		// Dynamic Retention Mode
+		hits, _ := pm.tracker.getStats(key)
+		if hits >= pm.threshold {
+			multiplier := hits / pm.threshold
+			if multiplier > pm.maxMultiplier {
+				multiplier = pm.maxMultiplier
+			}
+			retentionTime = pm.thresholdWindow * time.Duration(multiplier)
+			shouldCheck = true
+		}
+	}
+
+	if shouldCheck {
+		_, lastAccess := pm.tracker.getStats(key)
+		idleTime := time.Since(lastAccess)
+
+		if idleTime < retentionTime {
+			pm.logger.Debug("retaining item",
+				"domain", item.Domain,
+				"mode", func() string {
+					if pm.retentionTime > 0 {
+						return "fixed"
+					}
+					return "dynamic"
+				}(),
+				"idle", idleTime,
+				"retention", retentionTime)
+
+			// Re-add to queue with new expiration
+			pm.Add(item.Domain, item.QType, item.Subnet, time.Now().Add(pm.refreshBefore+1*time.Minute))
+		} else {
+			pm.logger.Debug("dropping item due to cooling",
+				"domain", item.Domain,
+				"idle", idleTime,
+				"retention", retentionTime)
+		}
+	}
 }
 
 // GetStats returns the current statistics (legacy method for tests)
@@ -392,6 +465,12 @@ func (ht *hitTracker) record(key string, threshold int, window time.Duration) bo
 	return ht.hits[key] >= threshold
 }
 
+func (ht *hitTracker) getStats(key string) (hits int, lastAccess time.Time) {
+	ht.mu.Lock()
+	defer ht.mu.Unlock()
+	return ht.hits[key], ht.lastAccess[key]
+}
+
 func (ht *hitTracker) cleanup(window time.Duration) {
 	ht.mu.Lock()
 	defer ht.mu.Unlock()
@@ -429,8 +508,9 @@ type PrefetchStats struct {
 func (pm *PrefetchQueueManager) Stats() *PrefetchStats {
 	pm.refreshingMu.Lock()
 	scheduledCount := len(pm.scheduled)
-	uniqueDomains := pm.countUniqueDomains()
 	pm.refreshingMu.Unlock()
+
+	uniqueDomains := int(pm.uniqueDomainsCount.Load())
 
 	lastRefresh := "never"
 	if ts := pm.lastRefreshTime.Load(); ts > 0 {
@@ -450,14 +530,4 @@ func (pm *PrefetchQueueManager) Stats() *PrefetchStats {
 		MaxConcurrent:   cap(pm.semaphore),
 		Threshold:       pm.threshold,
 	}
-}
-
-// countUniqueDomains counts the number of unique domains in the scheduled map
-// Must be called with refreshingMu held
-func (pm *PrefetchQueueManager) countUniqueDomains() int {
-	domains := make(map[string]struct{})
-	for _, item := range pm.scheduled {
-		domains[item.Domain] = struct{}{}
-	}
-	return len(domains)
 }

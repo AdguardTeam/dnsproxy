@@ -68,6 +68,10 @@ func TestPrefetchQueueManager(t *testing.T) {
 	pm.Start()
 	defer pm.Stop()
 
+	// Add item
+	pm.Add("example.com", dns.TypeA, nil, time.Now().Add(1*time.Minute))
+	time.Sleep(200 * time.Millisecond)
+
 	// Verify stats
 	refreshed, failed, _ := pm.GetStats()
 	assert.Equal(t, int64(1), refreshed)

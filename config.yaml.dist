@@ -23,3 +23,9 @@ prefetch:
   batch_size: 10
   check_interval: '10s'
   refresh_before: '5s'
+  max_concurrent_requests: 10
+  threshold: 2
+  threshold_window: '1m'
+  retention_time: 0 # 0=Dynamic, >0=Fixed (seconds)
+  dynamic_retention_max_multiplier: 10
+

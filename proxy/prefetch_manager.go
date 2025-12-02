@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -170,7 +171,10 @@ func (pm *PrefetchQueueManager) run() {
 
 		select {
 		case <-timer.C:
-			pm.processQueue()
+			if !pm.processQueue() {
+				// Queue was full, backoff a bit to avoid busy loop
+				time.Sleep(100 * time.Millisecond)
+			}
 			pm.tracker.cleanup(pm.thresholdWindow)
 		case <-pm.wakeCh:
 			if !timer.Stop() {
@@ -270,17 +274,17 @@ func (pm *PrefetchQueueManager) calculateEffectiveRefreshBefore(item *PrefetchIt
 	return effectiveRefreshBefore
 }
 
-func (pm *PrefetchQueueManager) processQueue() {
+func (pm *PrefetchQueueManager) processQueue() bool {
 	head := pm.queue.Peek()
 	if head == nil {
-		return
+		return true
 	}
 
 	now := time.Now()
 	effectiveRefreshBefore := pm.calculateEffectiveRefreshBefore(head)
 
 	if head.ExpireTime.Sub(now) > effectiveRefreshBefore {
-		return
+		return true
 	}
 
 	queueLen := pm.queue.Len()
@@ -301,7 +305,7 @@ func (pm *PrefetchQueueManager) processQueue() {
 
 	items := pm.queue.PopN(popCount)
 	if len(items) == 0 {
-		return
+		return true
 	}
 
 	pm.logger.Info("batch flush triggered",
@@ -340,26 +344,34 @@ func (pm *PrefetchQueueManager) processQueue() {
 	}
 
 	if len(needRefresh) == 0 {
-		return
+		return true
 	}
 
-	for _, item := range needRefresh {
+	for i, item := range needRefresh {
 		// Non-blocking dispatch: we try to send to jobsCh.
 		// If channel is full, we drop the item to avoid blocking the main loop.
 		// This acts as a natural backpressure mechanism.
 		select {
 		case pm.jobsCh <- item:
 		default:
-			pm.logger.Debug("worker queue full, re-queueing item",
-				"domain", item.Domain)
+			pm.logger.Debug("worker queue full, re-queueing items",
+				"domain", item.Domain,
+				"count", len(needRefresh)-i)
 
-			// Re-queue the item so it's not lost
-			pm.queue.Push(item)
+			// Re-queue the current item and all subsequent items
+			// We iterate in reverse order of the remaining items to maintain relative order if possible,
+			// though for the priority queue it doesn't strictly matter as Priority is key.
+			// But simply pushing them back is fine.
+			for j := i; j < len(needRefresh); j++ {
+				pm.queue.Push(needRefresh[j])
+			}
 
 			// Stop processing this batch to allow workers to drain
-			return
+			return false // False indicates we couldn't process everything (busy)
 		}
 	}
+
+	return true // True indicates success
 }
 
 func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
@@ -410,7 +422,21 @@ func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
 	var err error
 	maxRetries := 2
 	for i := 0; i <= maxRetries; i++ {
-		err = pm.proxy.Resolve(dctx)
+		// Wrap Resolve in a timeout to prevent worker hanging
+		done := make(chan error, 1)
+		go func() {
+			done <- pm.proxy.Resolve(dctx)
+		}()
+
+		select {
+		case err = <-done:
+			if err == nil {
+				break
+			}
+		case <-time.After(30 * time.Second):
+			err = fmt.Errorf("prefetch timeout after 30s")
+		}
+
 		if err == nil {
 			break
 		}

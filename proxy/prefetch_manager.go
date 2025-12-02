@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -277,11 +276,6 @@ func (pm *PrefetchQueueManager) processQueue() {
 	now := time.Now()
 	effectiveRefreshBefore := pm.calculateEffectiveRefreshBefore(head)
 
-	if head.Domain == "short.com." {
-		fmt.Printf("DEBUG: processQueue short.com: TotalTTL=%v, Remaining=%v, Effective=%v\n",
-			head.ExpireTime.Sub(head.AddedTime), head.ExpireTime.Sub(now), effectiveRefreshBefore)
-	}
-
 	if head.ExpireTime.Sub(now) > effectiveRefreshBefore {
 		return
 	}
@@ -334,20 +328,6 @@ func (pm *PrefetchQueueManager) processQueue() {
 		effectiveRefreshBefore := pm.calculateEffectiveRefreshBefore(item)
 		if timeUntilExpiry > effectiveRefreshBefore {
 			// Not due yet, re-add to queue
-			// We use Add to ensure it's properly re-scheduled
-			// Note: Add will check if it's already scheduled (it is, in pm.scheduled),
-			// but we just popped it, so it's NOT in the queue, but IS in pm.scheduled.
-			// Wait, Add expects it to be in pm.scheduled?
-			// Add checks: if item, ok := pm.scheduled[key]; ok { ... update ... }
-			// Since we popped it, it is still in pm.scheduled.
-			// So Add will just update it in the queue (Push it back).
-			// However, Add assumes it's already in the queue if it's in pm.scheduled?
-			// No, Add calls pm.queue.Update(item).
-			// Update checks if item.index is valid.
-			// Pop set item.index = -1.
-			// So Update will return without doing anything!
-			// So Add will NOT push it back if we use the existing logic!
-
 			// We need to explicitly Push it back.
 			pm.queue.Push(item)
 			continue
@@ -367,15 +347,14 @@ func (pm *PrefetchQueueManager) processQueue() {
 		select {
 		case pm.jobsCh <- item:
 		default:
-			pm.logger.Debug("dropping item due to full worker queue",
+			pm.logger.Debug("worker queue full, re-queueing item",
 				"domain", item.Domain)
 
-			pm.refreshingMu.Lock()
-			delete(pm.scheduled, pm.makeKey(item.Domain, item.QType, item.Subnet))
-			pm.uniqueDomainsCount.Add(-1)
-			pm.refreshingMu.Unlock()
+			// Re-queue the item so it's not lost
+			pm.queue.Push(item)
 
-			ReleasePrefetchItem(item)
+			// Stop processing this batch to allow workers to drain
+			return
 		}
 	}
 }

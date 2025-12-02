@@ -73,21 +73,34 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	//
 	// We skip this check for internal prefetch requests to avoid infinite retention loops
 	// where the prefetch refresh itself counts as a hit.
-	if !d.IsInternalPrefetch && p.Config.Prefetch != nil && p.Config.Prefetch.Enabled && dctxCache.prefetchEnabled && dctxCache.prefetchManager != nil {
-		q := d.Req.Question[0]
+	if !d.IsInternalPrefetch && p.Config.Prefetch != nil && p.Config.Prefetch.Enabled {
+		// Use the prefetch manager from the current cache context if available,
+		// otherwise fallback to the global cache's prefetch manager.
+		// This ensures prefetch works even for custom upstreams with their own caches
+		// that might not have a prefetch manager attached.
+		var pm *PrefetchQueueManager
+		if dctxCache.prefetchManager != nil {
+			pm = dctxCache.prefetchManager
+		} else if p.cache != nil {
+			pm = p.cache.prefetchManager
+		}
 
-		// CheckThreshold records the hit and returns true if hits >= threshold-1
-		if dctxCache.prefetchManager.CheckThreshold(q.Name, q.Qtype, d.ReqECS) {
-			// Calculate approximate expiration time based on current time and TTL
-			expireTime := time.Now().Add(time.Duration(ci.ttl) * time.Second)
+		if pm != nil {
+			q := d.Req.Question[0]
 
-			dctxCache.prefetchManager.Add(q.Name, q.Qtype, d.ReqECS, d.CustomUpstreamConfig, expireTime)
+			// CheckThreshold records the hit and returns true if hits >= threshold-1
+			if pm.CheckThreshold(q.Name, q.Qtype, d.ReqECS) {
+				// Calculate approximate expiration time based on current time and TTL
+				expireTime := time.Now().Add(time.Duration(ci.ttl) * time.Second)
 
-			p.logger.Debug("prefetch triggered",
-				"domain", q.Name,
-				"qtype", dns.TypeToString[q.Qtype],
-				"ttl", ci.ttl,
-				"expire_time", expireTime)
+				pm.Add(q.Name, q.Qtype, d.ReqECS, d.CustomUpstreamConfig, expireTime)
+
+				p.logger.Debug("prefetch triggered",
+					"domain", q.Name,
+					"qtype", dns.TypeToString[q.Qtype],
+					"ttl", ci.ttl,
+					"expire_time", expireTime)
+			}
 		}
 	}
 

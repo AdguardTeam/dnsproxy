@@ -85,7 +85,37 @@ func createProxyConfig(
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: conf.PendingRequestsEnabled,
 		},
-		Prefetch: conf.Prefetch,
+		Prefetch: func() *proxy.PrefetchConfig {
+			pc := conf.Prefetch
+			if pc == nil {
+				pc = &proxy.PrefetchConfig{}
+			}
+			if conf.PrefetchEnabled {
+				pc.Enabled = true
+			}
+			if conf.PrefetchBatchSize > 0 {
+				pc.BatchSize = conf.PrefetchBatchSize
+			}
+			if conf.PrefetchCheckInterval > 0 {
+				pc.CheckInterval = time.Duration(conf.PrefetchCheckInterval)
+			}
+			if conf.PrefetchRefreshBefore > 0 {
+				pc.RefreshBefore = time.Duration(conf.PrefetchRefreshBefore)
+			}
+			if conf.PrefetchThreshold > 0 {
+				pc.Threshold = conf.PrefetchThreshold
+			}
+			if conf.PrefetchThresholdWindow > 0 {
+				pc.ThresholdWindow = time.Duration(conf.PrefetchThresholdWindow)
+			}
+			if conf.PrefetchMaxConcurrentRequests > 0 {
+				pc.MaxConcurrentRequests = conf.PrefetchMaxConcurrentRequests
+			}
+			if conf.PrefetchMaxQueueSize > 0 {
+				pc.MaxQueueSize = conf.PrefetchMaxQueueSize
+			}
+			return pc
+		}(),
 	}
 
 	if uiStr := conf.HTTPSUserinfo; uiStr != "" {

@@ -205,6 +205,30 @@ type configuration struct {
 
 	// Prefetch is the configuration for active prefetching.
 	Prefetch *proxy.PrefetchConfig `yaml:"prefetch"`
+
+	// PrefetchEnabled enables active prefetching.
+	PrefetchEnabled bool `yaml:"prefetch-enabled"`
+
+	// PrefetchBatchSize is the number of items to process in one batch.
+	PrefetchBatchSize int `yaml:"prefetch-batch-size"`
+
+	// PrefetchCheckInterval is the interval between queue checks.
+	PrefetchCheckInterval timeutil.Duration `yaml:"prefetch-check-interval"`
+
+	// PrefetchRefreshBefore is the time before expiration to trigger refresh.
+	PrefetchRefreshBefore timeutil.Duration `yaml:"prefetch-refresh-before"`
+
+	// PrefetchThreshold is the number of hits required to trigger prefetch.
+	PrefetchThreshold int `yaml:"prefetch-threshold"`
+
+	// PrefetchThresholdWindow is the time window for tracking hits.
+	PrefetchThresholdWindow timeutil.Duration `yaml:"prefetch-threshold-window"`
+
+	// PrefetchMaxConcurrentRequests is the maximum number of concurrent prefetch requests.
+	PrefetchMaxConcurrentRequests int `yaml:"prefetch-max-concurrent-requests"`
+
+	// PrefetchMaxQueueSize is the maximum number of items in the prefetch queue.
+	PrefetchMaxQueueSize int `yaml:"prefetch-max-queue-size"`
 }
 
 // parseConfig returns options parsed from the command args or config file.  If

@@ -73,14 +73,15 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	//
 	// We skip this check for internal prefetch requests to avoid infinite retention loops
 	// where the prefetch refresh itself counts as a hit.
-	if !d.IsInternalPrefetch && p.Config.Prefetch != nil && p.Config.Prefetch.Enabled && p.cache.prefetchManager != nil {
+	if !d.IsInternalPrefetch && p.Config.Prefetch != nil && p.Config.Prefetch.Enabled && dctxCache.prefetchEnabled && dctxCache.prefetchManager != nil {
 		q := d.Req.Question[0]
+
 		// CheckThreshold records the hit and returns true if hits >= threshold-1
-		if p.cache.prefetchManager.CheckThreshold(q.Name, q.Qtype, d.ReqECS) {
+		if dctxCache.prefetchManager.CheckThreshold(q.Name, q.Qtype, d.ReqECS) {
 			// Calculate approximate expiration time based on current time and TTL
 			expireTime := time.Now().Add(time.Duration(ci.ttl) * time.Second)
 
-			p.cache.prefetchManager.Add(q.Name, q.Qtype, d.ReqECS, d.CustomUpstreamConfig, expireTime)
+			dctxCache.prefetchManager.Add(q.Name, q.Qtype, d.ReqECS, d.CustomUpstreamConfig, expireTime)
 
 			p.logger.Debug("prefetch triggered",
 				"domain", q.Name,

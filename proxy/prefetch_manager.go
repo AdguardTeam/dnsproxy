@@ -189,6 +189,9 @@ func (pm *PrefetchQueueManager) run() {
 // Add adds a domain to the prefetch queue
 func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPNet, customConfig *CustomUpstreamConfig, expireTime time.Time) {
 	if pm.queue.Len() >= pm.maxQueueSize {
+		pm.logger.Warn("prefetch queue full, dropping item",
+			"domain", domain,
+			"queue_len", pm.queue.Len())
 		return
 	}
 

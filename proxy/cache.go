@@ -176,8 +176,9 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 	filterMsg(res, m, req.AuthenticatedData, doBit, ttl)
 
 	return &cacheItem{
-		m: res,
-		u: string(b.Next(b.Len())),
+		m:   res,
+		u:   string(b.Next(b.Len())),
+		ttl: ttl,
 	}, expired
 }
 
@@ -354,7 +355,7 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 }
 
 // set stores response and upstream in the cache.  l must not be nil.
-func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
+func (c *cache) set(m *dns.Msg, u upstream.Upstream, skipPrefetch bool, l *slog.Logger) {
 	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
@@ -369,12 +370,12 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
 	c.items.Set(key, packed)
 
 	// Add to prefetch queue if enabled.
-	if c.prefetchEnabled && c.prefetchManager != nil {
+	if !skipPrefetch && c.prefetchEnabled && c.prefetchManager != nil {
 		for _, q := range m.Question {
 			if item.ttl > 0 {
 				if c.prefetchManager.CheckThreshold(q.Name, q.Qtype, nil) {
 					expireTime := time.Now().Add(time.Duration(item.ttl) * time.Second)
-					c.prefetchManager.Add(q.Name, q.Qtype, nil, expireTime)
+					c.prefetchManager.Add(q.Name, q.Qtype, nil, nil, expireTime)
 				}
 			}
 		}
@@ -384,7 +385,7 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
 // setWithSubnet stores response and upstream with subnet in the cache.  The
 // given subnet mask and IP address are used to calculate the cache key.  l must
 // not be nil.
-func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet, l *slog.Logger) {
+func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet, skipPrefetch bool, l *slog.Logger) {
 	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
@@ -400,12 +401,12 @@ func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet
 	c.itemsWithSubnet.Set(key, packed)
 
 	// Add to prefetch queue if enabled.
-	if c.prefetchEnabled && c.prefetchManager != nil {
+	if !skipPrefetch && c.prefetchEnabled && c.prefetchManager != nil {
 		for _, q := range m.Question {
 			if item.ttl > 0 {
 				if c.prefetchManager.CheckThreshold(q.Name, q.Qtype, subnet) {
 					expireTime := time.Now().Add(time.Duration(item.ttl) * time.Second)
-					c.prefetchManager.Add(q.Name, q.Qtype, subnet, expireTime)
+					c.prefetchManager.Add(q.Name, q.Qtype, subnet, nil, expireTime)
 				}
 			}
 		}

@@ -26,7 +26,7 @@ func BenchmarkStats(b *testing.B) {
 	// Fill queue with 1000 items
 	for i := 0; i < 1000; i++ {
 		domain := fmt.Sprintf("example-%d.com", i)
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(time.Hour))
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now().Add(time.Hour))
 	}
 
 	b.ResetTimer()
@@ -72,7 +72,7 @@ func BenchmarkProcessQueue(b *testing.B) {
 			for j := 0; j < 100; j++ {
 				domain := fmt.Sprintf("bench-%d-%d.com", i, j)
 				// Set expire time such that it triggers refresh (now + 1s < now + 100h)
-				pm.Add(domain, dns.TypeA, nil, time.Now().Add(1*time.Second))
+				pm.Add(domain, dns.TypeA, nil, nil, time.Now().Add(1*time.Second))
 			}
 		}
 		b.StartTimer()

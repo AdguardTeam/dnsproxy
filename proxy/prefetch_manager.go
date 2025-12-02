@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -28,7 +29,8 @@ type PrefetchQueueManager struct {
 	maxQueueSize    int
 	retentionTime   int
 	maxMultiplier   int
-	semaphore       chan struct{}
+	semaphore       chan struct{} // Deprecated: using worker pool
+	jobsCh          chan *PrefetchItem
 	wakeCh          chan struct{}
 
 	totalRefreshed     atomic.Int64
@@ -102,6 +104,7 @@ func NewPrefetchQueueManager(proxy *Proxy, config *PrefetchConfig) *PrefetchQueu
 		retentionTime:   config.RetentionTime,
 		maxMultiplier:   maxMultiplier,
 		semaphore:       make(chan struct{}, maxConcurrent),
+		jobsCh:          make(chan *PrefetchItem, maxConcurrent),
 		wakeCh:          make(chan struct{}, 1),
 		proxy:           proxy,
 		logger:          proxy.logger.With("component", "prefetch"),
@@ -113,6 +116,12 @@ func NewPrefetchQueueManager(proxy *Proxy, config *PrefetchConfig) *PrefetchQueu
 
 // Start starts the background refresh loop
 func (pm *PrefetchQueueManager) Start() {
+	// Start workers
+	for i := 0; i < cap(pm.jobsCh); i++ {
+		pm.wg.Add(1)
+		go pm.worker()
+	}
+
 	pm.wg.Add(1)
 	go pm.run()
 }
@@ -120,7 +129,17 @@ func (pm *PrefetchQueueManager) Start() {
 // Stop stops the background refresh loop
 func (pm *PrefetchQueueManager) Stop() {
 	close(pm.stopCh)
+	close(pm.jobsCh) // Close jobs channel to stop workers
 	pm.wg.Wait()
+}
+
+func (pm *PrefetchQueueManager) worker() {
+	defer pm.wg.Done()
+
+	for item := range pm.jobsCh {
+		pm.refreshItem(item)
+		ReleasePrefetchItem(item)
+	}
 }
 
 func (pm *PrefetchQueueManager) run() {
@@ -140,7 +159,8 @@ func (pm *PrefetchQueueManager) run() {
 		if item == nil {
 			nextRun = 1 * time.Hour
 		} else {
-			targetTime := item.ExpireTime.Add(-pm.refreshBefore)
+			effectiveRefreshBefore := pm.calculateEffectiveRefreshBefore(item)
+			targetTime := item.ExpireTime.Add(-effectiveRefreshBefore)
 			nextRun = time.Until(targetTime)
 			if nextRun < 0 {
 				nextRun = 0
@@ -168,7 +188,7 @@ func (pm *PrefetchQueueManager) run() {
 }
 
 // Add adds a domain to the prefetch queue
-func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPNet, expireTime time.Time) {
+func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPNet, customConfig *CustomUpstreamConfig, expireTime time.Time) {
 	if pm.queue.Len() >= pm.maxQueueSize {
 		return
 	}
@@ -199,7 +219,7 @@ func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPN
 		return
 	}
 
-	item := AcquirePrefetchItem(domain, qtype, subnet, expireTime)
+	item := AcquirePrefetchItem(domain, qtype, subnet, customConfig, expireTime)
 	item.HitCount = 1
 	item.AddedTime = time.Now()
 	item.Priority = item.CalculatePriority()
@@ -219,6 +239,35 @@ func (pm *PrefetchQueueManager) Add(domain string, qtype uint16, subnet *net.IPN
 	}
 }
 
+func (pm *PrefetchQueueManager) calculateEffectiveRefreshBefore(item *PrefetchItem) time.Duration {
+	// Smart Refresh Threshold Logic
+	// Calculate Total TTL based on AddedTime and ExpireTime
+	totalTTL := item.ExpireTime.Sub(item.AddedTime)
+
+	// Default: Refresh at 10% of TTL remaining
+	// This ensures we refresh closer to expiration for long TTLs (e.g., 300s -> 30s remaining)
+	// while still providing a buffer.
+	effectiveRefreshBefore := totalTTL / 10
+
+	// Ensure it's at least pm.refreshBefore (if possible)
+	// This respects the configured minimum safety margin.
+	if effectiveRefreshBefore < pm.refreshBefore {
+		effectiveRefreshBefore = pm.refreshBefore
+	}
+
+	// Cap at 50% of TTL to prevent immediate refresh loop for very short TTLs
+	// e.g. if TTL is 2s, RefreshBefore 5s -> effective would be 5s (immediate).
+	// We cap it at 1s to allow at least 1s of validity.
+	if totalTTL > 0 {
+		halfTTL := totalTTL / 2
+		if effectiveRefreshBefore > halfTTL {
+			effectiveRefreshBefore = halfTTL
+		}
+	}
+
+	return effectiveRefreshBefore
+}
+
 func (pm *PrefetchQueueManager) processQueue() {
 	head := pm.queue.Peek()
 	if head == nil {
@@ -226,19 +275,11 @@ func (pm *PrefetchQueueManager) processQueue() {
 	}
 
 	now := time.Now()
+	effectiveRefreshBefore := pm.calculateEffectiveRefreshBefore(head)
 
-	// Smart Refresh Threshold Logic
-	// Calculate Total TTL based on AddedTime and ExpireTime
-	totalTTL := head.ExpireTime.Sub(head.AddedTime)
-
-	// Effective RefreshBefore is min(pm.refreshBefore, totalTTL/2)
-	// This prevents immediate refresh for short TTLs.
-	effectiveRefreshBefore := pm.refreshBefore
-	if totalTTL > 0 {
-		halfTTL := totalTTL / 2
-		if halfTTL < effectiveRefreshBefore {
-			effectiveRefreshBefore = halfTTL
-		}
+	if head.Domain == "short.com." {
+		fmt.Printf("DEBUG: processQueue short.com: TotalTTL=%v, Remaining=%v, Effective=%v\n",
+			head.ExpireTime.Sub(head.AddedTime), head.ExpireTime.Sub(now), effectiveRefreshBefore)
 	}
 
 	if head.ExpireTime.Sub(now) > effectiveRefreshBefore {
@@ -289,6 +330,29 @@ func (pm *PrefetchQueueManager) processQueue() {
 			continue
 		}
 
+		// Check if this specific item is actually due for refresh
+		effectiveRefreshBefore := pm.calculateEffectiveRefreshBefore(item)
+		if timeUntilExpiry > effectiveRefreshBefore {
+			// Not due yet, re-add to queue
+			// We use Add to ensure it's properly re-scheduled
+			// Note: Add will check if it's already scheduled (it is, in pm.scheduled),
+			// but we just popped it, so it's NOT in the queue, but IS in pm.scheduled.
+			// Wait, Add expects it to be in pm.scheduled?
+			// Add checks: if item, ok := pm.scheduled[key]; ok { ... update ... }
+			// Since we popped it, it is still in pm.scheduled.
+			// So Add will just update it in the queue (Push it back).
+			// However, Add assumes it's already in the queue if it's in pm.scheduled?
+			// No, Add calls pm.queue.Update(item).
+			// Update checks if item.index is valid.
+			// Pop set item.index = -1.
+			// So Update will return without doing anything!
+			// So Add will NOT push it back if we use the existing logic!
+
+			// We need to explicitly Push it back.
+			pm.queue.Push(item)
+			continue
+		}
+
 		needRefresh = append(needRefresh, item)
 	}
 
@@ -297,19 +361,22 @@ func (pm *PrefetchQueueManager) processQueue() {
 	}
 
 	for _, item := range needRefresh {
-		// Non-blocking dispatch: we don't wait for the batch to finish.
-		// We use the main WaitGroup to ensure Stop() waits for all in-flight requests.
-		pm.wg.Add(1)
-		go func(item *PrefetchItem) {
-			defer pm.wg.Done()
+		// Non-blocking dispatch: we try to send to jobsCh.
+		// If channel is full, we drop the item to avoid blocking the main loop.
+		// This acts as a natural backpressure mechanism.
+		select {
+		case pm.jobsCh <- item:
+		default:
+			pm.logger.Debug("dropping item due to full worker queue",
+				"domain", item.Domain)
 
-			// Acquire semaphore to limit concurrency
-			pm.semaphore <- struct{}{}
-			defer func() { <-pm.semaphore }()
+			pm.refreshingMu.Lock()
+			delete(pm.scheduled, pm.makeKey(item.Domain, item.QType, item.Subnet))
+			pm.uniqueDomainsCount.Add(-1)
+			pm.refreshingMu.Unlock()
 
-			pm.refreshItem(item)
 			ReleasePrefetchItem(item)
-		}(item)
+		}
 	}
 }
 
@@ -355,10 +422,23 @@ func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
 	}
 
 	dctx := pm.proxy.newDNSContext(ProtoUDP, req, netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
+	dctx.CustomUpstreamConfig = item.CustomUpstreamConfig
+	dctx.IsInternalPrefetch = true
 
-	err := pm.proxy.Resolve(dctx)
+	var err error
+	maxRetries := 2
+	for i := 0; i <= maxRetries; i++ {
+		err = pm.proxy.Resolve(dctx)
+		if err == nil {
+			break
+		}
+		if i < maxRetries {
+			time.Sleep(100 * time.Millisecond * time.Duration(i+1))
+		}
+	}
+
 	if err != nil {
-		pm.logger.Debug("prefetch failed",
+		pm.logger.Debug("prefetch failed after retries",
 			"domain", item.Domain,
 			"qtype", item.QType,
 			"err", err)
@@ -372,6 +452,23 @@ func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
 
 	pm.totalProcessed.Add(1)
 	pm.lastRefreshTime.Store(time.Now().Unix())
+
+	// Extract actual TTL from DNS response for accurate re-scheduling
+	var actualTTL uint32
+	if err == nil && dctx.Res != nil {
+		actualTTL = calculateTTL(dctx.Res)
+		pm.logger.Debug("prefetch refresh completed",
+			"domain", item.Domain,
+			"qtype", item.QType,
+			"actual_ttl", actualTTL,
+			"success", true)
+	} else {
+		pm.logger.Debug("prefetch refresh completed",
+			"domain", item.Domain,
+			"qtype", item.QType,
+			"success", false,
+			"error", err)
+	}
 
 	// Clear refreshing flag explicitly before retention logic
 	// so that pm.Add() doesn't reject the re-addition.
@@ -403,8 +500,21 @@ func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
 	if shouldCheck {
 		_, lastAccess := pm.tracker.getStats(key)
 		idleTime := time.Since(lastAccess)
+		if idleTime < 0 {
+			// Clock skew detected, treat as just accessed
+			idleTime = 0
+		}
 
 		if idleTime < retentionTime {
+			// Use actual TTL from DNS response if available, otherwise use default
+			var expireTime time.Time
+			if actualTTL > 0 {
+				expireTime = time.Now().Add(time.Duration(actualTTL) * time.Second)
+			} else {
+				// Fallback to default if TTL extraction failed
+				expireTime = time.Now().Add(pm.refreshBefore + 1*time.Minute)
+			}
+
 			pm.logger.Debug("retaining item",
 				"domain", item.Domain,
 				"mode", func() string {
@@ -414,10 +524,12 @@ func (pm *PrefetchQueueManager) refreshItem(item *PrefetchItem) {
 					return "dynamic"
 				}(),
 				"idle", idleTime,
-				"retention", retentionTime)
+				"retention", retentionTime,
+				"actual_ttl", actualTTL,
+				"expire_time", expireTime)
 
-			// Re-add to queue with new expiration
-			pm.Add(item.Domain, item.QType, item.Subnet, time.Now().Add(pm.refreshBefore+1*time.Minute))
+			// Re-add to queue with actual TTL-based expiration
+			pm.Add(item.Domain, item.QType, item.Subnet, item.CustomUpstreamConfig, expireTime)
 		} else {
 			pm.logger.Debug("dropping item due to cooling",
 				"domain", item.Domain,
@@ -463,10 +575,6 @@ func (ht *hitTracker) record(key string, threshold int, window time.Duration) bo
 	ht.mu.Lock()
 	defer ht.mu.Unlock()
 
-	if threshold <= 1 {
-		return true
-	}
-
 	now := time.Now()
 	if window > 0 {
 		if last, ok := ht.lastAccess[key]; ok {
@@ -478,7 +586,9 @@ func (ht *hitTracker) record(key string, threshold int, window time.Duration) bo
 	}
 
 	ht.hits[key]++
-	return ht.hits[key] >= threshold
+	// Return true when hits reach threshold-1, so prefetch triggers before the threshold-th access
+	// This ensures the threshold-th access will hit the prefetched cache
+	return ht.hits[key] >= threshold-1
 }
 
 func (ht *hitTracker) getStats(key string) (hits int, lastAccess time.Time) {
@@ -492,7 +602,10 @@ func (ht *hitTracker) cleanup(window time.Duration) {
 	defer ht.mu.Unlock()
 
 	now := time.Now()
-	expiry := window * 2
+	// Expiry should cover the maximum possible retention time
+	// Max retention = window * maxMultiplier
+	// We use maxMultiplier + 1 to be safe
+	expiry := window * 11
 	if expiry == 0 {
 		expiry = 1 * time.Hour
 	}

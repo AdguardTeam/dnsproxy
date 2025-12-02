@@ -721,7 +721,8 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 		}
 		defer func() { p.pendingRequests.done(ctx, dctx, err) }()
 
-		if p.replyFromCache(dctx) {
+		// Skip cache lookup for internal prefetch to ensure we get fresh data
+		if !dctx.IsInternalPrefetch && p.replyFromCache(dctx) {
 			// Complete the response from cache.
 			dctx.scrub()
 

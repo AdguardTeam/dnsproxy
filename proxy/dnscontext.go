@@ -96,6 +96,10 @@ type DNSContext struct {
 
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
+
+	// IsInternalPrefetch indicates if this request is initiated by the prefetch manager.
+	// If true, it should not trigger new prefetch threshold checks or hit counting.
+	IsInternalPrefetch bool
 }
 
 // newDNSContext returns a new properly initialized *DNSContext.

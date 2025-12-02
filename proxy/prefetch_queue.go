@@ -14,11 +14,12 @@ var prefetchItemPool = sync.Pool{
 }
 
 // AcquirePrefetchItem gets an item from the pool
-func AcquirePrefetchItem(domain string, qtype uint16, subnet *net.IPNet, expireTime time.Time) *PrefetchItem {
+func AcquirePrefetchItem(domain string, qtype uint16, subnet *net.IPNet, customConfig *CustomUpstreamConfig, expireTime time.Time) *PrefetchItem {
 	item := prefetchItemPool.Get().(*PrefetchItem)
 	item.Domain = domain
 	item.QType = qtype
 	item.Subnet = subnet
+	item.CustomUpstreamConfig = customConfig
 	item.ExpireTime = expireTime
 	item.Priority = 0
 	item.HitCount = 0
@@ -31,6 +32,7 @@ func ReleasePrefetchItem(item *PrefetchItem) {
 	item.Domain = ""
 	item.QType = 0
 	item.Subnet = nil
+	item.CustomUpstreamConfig = nil
 	item.ExpireTime = time.Time{}
 	item.Priority = 0
 	item.HitCount = 0
@@ -41,14 +43,15 @@ func ReleasePrefetchItem(item *PrefetchItem) {
 
 // PrefetchItem represents a DNS query that needs to be refreshed
 type PrefetchItem struct {
-	Domain     string
-	QType      uint16
-	Subnet     *net.IPNet
-	ExpireTime time.Time
-	Priority   int64     // Lower value means higher priority (sooner to expire)
-	HitCount   int       // Number of hits while in queue
-	AddedTime  time.Time // Time when the item was added to the queue
-	index      int       // Index in the heap, for update
+	Domain               string
+	QType                uint16
+	Subnet               *net.IPNet
+	CustomUpstreamConfig *CustomUpstreamConfig
+	ExpireTime           time.Time
+	Priority             int64     // Lower value means higher priority (sooner to expire)
+	HitCount             int       // Number of hits while in queue
+	AddedTime            time.Time // Time when the item was added to the queue
+	index                int       // Index in the heap, for update
 }
 
 // CalculatePriority calculates the priority based on remaining TTL and hit count

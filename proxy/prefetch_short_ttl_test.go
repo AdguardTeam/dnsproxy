@@ -48,7 +48,7 @@ func TestShortTTL(t *testing.T) {
 		pm.CheckThreshold(domain, dns.TypeA, nil)
 
 		// Add item with 2s TTL
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(2*time.Second))
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now().Add(2*time.Second))
 
 		// Wait 200ms.
 		// Remaining TTL ~ 1.8s.
@@ -87,7 +87,7 @@ func TestShortTTL(t *testing.T) {
 		pm.CheckThreshold(domain, dns.TypeA, nil)
 
 		// Add item with 60s TTL
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(60*time.Second))
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now().Add(60*time.Second))
 
 		// Wait 200ms. Remaining ~ 59.8s > 5s. No refresh.
 		time.Sleep(200 * time.Millisecond)

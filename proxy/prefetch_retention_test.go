@@ -44,7 +44,8 @@ func TestDynamicRetention(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			pm.CheckThreshold(domain, dns.TypeA, nil)
 		}
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(1*time.Minute))
+		// Use time.Now() to ensure immediate processing
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now())
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, 1, pm.queue.Len(), "Should be re-added to queue")
 	})
@@ -58,7 +59,7 @@ func TestDynamicRetention(t *testing.T) {
 		for i := 0; i < 50; i++ {
 			pm.CheckThreshold(domain, dns.TypeA, nil)
 		}
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(1*time.Minute))
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now())
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, 1, pm.queue.Len(), "Should be re-added to queue")
 	})
@@ -73,10 +74,10 @@ func TestDynamicRetention(t *testing.T) {
 			pm.CheckThreshold(domain, dns.TypeA, nil)
 		}
 
-		// Wait for decay (Window is 1s)
-		time.Sleep(1100 * time.Millisecond)
+		// Wait for decay (Window is 1s, Cleanup expiry is 2*Window = 2s)
+		time.Sleep(2100 * time.Millisecond)
 
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(1*time.Minute))
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now())
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, 0, pm.queue.Len(), "Should NOT be re-added to queue")
 	})
@@ -119,7 +120,7 @@ func TestHybridRetention(t *testing.T) {
 		// In fixed mode, it SHOULD be retained if idle < 60s.
 		pm.CheckThreshold(domain, dns.TypeA, nil)
 
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(1*time.Minute))
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now())
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, 1, pm.queue.Len(), "Should be retained in fixed mode despite low heat")
 	})
@@ -134,7 +135,7 @@ func TestHybridRetention(t *testing.T) {
 		// Simulate 1 hit (below threshold)
 		pm.CheckThreshold(domain, dns.TypeA, nil)
 
-		pm.Add(domain, dns.TypeA, nil, time.Now().Add(1*time.Minute))
+		pm.Add(domain, dns.TypeA, nil, nil, time.Now())
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, 0, pm.queue.Len(), "Should NOT be retained in dynamic mode with low heat")
 	})

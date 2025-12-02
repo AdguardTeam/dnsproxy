@@ -4,6 +4,8 @@ import (
 	"net"
 	"slices"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 // cacheForContext returns cache object for the given context.
@@ -64,12 +66,27 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	}
 
 	// Trigger prefetch check on cache hit
-	if p.Config.Prefetch != nil && p.Config.Prefetch.Enabled && p.cache.prefetchManager != nil {
+	// Note: We trigger prefetch when hits reach threshold-1, so that the threshold-th access
+	// will hit the prefetched cache. For example, if threshold=2:
+	// - 1st access: hits=1, trigger prefetch
+	// - 2nd access: hits=2, hit prefetched cache
+	//
+	// We skip this check for internal prefetch requests to avoid infinite retention loops
+	// where the prefetch refresh itself counts as a hit.
+	if !d.IsInternalPrefetch && p.Config.Prefetch != nil && p.Config.Prefetch.Enabled && p.cache.prefetchManager != nil {
 		q := d.Req.Question[0]
+		// CheckThreshold records the hit and returns true if hits >= threshold-1
 		if p.cache.prefetchManager.CheckThreshold(q.Name, q.Qtype, d.ReqECS) {
 			// Calculate approximate expiration time based on current time and TTL
 			expireTime := time.Now().Add(time.Duration(ci.ttl) * time.Second)
-			p.cache.prefetchManager.Add(q.Name, q.Qtype, d.ReqECS, expireTime)
+
+			p.cache.prefetchManager.Add(q.Name, q.Qtype, d.ReqECS, d.CustomUpstreamConfig, expireTime)
+
+			p.logger.Debug("prefetch triggered",
+				"domain", q.Name,
+				"qtype", dns.TypeToString[q.Qtype],
+				"ttl", ci.ttl,
+				"expire_time", expireTime)
 		}
 	}
 
@@ -94,7 +111,7 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 	dctxCache := p.cacheForContext(d)
 
 	if !p.EnableEDNSClientSubnet {
-		dctxCache.set(d.Res, d.Upstream, p.logger)
+		dctxCache.set(d.Res, d.Upstream, d.IsInternalPrefetch, p.logger)
 
 		return
 	}
@@ -134,13 +151,13 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 
 		p.logger.Debug("caching response", "ecs", ecs)
 
-		dctxCache.setWithSubnet(d.Res, d.Upstream, ecs, p.logger)
+		dctxCache.setWithSubnet(d.Res, d.Upstream, ecs, d.IsInternalPrefetch, p.logger)
 	case d.ReqECS != nil:
 		// Cache the response for all subnets since the server doesn't support
 		// EDNS Client Subnet option.
-		dctxCache.setWithSubnet(d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil}, p.logger)
+		dctxCache.setWithSubnet(d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil}, d.IsInternalPrefetch, p.logger)
 	default:
-		dctxCache.set(d.Res, d.Upstream, p.logger)
+		dctxCache.set(d.Res, d.Upstream, d.IsInternalPrefetch, p.logger)
 	}
 }
 

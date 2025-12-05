@@ -251,6 +251,9 @@ func New(c *Config) (p *Proxy, err error) {
 		return nil, err
 	}
 
+	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
+	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
+
 	p.initCache()
 
 	if p.MaxGoroutines > 0 {
@@ -273,9 +276,6 @@ func New(c *Config) (p *Proxy, err error) {
 		p.bindRetryCount = bindRetries.Count
 		p.bindRetryIvl = bindRetries.Interval
 	}
-
-	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
-	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
 
 	err = p.setupDNS64()
 	if err != nil {

@@ -179,6 +179,12 @@ type Proxy struct {
 	// TODO(a.garipov): Remove this embed and create a proper initializer.
 	Config
 
+	// cookieSecret is the secret used to generate EDNS cookies.
+	cookieSecret []byte
+
+	// cookieMu protects cookieSecret.
+	cookieMu sync.RWMutex
+
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int
 
@@ -280,6 +286,11 @@ func New(c *Config) (p *Proxy, err error) {
 	err = p.setupDNS64()
 	if err != nil {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
+	}
+
+	err = p.initCookieSecret()
+	if err != nil {
+		return nil, fmt.Errorf("initializing dns cookies: %w", err)
 	}
 
 	// TODO(e.burkov):  Clone all mutable fields of Config.
@@ -703,6 +714,7 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	}
 
 	dctx.calcFlagsAndSize()
+	p.handleRequestCookies(dctx)
 
 	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
@@ -719,6 +731,7 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 
 		if p.replyFromCache(dctx) {
 			// Complete the response from cache.
+			p.handleResponseCookies(dctx)
 			dctx.scrub()
 
 			return nil
@@ -747,6 +760,8 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	if dctx.Res != nil {
 		filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
 	}
+
+	p.handleResponseCookies(dctx)
 
 	// Complete the response.
 	dctx.scrub()

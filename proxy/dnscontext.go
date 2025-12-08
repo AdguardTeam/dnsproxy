@@ -96,6 +96,10 @@ type DNSContext struct {
 
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
+
+	// ReqClientCookie is the client part of the EDNS Cookie option from the
+	// request, if any.
+	ReqClientCookie []byte
 }
 
 // newDNSContext returns a new properly initialized *DNSContext.

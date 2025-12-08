@@ -39,6 +39,13 @@ type configuration struct {
 	// EDNSAddr is the custom EDNS Client Address to send.
 	EDNSAddr string `yaml:"edns-addr"`
 
+	// DisableDNSCookies strips EDNS Cookies from both requests and responses.
+	DisableDNSCookies bool `yaml:"disable_dns_cookies"`
+
+	// DNSCookieSecret is a hex-encoded 16-byte secret used to generate server
+	// cookies.
+	DNSCookieSecret string `yaml:"dns_cookie_secret"`
+
 	// UpstreamMode determines the logic through which upstreams will be used.
 	// If not specified the [proxy.UpstreamModeLoadBalance] is used.
 	UpstreamMode string `yaml:"upstream-mode"`

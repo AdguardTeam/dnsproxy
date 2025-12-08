@@ -175,6 +175,14 @@ type Config struct {
 	// EDNSAddr is the ECS IP used in request.
 	EDNSAddr net.IP
 
+	// DisableDNSCookies strips EDNS Cookies from both requests and responses.
+	// If false, the proxy responds with EDNS Cookies per RFC 7873 and RFC 9018.
+	DisableDNSCookies bool `yaml:"disable_dns_cookies" json:"disable_dns_cookies"`
+
+	// DNSCookieSecret is a hex-encoded 16-byte secret used to generate server
+	// cookies.  If empty, a random secret is generated on start.
+	DNSCookieSecret string `yaml:"dns_cookie_secret" json:"dns_cookie_secret"`
+
 	// TODO(s.chzhen):  Extract ratelimit settings to a separate structure.
 
 	// RatelimitSubnetLenIPv4 is a subnet length for IPv4 addresses used for

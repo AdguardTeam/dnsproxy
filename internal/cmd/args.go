@@ -24,6 +24,8 @@ const (
 	httpsUserinfoIdx
 	dnsCryptConfigPathIdx
 	ednsAddrIdx
+	disableDNSCookiesIdx
+	dnsCookieSecretIdx
 	upstreamModeIdx
 	listenAddrsIdx
 	listenPortsIdx
@@ -131,6 +133,18 @@ var commandLineOptions = []*commandLineOption{
 		long:        "edns-addr",
 		short:       "",
 		valueType:   "address",
+	},
+	disableDNSCookiesIdx: {
+		description: "Disable EDNS Cookies support.",
+		long:        "disable-dns-cookies",
+		short:       "",
+		valueType:   "",
+	},
+	dnsCookieSecretIdx: {
+		description: "Hex-encoded 16-byte secret used to generate EDNS Cookies.",
+		long:        "dns-cookie-secret",
+		short:       "",
+		valueType:   "hex",
 	},
 	upstreamModeIdx: {
 		description: "Defines the upstreams logic mode, possible values: load_balance, parallel, " +
@@ -421,6 +435,8 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		httpsUserinfoIdx:            &conf.HTTPSUserinfo,
 		dnsCryptConfigPathIdx:       &conf.DNSCryptConfigPath,
 		ednsAddrIdx:                 &conf.EDNSAddr,
+		disableDNSCookiesIdx:        &conf.DisableDNSCookies,
+		dnsCookieSecretIdx:          &conf.DNSCookieSecret,
 		upstreamModeIdx:             &conf.UpstreamMode,
 		listenAddrsIdx:              &conf.ListenAddrs,
 		listenPortsIdx:              &conf.ListenPorts,

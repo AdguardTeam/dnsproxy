@@ -67,6 +67,8 @@ Usage of ./dnsproxy:
         If specified, dnsproxy will act as a DNS64 server.
   --dns64-prefix=subnet
         Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times.
+  --disable-dns-cookies
+        Disable DNS cookies support (which is enabled by default).
   --dnscrypt-config=path/-g path
         Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt.
   --dnscrypt-port=port/-y port
@@ -302,6 +304,12 @@ Loads upstreams list from a file.
 
 ```shell
 ./dnsproxy -l 127.0.0.1 -p 5353 -u ./upstreams.txt
+```
+
+DNS cookies are enabled by default. Disable them if needed:
+
+```shell
+./dnsproxy --disable-dns-cookies
 ```
 
 ### DNS64 server

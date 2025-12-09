@@ -183,7 +183,7 @@ type Proxy struct {
 	cookieSecret []byte
 
 	// cookieMu protects cookieSecret.
-	cookieMu sync.RWMutex
+	cookieMu sync.Mutex
 
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int

@@ -177,11 +177,11 @@ type Config struct {
 
 	// DisableDNSCookies strips EDNS Cookies from both requests and responses.
 	// If false, the proxy responds with EDNS Cookies per RFC 7873 and RFC 9018.
-	DisableDNSCookies bool `yaml:"disable_dns_cookies" json:"disable_dns_cookies"`
+	DisableDNSCookies bool `yaml:"disable-dns-cookies" json:"disable_dns_cookies"`
 
 	// DNSCookieSecret is a hex-encoded 16-byte secret used to generate server
 	// cookies.  If empty, a random secret is generated on start.
-	DNSCookieSecret string `yaml:"dns_cookie_secret" json:"dns_cookie_secret"`
+	DNSCookieSecret string `yaml:"dns-cookie-secret" json:"dns_cookie_secret"`
 
 	// TODO(s.chzhen):  Extract ratelimit settings to a separate structure.
 

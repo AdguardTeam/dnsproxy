@@ -92,12 +92,8 @@ func (p *Proxy) handleRequestCookies(dctx *DNSContext) {
 
 	if !p.DisableDNSCookies {
 		if client, _ := parseCookie(dctx.Req); len(client) > 0 {
-			dctx.ReqClientCookie = client
+			dctx.reqClientCookie = client
 		}
-
-		stripCookie(dctx.Req)
-
-		return
 	}
 
 	stripCookie(dctx.Req)
@@ -116,7 +112,7 @@ func (p *Proxy) handleResponseCookies(dctx *DNSContext) {
 		return
 	}
 
-	if len(dctx.ReqClientCookie) == 0 {
+	if len(dctx.reqClientCookie) == 0 {
 		stripCookie(dctx.Res)
 
 		return
@@ -129,12 +125,12 @@ func (p *Proxy) handleResponseCookies(dctx *DNSContext) {
 
 	stripCookie(dctx.Res)
 
-	server := p.serverCookie(dctx.Addr.Addr(), dctx.ReqClientCookie)
+	server := p.serverCookie(dctx.Addr.Addr(), dctx.reqClientCookie)
 	if len(server) == 0 {
 		return
 	}
 
-	setCookie(dctx.Res, dctx.ReqClientCookie, server, udpSize, dctx.doBit)
+	setCookie(dctx.Res, dctx.reqClientCookie, server, udpSize, dctx.doBit)
 }
 
 // serverCookie returns the server cookie for the provided address and client
@@ -144,9 +140,9 @@ func (p *Proxy) serverCookie(ip netip.Addr, client []byte) (server []byte) {
 		return nil
 	}
 
-	p.cookieMu.RLock()
+	p.cookieMu.Lock()
 	secret := p.cookieSecret
-	p.cookieMu.RUnlock()
+	p.cookieMu.Unlock()
 
 	if len(secret) != cookieSecretLen {
 		return nil

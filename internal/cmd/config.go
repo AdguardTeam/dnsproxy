@@ -40,11 +40,11 @@ type configuration struct {
 	EDNSAddr string `yaml:"edns-addr"`
 
 	// DisableDNSCookies strips EDNS Cookies from both requests and responses.
-	DisableDNSCookies bool `yaml:"disable_dns_cookies"`
+	DisableDNSCookies bool `yaml:"disable-dns-cookies"`
 
 	// DNSCookieSecret is a hex-encoded 16-byte secret used to generate server
 	// cookies.
-	DNSCookieSecret string `yaml:"dns_cookie_secret"`
+	DNSCookieSecret string `yaml:"dns-cookie-secret"`
 
 	// UpstreamMode determines the logic through which upstreams will be used.
 	// If not specified the [proxy.UpstreamModeLoadBalance] is used.

@@ -79,7 +79,7 @@ func TestServerCookieDeterministic(t *testing.T) {
 			DisableDNSCookies: false,
 			DNSCookieSecret:   "000102030405060708090a0b0c0d0e0f",
 		},
-		cookieMu: sync.RWMutex{},
+		cookieMu: sync.Mutex{},
 	}
 	err := p.initCookieSecret()
 	assert.NoError(t, err)
@@ -108,7 +108,7 @@ func TestHandleCookiesEnabled(t *testing.T) {
 			DisableDNSCookies: false,
 			DNSCookieSecret:   secretHex,
 		},
-		cookieMu: sync.RWMutex{},
+		cookieMu: sync.Mutex{},
 	}
 	assert.NoError(t, p.initCookieSecret())
 
@@ -126,7 +126,7 @@ func TestHandleCookiesEnabled(t *testing.T) {
 
 	// Incoming request: parse and strip.
 	p.handleRequestCookies(dctx)
-	assert.Equal(t, cc, dctx.ReqClientCookie)
+	assert.Equal(t, cc, dctx.reqClientCookie)
 	assert.Empty(t, dctx.Req.IsEdns0().Option, "cookie must be stripped before upstream")
 
 	// Prepare response with a bogus upstream cookie that must be removed.
@@ -166,7 +166,7 @@ func TestHandleCookiesDisabled(t *testing.T) {
 	}
 
 	p.handleRequestCookies(dctx)
-	assert.Nil(t, dctx.ReqClientCookie)
+	assert.Nil(t, dctx.reqClientCookie)
 	assert.Empty(t, req.IsEdns0().Option)
 
 	p.handleResponseCookies(dctx)

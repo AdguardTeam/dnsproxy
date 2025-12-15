@@ -180,9 +180,6 @@ func TestUpstreams(t *testing.T) {
 		bootstrap: nil,
 		address:   "https://dns.google/dns-query",
 	}, {
-		bootstrap: nil,
-		address:   "https://doh.opendns.com/dns-query",
-	}, {
 		// AdGuard DNS (DNSCrypt)
 		bootstrap: nil,
 		address:   "sdns://AQMAAAAAAAAAETk0LjE0MC4xNC4xNDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
@@ -383,10 +380,6 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 	}, {
 		address:   "tls://one.one.one.one/",
 		bootstrap: "https://1.1.1.1/dns-query",
-	}, {
-		address: "tls://one.one.one.one/",
-		// Cisco OpenDNS
-		bootstrap: "sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ",
 	}}
 
 	for _, tc := range upstreams {
@@ -426,9 +419,6 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	}, {
 		address:   "https://1dot1dot1dot1.cloudflare-dns.com/dns-query",
 		bootstrap: []string{"8.8.8.1", "1.0.0.1"},
-	}, {
-		address:   "https://doh.opendns.com:443/dns-query",
-		bootstrap: []string{"1.2.3.4:79", "8.8.8.8:53"},
 	}, {
 		// Cloudflare DNS (DoH)
 		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",

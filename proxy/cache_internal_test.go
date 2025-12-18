@@ -75,7 +75,7 @@ func TestServeCached(t *testing.T) {
 	}).SetQuestion("google.com.", dns.TypeA)
 	reply.SetEdns0(defaultUDPBufSize, false)
 
-	dnsProxy.cache.set(reply, upstreamWithAddr, slogutil.NewDiscardLogger())
+	dnsProxy.cache.set(reply, upstreamWithAddr, false, slogutil.NewDiscardLogger())
 
 	// Create a DNS-over-UDP client connection.
 	addr := dnsProxy.Addr(ProtoUDP)
@@ -199,7 +199,7 @@ func TestCacheDO(t *testing.T) {
 	reply.SetEdns0(4096, true)
 
 	// Store in cache.
-	testCache.set(reply, upstreamWithAddr, slogutil.NewDiscardLogger())
+	testCache.set(reply, upstreamWithAddr, false, slogutil.NewDiscardLogger())
 
 	// Make a request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -241,7 +241,7 @@ func TestCacheCNAME(t *testing.T) {
 		},
 		Answer: []dns.RR{newRR(t, "google.com.", dns.TypeCNAME, 3600, "test.google.com.")},
 	}).SetQuestion("google.com.", dns.TypeA)
-	testCache.set(reply, upstreamWithAddr, l)
+	testCache.set(reply, upstreamWithAddr, false, l)
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -254,7 +254,7 @@ func TestCacheCNAME(t *testing.T) {
 
 	// Now fill the cache with a cacheable CNAME response.
 	reply.Answer = append(reply.Answer, newRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8}))
-	testCache.set(reply, upstreamWithAddr, l)
+	testCache.set(reply, upstreamWithAddr, false, l)
 
 	// We are testing that a proper CNAME response gets cached
 	t.Run("cnames_exist", func(t *testing.T) {
@@ -277,7 +277,7 @@ func TestCache_uncacheable(t *testing.T) {
 	reply := (&dns.Msg{}).SetRcode(request, dns.RcodeBadAlg)
 
 	// We are testing that SERVFAIL responses aren't cached
-	testCache.set(reply, upstreamWithAddr, slogutil.NewDiscardLogger())
+	testCache.set(reply, upstreamWithAddr, false, slogutil.NewDiscardLogger())
 
 	r, expired, _ := testCache.get(request)
 	assert.Nil(t, r)
@@ -346,7 +346,7 @@ func TestCacheExpiration(t *testing.T) {
 			},
 			Answer: []dns.RR{dns.Copy(rr)},
 		}).SetQuestion(rr.Header().Name, dns.TypeA)
-		dnsProxy.cache.set(rep, upstreamWithAddr, l)
+		dnsProxy.cache.set(rep, upstreamWithAddr, false, l)
 		replies[i] = rep
 	}
 
@@ -567,7 +567,7 @@ func (tests testCases) run(t *testing.T) {
 			},
 			Answer: res.a,
 		}).SetQuestion(res.q, res.t)
-		testCache.set(reply, upstreamWithAddr, l)
+		testCache.set(reply, upstreamWithAddr, false, l)
 	}
 
 	for _, tc := range tests.cases {
@@ -590,7 +590,7 @@ func (tests testCases) run(t *testing.T) {
 			Answer: tc.a,
 		}).SetQuestion(tc.q, tc.t)
 
-		testCache.set(reply, upstreamWithAddr, l)
+		testCache.set(reply, upstreamWithAddr, false, l)
 
 		requireEqualMsgs(t, ci.m, reply)
 	}
@@ -637,7 +637,7 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 		Answer: []dns.RR{newRR(t, host, dns.TypeA, 1, ipAddr)},
 	}).SetQuestion(host, dns.TypeA)
 
-	c.set(dnsMsg, upstreamWithAddr, slogutil.NewDiscardLogger())
+	c.set(dnsMsg, upstreamWithAddr, false, slogutil.NewDiscardLogger())
 
 	for range 2 {
 		ci, expired, key := c.get(dnsMsg)
@@ -677,7 +677,7 @@ func TestCache_getWithSubnet(t *testing.T) {
 	resp := (&dns.Msg{
 		Answer: []dns.RR{newRR(t, testFQDN, dns.TypeA, 1, net.IP{1, 1, 1, 1})},
 	}).SetReply(req)
-	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: ip1234, Mask: mask16}, slogutil.NewDiscardLogger())
+	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: ip1234, Mask: mask16}, false, slogutil.NewDiscardLogger())
 
 	t.Run("different_ip", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip2234, Mask: mask24})
@@ -690,13 +690,13 @@ func TestCache_getWithSubnet(t *testing.T) {
 	resp = (&dns.Msg{
 		Answer: []dns.RR{newRR(t, testFQDN, dns.TypeA, 1, net.IP{2, 2, 2, 2})},
 	}).SetReply(req)
-	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: ip2234, Mask: mask16}, l)
+	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: ip2234, Mask: mask16}, false, l)
 
 	// Add a response entry without subnet.
 	resp = (&dns.Msg{
 		Answer: []dns.RR{newRR(t, testFQDN, dns.TypeA, 1, net.IP{3, 3, 3, 3})},
 	}).SetReply(req)
-	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: nil, Mask: nil}, l)
+	c.setWithSubnet(resp, upstreamWithAddr, &net.IPNet{IP: nil, Mask: nil}, false, l)
 
 	t.Run("with_subnet_1", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
@@ -766,6 +766,7 @@ func TestCache_getWithSubnet_mask(t *testing.T) {
 		resp,
 		upstreamWithAddr,
 		&net.IPNet{IP: cachedIP, Mask: cidrMask},
+		false,
 		slogutil.NewDiscardLogger(),
 	)
 

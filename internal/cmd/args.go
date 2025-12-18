@@ -18,6 +18,7 @@ import (
 const (
 	configPathIdx = iota
 	logOutputIdx
+	apiPortIdx
 	tlsCertPathIdx
 	tlsKeyPathIdx
 	httpsServerNameIdx
@@ -67,6 +68,14 @@ const (
 	pendingRequestsEnabledIdx
 	dns64Idx
 	usePrivateRDNSIdx
+	prefetchEnabledIdx
+	prefetchBatchSizeIdx
+	prefetchCheckIntervalIdx
+	prefetchRefreshBeforeIdx
+	prefetchThresholdIdx
+	prefetchThresholdWindowIdx
+	prefetchMaxConcurrentRequestsIdx
+	prefetchMaxQueueSizeIdx
 )
 
 // commandLineOption contains information about a command-line option: its long
@@ -93,6 +102,12 @@ var commandLineOptions = []*commandLineOption{
 		long:        "output",
 		short:       "o",
 		valueType:   "path",
+	},
+	apiPortIdx: {
+		description: "Port for the HTTP API server.",
+		long:        "api-port",
+		short:       "",
+		valueType:   "port",
 	},
 	tlsCertPathIdx: {
 		description: "Path to a file with the certificate chain.",
@@ -324,13 +339,13 @@ var commandLineOptions = []*commandLineOption{
 		valueType:   "",
 	},
 	pprofIdx: {
-		description: "If present, exposes pprof information on localhost:6060.",
+		description: "Enable pprof http server.",
 		long:        "pprof",
 		short:       "",
 		valueType:   "",
 	},
 	versionIdx: {
-		description: "Prints the program version.",
+		description: "Print version and exit.",
 		long:        "version",
 		short:       "",
 		valueType:   "",
@@ -405,6 +420,54 @@ var commandLineOptions = []*commandLineOption{
 		short:     "",
 		valueType: "",
 	},
+	prefetchEnabledIdx: {
+		description: "If specified, active prefetching is enabled.",
+		long:        "prefetch",
+		short:       "",
+		valueType:   "",
+	},
+	prefetchBatchSizeIdx: {
+		description: "The number of items to process in one batch.",
+		long:        "prefetch-batch-size",
+		short:       "",
+		valueType:   "int",
+	},
+	prefetchCheckIntervalIdx: {
+		description: "The interval between queue checks.",
+		long:        "prefetch-check-interval",
+		short:       "",
+		valueType:   "duration",
+	},
+	prefetchRefreshBeforeIdx: {
+		description: "The time before expiration to trigger refresh.",
+		long:        "prefetch-refresh-before",
+		short:       "",
+		valueType:   "duration",
+	},
+	prefetchThresholdIdx: {
+		description: "The number of hits required to trigger prefetch.",
+		long:        "prefetch-threshold",
+		short:       "",
+		valueType:   "int",
+	},
+	prefetchThresholdWindowIdx: {
+		description: "The time window for tracking hits.",
+		long:        "prefetch-threshold-window",
+		short:       "",
+		valueType:   "duration",
+	},
+	prefetchMaxConcurrentRequestsIdx: {
+		description: "The maximum number of concurrent prefetch requests.",
+		long:        "prefetch-max-concurrent-requests",
+		short:       "",
+		valueType:   "int",
+	},
+	prefetchMaxQueueSizeIdx: {
+		description: "The maximum number of items in the prefetch queue.",
+		long:        "prefetch-max-queue-size",
+		short:       "",
+		valueType:   "int",
+	},
 }
 
 // parseCmdLineOptions parses the command-line options.  conf must not be nil.
@@ -413,57 +476,66 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 
 	flags := flag.NewFlagSet(cmdName, flag.ContinueOnError)
 	for i, fieldPtr := range []any{
-		configPathIdx:               &conf.ConfigPath,
-		logOutputIdx:                &conf.LogOutput,
-		tlsCertPathIdx:              &conf.TLSCertPath,
-		tlsKeyPathIdx:               &conf.TLSKeyPath,
-		httpsServerNameIdx:          &conf.HTTPSServerName,
-		httpsUserinfoIdx:            &conf.HTTPSUserinfo,
-		dnsCryptConfigPathIdx:       &conf.DNSCryptConfigPath,
-		ednsAddrIdx:                 &conf.EDNSAddr,
-		upstreamModeIdx:             &conf.UpstreamMode,
-		listenAddrsIdx:              &conf.ListenAddrs,
-		listenPortsIdx:              &conf.ListenPorts,
-		httpsListenPortsIdx:         &conf.HTTPSListenPorts,
-		tlsListenPortsIdx:           &conf.TLSListenPorts,
-		quicListenPortsIdx:          &conf.QUICListenPorts,
-		dnsCryptListenPortsIdx:      &conf.DNSCryptListenPorts,
-		upstreamsIdx:                &conf.Upstreams,
-		bootstrapDNSIdx:             &conf.BootstrapDNS,
-		fallbacksIdx:                &conf.Fallbacks,
-		privateRDNSUpstreamsIdx:     &conf.PrivateRDNSUpstreams,
-		dns64PrefixIdx:              &conf.DNS64Prefix,
-		privateSubnetsIdx:           &conf.PrivateSubnets,
-		bogusNXDomainIdx:            &conf.BogusNXDomain,
-		hostsFilesIdx:               &conf.HostsFiles,
-		timeoutIdx:                  &conf.Timeout,
-		cacheMinTTLIdx:              &conf.CacheMinTTL,
-		cacheMaxTTLIdx:              &conf.CacheMaxTTL,
-		cacheOptimisticAnswerTTLIdx: &conf.OptimisticAnswerTTL,
-		cacheOptimisticMaxAgeIdx:    &conf.OptimisticMaxAge,
-		cacheSizeBytesIdx:           &conf.CacheSizeBytes,
-		ratelimitIdx:                &conf.Ratelimit,
-		ratelimitSubnetLenIPv4Idx:   &conf.RatelimitSubnetLenIPv4,
-		ratelimitSubnetLenIPv6Idx:   &conf.RatelimitSubnetLenIPv6,
-		udpBufferSizeIdx:            &conf.UDPBufferSize,
-		maxGoRoutinesIdx:            &conf.MaxGoRoutines,
-		tlsMinVersionIdx:            &conf.TLSMinVersion,
-		tlsMaxVersionIdx:            &conf.TLSMaxVersion,
-		helpIdx:                     &conf.help,
-		hostsFileEnabledIdx:         &conf.HostsFileEnabled,
-		pprofIdx:                    &conf.Pprof,
-		versionIdx:                  &conf.Version,
-		verboseIdx:                  &conf.Verbose,
-		insecureIdx:                 &conf.Insecure,
-		ipv6DisabledIdx:             &conf.IPv6Disabled,
-		http3Idx:                    &conf.HTTP3,
-		cacheOptimisticIdx:          &conf.CacheOptimistic,
-		cacheIdx:                    &conf.Cache,
-		refuseAnyIdx:                &conf.RefuseAny,
-		enableEDNSSubnetIdx:         &conf.EnableEDNSSubnet,
-		pendingRequestsEnabledIdx:   &conf.PendingRequestsEnabled,
-		dns64Idx:                    &conf.DNS64,
-		usePrivateRDNSIdx:           &conf.UsePrivateRDNS,
+		configPathIdx:                    &conf.ConfigPath,
+		logOutputIdx:                     &conf.LogOutput,
+		apiPortIdx:                       &conf.APIPort,
+		tlsCertPathIdx:                   &conf.TLSCertPath,
+		tlsKeyPathIdx:                    &conf.TLSKeyPath,
+		httpsServerNameIdx:               &conf.HTTPSServerName,
+		httpsUserinfoIdx:                 &conf.HTTPSUserinfo,
+		dnsCryptConfigPathIdx:            &conf.DNSCryptConfigPath,
+		ednsAddrIdx:                      &conf.EDNSAddr,
+		upstreamModeIdx:                  &conf.UpstreamMode,
+		listenAddrsIdx:                   &conf.ListenAddrs,
+		listenPortsIdx:                   &conf.ListenPorts,
+		httpsListenPortsIdx:              &conf.HTTPSListenPorts,
+		tlsListenPortsIdx:                &conf.TLSListenPorts,
+		quicListenPortsIdx:               &conf.QUICListenPorts,
+		dnsCryptListenPortsIdx:           &conf.DNSCryptListenPorts,
+		upstreamsIdx:                     &conf.Upstreams,
+		bootstrapDNSIdx:                  &conf.BootstrapDNS,
+		fallbacksIdx:                     &conf.Fallbacks,
+		privateRDNSUpstreamsIdx:          &conf.PrivateRDNSUpstreams,
+		dns64PrefixIdx:                   &conf.DNS64Prefix,
+		privateSubnetsIdx:                &conf.PrivateSubnets,
+		bogusNXDomainIdx:                 &conf.BogusNXDomain,
+		hostsFilesIdx:                    &conf.HostsFiles,
+		timeoutIdx:                       &conf.Timeout,
+		cacheMinTTLIdx:                   &conf.CacheMinTTL,
+		cacheMaxTTLIdx:                   &conf.CacheMaxTTL,
+		cacheOptimisticAnswerTTLIdx:      &conf.OptimisticAnswerTTL,
+		cacheOptimisticMaxAgeIdx:         &conf.OptimisticMaxAge,
+		cacheSizeBytesIdx:                &conf.CacheSizeBytes,
+		ratelimitIdx:                     &conf.Ratelimit,
+		ratelimitSubnetLenIPv4Idx:        &conf.RatelimitSubnetLenIPv4,
+		ratelimitSubnetLenIPv6Idx:        &conf.RatelimitSubnetLenIPv6,
+		udpBufferSizeIdx:                 &conf.UDPBufferSize,
+		maxGoRoutinesIdx:                 &conf.MaxGoRoutines,
+		tlsMinVersionIdx:                 &conf.TLSMinVersion,
+		tlsMaxVersionIdx:                 &conf.TLSMaxVersion,
+		helpIdx:                          &conf.help,
+		hostsFileEnabledIdx:              &conf.HostsFileEnabled,
+		pprofIdx:                         &conf.Pprof,
+		versionIdx:                       &conf.Version,
+		verboseIdx:                       &conf.Verbose,
+		insecureIdx:                      &conf.Insecure,
+		ipv6DisabledIdx:                  &conf.IPv6Disabled,
+		http3Idx:                         &conf.HTTP3,
+		cacheOptimisticIdx:               &conf.CacheOptimistic,
+		cacheIdx:                         &conf.Cache,
+		refuseAnyIdx:                     &conf.RefuseAny,
+		enableEDNSSubnetIdx:              &conf.EnableEDNSSubnet,
+		pendingRequestsEnabledIdx:        &conf.PendingRequestsEnabled,
+		dns64Idx:                         &conf.DNS64,
+		usePrivateRDNSIdx:                &conf.UsePrivateRDNS,
+		prefetchEnabledIdx:               &conf.PrefetchEnabled,
+		prefetchBatchSizeIdx:             &conf.PrefetchBatchSize,
+		prefetchCheckIntervalIdx:         &conf.PrefetchCheckInterval,
+		prefetchRefreshBeforeIdx:         &conf.PrefetchRefreshBefore,
+		prefetchThresholdIdx:             &conf.PrefetchThreshold,
+		prefetchThresholdWindowIdx:       &conf.PrefetchThresholdWindow,
+		prefetchMaxConcurrentRequestsIdx: &conf.PrefetchMaxConcurrentRequests,
+		prefetchMaxQueueSizeIdx:          &conf.PrefetchMaxQueueSize,
 	} {
 		addOption(flags, fieldPtr, commandLineOptions[i])
 	}

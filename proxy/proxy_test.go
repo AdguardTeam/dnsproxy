@@ -182,3 +182,4 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 		servicetest.RequireRun(t, p, testTimeout)
 	}))
 }
+		p.HTTPListenAddr = []*net.TCPAddr{{IP: ip, Port: 0}}

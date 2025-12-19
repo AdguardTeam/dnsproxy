@@ -28,6 +28,7 @@ import (
 func (p *Proxy) listenHTTP(
 	ctx context.Context,
 	addr *net.TCPAddr,
+	withTLS bool,
 ) (ln net.Listener, tcpAddr *net.TCPAddr, err error) {
 	var tcpListen *net.TCPListener
 	err = p.bindWithRetry(ctx, func() (listenErr error) {
@@ -45,14 +46,20 @@ func (p *Proxy) listenHTTP(
 		return nil, nil, fmt.Errorf("bad listener address type: %T", laddr)
 	}
 
-	p.logger.InfoContext(ctx, "listening to https", "addr", tcpAddr)
+	if withTLS {
+		p.logger.InfoContext(ctx, "listening to https", "addr", tcpAddr)
 
-	tlsConfig := p.TLSConfig.Clone()
-	tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
+		tlsConfig := p.TLSConfig.Clone()
+		tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 
-	tlsListen := tls.NewListener(tcpListen, tlsConfig)
+		tlsListen := tls.NewListener(tcpListen, tlsConfig)
 
-	return tlsListen, tcpAddr, nil
+		return tlsListen, tcpAddr, nil
+	}
+
+	p.logger.InfoContext(ctx, "listening to http", "addr", tcpAddr)
+
+	return tcpListen, tcpAddr, nil
 }
 
 // listenH3 creates instances of QUIC listeners that will be used for running
@@ -73,6 +80,27 @@ func (p *Proxy) listenH3(
 	return quicListen, nil
 }
 
+func (p *Proxy) initHTTPListeners(ctx context.Context) (err error) {
+	p.httpServer = &http.Server{
+		Handler:           p,
+		ReadHeaderTimeout: defaultTimeout,
+		WriteTimeout:      defaultTimeout,
+	}
+
+	for _, addr := range p.HTTPListenAddr {
+		p.logger.InfoContext(ctx, "creating an http server")
+
+		ln, _, lErr := p.listenHTTP(ctx, addr, false)
+		if lErr != nil {
+			return fmt.Errorf("failed to start HTTPS server on %s: %w", addr, lErr)
+		}
+
+		p.httpListen = append(p.httpListen, ln)
+	}
+
+	return nil
+}
+
 // initHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
 func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
 	p.httpsServer = &http.Server{
@@ -90,7 +118,7 @@ func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
 	for _, addr := range p.HTTPSListenAddr {
 		p.logger.InfoContext(ctx, "creating an https server")
 
-		ln, tcpAddr, lErr := p.listenHTTP(ctx, addr)
+		ln, tcpAddr, lErr := p.listenHTTP(ctx, addr, true)
 		if lErr != nil {
 			return fmt.Errorf("failed to start HTTPS server on %s: %w", addr, lErr)
 		}

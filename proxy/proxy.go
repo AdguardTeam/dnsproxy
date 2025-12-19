@@ -146,6 +146,9 @@ type Proxy struct {
 	// them.
 	quicTransports []*quic.Transport
 
+	httpListen []net.Listener // HTTP listeners
+	httpServer *http.Server   // HTTP server instance
+
 	// httpsListen are the listened HTTPS connections.
 	httpsListen []net.Listener
 
@@ -442,6 +445,14 @@ func (p *Proxy) closeListeners(errs []error) (res []error) {
 
 		// No need to close these since they're closed by httpsServer.Close().
 		p.httpsListen = nil
+	}
+
+	if p.httpServer != nil {
+		res = closeAll(res, p.httpServer)
+		p.httpServer = nil
+
+		// No need to close these since they're closed by httpsServer.Close().
+		p.httpListen = nil
 	}
 
 	if p.h3Server != nil {

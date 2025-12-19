@@ -49,6 +49,9 @@ type configuration struct {
 	// ListenPorts are the ports server listens on.
 	ListenPorts []int `yaml:"listen-ports"`
 
+	// HTTP listen ports are the ports server listens on for DNS-over-HTTP.
+	HTTPListenPorts []int `yaml:"http-port"`
+
 	// HTTPSListenPorts are the ports server listens on for DNS-over-HTTPS.
 	HTTPSListenPorts []int `yaml:"https-port"`
 

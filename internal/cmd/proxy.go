@@ -382,6 +382,13 @@ func (conf *configuration) initListenAddrs(config *proxy.Config) (err error) {
 		}
 	}
 
+	for _, ip := range addrs {
+		for _, port := range conf.HTTPListenPorts {
+			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			config.HTTPListenAddr = append(config.HTTPListenAddr, a)
+		}
+	}
+
 	initTLSListenAddrs(config, conf, addrs)
 	initDNSCryptListenAddrs(config, conf, addrs)
 

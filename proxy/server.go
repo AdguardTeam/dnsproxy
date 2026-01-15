@@ -40,6 +40,11 @@ func (p *Proxy) startListeners(ctx context.Context) (err error) {
 		return err
 	}
 
+	err = p.initHTTPListeners(ctx)
+	if err != nil {
+		return err
+	}
+
 	err = p.initQUICListeners(ctx)
 	if err != nil {
 		return err
@@ -69,6 +74,10 @@ func (p *Proxy) serveListeners() {
 
 	for _, l := range p.httpsListen {
 		go func(l net.Listener) { _ = p.httpsServer.Serve(l) }(l)
+	}
+
+	for _, l := range p.httpListen {
+		go func(l net.Listener) { _ = p.httpServer.Serve(l) }(l)
 	}
 
 	for _, l := range p.h3Listen {

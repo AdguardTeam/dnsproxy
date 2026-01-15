@@ -55,6 +55,34 @@ func (p *Proxy) listenHTTP(
 	return tlsListen, tcpAddr, nil
 }
 
+// listenPlainHTTP creates instances of plain HTTP (non-TLS) listeners.
+// Returns the address the listener actually listens to (useful in the case
+// if port 0 is specified).
+func (p *Proxy) listenPlainHTTP(
+	ctx context.Context,
+	addr *net.TCPAddr,
+) (ln net.Listener, tcpAddr *net.TCPAddr, err error) {
+	var tcpListen *net.TCPListener
+	err = p.bindWithRetry(ctx, func() (listenErr error) {
+		tcpListen, listenErr = net.ListenTCP(bootstrap.NetworkTCP, addr)
+
+		return listenErr
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("tcp listener: %w", err)
+	}
+
+	laddr := tcpListen.Addr()
+	tcpAddr, ok := laddr.(*net.TCPAddr)
+	if !ok {
+		return nil, nil, fmt.Errorf("bad listener address type: %T", laddr)
+	}
+
+	p.logger.InfoContext(ctx, "listening to http (non-ssl)", "addr", tcpAddr)
+
+	return tcpListen, tcpAddr, nil
+}
+
 // listenH3 creates instances of QUIC listeners that will be used for running
 // an HTTP/3 server.
 func (p *Proxy) listenH3(
@@ -75,15 +103,18 @@ func (p *Proxy) listenH3(
 
 // initHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
 func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
+	// Create a path-aware handler
+	handler := p.createHTTPHandler()
+
 	p.httpsServer = &http.Server{
-		Handler:           p,
+		Handler:           handler,
 		ReadHeaderTimeout: defaultTimeout,
 		WriteTimeout:      defaultTimeout,
 	}
 
 	if p.HTTP3 {
 		p.h3Server = &http3.Server{
-			Handler: p,
+			Handler: handler,
 		}
 	}
 
@@ -113,6 +144,58 @@ func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
 	}
 
 	return nil
+}
+
+// initHTTPListeners creates plain HTTP (non-SSL) TCP listeners.
+func (p *Proxy) initHTTPListeners(ctx context.Context) (err error) {
+	if len(p.HTTPListenAddr) == 0 {
+		return nil
+	}
+
+	// Create a path-aware handler
+	handler := p.createHTTPHandler()
+
+	p.httpServer = &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: defaultTimeout,
+		WriteTimeout:      defaultTimeout,
+	}
+
+	for _, addr := range p.HTTPListenAddr {
+		p.logger.InfoContext(ctx, "creating an http (non-ssl) server")
+
+		ln, _, lErr := p.listenPlainHTTP(ctx, addr)
+		if lErr != nil {
+			return fmt.Errorf("failed to start HTTP server on %s: %w", addr, lErr)
+		}
+
+		p.httpListen = append(p.httpListen, ln)
+	}
+
+	return nil
+}
+
+// createHTTPHandler creates an http.Handler that routes requests based on path.
+func (p *Proxy) createHTTPHandler() http.Handler {
+	mux := http.NewServeMux()
+
+	// Register batch query handler if configured
+	if p.Config.HTTPBatchPath != "" {
+		mux.HandleFunc(p.Config.HTTPBatchPath, p.handleBatchQuery)
+		p.logger.Info("registered batch query handler", "path", p.Config.HTTPBatchPath)
+	}
+
+	// Register standard DoH handler
+	if p.Config.HTTPPath != "" {
+		// Specific path for standard queries
+		mux.HandleFunc(p.Config.HTTPPath, p.ServeHTTP)
+		p.logger.Info("registered standard doh handler", "path", p.Config.HTTPPath)
+	} else {
+		// Default: accept all paths for standard queries
+		mux.HandleFunc("/", p.ServeHTTP)
+	}
+
+	return mux
 }
 
 // newDoHReq returns new DNS request parsed from the given HTTP request.  In

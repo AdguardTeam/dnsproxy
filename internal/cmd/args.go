@@ -22,12 +22,16 @@ const (
 	tlsKeyPathIdx
 	httpsServerNameIdx
 	httpsUserinfoIdx
+	httpPathIdx
+	httpBatchPathIdx
+	httpBatchJWTSecretIdx
 	dnsCryptConfigPathIdx
 	ednsAddrIdx
 	upstreamModeIdx
 	listenAddrsIdx
 	listenPortsIdx
 	httpsListenPortsIdx
+	httpListenPortsIdx
 	tlsListenPortsIdx
 	quicListenPortsIdx
 	dnsCryptListenPortsIdx
@@ -119,6 +123,24 @@ var commandLineOptions = []*commandLineOption{
 		short:     "",
 		valueType: "name",
 	},
+	httpPathIdx: {
+		description: "Path for standard DoH queries. If empty, all paths are accepted.",
+		long:        "http-path",
+		short:       "",
+		valueType:   "path",
+	},
+	httpBatchPathIdx: {
+		description: "Path for custom batch DoH queries. If empty, batch queries are disabled.",
+		long:        "http-batch-path",
+		short:       "",
+		valueType:   "path",
+	},
+	httpBatchJWTSecretIdx: {
+		description: "Shared secret for JWT token validation in batch queries (HS256).",
+		long:        "http-batch-jwt-secret",
+		short:       "",
+		valueType:   "secret",
+	},
 	dnsCryptConfigPathIdx: {
 		description: "Path to a file with DNSCrypt configuration. You can generate one using " +
 			"https://github.com/ameshkov/dnscrypt.",
@@ -155,6 +177,12 @@ var commandLineOptions = []*commandLineOption{
 		description: "Listening ports for DNS-over-HTTPS.",
 		long:        "https-port",
 		short:       "s",
+		valueType:   "port",
+	},
+	httpListenPortsIdx: {
+		description: "Listening ports for DNS-over-HTTP (non-SSL).",
+		long:        "http-port",
+		short:       "",
 		valueType:   "port",
 	},
 	tlsListenPortsIdx: {
@@ -419,12 +447,16 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		tlsKeyPathIdx:               &conf.TLSKeyPath,
 		httpsServerNameIdx:          &conf.HTTPSServerName,
 		httpsUserinfoIdx:            &conf.HTTPSUserinfo,
+		httpPathIdx:                 &conf.HTTPPath,
+		httpBatchPathIdx:            &conf.HTTPBatchPath,
+		httpBatchJWTSecretIdx:       &conf.HTTPBatchJWTSecret,
 		dnsCryptConfigPathIdx:       &conf.DNSCryptConfigPath,
 		ednsAddrIdx:                 &conf.EDNSAddr,
 		upstreamModeIdx:             &conf.UpstreamMode,
 		listenAddrsIdx:              &conf.ListenAddrs,
 		listenPortsIdx:              &conf.ListenPorts,
 		httpsListenPortsIdx:         &conf.HTTPSListenPorts,
+		httpListenPortsIdx:          &conf.HTTPListenPorts,
 		tlsListenPortsIdx:           &conf.TLSListenPorts,
 		quicListenPortsIdx:          &conf.QUICListenPorts,
 		dnsCryptListenPortsIdx:      &conf.DNSCryptListenPorts,

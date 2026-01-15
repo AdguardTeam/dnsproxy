@@ -149,11 +149,17 @@ type Proxy struct {
 	// httpsListen are the listened HTTPS connections.
 	httpsListen []net.Listener
 
+	// httpListen are the listened HTTP (non-SSL) connections.
+	httpListen []net.Listener
+
 	// h3Listen are the listened HTTP/3 connections.
 	h3Listen []*quic.EarlyListener
 
 	// httpsServer serves queries received over HTTPS.
 	httpsServer *http.Server
+
+	// httpServer serves queries received over HTTP (non-SSL).
+	httpServer *http.Server
 
 	// h3Server serves queries received over HTTP/3.
 	h3Server *http3.Server
@@ -442,6 +448,14 @@ func (p *Proxy) closeListeners(errs []error) (res []error) {
 
 		// No need to close these since they're closed by httpsServer.Close().
 		p.httpsListen = nil
+	}
+
+	if p.httpServer != nil {
+		res = closeAll(res, p.httpServer)
+		p.httpServer = nil
+
+		// No need to close these since they're closed by httpServer.Close().
+		p.httpListen = nil
 	}
 
 	if p.h3Server != nil {

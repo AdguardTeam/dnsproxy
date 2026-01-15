@@ -52,6 +52,18 @@ type configuration struct {
 	// HTTPSListenPorts are the ports server listens on for DNS-over-HTTPS.
 	HTTPSListenPorts []int `yaml:"https-port"`
 
+	// HTTPListenPorts are the ports server listens on for DNS-over-HTTP (non-SSL).
+	HTTPListenPorts []int `yaml:"http-port"`
+
+	// HTTPPath is the path for standard DoH queries.
+	HTTPPath string `yaml:"http-path"`
+
+	// HTTPBatchPath is the path for custom batch DoH queries.
+	HTTPBatchPath string `yaml:"http-batch-path"`
+
+	// HTTPBatchJWTSecret is the shared secret for JWT validation in batch queries.
+	HTTPBatchJWTSecret string `yaml:"http-batch-jwt-secret"`
+
 	// TLSListenPorts are the ports server listens on for DNS-over-TLS.
 	TLSListenPorts []int `yaml:"tls-port"`
 

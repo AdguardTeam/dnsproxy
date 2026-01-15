@@ -78,6 +78,9 @@ func createProxyConfig(
 		EnableEDNSClientSubnet: conf.EnableEDNSSubnet,
 		UDPBufferSize:          conf.UDPBufferSize,
 		HTTPSServerName:        conf.HTTPSServerName,
+		HTTPPath:               conf.HTTPPath,
+		HTTPBatchPath:          conf.HTTPBatchPath,
+		HTTPBatchJWTSecret:     conf.HTTPBatchJWTSecret,
 		MaxGoroutines:          conf.MaxGoRoutines,
 		UsePrivateRDNS:         conf.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
@@ -403,6 +406,11 @@ func initTLSListenAddrs(proxyConf *proxy.Config, conf *configuration, addrs []ne
 		for _, port := range conf.HTTPSListenPorts {
 			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
 			proxyConf.HTTPSListenAddr = append(proxyConf.HTTPSListenAddr, a)
+		}
+
+		for _, port := range conf.HTTPListenPorts {
+			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			proxyConf.HTTPListenAddr = append(proxyConf.HTTPListenAddr, a)
 		}
 
 		for _, port := range conf.QUICListenPorts {

@@ -127,6 +127,18 @@ type Config struct {
 	// not empty.
 	HTTPSServerName string
 
+	// HTTPPath is the path for standard DoH queries (default: "/dns-query").
+	// If empty, all paths are accepted for standard queries.
+	HTTPPath string
+
+	// HTTPBatchPath is the path for custom batch DoH queries.
+	// If empty, batch queries are disabled.
+	HTTPBatchPath string
+
+	// HTTPBatchJWTSecret is the shared secret for validating JWT tokens
+	// in batch queries. Required if HTTPBatchPath is set.
+	HTTPBatchJWTSecret string
+
 	// UpstreamMode determines the logic through which upstreams will be used.
 	// If not specified the [proxy.UpstreamModeLoadBalance] is used.
 	UpstreamMode UpstreamMode
@@ -142,6 +154,10 @@ type Config struct {
 	// HTTPSListenAddr is the set of TCP addresses to listen for DNS-over-HTTPS
 	// requests.
 	HTTPSListenAddr []*net.TCPAddr
+
+	// HTTPListenAddr is the set of TCP addresses to listen for DNS-over-HTTP
+	// (non-SSL) requests.
+	HTTPListenAddr []*net.TCPAddr
 
 	// TLSListenAddr is the set of TCP addresses to listen for DNS-over-TLS
 	// requests.
@@ -449,6 +465,7 @@ func (p *Proxy) hasListenAddrs() bool {
 		p.TCPListenAddr != nil ||
 		p.TLSListenAddr != nil ||
 		p.HTTPSListenAddr != nil ||
+		p.HTTPListenAddr != nil ||
 		p.QUICListenAddr != nil ||
 		p.DNSCryptUDPListenAddr != nil ||
 		p.DNSCryptTCPListenAddr != nil

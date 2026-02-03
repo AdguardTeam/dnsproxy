@@ -232,6 +232,98 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	require.True(t, conns[1].is0RTT())
 }
 
+func TestUpstreamDoQ_readMsg_partialRead(t *testing.T) {
+	oldReq := createHostTestMessage("old.example")
+	oldResp := (&dns.Msg{}).SetReply(oldReq)
+	oldResp.Answer = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn("old.example"),
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		A: net.IPv4(1, 1, 1, 1),
+	}}
+
+	oldPacked, err := oldResp.Pack()
+	require.NoError(t, err)
+	oldBuf := make([]byte, 2+len(oldPacked))
+	binary.BigEndian.PutUint16(oldBuf, uint16(len(oldPacked)))
+	copy(oldBuf[2:], oldPacked)
+
+	pool := &sync.Pool{
+		New: func() any {
+			b := make([]byte, dns.MaxMsgSize)
+			copy(b, oldBuf)
+			return &b
+		},
+	}
+
+	newReq := createHostTestMessage("new.example")
+	newResp := (&dns.Msg{}).SetReply(newReq)
+	newResp.Answer = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn("new.example"),
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		A: net.IPv4(2, 2, 2, 2),
+	}}
+
+	newPacked, err := newResp.Pack()
+	require.NoError(t, err)
+	newBuf := make([]byte, 2+len(newPacked))
+	binary.BigEndian.PutUint16(newBuf, uint16(len(newPacked)))
+	copy(newBuf[2:], newPacked)
+
+	stream := &testQUICStream{
+		data:  newBuf,
+		chunk: 1,
+	}
+
+	p := &dnsOverQUIC{
+		addr:        &url.URL{Host: "example:853"},
+		bytesPool:   pool,
+		bytesPoolMu: &sync.Mutex{},
+	}
+
+	got, err := p.readMsg(stream)
+	require.NoError(t, err)
+	require.Len(t, got.Answer, 1)
+	require.Equal(t, dns.Fqdn("new.example"), got.Question[0].Name)
+
+	a, ok := got.Answer[0].(*dns.A)
+	require.True(t, ok, "wrong answer type: %T", got.Answer[0])
+	require.Equal(t, net.IPv4(2, 2, 2, 2).To4(), a.A)
+}
+
+type testQUICStream struct {
+	data  []byte
+	chunk int
+}
+
+func (s *testQUICStream) Read(p []byte) (n int, err error) {
+	if len(s.data) == 0 {
+		return 0, io.EOF
+	}
+
+	n = s.chunk
+	if n <= 0 || n > len(s.data) {
+		n = len(s.data)
+	}
+	if n > len(p) {
+		n = len(p)
+	}
+
+	copy(p, s.data[:n])
+	s.data = s.data[n:]
+
+	return n, nil
+}
+
+func (s *testQUICStream) CancelRead(_ quic.StreamErrorCode) {}
+
 // testDoHServer is an instance of a test DNS-over-QUIC server.
 type testDoQServer struct {
 	// listener is the QUIC connections listener.

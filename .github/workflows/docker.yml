@@ -34,7 +34,7 @@
       - 'name': 'Set up Docker Buildx'
         'uses': 'docker/setup-buildx-action@v3'
         'with':
-          'install': true'
+          'install': true
       - 'name': 'Publish to Docker Hub'
         'env':
           'DOCKER_USER': ${{ secrets.DOCKER_USER }}

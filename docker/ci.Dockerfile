@@ -39,7 +39,6 @@ ARG BASE_IMAGE=adguard/go-builder:1.25.5--1
 #
 # NOTE:  Only ADD the files required to install the dependencies.
 FROM "$BASE_IMAGE" AS dependencies
-RUN ls -la .
 ADD Makefile go.mod go.sum /app/
 ADD scripts /app/scripts
 WORKDIR /app

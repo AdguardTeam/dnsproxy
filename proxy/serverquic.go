@@ -248,9 +248,9 @@ func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn 
 	// draft DNS messages were not prefixed with the message length.
 	packetLen := binary.BigEndian.Uint16(buf[:2])
 	if packetLen == uint16(n-2) {
-		err = req.Unpack(buf[2:])
+		err = req.Unpack(buf[2:n])
 	} else {
-		err = req.Unpack(buf)
+		err = req.Unpack(buf[:n])
 		doqVersion = DoQv1Draft
 	}
 

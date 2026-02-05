@@ -3,7 +3,9 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/url"
@@ -93,6 +95,12 @@ type dnsOverQUIC struct {
 
 	// timeout is the timeout for the upstream connection.
 	timeout time.Duration
+}
+
+// quicStream is the subset of quic.Stream used by readMsg.
+type quicStream interface {
+	Read(p []byte) (n int, err error)
+	CancelRead(code quic.StreamErrorCode)
 }
 
 // newDoQ returns the DNS-over-QUIC Upstream.
@@ -397,15 +405,33 @@ func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
 }
 
 // readMsg reads the incoming DNS message from the QUIC stream.
-func (p *dnsOverQUIC) readMsg(stream *quic.Stream) (m *dns.Msg, err error) {
+func (p *dnsOverQUIC) readMsg(stream quicStream) (m *dns.Msg, err error) {
 	pool := p.getBytesPool()
 	bufPtr := pool.Get().(*[]byte)
 
 	defer pool.Put(bufPtr)
 
+	var lenBuf [2]byte
+	_, err = io.ReadFull(stream, lenBuf[:])
+	if err != nil {
+		return nil, fmt.Errorf("reading response length from %s: %w", p.addr, err)
+	}
+
+	msgLen := int(binary.BigEndian.Uint16(lenBuf[:]))
+	if msgLen == 0 {
+		return nil, fmt.Errorf("empty response from %s", p.addr)
+	} else if msgLen > dns.MaxMsgSize {
+		return nil, fmt.Errorf("response size %d exceeds max %d from %s", msgLen, dns.MaxMsgSize, p.addr)
+	}
+
 	respBuf := *bufPtr
-	n, err := stream.Read(respBuf)
-	if err != nil && n == 0 {
+	if cap(respBuf) < msgLen {
+		respBuf = make([]byte, msgLen)
+	}
+	respBuf = respBuf[:msgLen]
+
+	_, err = io.ReadFull(stream, respBuf)
+	if err != nil {
 		return nil, fmt.Errorf("reading response from %s: %w", p.addr, err)
 	}
 
@@ -414,10 +440,8 @@ func (p *dnsOverQUIC) readMsg(stream *quic.Stream) (m *dns.Msg, err error) {
 	// All DNS messages (queries and responses) sent over DoQ connections MUST
 	// be encoded as a 2-octet length field followed by the message content as
 	// specified in [RFC1035].
-	// IMPORTANT: Note, that we ignore this prefix here as this implementation
-	// does not support receiving multiple messages over a single connection.
 	m = new(dns.Msg)
-	err = m.Unpack(respBuf[2:])
+	err = m.Unpack(respBuf)
 	if err != nil {
 		return nil, fmt.Errorf("unpacking response from %s: %w", p.addr, err)
 	}

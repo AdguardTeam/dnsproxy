@@ -30,7 +30,6 @@ import (
 	"github.com/AdguardTeam/golibs/validate"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
-	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
@@ -58,6 +57,10 @@ const (
 	// ProtoDNSCrypt is the DNSCrypt protocol.
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
+
+// ErrDrop is returned by a RequestHandler to signal that the proxy should not
+// send any response to the client.
+var ErrDrop = errors.Error("drop response")
 
 // Proxy combines the proxy server state and configuration.
 //
@@ -101,9 +104,6 @@ type Proxy struct {
 
 	// logger is used for logging in the proxy service.  It is never nil.
 	logger *slog.Logger
-
-	// ratelimitBuckets is a storage for ratelimiters for individual IPs.
-	ratelimitBuckets *gocache.Cache
 
 	// fastestAddr finds the fastest IP address for the resolved domain.
 	fastestAddr *fastip.FastestAddr
@@ -203,9 +203,6 @@ type Proxy struct {
 	// Also make it a pointer.
 	sync.RWMutex
 
-	// ratelimitLock protects ratelimitBuckets.
-	ratelimitLock sync.Mutex
-
 	// rttLock protects upstreamRTTStats.
 	//
 	// TODO(e.burkov):  Make it a pointer.
@@ -234,7 +231,6 @@ func New(c *Config) (p *Proxy, err error) {
 		requestHandler:   cmp.Or[RequestHandler](c.RequestHandler, DefaultRequestHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
 		rttLock:          sync.Mutex{},
-		ratelimitLock:    sync.Mutex{},
 		RWMutex:          sync.RWMutex{},
 		// 2 bytes may be used to store packet length (see TCP/TLS).
 		bytesPool:  syncutil.NewSlicePool[byte](2 + dns.MaxMsgSize),

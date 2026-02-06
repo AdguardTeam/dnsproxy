@@ -108,21 +108,14 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 		return nil
 	}
 
-	// ratelimit based on IP only, protects CPU cycles and outbound connections
-	//
-	// TODO(e.burkov):  Investigate if written above true and move to UDP server
-	// implementation?
-	if d.Proto == ProtoUDP && p.isRatelimited(ip) {
-		p.logger.Debug("ratelimited based on ip only", "addr", d.Addr)
-
-		// Don't reply to ratelimited clients.
-		return nil
-	}
-
 	d.Res = p.validateRequest(d)
 	if d.Res == nil {
 		// TODO(d.kolyshev):  Consider using middlewares.
 		err = p.requestHandler.Handle(p, d)
+		if errors.Is(err, ErrDrop) {
+			// Don't reply to dropped clients.
+			return nil
+		}
 	}
 
 	p.logDNSMessage(d.Res)

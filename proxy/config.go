@@ -148,6 +148,8 @@ type Config struct {
 	DNS64Prefs []netip.Prefix
 
 	// RatelimitWhitelist is a list of IP addresses excluded from rate limiting.
+	//
+	// TODO(d.kolyshev): !! Remove.
 	RatelimitWhitelist []netip.Addr
 
 	// EDNSAddr is the ECS IP used in request.
@@ -157,14 +159,20 @@ type Config struct {
 
 	// RatelimitSubnetLenIPv4 is a subnet length for IPv4 addresses used for
 	// rate limiting requests.
+	//
+	// TODO(d.kolyshev): !! Remove.
 	RatelimitSubnetLenIPv4 int
 
 	// RatelimitSubnetLenIPv6 is a subnet length for IPv6 addresses used for
 	// rate limiting requests.
+	//
+	// TODO(d.kolyshev): !! Remove.
 	RatelimitSubnetLenIPv6 int
 
 	// Ratelimit is a maximum number of requests per second from a given IP (0
 	// to disable).
+	//
+	// TODO(d.kolyshev): !! Remove.
 	Ratelimit int
 
 	// CacheSizeBytes is the maximum cache size in bytes.

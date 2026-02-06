@@ -1,11 +1,12 @@
 package proxy
 
 // RequestHandler is an interface for handling DNS requests.
+//
+// TODO(d.kolyshev): Rename.
 type RequestHandler interface {
 	// Handle resolves the DNS request within *DNSContext.
 	//
-	// TODO(e.burkov):  Use the [context.Context] instead of [*DNSContext] when
-	//  the interface-based handler is implemented.
+	// TODO(e.burkov):  Use the [context.Context] instead of [*DNSContext].
 	Handle(p *Proxy, dctx *DNSContext) (err error)
 }
 

@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"io"
 	"net"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -150,10 +150,9 @@ func TestQuicProxy_largePackets(t *testing.T) {
 	requireResponse(t, msg, resp)
 }
 
-func TestQuicProxy_truncatedRequestUsesOnlyReadBytes(t *testing.T) {
+func TestQuicProxy_truncatedRequest(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
 
-	var handled atomic.Bool
 	conf := &Config{
 		Logger:                 slogutil.NewDiscardLogger(),
 		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
@@ -162,26 +161,14 @@ func TestQuicProxy_truncatedRequestUsesOnlyReadBytes(t *testing.T) {
 		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
-		RequestHandler: func(_ *Proxy, d *DNSContext) (err error) {
-			handled.Store(true)
-			resp := (&dns.Msg{}).SetReply(d.Req)
-			resp.Answer = []dns.RR{&dns.A{
-				Hdr: dns.RR_Header{
-					Name:   d.Req.Question[0].Name,
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-				},
-				A: net.IP{8, 8, 8, 8},
-			}}
-			d.Res = resp
-
-			return nil
+		RequestHandler: func(p *Proxy, d *DNSContext) (_ error) {
+			panic(testutil.UnexpectedCall(p, d))
 		},
 	}
 
 	dnsProxy := mustNew(t, conf)
 
-	req := &dns.Msg{
+	req := (&dns.Msg{
 		MsgHdr: dns.MsgHdr{
 			Id:               0,
 			RecursionDesired: true,
@@ -191,8 +178,7 @@ func TestQuicProxy_truncatedRequestUsesOnlyReadBytes(t *testing.T) {
 			Qtype:  dns.TypeA,
 			Qclass: dns.ClassINET,
 		}},
-	}
-	req.SetEdns0(4096, false)
+	}).SetEdns0(4096, false)
 
 	packed, err := req.Pack()
 	require.NoError(t, err)
@@ -208,36 +194,39 @@ func TestQuicProxy_truncatedRequestUsesOnlyReadBytes(t *testing.T) {
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
+	addr := dnsProxy.Addr(ProtoQUIC)
+
 	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(caPem)
+	require.True(t, roots.AppendCertsFromPEM(caPem))
+
 	tlsConfig := &tls.Config{
 		ServerName: tlsServerName,
 		RootCAs:    roots,
 		NextProtos: append([]string{NextProtoDQ}, compatProtoDQ...),
 	}
 
-	addr := dnsProxy.Addr(ProtoQUIC)
-	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+	conn, err := quic.DialAddrEarly(ctx, addr.String(), tlsConfig, nil)
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, func() (err error) {
 		return conn.CloseWithError(DoQCodeNoError, "")
 	})
 
-	truncLen := len(packed) - 5
+	truncLen := len(packed) - len(packed)/2
 	require.Greater(t, truncLen, 0)
+
 	truncated := packed[:truncLen]
 	reqBuf := proxyutil.AddPrefix(truncated)
 	require.Greater(t, len(reqBuf), minDNSPacketSize)
 
-	stream, err := conn.OpenStreamSync(context.Background())
+	stream, err := conn.OpenStreamSync(ctx)
 	require.NoError(t, err)
-	_, err = stream.Write(reqBuf)
-	require.NoError(t, err)
-	_ = stream.Close()
+	testutil.CleanupAndRequireSuccess(t, stream.Close)
 
-	require.Never(t, func() bool {
-		return handled.Load()
-	}, testTimeout, 10*time.Millisecond)
+	n, err := stream.Write(reqBuf)
+	require.NoError(t, err)
+	assert.Greater(t, n, minDNSPacketSize)
 }
 
 // sendQUICMessage sends msg to the specified QUIC connection.

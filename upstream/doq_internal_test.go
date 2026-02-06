@@ -232,7 +232,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	require.True(t, conns[1].is0RTT())
 }
 
-func TestUpstreamDoQ_readMsg_partialRead(t *testing.T) {
+func TestUpstreamDoQ_ReadMsg_partialRead(t *testing.T) {
 	oldReq := createHostTestMessage("old.example")
 	oldResp := (&dns.Msg{}).SetReply(oldReq)
 	oldResp.Answer = []dns.RR{&dns.A{
@@ -242,22 +242,33 @@ func TestUpstreamDoQ_readMsg_partialRead(t *testing.T) {
 			Class:  dns.ClassINET,
 			Ttl:    60,
 		},
-		A: net.IPv4(1, 1, 1, 1),
+		A: net.IP{192, 0, 2, 1},
 	}}
 
 	oldPacked, err := oldResp.Pack()
 	require.NoError(t, err)
+
 	oldBuf := make([]byte, 2+len(oldPacked))
 	binary.BigEndian.PutUint16(oldBuf, uint16(len(oldPacked)))
 	copy(oldBuf[2:], oldPacked)
 
 	pool := &sync.Pool{
-		New: func() any {
+		New: func() (buf any) {
 			b := make([]byte, dns.MaxMsgSize)
 			copy(b, oldBuf)
+
 			return &b
 		},
 	}
+
+	ups, err := newDoQ(&url.URL{Host: "example:853"}, &Options{})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, ups.Close)
+
+	doq := testutil.RequireTypeAssert[*dnsOverQUIC](t, ups)
+	doq.bytesPool = pool
+
+	newAnsIP := net.IP{192, 0, 2, 2}
 
 	newReq := createHostTestMessage("new.example")
 	newResp := (&dns.Msg{}).SetReply(newReq)
@@ -268,11 +279,12 @@ func TestUpstreamDoQ_readMsg_partialRead(t *testing.T) {
 			Class:  dns.ClassINET,
 			Ttl:    60,
 		},
-		A: net.IPv4(2, 2, 2, 2),
+		A: newAnsIP,
 	}}
 
 	newPacked, err := newResp.Pack()
 	require.NoError(t, err)
+
 	newBuf := make([]byte, 2+len(newPacked))
 	binary.BigEndian.PutUint16(newBuf, uint16(len(newPacked)))
 	copy(newBuf[2:], newPacked)
@@ -282,20 +294,14 @@ func TestUpstreamDoQ_readMsg_partialRead(t *testing.T) {
 		chunk: 1,
 	}
 
-	p := &dnsOverQUIC{
-		addr:        &url.URL{Host: "example:853"},
-		bytesPool:   pool,
-		bytesPoolMu: &sync.Mutex{},
-	}
-
-	got, err := p.readMsg(stream)
+	got, err := doq.readMsg(stream)
 	require.NoError(t, err)
 	require.Len(t, got.Answer, 1)
-	require.Equal(t, dns.Fqdn("new.example"), got.Question[0].Name)
 
-	a, ok := got.Answer[0].(*dns.A)
-	require.True(t, ok, "wrong answer type: %T", got.Answer[0])
-	require.Equal(t, net.IPv4(2, 2, 2, 2).To4(), a.A)
+	assert.Equal(t, dns.Fqdn("new.example"), got.Question[0].Name)
+
+	a := testutil.RequireTypeAssert[*dns.A](t, got.Answer[0])
+	assert.Equal(t, newAnsIP, a.A)
 }
 
 type testQUICStream struct {

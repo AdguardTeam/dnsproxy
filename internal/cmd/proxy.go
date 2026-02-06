@@ -81,7 +81,7 @@ func createProxyConfig(
 		MaxGoroutines:          conf.MaxGoRoutines,
 		UsePrivateRDNS:         conf.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		RequestHandler:         reqHdlr.HandleRequest,
+		RequestHandler:         reqHdlr,
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: conf.PendingRequestsEnabled,
 		},

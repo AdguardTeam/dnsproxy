@@ -28,24 +28,6 @@ const (
 	DefaultOptimisticAnswerTTL = 30 * time.Second
 )
 
-// RequestHandler is an optional custom handler for DNS requests.  It's used
-// instead of [Proxy.Resolve] if set.  The resulting error doesn't affect the
-// request processing.  The custom handler is responsible for calling
-// [ResponseHandler], if it doesn't call [Proxy.Resolve].
-//
-// TODO(e.burkov):  Use the same interface-based approach as
-// [BeforeRequestHandler].
-type RequestHandler func(p *Proxy, dctx *DNSContext) (err error)
-
-// ResponseHandler is an optional custom handler called when DNS query has been
-// processed.  When called from [Proxy.Resolve], dctx will contain the response
-// message if the upstream or cache succeeded.  err is only not nil if the
-// upstream failed to respond.
-//
-// TODO(e.burkov):  Use the same interface-based approach as
-// [BeforeRequestHandler].
-type ResponseHandler func(dctx *DNSContext, err error)
-
 // Config contains all the fields necessary for proxy configuration.
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
@@ -79,12 +61,8 @@ type Config struct {
 	BeforeRequestHandler BeforeRequestHandler
 
 	// RequestHandler is an optional custom handler for DNS requests.  It's used
-	// instead of [Proxy.Resolve] if set.  See [RequestHandler].
+	// instead of DefaultRequestHandler if set.
 	RequestHandler RequestHandler
-
-	// ResponseHandler is an optional custom handler called when DNS query has
-	// been processed.  See [ResponseHandler].
-	ResponseHandler ResponseHandler
 
 	// UpstreamConfig is a general set of DNS servers to forward requests to.
 	UpstreamConfig *UpstreamConfig

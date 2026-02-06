@@ -121,11 +121,8 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 
 	d.Res = p.validateRequest(d)
 	if d.Res == nil {
-		if p.RequestHandler != nil {
-			err = errors.Annotate(p.RequestHandler(p, d), "using request handler: %w")
-		} else {
-			err = errors.Annotate(p.Resolve(d), "using default request handler: %w")
-		}
+		// TODO(d.kolyshev):  Consider using middlewares.
+		err = p.requestHandler.Handle(p, d)
 	}
 
 	p.logDNSMessage(d.Res)

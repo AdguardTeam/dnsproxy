@@ -86,33 +86,26 @@ func TestQuicProxy(t *testing.T) {
 }
 
 func TestQuicProxy_largePackets(t *testing.T) {
-	serverConfig, caPem := newTLSConfig(t)
-	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TLSConfig:              serverConfig,
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		// Make sure the request does not go to any real upstream.
-		RequestHandler: func(_ *Proxy, d *DNSContext) (err error) {
-			resp := &dns.Msg{}
-			resp.SetReply(d.Req)
-			resp.Answer = []dns.RR{&dns.A{
-				Hdr: dns.RR_Header{
-					Name:   d.Req.Question[0].Name,
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-				},
-				A: net.IP{8, 8, 8, 8},
-			}}
-			d.Res = resp
+	reqHandler := &TestRequestHandler{
+		OnHandle: func(_ *Proxy, d *DNSContext) (err error) {
+			d.Res = newTestResponse(d)
 
 			return nil
 		},
+	}
+
+	serverConfig, caPem := newTLSConfig(t)
+	dnsProxy := mustNew(t, &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
+		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies:         defaultTrustedProxies,
+		RequestHandler:         reqHandler,
+		TLSConfig:              serverConfig,
+		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
@@ -162,20 +155,22 @@ func TestQuicProxy_truncatedRequestUsesOnlyReadBytes(t *testing.T) {
 		TrustedProxies:         defaultTrustedProxies,
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 64,
-		RequestHandler: func(_ *Proxy, d *DNSContext) (err error) {
-			handled.Store(true)
-			resp := (&dns.Msg{}).SetReply(d.Req)
-			resp.Answer = []dns.RR{&dns.A{
-				Hdr: dns.RR_Header{
-					Name:   d.Req.Question[0].Name,
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-				},
-				A: net.IP{8, 8, 8, 8},
-			}}
-			d.Res = resp
+		RequestHandler: &TestRequestHandler{
+			OnHandle: func(p *Proxy, dctx *DNSContext) (err error) {
+				handled.Store(true)
+				resp := (&dns.Msg{}).SetReply(dctx.Req)
+				resp.Answer = []dns.RR{&dns.A{
+					Hdr: dns.RR_Header{
+						Name:   dctx.Req.Question[0].Name,
+						Rrtype: dns.TypeA,
+						Class:  dns.ClassINET,
+					},
+					A: net.IP{8, 8, 8, 8},
+				}}
+				dctx.Res = resp
 
-			return nil
+				return nil
+			},
 		},
 	}
 
@@ -238,6 +233,22 @@ func TestQuicProxy_truncatedRequestUsesOnlyReadBytes(t *testing.T) {
 	require.Never(t, func() bool {
 		return handled.Load()
 	}, testTimeout, 10*time.Millisecond)
+}
+
+// newTestResponse creates a test response for the specified request.
+func newTestResponse(d *DNSContext) (resp *dns.Msg) {
+	resp = &dns.Msg{}
+	resp.SetReply(d.Req)
+	resp.Answer = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Name:   d.Req.Question[0].Name,
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+		},
+		A: net.IP{8, 8, 8, 8},
+	}}
+
+	return resp
 }
 
 // sendQUICMessage sends msg to the specified QUIC connection.

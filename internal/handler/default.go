@@ -33,7 +33,7 @@ type Default struct {
 	isIPv6Halted bool
 }
 
-// NewDefault creates a new [Default] handler.
+// NewDefault creates a new *Default handler.
 func NewDefault(conf *DefaultConfig) (d *Default) {
 	mc, ok := conf.MessageConstructor.(messageConstructor)
 	if !ok {
@@ -50,12 +50,14 @@ func NewDefault(conf *DefaultConfig) (d *Default) {
 	}
 }
 
-// HandleRequest resolves the DNS request within proxyCtx.  It only calls
+// type check
+var _ proxy.RequestHandler = (*Default)(nil)
+
+// Handle implements the [proxy.RequestHandler] interface for *Default.  It
+// resolves the DNS request within proxyCtx.  It only calls
 // [proxy.Proxy.Resolve] if the request isn't handled by any of the internal
 // handlers.
-func (h *Default) HandleRequest(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
-	// TODO(e.burkov):  Use the [*context.Context] instead of
-	// [*proxy.DNSContext] when the interface-based handler is implemented.
+func (h *Default) Handle(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
 	ctx := context.TODO()
 
 	h.logger.DebugContext(ctx, "handling request", "req", &proxyCtx.Req.Question[0])

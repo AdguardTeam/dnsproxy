@@ -13,8 +13,8 @@ import (
 
 // Subnet lengths used in tests.
 const (
-	subnetLenIPv4 = 24
-	subnetLenIPv6 = 64
+	testSubnetLenIPv4 = 24
+	testSubnetLenIPv6 = 64
 )
 
 // testLogger is a test logger used in tests.
@@ -35,8 +35,8 @@ func TestHandler_Handle(t *testing.T) {
 		config: &ratelimit.Config{
 			Logger:        testLogger,
 			Ratelimit:     0,
-			SubnetLenIPv4: subnetLenIPv4,
-			SubnetLenIPv6: subnetLenIPv6,
+			SubnetLenIPv4: testSubnetLenIPv4,
+			SubnetLenIPv6: testSubnetLenIPv6,
 		},
 		dctx: &proxy.DNSContext{
 			Addr:  testAddr,
@@ -48,8 +48,8 @@ func TestHandler_Handle(t *testing.T) {
 		config: &ratelimit.Config{
 			Logger:        testLogger,
 			Ratelimit:     1,
-			SubnetLenIPv4: subnetLenIPv4,
-			SubnetLenIPv6: subnetLenIPv6,
+			SubnetLenIPv4: testSubnetLenIPv4,
+			SubnetLenIPv6: testSubnetLenIPv6,
 		},
 		dctx: &proxy.DNSContext{
 			Addr:  testAddr,
@@ -61,8 +61,8 @@ func TestHandler_Handle(t *testing.T) {
 		config: &ratelimit.Config{
 			Logger:        testLogger,
 			Ratelimit:     1,
-			SubnetLenIPv4: subnetLenIPv4,
-			SubnetLenIPv6: subnetLenIPv6,
+			SubnetLenIPv4: testSubnetLenIPv4,
+			SubnetLenIPv6: testSubnetLenIPv6,
 		},
 		dctx: &proxy.DNSContext{
 			Addr:  testAddr,
@@ -104,8 +104,8 @@ func TestHandler_Handle_allowlist(t *testing.T) {
 	conf := &ratelimit.Config{
 		Logger:        testLogger,
 		Ratelimit:     1,
-		SubnetLenIPv4: subnetLenIPv4,
-		SubnetLenIPv6: subnetLenIPv6,
+		SubnetLenIPv4: testSubnetLenIPv4,
+		SubnetLenIPv6: testSubnetLenIPv6,
 		AllowlistAddrs: []netip.Addr{
 			addrAllow,
 		},

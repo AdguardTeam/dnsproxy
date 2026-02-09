@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	rate "github.com/beefsack/go-rate"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -25,15 +24,15 @@ type Config struct {
 
 	// Ratelimit is a maximum number of requests per second from a given IP (0
 	// to disable).
-	Ratelimit int
+	Ratelimit uint
 
 	// SubnetLenIPv4 is a subnet length for IPv4 addresses used for rate
 	// limiting requests.
-	SubnetLenIPv4 int
+	SubnetLenIPv4 uint
 
 	// SubnetLenIPv6 is a subnet length for IPv6 addresses used for rate
 	// limiting requests.
-	SubnetLenIPv6 int
+	SubnetLenIPv6 uint
 }
 
 // handler implements [proxy.RequestHandler] with rate limiting functionality.
@@ -46,9 +45,9 @@ type handler struct {
 	mu *sync.Mutex
 
 	allowlistAddrs []netip.Addr
-	ratelimit      int
-	subnetLenIPv4  int
-	subnetLenIPv6  int
+	ratelimit      uint
+	subnetLenIPv4  uint
+	subnetLenIPv6  uint
 }
 
 // NewRatelimitedRequestHandler wraps a RequestHandler with rate limiting
@@ -88,7 +87,7 @@ func (h *handler) Handle(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 }
 
 // limiterForIP returns a rate limiter for the specified IP address.
-func (h *handler) limiterForIP(ip string) interface{} {
+func (h *handler) limiterForIP(ip string) (rl any) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -96,13 +95,13 @@ func (h *handler) limiterForIP(ip string) interface{} {
 		h.buckets = gocache.New(time.Hour, time.Hour)
 	}
 
-	value, found := h.buckets.Get(ip)
-	if !found {
-		value = rate.New(h.ratelimit, time.Second)
-		h.buckets.Set(ip, value, time.Hour)
+	rl, ok := h.buckets.Get(ip)
+	if !ok {
+		rl = rate.New(int(h.ratelimit), time.Second)
+		h.buckets.Set(ip, rl, time.Hour)
 	}
 
-	return value
+	return rl
 }
 
 // isRatelimited checks if the specified address should be rate limited.
@@ -115,9 +114,9 @@ func (h *handler) isRatelimited(addr netip.Addr) (ok bool) {
 
 	var pref netip.Prefix
 	if addr.Is4() {
-		pref = netip.PrefixFrom(addr, h.subnetLenIPv4)
+		pref = netip.PrefixFrom(addr, int(h.subnetLenIPv4))
 	} else {
-		pref = netip.PrefixFrom(addr, h.subnetLenIPv6)
+		pref = netip.PrefixFrom(addr, int(h.subnetLenIPv6))
 	}
 	pref = pref.Masked()
 
@@ -126,13 +125,7 @@ func (h *handler) isRatelimited(addr netip.Addr) (ok bool) {
 	value := h.limiterForIP(ipStr)
 	rl, ok := value.(*rate.RateLimiter)
 	if !ok {
-		h.logger.Error(
-			"invalid value found in ratelimit cache",
-			slogutil.KeyError,
-			fmt.Errorf("bad type %T", value),
-		)
-
-		return false
+		panic(fmt.Sprintf("invalid value found in ratelimit cache: bad type: %T", value))
 	}
 
 	allow, _ := rl.Try()

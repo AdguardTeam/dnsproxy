@@ -60,7 +60,7 @@ const (
 
 // ErrDrop is returned by a RequestHandler to signal that the proxy should not
 // send any response to the client.
-var ErrDrop = errors.Error("drop response")
+const ErrDrop = errors.Error("drop response")
 
 // Proxy combines the proxy server state and configuration.
 //

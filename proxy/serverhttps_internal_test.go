@@ -40,16 +40,14 @@ func TestHttpsProxy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tlsConf, caPem := newTLSConfig(t)
 			dnsProxy := mustNew(t, &Config{
-				Logger:                 slogutil.NewDiscardLogger(),
-				TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-				TLSConfig:              tlsConf,
-				UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-				TrustedProxies:         defaultTrustedProxies,
-				RatelimitSubnetLenIPv4: 24,
-				RatelimitSubnetLenIPv6: 64,
-				HTTP3:                  tc.http3,
+				Logger:          slogutil.NewDiscardLogger(),
+				TLSListenAddr:   []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				HTTPSListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				QUICListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TLSConfig:       tlsConf,
+				UpstreamConfig:  newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+				TrustedProxies:  defaultTrustedProxies,
+				HTTP3:           tc.http3,
 			})
 
 			servicetest.RequireRun(t, dnsProxy, testTimeout)
@@ -87,16 +85,14 @@ func TestProxy_trustedProxies(t *testing.T) {
 		// Prepare the proxy server.
 		tlsConf, caPem := newTLSConfig(t)
 		dnsProxy := mustNew(t, &Config{
-			Logger:                 slogutil.NewDiscardLogger(),
-			UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-			TrustedProxies:         defaultTrustedProxies,
-			RequestHandler:         reqHandler,
-			TLSConfig:              tlsConf,
-			TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-			RatelimitSubnetLenIPv4: 24,
-			RatelimitSubnetLenIPv6: 64,
+			Logger:          slogutil.NewDiscardLogger(),
+			UpstreamConfig:  newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+			TrustedProxies:  defaultTrustedProxies,
+			RequestHandler:  reqHandler,
+			TLSConfig:       tlsConf,
+			TLSListenAddr:   []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+			HTTPSListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+			QUICListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		})
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)

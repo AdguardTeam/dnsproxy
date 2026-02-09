@@ -215,9 +215,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 			UpstreamConfig: &UpstreamConfig{
 				Upstreams: ups,
 			},
-			TrustedProxies:         defaultTrustedProxies,
-			RatelimitSubnetLenIPv4: 24,
-			RatelimitSubnetLenIPv6: 64,
+			TrustedProxies: defaultTrustedProxies,
 		})
 		p.time = tc.clock
 		p.randSrc = randSrc

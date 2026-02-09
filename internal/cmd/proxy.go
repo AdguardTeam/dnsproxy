@@ -16,6 +16,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/handler"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/ratelimit"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -44,6 +45,19 @@ func createProxyConfig(
 		return nil, fmt.Errorf("reading hosts files: %w", err)
 	}
 
+	mwConf := &ratelimit.Config{
+		Logger:         l.With(slogutil.KeyPrefix, "ratelimit"),
+		AllowlistAddrs: []netip.Addr{},
+		Ratelimit:      conf.Ratelimit,
+		SubnetLenIPv4:  conf.RatelimitSubnetLenIPv4,
+		SubnetLenIPv6:  conf.RatelimitSubnetLenIPv6,
+	}
+	if err = mwConf.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid ratelimit configuration: %w", err)
+	}
+
+	mw := ratelimit.NewMiddleware(mwConf)
+
 	reqHdlr := handler.NewDefault(&handler.DefaultConfig{
 		Logger: l.With(slogutil.KeyPrefix, "default_handler"),
 		// TODO(e.burkov):  Use the configured message constructor.
@@ -55,10 +69,6 @@ func createProxyConfig(
 	proxyConf = &proxy.Config{
 		Logger: l.With(slogutil.KeyPrefix, proxy.LogPrefix),
 
-		RatelimitSubnetLenIPv4: conf.RatelimitSubnetLenIPv4,
-		RatelimitSubnetLenIPv6: conf.RatelimitSubnetLenIPv6,
-
-		Ratelimit:                conf.Ratelimit,
 		CacheEnabled:             conf.Cache,
 		CacheSizeBytes:           conf.CacheSizeBytes,
 		CacheMinTTL:              conf.CacheMinTTL,
@@ -81,6 +91,7 @@ func createProxyConfig(
 		MaxGoroutines:          conf.MaxGoRoutines,
 		UsePrivateRDNS:         conf.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		Middleware:             mw,
 		RequestHandler:         reqHdlr,
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: conf.PendingRequestsEnabled,

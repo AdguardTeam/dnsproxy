@@ -53,14 +53,12 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 
 func TestServeCached(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		CacheEnabled:           true,
+		Logger:         slogutil.NewDiscardLogger(),
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
+		CacheEnabled:   true,
 	})
 
 	// Start listening.
@@ -318,14 +316,12 @@ func TestCacheExpiration(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		CacheEnabled:           true,
+		Logger:         slogutil.NewDiscardLogger(),
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
+		CacheEnabled:   true,
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
@@ -381,12 +377,10 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{&u},
 		},
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		CacheEnabled:           true,
-		CacheMinTTL:            20,
-		CacheMaxTTL:            40,
+		TrustedProxies: defaultTrustedProxies,
+		CacheEnabled:   true,
+		CacheMinTTL:    20,
+		CacheMaxTTL:    40,
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)

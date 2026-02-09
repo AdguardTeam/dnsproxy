@@ -50,9 +50,7 @@ func TestDNS64Race(t *testing.T) {
 		PrivateRDNSUpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{localUps},
 		},
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		TrustedProxies: defaultTrustedProxies,
 
 		UseDNS64:       true,
 		UsePrivateRDNS: true,
@@ -363,10 +361,8 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				PrivateRDNSUpstreamConfig: &UpstreamConfig{
 					Upstreams: []upstream.Upstream{localUps},
 				},
-				TrustedProxies:         defaultTrustedProxies,
-				RatelimitSubnetLenIPv4: 24,
-				RatelimitSubnetLenIPv6: 64,
-				CacheEnabled:           true,
+				TrustedProxies: defaultTrustedProxies,
+				CacheEnabled:   true,
 
 				UseDNS64:       true,
 				UsePrivateRDNS: true,

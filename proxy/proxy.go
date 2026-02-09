@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -286,10 +285,6 @@ func New(c *Config) (p *Proxy, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
 	}
-
-	// TODO(e.burkov):  Clone all mutable fields of Config.
-	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
-	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
 
 	return p, nil
 }

@@ -14,28 +14,6 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 )
 
-// Config is the configuration for the ratelimit middleware.
-type Config struct {
-	// Logger is used for logging in the ratelimit middleware. It must not be
-	// nil.
-	Logger *slog.Logger
-
-	// AllowlistAddrs is a list of IP addresses excluded from rate limiting.
-	AllowlistAddrs []netip.Addr
-
-	// Ratelimit is a maximum number of requests per second from a given IP (0
-	// to disable).
-	Ratelimit uint
-
-	// SubnetLenIPv4 is a subnet length for IPv4 addresses used for rate
-	// limiting requests.
-	SubnetLenIPv4 uint
-
-	// SubnetLenIPv6 is a subnet length for IPv6 addresses used for rate
-	// limiting requests.
-	SubnetLenIPv6 uint
-}
-
 // middleware implements [proxy.Handler] with rate limiting functionality.
 type middleware struct {
 	buckets *gocache.Cache
@@ -52,8 +30,6 @@ type middleware struct {
 
 // NewMiddleware returns middleware with rate limiting functionality.  h must
 // not be nil, c must be valid.
-//
-// TODO(d.kolyshev): !! Use.
 func NewMiddleware(c *Config) (m proxy.Middleware) {
 	if c.Ratelimit <= 0 {
 		return proxy.MiddlewareFunc(proxy.PassThrough)

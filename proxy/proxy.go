@@ -755,6 +755,38 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	return err
 }
 
+// ValidateRequest returns a response for invalid request or nil if the request
+// is ok.
+func (p *Proxy) ValidateRequest(d *DNSContext) (resp *dns.Msg) {
+	switch {
+	case len(d.Req.Question) != 1:
+		p.logger.Debug("invalid number of questions", "req_questions_len", len(d.Req.Question))
+
+		// TODO(e.burkov):  Probably, FORMERR would be a better choice here.
+		// Check out RFC.
+		return p.messages.NewMsgSERVFAIL(d.Req)
+	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
+		// Refuse requests of type ANY (anti-DDOS measure).
+		p.logger.Debug("refusing dns type any request")
+
+		return p.messages.NewMsgNOTIMPLEMENTED(d.Req)
+	case p.recDetector.check(d.Req):
+		p.logger.Debug("recursion detected", "req_question", d.Req.Question[0].Name)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
+	case d.isForbiddenARPA(p.privateNets, p.logger):
+		p.logger.Debug(
+			"private arpa domain is requested",
+			"addr", d.Addr,
+			"arpa", d.Req.Question[0].Name,
+		)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
+	default:
+		return nil
+	}
+}
+
 // cacheWorks returns true if the cache works for the given context.  If not, it
 // returns false and logs the reason why.
 func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {

@@ -53,7 +53,7 @@ func TestDefault_haltAAAA(t *testing.T) {
 		t.Parallel()
 
 		hdlr := NewDefault(&DefaultConfig{
-			Logger:             slogutil.NewDiscardLogger(),
+			Logger:             testLogger,
 			MessageConstructor: messages,
 			HaltIPv6:           false,
 		})
@@ -68,7 +68,7 @@ func TestDefault_haltAAAA(t *testing.T) {
 		t.Parallel()
 
 		hdlr := NewDefault(&DefaultConfig{
-			Logger:             slogutil.NewDiscardLogger(),
+			Logger:             testLogger,
 			MessageConstructor: messages,
 			HaltIPv6:           true,
 		})
@@ -96,7 +96,7 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 
 	hdlr := NewDefault(&DefaultConfig{
 		MessageConstructor: messages,
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		HostsFiles:         strg,
 		HaltIPv6:           true,
 	})

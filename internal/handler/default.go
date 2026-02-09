@@ -53,13 +53,18 @@ func NewDefault(conf *DefaultConfig) (d *Default) {
 // type check
 var _ proxy.Handler = (*Default)(nil)
 
-// ServeDNS implements the [proxy.Handler] interface for *Default.  It resolves
-// the DNS request within proxyCtx.  It only calls [proxy.Proxy.Resolve] if the
-// request isn't handled by any of the internal handlers.
+// ServeDNS implements the [proxy.Handler] interface for *Default.  It validates
+// and resolves the DNS request within proxyCtx.  It only calls
+// [proxy.Proxy.Resolve] if the request isn't handled by any of the internal
+// handlers.
 func (h *Default) ServeDNS(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
 	ctx := context.TODO()
 
 	h.logger.DebugContext(ctx, "handling request", "req", &proxyCtx.Req.Question[0])
+
+	if proxyCtx.Res = p.ValidateRequest(proxyCtx); proxyCtx.Res != nil {
+		return nil
+	}
 
 	if proxyCtx.Res = h.haltAAAA(ctx, proxyCtx.Req); proxyCtx.Res != nil {
 		return nil

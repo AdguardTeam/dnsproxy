@@ -2,12 +2,14 @@ package proxy_test
 
 import (
 	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
@@ -181,4 +183,129 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 
 		servicetest.RequireRun(t, p, testTimeout)
 	}))
+}
+
+func TestProxy_ValidateRequest(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fqdn            = "test.example."
+		privateARPAFQDN = "1.100.51.198.in-addr.arpa."
+		publicARPAFQDN  = "8.8.8.8.in-addr.arpa."
+	)
+
+	testAddr := netip.MustParseAddrPort("192.0.2.1:53")
+	privateAddr := netip.MustParseAddrPort("198.51.100.1:53")
+
+	privateNets := netutil.SliceSubnetSet{
+		netip.MustParsePrefix("198.51.100.0/24"),
+		netip.MustParsePrefix("203.0.113.0/8"),
+	}
+
+	ups := &dnsproxytest.Upstream{
+		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+			resp = &dns.Msg{}
+			resp.SetReply(m)
+
+			return resp, nil
+		},
+		OnAddress: func() (addr string) { return "stub" },
+		OnClose:   func() (err error) { return nil },
+	}
+
+	p, err := proxy.New(&proxy.Config{
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig: &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{ups}},
+		RefuseAny:      true,
+		PrivateSubnets: privateNets,
+	})
+	require.NoError(t, err)
+
+	testCases := []struct {
+		req             *dns.Msg
+		addr            netip.AddrPort
+		name            string
+		wantRcode       int
+		isPrivateClient bool
+		wantNil         bool
+	}{{
+		name:            "valid_request",
+		req:             (&dns.Msg{}).SetQuestion(fqdn, dns.TypeA),
+		addr:            testAddr,
+		wantNil:         true,
+		isPrivateClient: false,
+	}, {
+		name: "no_questions",
+		req: &dns.Msg{
+			MsgHdr:   dns.MsgHdr{Id: dns.Id()},
+			Question: []dns.Question{},
+		},
+		addr:            testAddr,
+		wantRcode:       dns.RcodeServerFailure,
+		wantNil:         false,
+		isPrivateClient: false,
+	}, {
+		name:            "refuse_any",
+		req:             (&dns.Msg{}).SetQuestion(fqdn, dns.TypeANY),
+		addr:            testAddr,
+		wantRcode:       dns.RcodeNotImplemented,
+		wantNil:         false,
+		isPrivateClient: false,
+	}, {
+		name:            "private_arpa_from_public_client",
+		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypePTR),
+		addr:            testAddr,
+		wantRcode:       dns.RcodeNameError,
+		wantNil:         false,
+		isPrivateClient: false,
+	}, {
+		name:            "private_arpa_from_private_client",
+		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypePTR),
+		addr:            privateAddr,
+		wantNil:         true,
+		isPrivateClient: true,
+	}, {
+		name:            "private_arpa_soa_from_public_client",
+		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypeSOA),
+		addr:            testAddr,
+		wantRcode:       dns.RcodeNameError,
+		wantNil:         false,
+		isPrivateClient: false,
+	}, {
+		name:            "private_arpa_ns_from_public_client",
+		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypeNS),
+		addr:            testAddr,
+		wantRcode:       dns.RcodeNameError,
+		wantNil:         false,
+		isPrivateClient: false,
+	}, {
+		name:            "public_arpa",
+		req:             (&dns.Msg{}).SetQuestion(publicARPAFQDN, dns.TypePTR),
+		addr:            testAddr,
+		wantNil:         true,
+		isPrivateClient: false,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dctx := &proxy.DNSContext{
+				Req:             tc.req,
+				Addr:            tc.addr,
+				IsPrivateClient: tc.isPrivateClient,
+			}
+
+			resp := p.ValidateRequest(dctx)
+
+			if tc.wantNil {
+				assert.Nil(t, resp)
+
+				return
+			}
+
+			require.NotNil(t, resp)
+			assert.Equal(t, tc.wantRcode, resp.Rcode)
+		})
+	}
 }

@@ -4,8 +4,8 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/AdguardTeam/dnsproxy/internal/ratelimit"
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/ratelimit"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

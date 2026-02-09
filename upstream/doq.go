@@ -11,12 +11,14 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/validate"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -97,11 +99,22 @@ type dnsOverQUIC struct {
 	timeout time.Duration
 }
 
-// quicStream is the subset of quic.Stream used by readMsg.
+// quicStream is the interface of QUIC stream used by readMsg to simplify
+// testing.
+//
+// Note, that this interface is implemented by [*quic.Stream].
 type quicStream interface {
+	// Read reads data from the stream.  If the stream was canceled, the error
+	// is a [quic.StreamError].
 	Read(p []byte) (n int, err error)
+
+	// CancelRead aborts receiving on this stream.  See
+	// [quic.ReceiveStream.CancelRead] for more details.
 	CancelRead(code quic.StreamErrorCode)
 }
+
+// type check
+var _ quicStream = (*quic.Stream)(nil)
 
 // newDoQ returns the DNS-over-QUIC Upstream.
 func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
@@ -406,33 +419,30 @@ func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
 
 // readMsg reads the incoming DNS message from the QUIC stream.
 func (p *dnsOverQUIC) readMsg(stream quicStream) (m *dns.Msg, err error) {
+	defer func() { err = errors.Annotate(err, "from %s: %w", p.addr) }()
+
 	pool := p.getBytesPool()
 	bufPtr := pool.Get().(*[]byte)
-
 	defer pool.Put(bufPtr)
 
 	var lenBuf [2]byte
 	_, err = io.ReadFull(stream, lenBuf[:])
 	if err != nil {
-		return nil, fmt.Errorf("reading response length from %s: %w", p.addr, err)
+		return nil, fmt.Errorf("reading response length: %w", err)
 	}
 
-	msgLen := int(binary.BigEndian.Uint16(lenBuf[:]))
-	if msgLen == 0 {
-		return nil, fmt.Errorf("empty response from %s", p.addr)
-	} else if msgLen > dns.MaxMsgSize {
-		return nil, fmt.Errorf("response size %d exceeds max %d from %s", msgLen, dns.MaxMsgSize, p.addr)
+	msgLen := binary.BigEndian.Uint16(lenBuf[:])
+	err = validate.NotEmpty("response", msgLen)
+	if err != nil {
+		return nil, err
 	}
 
-	respBuf := *bufPtr
-	if cap(respBuf) < msgLen {
-		respBuf = make([]byte, msgLen)
-	}
-	respBuf = respBuf[:msgLen]
+	*bufPtr = slices.Grow(*bufPtr, int(msgLen))
+	respBuf := (*bufPtr)[:msgLen]
 
 	_, err = io.ReadFull(stream, respBuf)
 	if err != nil {
-		return nil, fmt.Errorf("reading response from %s: %w", p.addr, err)
+		return nil, err
 	}
 
 	stream.CancelRead(0)
@@ -443,7 +453,7 @@ func (p *dnsOverQUIC) readMsg(stream quicStream) (m *dns.Msg, err error) {
 	m = new(dns.Msg)
 	err = m.Unpack(respBuf)
 	if err != nil {
-		return nil, fmt.Errorf("unpacking response from %s: %w", p.addr, err)
+		return nil, fmt.Errorf("from %s: unpacking response: %w", p.addr, err)
 	}
 
 	return m, nil

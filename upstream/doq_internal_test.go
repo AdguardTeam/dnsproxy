@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpstreamDoQ(t *testing.T) {
+func TestDNSOverQUIC(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
 	srv := startDoQServer(t, tlsConf, 0)
@@ -77,7 +77,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	checkRaceCondition(u)
 }
 
-func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
+func TestDNSOverQUIC_Exchange_quicCloseConn(t *testing.T) {
 	// Use the same tlsConf for all servers to preserve the data necessary for
 	// 0-RTT connections.
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
@@ -129,7 +129,7 @@ func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
 	wg.Wait()
 }
 
-func TestUpstreamDoQ_serverRestart(t *testing.T) {
+func TestDNSOverQUIC_serverRestart(t *testing.T) {
 	t.Parallel()
 
 	// Use the same tlsConf for all servers to preserve the data necessary for
@@ -182,7 +182,7 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 	})
 }
 
-func TestUpstreamDoQ_0RTT(t *testing.T) {
+func TestDNSOverQUIC_0RTT(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
 	srv := startDoQServer(t, tlsConf, 0)
@@ -232,7 +232,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	require.True(t, conns[1].is0RTT())
 }
 
-func TestUpstreamDoQ_ReadMsg_partialRead(t *testing.T) {
+func TestDNSOverQUIC_ReadMsg_partialRead(t *testing.T) {
 	oldReq := createHostTestMessage("old.example")
 	oldResp := (&dns.Msg{}).SetReply(oldReq)
 	oldResp.Answer = []dns.RR{&dns.A{
@@ -290,8 +290,25 @@ func TestUpstreamDoQ_ReadMsg_partialRead(t *testing.T) {
 	copy(newBuf[2:], newPacked)
 
 	stream := &testQUICStream{
-		data:  newBuf,
-		chunk: 1,
+		onRead: func(p []byte) (n int, err error) {
+			if len(newBuf) == 0 {
+				return 0, io.EOF
+			}
+
+			n = 1
+			if n <= 0 || n > len(newBuf) {
+				n = len(newBuf)
+			}
+			n = min(n, len(p))
+
+			copy(p, newBuf[:n])
+			newBuf = newBuf[n:]
+
+			return n, nil
+		},
+		onCancelRead: func(code quic.StreamErrorCode) {
+			assert.Equal(t, quic.StreamErrorCode(0), code)
+		},
 	}
 
 	got, err := doq.readMsg(stream)
@@ -301,34 +318,29 @@ func TestUpstreamDoQ_ReadMsg_partialRead(t *testing.T) {
 	assert.Equal(t, dns.Fqdn("new.example"), got.Question[0].Name)
 
 	a := testutil.RequireTypeAssert[*dns.A](t, got.Answer[0])
+
 	assert.Equal(t, newAnsIP, a.A)
 }
 
+// testQUICStream is a mock implementation of the [quicStream] interface for
+// tests.
 type testQUICStream struct {
-	data  []byte
-	chunk int
+	onRead       func(p []byte) (n int, err error)
+	onCancelRead func(code quic.StreamErrorCode)
 }
 
+// type check
+var _ quicStream = (*testQUICStream)(nil)
+
+// Read implements the [quicStream] interface for *testQUICStream.
 func (s *testQUICStream) Read(p []byte) (n int, err error) {
-	if len(s.data) == 0 {
-		return 0, io.EOF
-	}
-
-	n = s.chunk
-	if n <= 0 || n > len(s.data) {
-		n = len(s.data)
-	}
-	if n > len(p) {
-		n = len(p)
-	}
-
-	copy(p, s.data[:n])
-	s.data = s.data[n:]
-
-	return n, nil
+	return s.onRead(p)
 }
 
-func (s *testQUICStream) CancelRead(_ quic.StreamErrorCode) {}
+// CancelRead implements the [quicStream] interface for *testQUICStream.
+func (s *testQUICStream) CancelRead(code quic.StreamErrorCode) {
+	s.onCancelRead(code)
+}
 
 // testDoHServer is an instance of a test DNS-over-QUIC server.
 type testDoQServer struct {

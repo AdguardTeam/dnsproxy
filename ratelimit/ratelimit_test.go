@@ -20,7 +20,7 @@ const (
 // testLogger is a test logger used in tests.
 var testLogger = slogutil.NewDiscardLogger()
 
-func TestHandler_ServeDNS(t *testing.T) {
+func TestMiddleware_Wrap(t *testing.T) {
 	t.Parallel()
 
 	testAddr := netip.MustParseAddrPort("192.0.2.0:53")
@@ -81,7 +81,8 @@ func TestHandler_ServeDNS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			wrapped := ratelimit.NewRatelimitedHandler(mock, tc.config)
+			mw := ratelimit.NewMiddleware(tc.config)
+			wrapped := mw.Wrap(mock)
 
 			err := wrapped.ServeDNS(nil, tc.dctx)
 			require.NoError(t, err, "first request should not be ratelimited")
@@ -92,7 +93,7 @@ func TestHandler_ServeDNS(t *testing.T) {
 	}
 }
 
-func TestHandler_ServeDNS_allowlist(t *testing.T) {
+func TestMiddleware_Wrap_allowlist(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -116,7 +117,8 @@ func TestHandler_ServeDNS_allowlist(t *testing.T) {
 			return nil
 		},
 	}
-	handler := ratelimit.NewRatelimitedHandler(mock, conf)
+	mw := ratelimit.NewMiddleware(conf)
+	handler := mw.Wrap(mock)
 
 	t.Run("block", func(t *testing.T) {
 		dctx := &proxy.DNSContext{
@@ -146,7 +148,7 @@ func TestHandler_ServeDNS_allowlist(t *testing.T) {
 	})
 }
 
-// TestHandler is a mock request handler implementation to simplify testing.
+// TestHandler is a mock request middleware implementation to simplify testing.
 //
 // TODO(d.kolyshev):  Move to internal/dnsproxytest.
 type TestHandler struct {

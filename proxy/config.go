@@ -60,6 +60,9 @@ type Config struct {
 	// no-op implementation is used, if it's nil.
 	BeforeRequestHandler BeforeRequestHandler
 
+	// Middleware is an optional custom middleware for DNS requests.
+	Middleware Middleware
+
 	// RequestHandler is an optional custom handler for DNS requests.  It's used
 	// instead of DefaultHandler if set.
 	RequestHandler Handler

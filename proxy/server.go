@@ -108,8 +108,7 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 		return nil
 	}
 
-	// TODO(d.kolyshev):  Use middlewares.
-	err = p.requestHandler.ServeDNS(p, d)
+	err = p.middleware.Wrap(p.requestHandler).ServeDNS(p, d)
 	if errors.Is(err, ErrDrop) {
 		// Don't reply to dropped clients.
 		return nil

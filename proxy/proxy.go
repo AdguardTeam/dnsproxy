@@ -95,6 +95,9 @@ type Proxy struct {
 	// beforeRequestHandler handles the request's context before it is resolved.
 	beforeRequestHandler BeforeRequestHandler
 
+	// middleware is a middleware that wraps requestHandler.  It is never nil.
+	middleware Middleware
+
 	// requestHandler handles the DNS request after it's been processed by the
 	// beforeRequestHandler.  It is never nil.
 	requestHandler Handler
@@ -228,6 +231,7 @@ func New(c *Config) (p *Proxy, err error) {
 			c.BeforeRequestHandler,
 			noopRequestHandler{},
 		),
+		middleware:       cmp.Or[Middleware](c.Middleware, MiddlewareFunc(PassThrough)),
 		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
 		rttLock:          sync.Mutex{},

@@ -35,10 +35,10 @@ type Config struct {
 	SubnetLenIPv6 uint
 }
 
-// handler implements [proxy.RequestHandler] with rate limiting functionality.
+// handler implements [proxy.Handler] with rate limiting functionality.
 type handler struct {
 	buckets *gocache.Cache
-	handler proxy.RequestHandler
+	handler proxy.Handler
 	logger  *slog.Logger
 
 	// mu protects buckets.
@@ -50,11 +50,11 @@ type handler struct {
 	subnetLenIPv6  uint
 }
 
-// NewRatelimitedRequestHandler wraps a RequestHandler with rate limiting
-// functionality.  h must not be nil, c must be valid.
+// NewRatelimitedHandler wraps h with rate limiting functionality.  h must not
+// be nil, c must be valid.
 //
 // TODO(d.kolyshev): !! Use.
-func NewRatelimitedRequestHandler(h proxy.RequestHandler, c *Config) (wrapped proxy.RequestHandler) {
+func NewRatelimitedHandler(h proxy.Handler, c *Config) (wrapped proxy.Handler) {
 	if c.Ratelimit <= 0 {
 		return h
 	}
@@ -71,19 +71,19 @@ func NewRatelimitedRequestHandler(h proxy.RequestHandler, c *Config) (wrapped pr
 }
 
 // type check
-var _ proxy.RequestHandler = (*handler)(nil)
+var _ proxy.Handler = (*handler)(nil)
 
-// Handle implements the [proxy.RequestHandler] interface for *handler.  If the
+// ServeDNS implements the [proxy.Handler] interface for *handler.  If the
 // client is rate limited, it returns [proxy.ErrDrop] to signal that no response
 // should be sent.
-func (h *handler) Handle(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
+func (h *handler) ServeDNS(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 	if dctx.Proto == proxy.ProtoUDP && h.isRatelimited(dctx.Addr.Addr()) {
 		h.logger.Debug("ratelimited based on ip only", "addr", dctx.Addr)
 
 		return proxy.ErrDrop
 	}
 
-	return h.handler.Handle(p, dctx)
+	return h.handler.ServeDNS(p, dctx)
 }
 
 // limiterForIP returns a rate limiter for the specified IP address.

@@ -58,7 +58,7 @@ const (
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
 
-// ErrDrop is returned by a RequestHandler to signal that the proxy should not
+// ErrDrop is returned by a Handler to signal that the proxy should not
 // send any response to the client.
 const ErrDrop = errors.Error("drop response")
 
@@ -97,7 +97,7 @@ type Proxy struct {
 
 	// requestHandler handles the DNS request after it's been processed by the
 	// beforeRequestHandler.  It is never nil.
-	requestHandler RequestHandler
+	requestHandler Handler
 
 	// dnsCryptServer serves DNSCrypt queries.
 	dnsCryptServer *dnscrypt.Server
@@ -228,7 +228,7 @@ func New(c *Config) (p *Proxy, err error) {
 			c.BeforeRequestHandler,
 			noopRequestHandler{},
 		),
-		requestHandler:   cmp.Or[RequestHandler](c.RequestHandler, DefaultRequestHandler{}),
+		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
 		rttLock:          sync.Mutex{},
 		RWMutex:          sync.RWMutex{},

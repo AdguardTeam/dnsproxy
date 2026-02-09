@@ -20,7 +20,7 @@ const (
 // testLogger is a test logger used in tests.
 var testLogger = slogutil.NewDiscardLogger()
 
-func TestHandler_Handle(t *testing.T) {
+func TestHandler_ServeDNS(t *testing.T) {
 	t.Parallel()
 
 	testAddr := netip.MustParseAddrPort("192.0.2.0:53")
@@ -71,7 +71,7 @@ func TestHandler_Handle(t *testing.T) {
 		want: proxy.ErrDrop,
 	}}
 
-	mock := &TestRequestHandler{
+	mock := &TestHandler{
 		OnHandle: func(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 			return nil
 		},
@@ -81,18 +81,18 @@ func TestHandler_Handle(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			wrapped := ratelimit.NewRatelimitedRequestHandler(mock, tc.config)
+			wrapped := ratelimit.NewRatelimitedHandler(mock, tc.config)
 
-			err := wrapped.Handle(nil, tc.dctx)
+			err := wrapped.ServeDNS(nil, tc.dctx)
 			require.NoError(t, err, "first request should not be ratelimited")
 
-			err = wrapped.Handle(nil, tc.dctx)
+			err = wrapped.ServeDNS(nil, tc.dctx)
 			assert.Equal(t, tc.want, err)
 		})
 	}
 }
 
-func TestHandler_Handle_allowlist(t *testing.T) {
+func TestHandler_ServeDNS_allowlist(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -111,12 +111,12 @@ func TestHandler_Handle_allowlist(t *testing.T) {
 		},
 	}
 
-	mock := &TestRequestHandler{
+	mock := &TestHandler{
 		OnHandle: func(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 			return nil
 		},
 	}
-	handler := ratelimit.NewRatelimitedRequestHandler(mock, conf)
+	handler := ratelimit.NewRatelimitedHandler(mock, conf)
 
 	t.Run("block", func(t *testing.T) {
 		dctx := &proxy.DNSContext{
@@ -124,10 +124,10 @@ func TestHandler_Handle_allowlist(t *testing.T) {
 			Proto: proxy.ProtoUDP,
 		}
 
-		err := handler.Handle(nil, dctx)
+		err := handler.ServeDNS(nil, dctx)
 		require.NoError(t, err, "first request should not be ratelimited")
 
-		err = handler.Handle(nil, dctx)
+		err = handler.ServeDNS(nil, dctx)
 		require.Error(t, err, "second request should be ratelimited")
 		assert.Equal(t, proxy.ErrDrop, err)
 	})
@@ -138,26 +138,25 @@ func TestHandler_Handle_allowlist(t *testing.T) {
 			Proto: proxy.ProtoUDP,
 		}
 
-		err := handler.Handle(nil, dctx)
+		err := handler.ServeDNS(nil, dctx)
 		require.NoError(t, err, "first request should not be ratelimited")
 
-		err = handler.Handle(nil, dctx)
+		err = handler.ServeDNS(nil, dctx)
 		require.NoError(t, err, "second request should not be ratelimited due to whitelist")
 	})
 }
 
-// TestRequestHandler is a mock request handler implementation to simplify
-// testing.
+// TestHandler is a mock request handler implementation to simplify testing.
 //
 // TODO(d.kolyshev):  Move to internal/dnsproxytest.
-type TestRequestHandler struct {
+type TestHandler struct {
 	OnHandle func(p *proxy.Proxy, dctx *proxy.DNSContext) (err error)
 }
 
 // type check
-var _ proxy.RequestHandler = (*TestRequestHandler)(nil)
+var _ proxy.Handler = (*TestHandler)(nil)
 
-// Handle implements the [RequestHandler] interface for *TestRequestHandler.
-func (h *TestRequestHandler) Handle(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
+// ServeDNS implements the [Handler] interface for *TestHandler.
+func (h *TestHandler) ServeDNS(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 	return h.OnHandle(p, dctx)
 }

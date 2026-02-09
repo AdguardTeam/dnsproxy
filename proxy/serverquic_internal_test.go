@@ -84,7 +84,7 @@ func TestQuicProxy(t *testing.T) {
 }
 
 func TestQuicProxy_largePackets(t *testing.T) {
-	reqHandler := &TestRequestHandler{
+	reqHandler := &TestHandler{
 		OnHandle: func(_ *Proxy, d *DNSContext) (err error) {
 			d.Res = newTestResponse(d)
 

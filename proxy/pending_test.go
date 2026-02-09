@@ -79,7 +79,7 @@ func TestPendingRequests(t *testing.T) {
 	workloadWG := &sync.WaitGroup{}
 	workloadWG.Add(reqsNum)
 
-	reqHandler := &proxy.TestRequestHandler{
+	reqHandler := &proxy.TestHandler{
 		OnHandle: func(p *proxy.Proxy, d *proxy.DNSContext) (err error) {
 			workloadWG.Done()
 

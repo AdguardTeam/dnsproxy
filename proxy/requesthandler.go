@@ -1,22 +1,20 @@
 package proxy
 
-// RequestHandler is an interface for handling DNS requests.
-//
-// TODO(d.kolyshev): Rename.
-type RequestHandler interface {
-	// Handle resolves the DNS request within *DNSContext.
+// Handler is an interface for handling DNS requests.
+type Handler interface {
+	// ServeDNS resolves the DNS request within *DNSContext.
 	//
 	// TODO(e.burkov):  Use the [context.Context] instead of [*DNSContext].
-	Handle(p *Proxy, dctx *DNSContext) (err error)
+	ServeDNS(p *Proxy, dctx *DNSContext) (err error)
 }
 
-// DefaultRequestHandler implements [RequestHandler] by calling [Proxy.Resolve].
-type DefaultRequestHandler struct{}
+// DefaultHandler implements [Handler] by calling [Proxy.Resolve].
+type DefaultHandler struct{}
 
 // type check
-var _ RequestHandler = DefaultRequestHandler{}
+var _ Handler = DefaultHandler{}
 
-// Handle implements the [RequestHandler] interface for DefaultRequestHandler.
-func (DefaultRequestHandler) Handle(p *Proxy, proxyCtx *DNSContext) (err error) {
+// ServeDNS implements the [Handler] interface for DefaultHandler.
+func (DefaultHandler) ServeDNS(p *Proxy, proxyCtx *DNSContext) (err error) {
 	return p.Resolve(proxyCtx)
 }

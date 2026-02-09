@@ -25,7 +25,7 @@ type DefaultConfig struct {
 	HaltIPv6 bool
 }
 
-// Default implements the default configurable [proxy.RequestHandler].
+// Default implements the default configurable [proxy.Handler].
 type Default struct {
 	messages     messageConstructor
 	hosts        hostsfile.Storage
@@ -51,13 +51,12 @@ func NewDefault(conf *DefaultConfig) (d *Default) {
 }
 
 // type check
-var _ proxy.RequestHandler = (*Default)(nil)
+var _ proxy.Handler = (*Default)(nil)
 
-// Handle implements the [proxy.RequestHandler] interface for *Default.  It
-// resolves the DNS request within proxyCtx.  It only calls
-// [proxy.Proxy.Resolve] if the request isn't handled by any of the internal
-// handlers.
-func (h *Default) Handle(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
+// ServeDNS implements the [proxy.Handler] interface for *Default.  It resolves
+// the DNS request within proxyCtx.  It only calls [proxy.Proxy.Resolve] if the
+// request isn't handled by any of the internal handlers.
+func (h *Default) ServeDNS(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
 	ctx := context.TODO()
 
 	h.logger.DebugContext(ctx, "handling request", "req", &proxyCtx.Req.Question[0])

@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"runtime"
-	"slices"
 	"sync"
 	"time"
 
@@ -421,10 +420,6 @@ func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
 func (p *dnsOverQUIC) readMsg(stream quicStream) (m *dns.Msg, err error) {
 	defer func() { err = errors.Annotate(err, "from %s: %w", p.addr) }()
 
-	pool := p.getBytesPool()
-	bufPtr := pool.Get().(*[]byte)
-	defer pool.Put(bufPtr)
-
 	var lenBuf [2]byte
 	_, err = io.ReadFull(stream, lenBuf[:])
 	if err != nil {
@@ -432,12 +427,16 @@ func (p *dnsOverQUIC) readMsg(stream quicStream) (m *dns.Msg, err error) {
 	}
 
 	msgLen := binary.BigEndian.Uint16(lenBuf[:])
-	err = validate.NotEmpty("response", msgLen)
+	err = validate.Positive("response length", msgLen)
 	if err != nil {
+		// Don't wrap the error, since it's informative enough as is.
 		return nil, err
 	}
 
-	*bufPtr = slices.Grow(*bufPtr, int(msgLen))
+	pool := p.getBytesPool()
+	bufPtr := pool.Get().(*[]byte)
+	defer pool.Put(bufPtr)
+
 	respBuf := (*bufPtr)[:msgLen]
 
 	_, err = io.ReadFull(stream, respBuf)
@@ -450,7 +449,7 @@ func (p *dnsOverQUIC) readMsg(stream quicStream) (m *dns.Msg, err error) {
 	// All DNS messages (queries and responses) sent over DoQ connections MUST
 	// be encoded as a 2-octet length field followed by the message content as
 	// specified in [RFC1035].
-	m = new(dns.Msg)
+	m = &dns.Msg{}
 	err = m.Unpack(respBuf)
 	if err != nil {
 		return nil, fmt.Errorf("from %s: unpacking response: %w", p.addr, err)

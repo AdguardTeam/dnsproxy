@@ -295,11 +295,7 @@ func TestDNSOverQUIC_ReadMsg_partialRead(t *testing.T) {
 				return 0, io.EOF
 			}
 
-			n = 1
-			if n <= 0 || n > len(newBuf) {
-				n = len(newBuf)
-			}
-			n = min(n, len(p))
+			n = min(1, len(newBuf), len(p))
 
 			copy(p, newBuf[:n])
 			newBuf = newBuf[n:]

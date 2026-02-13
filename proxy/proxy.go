@@ -94,7 +94,7 @@ type Proxy struct {
 
 	// requestHandler handles the DNS request after it's been processed by the
 	// beforeRequestHandler.  It is never nil.
-	requestHandler RequestHandler
+	requestHandler Handler
 
 	// dnsCryptServer serves DNSCrypt queries.
 	dnsCryptServer *dnscrypt.Server
@@ -231,7 +231,7 @@ func New(c *Config) (p *Proxy, err error) {
 			c.BeforeRequestHandler,
 			noopRequestHandler{},
 		),
-		requestHandler:   cmp.Or[RequestHandler](c.RequestHandler, DefaultRequestHandler{}),
+		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
 		rttLock:          sync.Mutex{},
 		ratelimitLock:    sync.Mutex{},

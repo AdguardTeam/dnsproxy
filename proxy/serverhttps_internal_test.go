@@ -76,7 +76,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 	doRequest := func(t *testing.T, addr, expectedClientIP netip.Addr) {
 		var gotAddr netip.Addr
-		reqHandler := &TestRequestHandler{
+		reqHandler := &TestHandler{
 			OnHandle: func(p *Proxy, d *DNSContext) (err error) {
 				gotAddr = d.Addr.Addr()
 

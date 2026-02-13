@@ -61,8 +61,9 @@ type Config struct {
 	BeforeRequestHandler BeforeRequestHandler
 
 	// RequestHandler is an optional custom handler for DNS requests.  It's used
-	// instead of DefaultRequestHandler if set.
-	RequestHandler RequestHandler
+	// instead of DefaultHandler if set.  In case of [ErrDrop] error returned
+	// from this handler, the proxy will not send any response to the client.
+	RequestHandler Handler
 
 	// UpstreamConfig is a general set of DNS servers to forward requests to.
 	UpstreamConfig *UpstreamConfig

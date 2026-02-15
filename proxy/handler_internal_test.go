@@ -17,21 +17,13 @@ func TestFilteringHandler(t *testing.T) {
 	m := &sync.RWMutex{}
 	blockResponse := false
 
-	// Prepare the proxy server
-	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		RequestHandler: func(p *Proxy, d *DNSContext) error {
+	reqHandler := &TestHandler{
+		OnHandle: func(p *Proxy, d *DNSContext) (err error) {
 			m.Lock()
 			defer m.Unlock()
 
 			if !blockResponse {
-				// Use the default Resolve method if response is not blocked
+				// Use the default Resolve method if response is not blocked.
 				return p.Resolve(d)
 			}
 
@@ -41,8 +33,21 @@ func TestFilteringHandler(t *testing.T) {
 
 			// Set the response right away
 			d.Res = &resp
+
 			return nil
 		},
+	}
+
+	// Prepare the proxy server.
+	dnsProxy := mustNew(t, &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
+		TrustedProxies:         defaultTrustedProxies,
+		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		RequestHandler:         reqHandler,
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)

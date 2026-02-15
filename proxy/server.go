@@ -89,9 +89,9 @@ func (p *Proxy) serveListeners() {
 }
 
 // handleDNSRequest processes the context.  The only error it returns is the one
-// from the [RequestHandler], or [Resolve] if the [RequestHandler] is not set.
-// d is left without a response as the documentation to [BeforeRequestHandler]
-// says, and if it's ratelimited.
+// from the [Handler], or [Resolve] if the [Handler] is not set.  d is left
+// without a response as the documentation to [BeforeRequestHandler] says, and
+// if it's ratelimited.
 func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 	p.logDNSMessage(d.Req)
 
@@ -119,13 +119,10 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 		return nil
 	}
 
+	// TODO(d.kolyshev):  Move to DefaultHandler.
 	d.Res = p.validateRequest(d)
 	if d.Res == nil {
-		if p.RequestHandler != nil {
-			err = errors.Annotate(p.RequestHandler(p, d), "using request handler: %w")
-		} else {
-			err = errors.Annotate(p.Resolve(d), "using default request handler: %w")
-		}
+		err = p.requestHandler.ServeDNS(p, d)
 	}
 
 	p.logDNSMessage(d.Res)

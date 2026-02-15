@@ -5,6 +5,9 @@
     'key': 'DNSPROXY'
     'name': 'dnsproxy - Build and run tests'
 'variables':
+    # This variable is used to override Docker caching, for example to rerun a
+    # flaky test suite.
+    'cacheBuster': '0'
     'dockerFpm': 'alanfranz/fpm-within-docker:ubuntu-bionic'
     # When there is a patch release of Go available, set this property to an
     # exact patch version as opposed to a minor one to make sure that this exact
@@ -15,48 +18,13 @@
     'name': 'dnsproxy'
 
 'stages':
-# TODO(e.burkov):  Add separate lint stage for texts.
-  - 'Lint':
-      'manual': false
-      'final': false
-      'jobs':
-        - 'Lint'
   - 'Test':
       'manual': false
       'final': false
       'jobs':
         - 'Test'
 
-'Lint':
-    'docker':
-        'image': '${bamboo.dockerGo}'
-        'volumes':
-            '${system.GO_CACHE_DIR}': '${bamboo.cacheGo}'
-            '${system.GO_PKG_CACHE_DIR}': '${bamboo.cacheGoPkg}'
-    'key': 'LINT'
-    'other':
-        'clean-working-dir': true
-    'requirements':
-      - 'adg-docker': true
-    'tasks':
-      - 'checkout':
-             'force-clean-build': true
-      - 'script':
-              'interpreter': 'SHELL'
-              'scripts':
-                - |
-                  #!/bin/sh
-
-                  set -e -f -u -x
-
-                  make VERBOSE=1 GOMAXPROCS=1 go-tools go-lint
-
 'Test':
-    'docker':
-        'image': '${bamboo.dockerGo}'
-        'volumes':
-            '${system.GO_CACHE_DIR}': '${bamboo.cacheGo}'
-            '${system.GO_PKG_CACHE_DIR}': '${bamboo.cacheGoPkg}'
     'final-tasks':
       - 'test-parser':
           # The default pattern, '**/test-reports/*.xml', works, so don't set
@@ -67,8 +35,6 @@
     'key': 'TEST'
     'other':
         'clean-working-dir': true
-    'requirements':
-      - 'adg-docker': true
     'tasks':
       - 'checkout':
             'force-clean-build': true
@@ -82,18 +48,21 @@
 
                 set -e -f -u -x
 
-                make \
-                    GOMAXPROCS=1 \
-                    VERBOSE=1 \
-                    go-deps go-tools
+                docker info
 
-                make \
-                    TEST_REPORTS_DIR="./test-reports/" \
-                    VERBOSE=1 \
-                    go-test \
-                    ;
+                docker build \
+                    --build-arg "BASE_IMAGE=${bamboo_dockerGo}" \
+                    --build-arg "CACHE_BUSTER=${bamboo_cacheBuster}" \
+                    --output '.' \
+                    --progress 'plain' \
+                    --target 'tester-exporter' \
+                    -f ./docker/ci.Dockerfile \
+                    .
 
-                exit "$(cat ./test-reports/test-exit-code.txt)"
+                  exit_code="$(cat ./test-reports/test-exit-code.txt)"
+                  readonly exit_code
+
+                  exit "$exit_code"
 
 'branches':
     'create': 'for-pull-request'

@@ -75,26 +75,29 @@ func TestProxy_trustedProxies(t *testing.T) {
 	)
 
 	doRequest := func(t *testing.T, addr, expectedClientIP netip.Addr) {
+		var gotAddr netip.Addr
+		reqHandler := &TestHandler{
+			OnHandle: func(p *Proxy, d *DNSContext) (err error) {
+				gotAddr = d.Addr.Addr()
+
+				return p.Resolve(d)
+			},
+		}
+
 		// Prepare the proxy server.
 		tlsConf, caPem := newTLSConfig(t)
 		dnsProxy := mustNew(t, &Config{
 			Logger:                 slogutil.NewDiscardLogger(),
+			UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+			TrustedProxies:         defaultTrustedProxies,
+			RequestHandler:         reqHandler,
+			TLSConfig:              tlsConf,
 			TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 			HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 			QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-			TLSConfig:              tlsConf,
-			UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-			TrustedProxies:         defaultTrustedProxies,
 			RatelimitSubnetLenIPv4: 24,
 			RatelimitSubnetLenIPv6: 64,
 		})
-
-		var gotAddr netip.Addr
-		dnsProxy.RequestHandler = func(_ *Proxy, d *DNSContext) (err error) {
-			gotAddr = d.Addr.Addr()
-
-			return dnsProxy.Resolve(d)
-		}
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)
 

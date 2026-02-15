@@ -79,6 +79,14 @@ func TestPendingRequests(t *testing.T) {
 	workloadWG := &sync.WaitGroup{}
 	workloadWG.Add(reqsNum)
 
+	reqHandler := &proxy.TestHandler{
+		OnHandle: func(p *proxy.Proxy, d *proxy.DNSContext) (err error) {
+			workloadWG.Done()
+
+			return p.Resolve(d)
+		},
+	}
+
 	once := &sync.Once{}
 	u := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -98,25 +106,21 @@ func TestPendingRequests(t *testing.T) {
 	}
 
 	p, err := proxy.New(&proxy.Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		UpstreamConfig:         &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-		TrustedProxies:         testTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		Ratelimit:              0,
-		CacheEnabled:           true,
-		CacheSizeBytes:         testCacheSize,
-		EnableEDNSClientSubnet: true,
+		Logger:         slogutil.NewDiscardLogger(),
+		UpstreamConfig: &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+		TrustedProxies: testTrustedProxies,
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: true,
 		},
-		RequestHandler: func(prx *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
-			workloadWG.Done()
-
-			return prx.Resolve(dctx)
-		},
+		RequestHandler:         reqHandler,
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
+		Ratelimit:              0,
+		CacheSizeBytes:         testCacheSize,
+		CacheEnabled:           true,
+		EnableEDNSClientSubnet: true,
 	})
 	require.NoError(t, err)
 

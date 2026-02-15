@@ -1,4 +1,4 @@
-package handler
+package middleware
 
 import (
 	"net"
@@ -52,23 +52,23 @@ func TestDefault_haltAAAA(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		t.Parallel()
 
-		hdlr := NewDefault(&DefaultConfig{
-			Logger:             slogutil.NewDiscardLogger(),
+		mw := New(&Config{
+			Logger:             testLogger,
 			MessageConstructor: messages,
 			HaltIPv6:           false,
 		})
 
 		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
 
-		assert.Nil(t, hdlr.haltAAAA(ctx, reqA))
-		assert.Nil(t, hdlr.haltAAAA(ctx, reqAAAA))
+		assert.Nil(t, mw.haltAAAA(ctx, reqA))
+		assert.Nil(t, mw.haltAAAA(ctx, reqAAAA))
 	})
 
 	t.Run("enabled", func(t *testing.T) {
 		t.Parallel()
 
-		hdlr := NewDefault(&DefaultConfig{
-			Logger:             slogutil.NewDiscardLogger(),
+		hdlr := New(&Config{
+			Logger:             testLogger,
 			MessageConstructor: messages,
 			HaltIPv6:           true,
 		})
@@ -94,9 +94,9 @@ func TestDefault_resolveFromHosts(t *testing.T) {
 	strg, err := ReadHosts(ctx, testLogger, []string{absPath, relPath})
 	require.NoError(t, err)
 
-	hdlr := NewDefault(&DefaultConfig{
+	hdlr := New(&Config{
 		MessageConstructor: messages,
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		HostsFiles:         strg,
 		HaltIPv6:           true,
 	})

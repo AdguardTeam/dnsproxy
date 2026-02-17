@@ -46,6 +46,12 @@ type cache struct {
 	// optimisticMaxAge is the maximum time entries remain in the cache when
 	// cache is optimistic.
 	optimisticMaxAge time.Duration
+
+	// prefetchManager is the manager for active prefetching.
+	prefetchManager *PrefetchQueueManager
+
+	// prefetchEnabled defines if the active prefetching is enabled.
+	prefetchEnabled bool
 }
 
 // cacheItem is a single cache entry.  It's a helper type to aggregate the
@@ -123,12 +129,24 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 	now := time.Now()
 	var ttl uint32
 	if expired = now.After(expire); expired {
-		optimisticExpire := expire.Add(c.optimisticMaxAge)
-		if !c.optimistic || now.After(optimisticExpire) {
+		// Check if we should return the expired item.
+		shouldReturn := false
+		if c.prefetchEnabled || c.optimistic {
+			optimisticExpire := expire.Add(c.optimisticMaxAge)
+			if !now.After(optimisticExpire) {
+				shouldReturn = true
+			}
+		}
+
+		if !shouldReturn {
 			return nil, expired
 		}
 
 		ttl = uint32(c.optimisticTTL.Seconds())
+
+		if c.prefetchEnabled {
+			expired = false
+		}
 	} else {
 		ttl = uint32(expire.Unix() - now.Unix())
 	}
@@ -158,8 +176,9 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 	filterMsg(res, m, req.AuthenticatedData, doBit, ttl)
 
 	return &cacheItem{
-		m: res,
-		u: string(b.Next(b.Len())),
+		m:   res,
+		u:   string(b.Next(b.Len())),
+		ttl: ttl,
 	}, expired
 }
 
@@ -180,6 +199,15 @@ func (p *Proxy) initCache() {
 		withECS:          p.EnableEDNSClientSubnet,
 		optimistic:       p.CacheOptimistic,
 	})
+
+	if p.Config.Prefetch != nil && p.Config.Prefetch.Enabled {
+		p.logger.Info("prefetch enabled")
+		pm := NewPrefetchQueueManager(p, p.Config.Prefetch)
+		p.cache.prefetchManager = pm
+		p.cache.prefetchEnabled = true
+		pm.Start()
+	}
+
 	p.shortFlighter = newOptimisticResolver(p)
 }
 
@@ -327,7 +355,7 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 }
 
 // set stores response and upstream in the cache.  l must not be nil.
-func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
+func (c *cache) set(m *dns.Msg, u upstream.Upstream, skipPrefetch bool, l *slog.Logger) {
 	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
@@ -340,12 +368,24 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
 	defer c.itemsLock.Unlock()
 
 	c.items.Set(key, packed)
+
+	// Add to prefetch queue if enabled.
+	if !skipPrefetch && c.prefetchEnabled && c.prefetchManager != nil {
+		for _, q := range m.Question {
+			if item.ttl > 0 {
+				if c.prefetchManager.CheckThreshold(q.Name, q.Qtype, nil) {
+					expireTime := time.Now().Add(time.Duration(item.ttl) * time.Second)
+					c.prefetchManager.Add(q.Name, q.Qtype, nil, nil, expireTime)
+				}
+			}
+		}
+	}
 }
 
 // setWithSubnet stores response and upstream with subnet in the cache.  The
 // given subnet mask and IP address are used to calculate the cache key.  l must
 // not be nil.
-func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet, l *slog.Logger) {
+func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet, skipPrefetch bool, l *slog.Logger) {
 	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
@@ -359,6 +399,18 @@ func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet
 	defer c.itemsWithSubnetLock.Unlock()
 
 	c.itemsWithSubnet.Set(key, packed)
+
+	// Add to prefetch queue if enabled.
+	if !skipPrefetch && c.prefetchEnabled && c.prefetchManager != nil {
+		for _, q := range m.Question {
+			if item.ttl > 0 {
+				if c.prefetchManager.CheckThreshold(q.Name, q.Qtype, subnet) {
+					expireTime := time.Now().Add(time.Duration(item.ttl) * time.Second)
+					c.prefetchManager.Add(q.Name, q.Qtype, subnet, nil, expireTime)
+				}
+			}
+		}
+	}
 }
 
 // clearItems empties the simple cache.

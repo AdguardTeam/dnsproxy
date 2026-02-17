@@ -116,6 +116,10 @@ func runProxy(ctx context.Context, l *slog.Logger, conf *configuration) (err err
 		return fmt.Errorf("starting dnsproxy: %w", err)
 	}
 
+	if conf.APIPort > 0 {
+		runAPI(ctx, l, conf.APIPort, dnsProxy)
+	}
+
 	// TODO(e.burkov):  Use [service.SignalHandler].
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)

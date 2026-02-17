@@ -490,3 +490,15 @@ For example:
 This configuration will only allow DoH queries that contain an `Authorization` header containing the BasicAuth credentials for user `user` with password `p4ssw0rd`.
 
 Add `-p 0` if you also want to disable plain-DNS handling and make `dnsproxy` only serve DoH with Basic Auth checking.
+
+### Active Prefetching
+
+`dnsproxy` supports active prefetching of cached items. This feature allows the proxy to proactively refresh cached DNS records before they expire, ensuring that users always receive fresh data and reducing latency.
+
+To enable active prefetching, you need to use the configuration file (see `config.yaml.dist`).
+
+Key configuration options:
+- `enabled`: Enable or disable prefetching.
+- `batch_size`: Number of items to refresh in parallel (default: 10).
+- `check_interval`: Interval between checks for expiring items (default: 10s).
+- `refresh_before`: Time before expiration to trigger refresh (default: 5s).

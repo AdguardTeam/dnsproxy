@@ -416,6 +416,10 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 
 	p.started = false
 
+	if p.cache != nil && p.cache.prefetchManager != nil {
+		p.cache.prefetchManager.Stop()
+	}
+
 	p.logger.InfoContext(ctx, "stopped dns proxy server")
 
 	err = errors.Join(errs...)
@@ -722,7 +726,8 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 		}
 		defer func() { p.pendingRequests.done(ctx, dctx, err) }()
 
-		if p.replyFromCache(dctx) {
+		// Skip cache lookup for internal prefetch to ensure we get fresh data
+		if !dctx.IsInternalPrefetch && p.replyFromCache(dctx) {
 			// Complete the response from cache.
 			dctx.scrub()
 
@@ -819,4 +824,13 @@ func (dctx *DNSContext) processECS(cliIP net.IP, l *slog.Logger) {
 
 		l.Debug("setting ecs", "subnet", dctx.ReqECS)
 	}
+}
+
+// GetPrefetchStats returns the statistics of the prefetch manager.
+func (p *Proxy) GetPrefetchStats() *PrefetchStats {
+	if p.cache == nil || p.cache.prefetchManager == nil {
+		return nil
+	}
+
+	return p.cache.prefetchManager.Stats()
 }

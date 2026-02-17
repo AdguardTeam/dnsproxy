@@ -251,6 +251,9 @@ type Config struct {
 	// PreferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
 	// upstreams that use hostnames.
 	PreferIPv6 bool
+
+	// Prefetch is the configuration for active prefetching.
+	Prefetch *PrefetchConfig
 }
 
 // PendingRequestsConfig is the configuration for tracking identical requests.
@@ -259,10 +262,50 @@ type PendingRequestsConfig struct {
 	Enabled bool
 }
 
-// validateConfig verifies that the supplied configuration is valid and returns
-// an error if it's not.
-//
-// TODO(s.chzhen):  Use [validate.Interface] from golibs.
+// PrefetchConfig is the configuration for active prefetching.
+type PrefetchConfig struct {
+	// Enabled defines if the prefetch is enabled.
+	Enabled bool
+
+	// BatchSize is the number of items to process in one batch.
+	// Default is 10.
+	BatchSize int
+
+	// CheckInterval is the interval between prefetch checks.
+	// Default is 10s.
+	CheckInterval time.Duration
+
+	// RefreshBefore is the time before expiration to trigger refresh.
+	// Default is 5s.
+	RefreshBefore time.Duration
+
+	// MaxConcurrentRequests is the maximum number of concurrent prefetch requests.
+	// Default is 10.
+	MaxConcurrentRequests int
+
+	// Threshold is the minimum number of requests required to trigger prefetch.
+	// Default is 1.
+	Threshold int
+
+	// ThresholdWindow is the time window for tracking request counts.
+	// Default is 0 (no window, simple counter).
+	ThresholdWindow time.Duration
+
+	// MaxQueueSize is the maximum number of items in the prefetch queue.
+	// Default is 10000.
+	MaxQueueSize int
+
+	// RetentionTime is the fixed retention time in seconds.
+	// If 0, dynamic retention algorithm is used.
+	// Default is 0.
+	RetentionTime int
+
+	// DynamicRetentionMaxMultiplier is the maximum multiplier for dynamic retention.
+	// Only used when RetentionTime is 0.
+	// Default is 10.
+	DynamicRetentionMaxMultiplier int
+}
+
 func (p *Proxy) validateConfig() (err error) {
 	err = p.UpstreamConfig.validate()
 	if err != nil {

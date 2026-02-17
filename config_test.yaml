@@ -1,0 +1,17 @@
+prefetch:
+  enabled: true
+  threshold: 2              # 访问 2 次后预取
+  threshold_window: 1m      # 1 分钟统计窗口
+  max_concurrent_requests: 10
+  refresh_before: 5s
+  batch_size: 0           # 0 = 自动 (推荐)
+  check_interval: 10s     # 智能调度已启用,通常无需调整
+  retention_time: 0       # 0=Dynamic, >0=Fixed (seconds)
+  dynamic_retention_max_multiplier: 10
+upstream:
+  - 8.8.8.8
+listen-ports:
+  - 53
+api-port: 8989
+verbose: true
+cache: true

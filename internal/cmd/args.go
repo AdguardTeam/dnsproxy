@@ -27,6 +27,7 @@ const (
 	upstreamModeIdx
 	listenAddrsIdx
 	listenPortsIdx
+	httpListenPortsIdx
 	httpsListenPortsIdx
 	tlsListenPortsIdx
 	quicListenPortsIdx
@@ -149,6 +150,12 @@ var commandLineOptions = []*commandLineOption{
 		description: "Listening ports. Zero value disables TCP and UDP listeners.",
 		long:        "port",
 		short:       "p",
+		valueType:   "port",
+	},
+	httpListenPortsIdx: {
+		description: "Listening ports for DNS-over-HTTP.",
+		long:        "http-port",
+		short:       "i",
 		valueType:   "port",
 	},
 	httpsListenPortsIdx: {
@@ -424,6 +431,7 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		upstreamModeIdx:             &conf.UpstreamMode,
 		listenAddrsIdx:              &conf.ListenAddrs,
 		listenPortsIdx:              &conf.ListenPorts,
+		httpListenPortsIdx:          &conf.HTTPListenPorts,
 		httpsListenPortsIdx:         &conf.HTTPSListenPorts,
 		tlsListenPortsIdx:           &conf.TLSListenPorts,
 		quicListenPortsIdx:          &conf.QUICListenPorts,

@@ -10,6 +10,7 @@ it can work as a `DNS-over-HTTPS`, `DNS-over-TLS` or `DNS-over-QUIC` server.
 
 - [How to install](#how-to-install)
 - [How to build](#how-to-build)
+  - [OpenWRT](openwrt/README.md)
 - [Usage](#usage)
 - [Examples](#examples)
     - [Simple options](#simple-options)

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
-	"github.com/AdguardTeam/dnsproxy/internal/handler"
+	"github.com/AdguardTeam/dnsproxy/internal/middleware"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -39,13 +39,13 @@ func createProxyConfig(
 		return nil, err
 	}
 
-	hosts, err := handler.ReadHosts(ctx, l, hostsFiles)
+	hosts, err := middleware.ReadHosts(ctx, l, hostsFiles)
 	if err != nil {
 		return nil, fmt.Errorf("reading hosts files: %w", err)
 	}
 
-	reqHdlr := handler.NewDefault(&handler.DefaultConfig{
-		Logger: l.With(slogutil.KeyPrefix, "default_handler"),
+	preMw := middleware.New(&middleware.Config{
+		Logger: l.With(slogutil.KeyPrefix, "pre_handler_mw"),
 		// TODO(e.burkov):  Use the configured message constructor.
 		MessageConstructor: dnsmsg.DefaultMessageConstructor{},
 		HaltIPv6:           conf.IPv6Disabled,
@@ -81,7 +81,7 @@ func createProxyConfig(
 		MaxGoroutines:          conf.MaxGoRoutines,
 		UsePrivateRDNS:         conf.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		RequestHandler:         reqHdlr,
+		RequestHandler:         preMw.Wrap(proxy.DefaultHandler{}),
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: conf.PendingRequestsEnabled,
 		},

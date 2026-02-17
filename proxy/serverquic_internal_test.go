@@ -11,14 +11,16 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestQuicProxy(t *testing.T) {
+func TestProxy_quic(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
 
 	roots := x509.NewCertPool()
@@ -83,7 +85,7 @@ func TestQuicProxy(t *testing.T) {
 	})
 }
 
-func TestQuicProxy_largePackets(t *testing.T) {
+func TestProxy_quicLargePackets(t *testing.T) {
 	reqHandler := &TestHandler{
 		OnHandle: func(_ *Proxy, d *DNSContext) (err error) {
 			d.Res = newTestResponse(d)
@@ -139,6 +141,88 @@ func TestQuicProxy_largePackets(t *testing.T) {
 
 	resp := sendQUICMessage(t, msg, conn, DoQv1)
 	requireResponse(t, msg, resp)
+}
+
+func TestProxy_quicTruncatedRequest(t *testing.T) {
+	serverConfig, caPem := newTLSConfig(t)
+
+	conf := &Config{
+		Logger:                 slogutil.NewDiscardLogger(),
+		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TLSConfig:              serverConfig,
+		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies:         defaultTrustedProxies,
+		RatelimitSubnetLenIPv4: 24,
+		RatelimitSubnetLenIPv6: 64,
+		RequestHandler: &TestHandler{
+			OnHandle: func(p *Proxy, d *DNSContext) (_ error) {
+				panic(testutil.UnexpectedCall(p, d))
+			},
+		},
+	}
+
+	dnsProxy := mustNew(t, conf)
+
+	req := (&dns.Msg{
+		MsgHdr: dns.MsgHdr{
+			Id:               0,
+			RecursionDesired: true,
+		},
+		Question: []dns.Question{{
+			Name:   "example.org.",
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}},
+	}).SetEdns0(4096, false)
+
+	packed, err := req.Pack()
+	require.NoError(t, err)
+
+	fullBuf := proxyutil.AddPrefix(packed)
+
+	dnsProxy.bytesPool = syncutil.NewPool(func() (v *[]byte) {
+		b := make([]byte, 2+dns.MaxMsgSize)
+		copy(b, fullBuf)
+
+		return &b
+	})
+
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
+
+	addr := dnsProxy.Addr(ProtoQUIC)
+
+	roots := x509.NewCertPool()
+	require.True(t, roots.AppendCertsFromPEM(caPem))
+
+	tlsConfig := &tls.Config{
+		ServerName: tlsServerName,
+		RootCAs:    roots,
+		NextProtos: append([]string{NextProtoDQ}, compatProtoDQ...),
+	}
+
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+	conn, err := quic.DialAddrEarly(ctx, addr.String(), tlsConfig, nil)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, func() (err error) {
+		return conn.CloseWithError(DoQCodeNoError, "")
+	})
+
+	truncLen := len(packed) - len(packed)/2
+	require.Greater(t, truncLen, 0)
+
+	truncated := packed[:truncLen]
+	reqBuf := proxyutil.AddPrefix(truncated)
+	require.Greater(t, len(reqBuf), minDNSPacketSize)
+
+	stream, err := conn.OpenStreamSync(ctx)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, stream.Close)
+
+	n, err := stream.Write(reqBuf)
+	require.NoError(t, err)
+
+	assert.Greater(t, n, minDNSPacketSize)
 }
 
 // newTestResponse creates a test response for the specified request.

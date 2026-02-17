@@ -3,7 +3,9 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/validate"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -94,6 +97,23 @@ type dnsOverQUIC struct {
 	// timeout is the timeout for the upstream connection.
 	timeout time.Duration
 }
+
+// quicStream is the interface of QUIC stream used by readMsg to simplify
+// testing.
+//
+// Note, that this interface is implemented by [*quic.Stream].
+type quicStream interface {
+	// Read reads data from the stream.  If the stream was canceled, the error
+	// is a [quic.StreamError].
+	Read(p []byte) (n int, err error)
+
+	// CancelRead aborts receiving on this stream.  See
+	// [quic.ReceiveStream.CancelRead] for more details.
+	CancelRead(code quic.StreamErrorCode)
+}
+
+// type check
+var _ quicStream = (*quic.Stream)(nil)
 
 // newDoQ returns the DNS-over-QUIC Upstream.
 func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
@@ -397,16 +417,31 @@ func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
 }
 
 // readMsg reads the incoming DNS message from the QUIC stream.
-func (p *dnsOverQUIC) readMsg(stream *quic.Stream) (m *dns.Msg, err error) {
+func (p *dnsOverQUIC) readMsg(stream quicStream) (m *dns.Msg, err error) {
+	defer func() { err = errors.Annotate(err, "from %s: %w", p.addr) }()
+
+	var lenBuf [2]byte
+	_, err = io.ReadFull(stream, lenBuf[:])
+	if err != nil {
+		return nil, fmt.Errorf("reading response length: %w", err)
+	}
+
+	msgLen := binary.BigEndian.Uint16(lenBuf[:])
+	err = validate.Positive("response length", msgLen)
+	if err != nil {
+		// Don't wrap the error, since it's informative enough as is.
+		return nil, err
+	}
+
 	pool := p.getBytesPool()
 	bufPtr := pool.Get().(*[]byte)
-
 	defer pool.Put(bufPtr)
 
-	respBuf := *bufPtr
-	n, err := stream.Read(respBuf)
-	if err != nil && n == 0 {
-		return nil, fmt.Errorf("reading response from %s: %w", p.addr, err)
+	respBuf := (*bufPtr)[:msgLen]
+
+	_, err = io.ReadFull(stream, respBuf)
+	if err != nil {
+		return nil, err
 	}
 
 	stream.CancelRead(0)
@@ -414,12 +449,10 @@ func (p *dnsOverQUIC) readMsg(stream *quic.Stream) (m *dns.Msg, err error) {
 	// All DNS messages (queries and responses) sent over DoQ connections MUST
 	// be encoded as a 2-octet length field followed by the message content as
 	// specified in [RFC1035].
-	// IMPORTANT: Note, that we ignore this prefix here as this implementation
-	// does not support receiving multiple messages over a single connection.
-	m = new(dns.Msg)
-	err = m.Unpack(respBuf[2:])
+	m = &dns.Msg{}
+	err = m.Unpack(respBuf)
 	if err != nil {
-		return nil, fmt.Errorf("unpacking response from %s: %w", p.addr, err)
+		return nil, fmt.Errorf("from %s: unpacking response: %w", p.addr, err)
 	}
 
 	return m, nil

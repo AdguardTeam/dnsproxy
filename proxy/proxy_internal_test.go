@@ -63,6 +63,8 @@ var defaultTrustedProxies netutil.SubnetSet = netutil.SliceSubnetSet{
 // mustNew wraps [New] function failing the test on error.
 //
 // TODO(e.burkov):  Move into the proxytest package.
+//
+// TODO(e.burkov):  Put default values into configuration.
 func mustNew(tb testing.TB, conf *Config) (p *Proxy) {
 	tb.Helper()
 

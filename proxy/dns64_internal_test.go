@@ -8,7 +8,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
@@ -40,7 +39,7 @@ func TestDNS64Race(t *testing.T) {
 	}
 
 	dnsProxy := mustNew(t, &Config{
-		Logger:         slogutil.NewDiscardLogger(),
+		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
@@ -50,9 +49,7 @@ func TestDNS64Race(t *testing.T) {
 		PrivateRDNSUpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{localUps},
 		},
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		TrustedProxies: defaultTrustedProxies,
 
 		UseDNS64:       true,
 		UsePrivateRDNS: true,
@@ -354,7 +351,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := mustNew(t, &Config{
-				Logger:        slogutil.NewDiscardLogger(),
+				Logger:        testLogger,
 				UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 				TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 				UpstreamConfig: &UpstreamConfig{
@@ -363,10 +360,8 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				PrivateRDNSUpstreamConfig: &UpstreamConfig{
 					Upstreams: []upstream.Upstream{localUps},
 				},
-				TrustedProxies:         defaultTrustedProxies,
-				RatelimitSubnetLenIPv4: 24,
-				RatelimitSubnetLenIPv6: 64,
-				CacheEnabled:           true,
+				TrustedProxies: defaultTrustedProxies,
+				CacheEnabled:   true,
 
 				UseDNS64:       true,
 				UsePrivateRDNS: true,

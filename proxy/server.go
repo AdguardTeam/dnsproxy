@@ -108,59 +108,20 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 		return nil
 	}
 
-	// ratelimit based on IP only, protects CPU cycles and outbound connections
-	//
-	// TODO(e.burkov):  Investigate if written above true and move to UDP server
-	// implementation?
-	if d.Proto == ProtoUDP && p.isRatelimited(ip) {
-		p.logger.Debug("ratelimited based on ip only", "addr", d.Addr)
-
-		// Don't reply to ratelimited clients.
-		return nil
-	}
-
-	// TODO(d.kolyshev):  Move to DefaultHandler.
+	// TODO(d.kolyshev):  Consider moving validation to a new middleware.
 	d.Res = p.validateRequest(d)
 	if d.Res == nil {
 		err = p.requestHandler.ServeDNS(p, d)
+		if errors.Is(err, ErrDrop) {
+			// Don't reply to dropped clients.
+			return nil
+		}
 	}
 
 	p.logDNSMessage(d.Res)
 	p.respond(d)
 
 	return err
-}
-
-// validateRequest returns a response for invalid request or nil if the request
-// is ok.
-func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
-	switch {
-	case len(d.Req.Question) != 1:
-		p.logger.Debug("invalid number of questions", "req_questions_len", len(d.Req.Question))
-
-		// TODO(e.burkov):  Probably, FORMERR would be a better choice here.
-		// Check out RFC.
-		return p.messages.NewMsgSERVFAIL(d.Req)
-	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
-		// Refuse requests of type ANY (anti-DDOS measure).
-		p.logger.Debug("refusing dns type any request")
-
-		return p.messages.NewMsgNOTIMPLEMENTED(d.Req)
-	case p.recDetector.check(d.Req):
-		p.logger.Debug("recursion detected", "req_question", d.Req.Question[0].Name)
-
-		return p.messages.NewMsgNXDOMAIN(d.Req)
-	case d.isForbiddenARPA(p.privateNets, p.logger):
-		p.logger.Debug(
-			"private arpa domain is requested",
-			"addr", d.Addr,
-			"arpa", d.Req.Question[0].Name,
-		)
-
-		return p.messages.NewMsgNXDOMAIN(d.Req)
-	default:
-		return nil
-	}
 }
 
 // isForbiddenARPA returns true if dctx contains a PTR, SOA, or NS request for

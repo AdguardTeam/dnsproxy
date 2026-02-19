@@ -10,7 +10,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
@@ -106,7 +105,7 @@ func TestPendingRequests(t *testing.T) {
 	}
 
 	p, err := proxy.New(&proxy.Config{
-		Logger:         slogutil.NewDiscardLogger(),
+		Logger:         testLogger,
 		UpstreamConfig: &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 		TrustedProxies: testTrustedProxies,
 		PendingRequests: &proxy.PendingRequestsConfig{
@@ -115,9 +114,6 @@ func TestPendingRequests(t *testing.T) {
 		RequestHandler:         reqHandler,
 		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		Ratelimit:              0,
 		CacheSizeBytes:         testCacheSize,
 		CacheEnabled:           true,
 		EnableEDNSClientSubnet: true,

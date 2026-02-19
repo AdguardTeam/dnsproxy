@@ -8,12 +8,16 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testLogger is a common logger for tests.
+var testLogger = slogutil.NewDiscardLogger()
 
 // newCustomUpstreamConfig is a helper function that returns an initialized
 // [*proxy.CustomUpstreamConfig].

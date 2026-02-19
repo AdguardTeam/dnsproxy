@@ -10,7 +10,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/faketime"
@@ -209,15 +208,13 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		}
 
 		p := mustNew(t, &Config{
-			Logger:        slogutil.NewDiscardLogger(),
+			Logger:        testLogger,
 			UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 			TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 			UpstreamConfig: &UpstreamConfig{
 				Upstreams: ups,
 			},
-			TrustedProxies:         defaultTrustedProxies,
-			RatelimitSubnetLenIPv4: 24,
-			RatelimitSubnetLenIPv6: 64,
+			TrustedProxies: defaultTrustedProxies,
 		})
 		p.time = tc.clock
 		p.randSrc = randSrc

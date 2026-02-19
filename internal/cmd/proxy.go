@@ -16,6 +16,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/middleware"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/ratelimit"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -52,13 +53,13 @@ func createProxyConfig(
 		HostsFiles:         hosts,
 	})
 
+	ratelimitMw, err := conf.newRatelimitMw(l)
+	if err != nil {
+		return nil, fmt.Errorf("ratelimit mw: %w", err)
+	}
+
 	proxyConf = &proxy.Config{
-		Logger: l.With(slogutil.KeyPrefix, proxy.LogPrefix),
-
-		RatelimitSubnetLenIPv4: conf.RatelimitSubnetLenIPv4,
-		RatelimitSubnetLenIPv6: conf.RatelimitSubnetLenIPv6,
-
-		Ratelimit:                conf.Ratelimit,
+		Logger:                   l.With(slogutil.KeyPrefix, proxy.LogPrefix),
 		CacheEnabled:             conf.Cache,
 		CacheSizeBytes:           conf.CacheSizeBytes,
 		CacheMinTTL:              conf.CacheMinTTL,
@@ -81,7 +82,7 @@ func createProxyConfig(
 		MaxGoroutines:          conf.MaxGoRoutines,
 		UsePrivateRDNS:         conf.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		RequestHandler:         preMw.Wrap(proxy.DefaultHandler{}),
+		RequestHandler:         ratelimitMw.Wrap(preMw.Wrap(proxy.DefaultHandler{})),
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: conf.PendingRequestsEnabled,
 		},
@@ -118,6 +119,26 @@ func isEmpty(uc *proxy.UpstreamConfig) (ok bool) {
 	return len(uc.Upstreams) == 0 &&
 		len(uc.DomainReservedUpstreams) == 0 &&
 		len(uc.SpecifiedDomainUpstreams) == 0
+}
+
+// newRatelimitMw returns the ratelimit middleware.  In case of invalid
+// ratelimit configuration returns an error. l must not be nil.
+func (conf *configuration) newRatelimitMw(l *slog.Logger) (mw proxy.Middleware, err error) {
+	if conf.Ratelimit == 0 {
+		return proxy.MiddlewareFunc(proxy.PassThrough), nil
+	}
+
+	rlConf := &ratelimit.Config{
+		Logger:        l.With(slogutil.KeyPrefix, "ratelimit"),
+		Ratelimit:     conf.Ratelimit,
+		SubnetLenIPv4: conf.RatelimitSubnetLenIPv4,
+		SubnetLenIPv6: conf.RatelimitSubnetLenIPv6,
+	}
+	if err = rlConf.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	return ratelimit.NewMiddleware(rlConf), nil
 }
 
 // defaultLocalTimeout is the default timeout for local operations.

@@ -5,7 +5,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
@@ -276,7 +275,7 @@ func TestValidatePrivateConfig(t *testing.T) {
 func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
 	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
 	config, err := ParseUpstreamsConfig(upstreams, &upstream.Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: false,
 		Bootstrap:          nil,
 		Timeout:            testTimeout,
@@ -449,7 +448,7 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 	}
 
 	config, _ := ParseUpstreamsConfig(upstreamsAddrs, &upstream.Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: false,
 		Bootstrap:          nil,
 		Timeout:            testTimeout,

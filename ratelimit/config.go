@@ -42,7 +42,7 @@ func (c *Config) Validate() (err error) {
 	return errors.Join(
 		validate.Positive("Ratelimit", c.Ratelimit),
 		validate.NotNil("Logger", c.Logger),
-		validate.LessThan("SubnetLenIPv4", c.SubnetLenIPv4, netutil.IPv4BitLen),
-		validate.LessThan("SubnetLenIPv4", c.SubnetLenIPv6, netutil.IPv6BitLen),
+		validate.NoGreaterThan("SubnetLenIPv4", c.SubnetLenIPv4, netutil.IPv4BitLen),
+		validate.NoGreaterThan("SubnetLenIPv4", c.SubnetLenIPv6, netutil.IPv6BitLen),
 	)
 }

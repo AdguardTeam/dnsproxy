@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -40,14 +39,12 @@ func TestFilteringHandler(t *testing.T) {
 
 	// Prepare the proxy server.
 	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		TrustedProxies:         defaultTrustedProxies,
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		RequestHandler:         reqHandler,
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		Logger:         testLogger,
+		TrustedProxies: defaultTrustedProxies,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		RequestHandler: reqHandler,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)

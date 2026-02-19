@@ -15,8 +15,6 @@ import (
 )
 
 // middleware implements [proxy.Middleware] with rate limiting functionality.
-//
-// TODO(d.kolyshev): Use.
 type middleware struct {
 	buckets *gocache.Cache
 	logger  *slog.Logger

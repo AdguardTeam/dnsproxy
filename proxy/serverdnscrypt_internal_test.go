@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
@@ -40,7 +39,7 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 
 	port := getFreePort()
 	p := mustNew(t, &Config{
-		Logger: slogutil.NewDiscardLogger(),
+		Logger: testLogger,
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{
 			Port: int(port), IP: net.ParseIP(listenIP),
 		}},
@@ -49,8 +48,6 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 		}},
 		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
 		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,
 		CacheMinTTL:            20,

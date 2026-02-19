@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
@@ -32,13 +31,11 @@ func TestProxy_quic(t *testing.T) {
 	}
 
 	conf := &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TLSConfig:              serverConfig,
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		Logger:         testLogger,
+		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TLSConfig:      serverConfig,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
 	}
 
 	var addr *net.UDPAddr
@@ -96,16 +93,14 @@ func TestProxy_quicLargePackets(t *testing.T) {
 
 	serverConfig, caPem := newTLSConfig(t)
 	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RequestHandler:         reqHandler,
-		TLSConfig:              serverConfig,
-		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		Logger:          testLogger,
+		UpstreamConfig:  newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies:  defaultTrustedProxies,
+		RequestHandler:  reqHandler,
+		TLSConfig:       serverConfig,
+		TLSListenAddr:   []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		HTTPSListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		QUICListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
@@ -147,13 +142,11 @@ func TestProxy_quicTruncatedRequest(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
 
 	conf := &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TLSConfig:              serverConfig,
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		Logger:         testLogger,
+		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TLSConfig:      serverConfig,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
 		RequestHandler: &TestHandler{
 			OnHandle: func(p *Proxy, d *DNSContext) (_ error) {
 				panic(testutil.UnexpectedCall(p, d))

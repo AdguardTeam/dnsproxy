@@ -14,7 +14,8 @@ type Handler interface {
 	ServeDNS(p *Proxy, dctx *DNSContext) (err error)
 }
 
-// DefaultHandler implements [Handler] by calling [Proxy.Resolve].
+// DefaultHandler implements [Handler] by calling [Proxy.Resolve].  It is used
+// as a default handler if no other handler is specified.
 type DefaultHandler struct{}
 
 // type check

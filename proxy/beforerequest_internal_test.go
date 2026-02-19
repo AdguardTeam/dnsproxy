@@ -9,7 +9,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
@@ -53,7 +52,7 @@ func TestProxy_HandleDNSRequest_beforeRequestHandler(t *testing.T) {
 	errorResponse := (&dns.Msg{}).SetReply(errorRequest)
 
 	p := mustNew(t, &Config{
-		Logger:        slogutil.NewDiscardLogger(),
+		Logger:        testLogger,
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{&dnsproxytest.Upstream{

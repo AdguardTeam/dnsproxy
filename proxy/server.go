@@ -89,9 +89,7 @@ func (p *Proxy) serveListeners() {
 }
 
 // handleDNSRequest processes the context.  The only error it returns is the one
-// from the [Handler], or [Resolve] if the [Handler] is not set.  d is left
-// without a response as the documentation to [BeforeRequestHandler] says, and
-// if it's ratelimited.
+// from the [Handler], or [Resolve] if the [Handler] is not set.
 func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 	p.logDNSMessage(d.Req)
 
@@ -103,10 +101,6 @@ func (p *Proxy) handleDNSRequest(d *DNSContext) (err error) {
 
 	ip := d.Addr.Addr()
 	d.IsPrivateClient = p.privateNets.Contains(ip)
-
-	if !p.handleBefore(d) {
-		return nil
-	}
 
 	// TODO(d.kolyshev):  Consider moving validation to a new middleware.
 	d.Res = p.validateRequest(d)

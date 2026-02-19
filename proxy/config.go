@@ -55,11 +55,6 @@ type Config struct {
 	// performing a single lookup.  If nil, it will be enabled by default.
 	PendingRequests *PendingRequestsConfig
 
-	// BeforeRequestHandler is an optional custom handler called before each DNS
-	// request is started processing, see [BeforeRequestHandler].  The default
-	// no-op implementation is used, if it's nil.
-	BeforeRequestHandler BeforeRequestHandler
-
 	// RequestHandler is an optional custom handler for DNS requests.  It's used
 	// instead of DefaultHandler if set.  In case of [ErrDrop] error returned
 	// from this handler, the proxy will not send any response to the client.

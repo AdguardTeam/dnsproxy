@@ -87,11 +87,7 @@ type Proxy struct {
 	// messages constructs DNS messages.
 	messages MessageConstructor
 
-	// beforeRequestHandler handles the request's context before it is resolved.
-	beforeRequestHandler BeforeRequestHandler
-
-	// requestHandler handles the DNS request after it's been processed by the
-	// beforeRequestHandler.  It is never nil.
+	// requestHandler handles the DNS request.  It is never nil.
 	requestHandler Handler
 
 	// dnsCryptServer serves DNSCrypt queries.
@@ -218,10 +214,6 @@ func New(c *Config) (p *Proxy, err error) {
 		privateNets: cmp.Or[netutil.SubnetSet](
 			c.PrivateSubnets,
 			netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		),
-		beforeRequestHandler: cmp.Or[BeforeRequestHandler](
-			c.BeforeRequestHandler,
-			noopRequestHandler{},
 		),
 		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},

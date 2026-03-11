@@ -75,29 +75,40 @@ func (p *Proxy) listenH3(
 
 // initHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
 func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
-	p.httpsServer = &http.Server{
-		Handler:           p,
-		ReadHeaderTimeout: defaultTimeout,
-		WriteTimeout:      defaultTimeout,
+	httpConf := p.HTTPConfig
+	if httpConf == nil {
+		p.logger.DebugContext(ctx, "no https configuration provided")
+
+		return nil
 	}
 
-	if p.HTTP3 {
+	mux := http.NewServeMux()
+	p.routeDoH(mux)
+
+	p.httpsServer = &http.Server{
+		Handler:           mux,
+		ReadTimeout:       httpConf.ReadTimeout,
+		ReadHeaderTimeout: httpConf.ReadTimeout,
+		WriteTimeout:      httpConf.WriteTimeout,
+	}
+
+	if httpConf.HTTP3Enabled {
 		p.h3Server = &http3.Server{
-			Handler: p,
+			Handler: mux,
 		}
 	}
 
-	for _, addr := range p.HTTPSListenAddr {
+	for _, addr := range httpConf.ListenAddresses {
 		p.logger.InfoContext(ctx, "creating an https server")
 
-		ln, tcpAddr, lErr := p.listenHTTP(ctx, addr)
+		ln, tcpAddr, lErr := p.listenHTTP(ctx, net.TCPAddrFromAddrPort(addr))
 		if lErr != nil {
-			return fmt.Errorf("failed to start HTTPS server on %s: %w", addr, lErr)
+			return fmt.Errorf("failed to start https server on %s: %w", addr, lErr)
 		}
 
 		p.httpsListen = append(p.httpsListen, ln)
 
-		if p.HTTP3 {
+		if httpConf.HTTP3Enabled {
 			// HTTP/3 server listens to the same pair IP:port as the one HTTP/2
 			// server listens to.
 			udpAddr := &net.UDPAddr{IP: tcpAddr.IP, Port: tcpAddr.Port}
@@ -105,7 +116,7 @@ func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
 			var quicListen *quic.EarlyListener
 			quicListen, err = p.listenH3(ctx, udpAddr)
 			if err != nil {
-				return fmt.Errorf("failed to start HTTP/3 server on %s: %w", udpAddr, err)
+				return fmt.Errorf("failed to start h3 server on %s: %w", udpAddr, err)
 			}
 
 			p.h3Listen = append(p.h3Listen, quicListen)
@@ -172,12 +183,21 @@ func newDoHReq(r *http.Request, l *slog.Logger) (req *dns.Msg, statusCode int) {
 //
 // Here is what it returns:
 //
+//   - http.StatusNotFound if the request is not encrypted and proxy is not
+//     configured to accept unencrypted requests,
 //   - http.StatusBadRequest if there is no DNS request data,
 //   - http.StatusUnsupportedMediaType if request content type is not
 //     "application/dns-message",
 //   - http.StatusMethodNotAllowed if request method is not GET or POST.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.logger.Debug("incoming https request", "url", r.URL)
+
+	if !p.HTTPConfig.InsecureEnabled && r.TLS == nil {
+		statusCode := http.StatusNotFound
+		http.Error(w, http.StatusText(statusCode), statusCode)
+
+		return
+	}
 
 	raddr, prx, err := remoteAddr(r, p.logger)
 	if err != nil {
@@ -221,13 +241,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // checkBasicAuth checks the basic authorization data, if necessary, and if the
 // data isn't valid, it writes an error.  shouldHandle is false if the request
-// has been denied.
+// has been denied.  p.HTTPConfig must not be nil.
 func (p *Proxy) checkBasicAuth(
 	w http.ResponseWriter,
 	r *http.Request,
 	raddr netip.AddrPort,
 ) (shouldHandle bool) {
-	ui := p.Config.Userinfo
+	ui := p.HTTPConfig.Userinfo
 	if ui == nil {
 		return true
 	}
@@ -273,8 +293,8 @@ func (p *Proxy) respondHTTPS(d *DNSContext) (err error) {
 		return fmt.Errorf("packing message: %w", err)
 	}
 
-	if srvName := p.Config.HTTPSServerName; srvName != "" {
-		w.Header().Set(httphdr.Server, srvName)
+	if srvHeader := p.HTTPConfig.ServerHeader; srvHeader != "" {
+		w.Header().Set(httphdr.Server, srvHeader)
 	}
 
 	w.Header().Set(httphdr.ContentType, "application/dns-message")

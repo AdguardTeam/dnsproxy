@@ -76,11 +76,6 @@ type Config struct {
 	// TODO(e.burkov):  Add explicit boolean for disabling fallbacks.
 	Fallbacks *UpstreamConfig
 
-	// Userinfo is the sole permitted userinfo for the DoH basic authentication.
-	// If Userinfo is set, all DoH queries are required to have this basic
-	// authentication information.
-	Userinfo *url.Userinfo
-
 	// TLSConfig is the TLS configuration.  Required for DNS-over-TLS,
 	// DNS-over-HTTP, and DNS-over-QUIC servers.
 	TLSConfig *tls.Config
@@ -93,13 +88,13 @@ type Config struct {
 	// retries are disabled.
 	BindRetryConfig *BindRetryConfig
 
+	// HTTPConfig is the configuration for HTTP requests proxying.  Required for
+	// DoH server.  If nil, the DoH server is disabled.
+	HTTPConfig *HTTPConfig
+
 	// DNSCryptProviderName is the DNSCrypt provider name.  Required for
 	// DNSCrypt server.
 	DNSCryptProviderName string
-
-	// HTTPSServerName sets the Server header of the HTTPS server responses, if
-	// not empty.
-	HTTPSServerName string
 
 	// UpstreamMode determines the logic through which upstreams will be used.
 	// If not specified the [proxy.UpstreamModeLoadBalance] is used.
@@ -112,10 +107,6 @@ type Config struct {
 	// TCPListenAddr is the set of TCP addresses to listen for plain
 	// DNS-over-TCP requests.
 	TCPListenAddr []*net.TCPAddr
-
-	// HTTPSListenAddr is the set of TCP addresses to listen for DNS-over-HTTPS
-	// requests.
-	HTTPSListenAddr []*net.TCPAddr
 
 	// TLSListenAddr is the set of TCP addresses to listen for DNS-over-TLS
 	// requests.
@@ -182,9 +173,6 @@ type Config struct {
 	// RefuseAny makes proxy refuse the requests of type ANY.
 	RefuseAny bool
 
-	// HTTP3 enables HTTP/3 support for HTTPS server.
-	HTTP3 bool
-
 	// Enable EDNS Client Subnet option DNS requests to the upstream server will
 	// contain an OPT record with Client Subnet option.  If the original request
 	// already has this option set, we pass it through as is.  Otherwise, we set
@@ -235,6 +223,45 @@ type Config struct {
 type PendingRequestsConfig struct {
 	// Enabled defines if the duplicate requests should be tracked.
 	Enabled bool
+}
+
+// HTTPConfig is the configuration for HTTP requests proxying.
+type HTTPConfig struct {
+	// Userinfo is the sole permitted userinfo for the DoH basic authentication.
+	// If Userinfo is set, all DoH queries are required to have this basic
+	// authentication information.
+	Userinfo *url.Userinfo
+
+	// ServerHeader sets the Server header of the HTTPS server responses, if not
+	// empty.
+	ServerHeader string
+
+	// ListenAddresses is the set of addresses to listen for DNS-over-HTTPS
+	// requests.  If it is empty the proxy doesn't start the HTTPS server, but
+	// still can be used as an http.Handler with [Proxy.ServeHTTP].
+	ListenAddresses []netip.AddrPort
+
+	// Routes is the set of routes to handle.  It must be a slice of valid route
+	// patterns, if it is empty, the default routes are registered.  It is
+	// ignored if ListenAddresses is empty.
+	Routes []string
+
+	// ReadTimeout is the maximum duration before timing out reads of the
+	// request.  A zero or negative value means there will be no timeout.  It is
+	// ignored if ListenAddresses is empty.
+	ReadTimeout time.Duration
+
+	// WriteTimeout is the maximum duration before timing out writes of the
+	// response.  A zero or negative value means there will be no timeout.  It
+	// is ignored if ListenAddresses is empty.
+	WriteTimeout time.Duration
+
+	// HTTP3Enabled specifies if HTTP/3 support for HTTPS server.  It is ignored
+	// if ListenAddresses is empty.
+	HTTP3Enabled bool
+
+	// InsecureEnabled specifies if unencrypted DoH requests are allowed.
+	InsecureEnabled bool
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns
@@ -339,7 +366,7 @@ func (p *Proxy) validateTLSConfig() (err error) {
 		return errors.Error("tls listener configuration not found")
 	}
 
-	if p.HTTPSListenAddr != nil {
+	if p.HTTPConfig != nil && p.HTTPConfig.ListenAddresses != nil {
 		return errors.Error("https listener configuration not found")
 	}
 
@@ -351,11 +378,11 @@ func (p *Proxy) validateTLSConfig() (err error) {
 }
 
 // hasListenAddrs - is there any addresses to listen to?
-func (p *Proxy) hasListenAddrs() bool {
+func (p *Proxy) hasListenAddrs() (ok bool) {
 	return p.UDPListenAddr != nil ||
 		p.TCPListenAddr != nil ||
 		p.TLSListenAddr != nil ||
-		p.HTTPSListenAddr != nil ||
+		(p.HTTPConfig != nil && p.HTTPConfig.ListenAddresses != nil) ||
 		p.QUICListenAddr != nil ||
 		p.DNSCryptUDPListenAddr != nil ||
 		p.DNSCryptTCPListenAddr != nil

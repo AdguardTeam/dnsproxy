@@ -67,6 +67,8 @@ const (
 	pendingRequestsEnabledIdx
 	dns64Idx
 	usePrivateRDNSIdx
+	dohRoutesIdx
+	dohInsecureEnabledIdx
 )
 
 // commandLineOption contains information about a command-line option: its long
@@ -405,6 +407,18 @@ var commandLineOptions = []*commandLineOption{
 		short:     "",
 		valueType: "",
 	},
+	dohRoutesIdx: {
+		description: "List of routes for DNS-over-HTTPS, can be specified multiple times.",
+		long:        "doh-routes",
+		short:       "",
+		valueType:   "route",
+	},
+	dohInsecureEnabledIdx: {
+		description: "If specified, the DoH server will skip TLS certificate verification.",
+		long:        "doh-insecure-enabled",
+		short:       "",
+		valueType:   "",
+	},
 }
 
 // parseCmdLineOptions parses the command-line options.  conf must not be nil.
@@ -464,6 +478,8 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		pendingRequestsEnabledIdx:   &conf.PendingRequestsEnabled,
 		dns64Idx:                    &conf.DNS64,
 		usePrivateRDNSIdx:           &conf.UsePrivateRDNS,
+		dohRoutesIdx:                &conf.DoHRoutes,
+		dohInsecureEnabledIdx:       &conf.DoHInsecureEnabled,
 	} {
 		addOption(flags, fieldPtr, commandLineOptions[i])
 	}
@@ -536,8 +552,8 @@ func addOption(flags *flag.FlagSet, fieldPtr any, o *commandLineOption) {
 		defineFlagVar(flags, (*uint32Value)(fieldPtr), o)
 	case *float32:
 		defineFlagVar(flags, (*float32Value)(fieldPtr), o)
-	case *[]int:
-		defineFlagVar(flags, newIntSliceValue(fieldPtr), o)
+	case *[]uint16:
+		defineFlagVar(flags, newUInt16SliceValue(fieldPtr), o)
 	case *[]string:
 		defineFlagVar(flags, newStringSliceValue(fieldPtr), o)
 	case *timeutil.Duration:

@@ -93,14 +93,13 @@ func TestProxy_quicLargePackets(t *testing.T) {
 
 	serverConfig, caPem := newTLSConfig(t)
 	dnsProxy := mustNew(t, &Config{
-		Logger:          testLogger,
-		UpstreamConfig:  newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:  defaultTrustedProxies,
-		RequestHandler:  reqHandler,
-		TLSConfig:       serverConfig,
-		TLSListenAddr:   []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		HTTPSListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		QUICListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		Logger:         testLogger,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
+		RequestHandler: reqHandler,
+		TLSConfig:      serverConfig,
+		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)

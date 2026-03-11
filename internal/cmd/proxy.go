@@ -26,6 +26,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// defaultHTTPTimeout is the default timeout for HTTP server operations.
+//
+// TODO(a.garipov):  Consider making configurable.
+const defaultHTTPTimeout = 10 * time.Second
+
 // TODO(e.burkov):  Use a separate type for the YAML configuration file.
 
 // createProxyConfig initializes [proxy.Config].  l must not be nil.
@@ -58,6 +63,24 @@ func createProxyConfig(
 		return nil, fmt.Errorf("ratelimit mw: %w", err)
 	}
 
+	httpConf := &proxy.HTTPConfig{
+		ServerHeader:    conf.HTTPSServerName,
+		Routes:          conf.DoHRoutes,
+		ReadTimeout:     defaultHTTPTimeout,
+		WriteTimeout:    defaultHTTPTimeout,
+		HTTP3Enabled:    conf.HTTP3,
+		InsecureEnabled: conf.DoHInsecureEnabled,
+	}
+
+	if uiStr := conf.HTTPSUserinfo; uiStr != "" {
+		user, pass, ok := strings.Cut(uiStr, ":")
+		if ok {
+			httpConf.Userinfo = url.UserPassword(user, pass)
+		} else {
+			httpConf.Userinfo = url.User(user)
+		}
+	}
+
 	proxyConf = &proxy.Config{
 		Logger:                   l.With(slogutil.KeyPrefix, proxy.LogPrefix),
 		CacheEnabled:             conf.Cache,
@@ -68,7 +91,6 @@ func createProxyConfig(
 		CacheOptimisticMaxAge:    time.Duration(conf.OptimisticMaxAge),
 		CacheOptimistic:          conf.CacheOptimistic,
 		RefuseAny:                conf.RefuseAny,
-		HTTP3:                    conf.HTTP3,
 		// TODO(e.burkov):  The following CIDRs are aimed to match any address.
 		// This is not quite proper approach to be used by default so think
 		// about configuring it.
@@ -78,7 +100,6 @@ func createProxyConfig(
 		},
 		EnableEDNSClientSubnet: conf.EnableEDNSSubnet,
 		UDPBufferSize:          conf.UDPBufferSize,
-		HTTPSServerName:        conf.HTTPSServerName,
 		MaxGoroutines:          conf.MaxGoRoutines,
 		UsePrivateRDNS:         conf.UsePrivateRDNS,
 		PrivateSubnets:         netutil.SubnetSetFunc(netutil.IsLocallyServed),
@@ -86,15 +107,7 @@ func createProxyConfig(
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: conf.PendingRequestsEnabled,
 		},
-	}
-
-	if uiStr := conf.HTTPSUserinfo; uiStr != "" {
-		user, pass, ok := strings.Cut(uiStr, ":")
-		if ok {
-			proxyConf.Userinfo = url.UserPassword(user, pass)
-		} else {
-			proxyConf.Userinfo = url.User(user)
-		}
+		HTTPConfig: httpConf,
 	}
 
 	conf.initBogusNXDomain(ctx, l, proxyConf)
@@ -391,60 +404,58 @@ func (conf *configuration) initListenAddrs(config *proxy.Config) (err error) {
 	if len(conf.ListenPorts) == 0 {
 		// If ListenPorts has not been parsed through config file nor command
 		// line we set it to 53.
-		conf.ListenPorts = []int{53}
+		conf.ListenPorts = []uint16{53}
 	}
 
 	for _, port := range conf.ListenPorts {
 		for _, ip := range addrs {
-			addrPort := netip.AddrPortFrom(ip, uint16(port))
+			addrPort := netip.AddrPortFrom(ip, port)
 
 			config.UDPListenAddr = append(config.UDPListenAddr, net.UDPAddrFromAddrPort(addrPort))
 			config.TCPListenAddr = append(config.TCPListenAddr, net.TCPAddrFromAddrPort(addrPort))
 		}
 	}
 
-	initTLSListenAddrs(config, conf, addrs)
-	initDNSCryptListenAddrs(config, conf, addrs)
+	if config.TLSConfig != nil {
+		initTLSListenAddrs(config, conf, addrs)
+	}
+
+	if config.DNSCryptResolverCert != nil && config.DNSCryptProviderName != "" {
+		initDNSCryptListenAddrs(config, conf, addrs)
+	}
 
 	return nil
 }
 
-// initTLSListenAddrs sets up proxy configuration TLS listen addresses.
+// initTLSListenAddrs sets up proxy configuration TLS listen addresses.  conf,
+// proxyConf must not be nil.  If conf.HTTPSListenPorts is not empty,
+// proxyConf.HTTPConfig must not be nil.
 func initTLSListenAddrs(proxyConf *proxy.Config, conf *configuration, addrs []netip.Addr) {
-	if proxyConf.TLSConfig == nil {
-		return
-	}
-
+	httpConfig := proxyConf.HTTPConfig
 	for _, ip := range addrs {
 		for _, port := range conf.TLSListenPorts {
-			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, port))
 			proxyConf.TLSListenAddr = append(proxyConf.TLSListenAddr, a)
 		}
 
 		for _, port := range conf.HTTPSListenPorts {
-			a := net.TCPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
-			proxyConf.HTTPSListenAddr = append(proxyConf.HTTPSListenAddr, a)
+			a := netip.AddrPortFrom(ip, port)
+			httpConfig.ListenAddresses = append(httpConfig.ListenAddresses, a)
 		}
 
 		for _, port := range conf.QUICListenPorts {
-			a := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, uint16(port)))
+			a := net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, port))
 			proxyConf.QUICListenAddr = append(proxyConf.QUICListenAddr, a)
 		}
 	}
 }
 
 // initDNSCryptListenAddrs sets up proxy configuration DNSCrypt listen
-// addresses.
+// addresses.  proxyConf and conf must not be nil.
 func initDNSCryptListenAddrs(proxyConf *proxy.Config, conf *configuration, addrs []netip.Addr) {
-	if proxyConf.DNSCryptResolverCert == nil || proxyConf.DNSCryptProviderName == "" {
-		return
-	}
-
 	for _, port := range conf.DNSCryptListenPorts {
-		p := uint16(port)
-
 		for _, ip := range addrs {
-			addrPort := netip.AddrPortFrom(ip, p)
+			addrPort := netip.AddrPortFrom(ip, port)
 
 			tcp := net.TCPAddrFromAddrPort(addrPort)
 			proxyConf.DNSCryptTCPListenAddr = append(proxyConf.DNSCryptTCPListenAddr, tcp)

@@ -293,15 +293,14 @@ func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
 	return slog.Default().With(slogutil.KeyPrefix, LogPrefix)
 }
 
-// validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
-// is set.
+// validateBasicAuth validates the HTTP settings if HTTPConfig.Userinfo is set.
 func (p *Proxy) validateBasicAuth() (err error) {
-	conf := p.Config
-	if conf.Userinfo == nil {
+	conf := p.Config.HTTPConfig
+	if conf == nil || conf.Userinfo == nil {
 		return nil
 	}
 
-	return validate.NotEmptySlice("HTTPSListenAddr", conf.HTTPSListenAddr)
+	return validate.NotEmptySlice("HTTPConfig.ListenAddresses", conf.ListenAddresses)
 }
 
 // Returns true if proxy is started.  It is safe for concurrent use.

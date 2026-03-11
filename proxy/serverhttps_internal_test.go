@@ -38,15 +38,19 @@ func TestHttpsProxy(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tlsConf, caPem := newTLSConfig(t)
+
+			httpConf := &HTTPConfig{
+				ListenAddresses: []netip.AddrPort{localhostAnyPort},
+				HTTP3Enabled:    tc.http3,
+			}
 			dnsProxy := mustNew(t, &Config{
-				Logger:          testLogger,
-				TLSListenAddr:   []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				HTTPSListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				QUICListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-				TLSConfig:       tlsConf,
-				UpstreamConfig:  newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-				TrustedProxies:  defaultTrustedProxies,
-				HTTP3:           tc.http3,
+				Logger:         testLogger,
+				TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TLSConfig:      tlsConf,
+				UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+				TrustedProxies: defaultTrustedProxies,
+				HTTPConfig:     httpConf,
 			})
 
 			servicetest.RequireRun(t, dnsProxy, testTimeout)
@@ -83,15 +87,18 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 		// Prepare the proxy server.
 		tlsConf, caPem := newTLSConfig(t)
+		httpConf := &HTTPConfig{
+			ListenAddresses: []netip.AddrPort{localhostAnyPort},
+		}
 		dnsProxy := mustNew(t, &Config{
-			Logger:          testLogger,
-			UpstreamConfig:  newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-			TrustedProxies:  defaultTrustedProxies,
-			RequestHandler:  reqHandler,
-			TLSConfig:       tlsConf,
-			TLSListenAddr:   []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			HTTPSListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			QUICListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+			Logger:         testLogger,
+			UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+			TrustedProxies: defaultTrustedProxies,
+			RequestHandler: reqHandler,
+			TLSConfig:      tlsConf,
+			TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+			QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+			HTTPConfig:     httpConf,
 		})
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)

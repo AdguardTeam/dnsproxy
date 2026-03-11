@@ -63,6 +63,14 @@ Usage of ./dnsproxy:
         Cache size (in bytes). Default: 64k.
   --config-path=path
         YAML configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
+  --doh-insecure-enabled
+        If specified, the DoH server will skip TLS certificate verification.
+  --doh-routes
+        Routes for DNS-over-HTTPS.  If not specified, the default routes are registered:
+        - "GET /", deprecated and will soon be removed,
+        - "POST /", deprecated and will soon be removed.
+        - "GET /dns-query",
+        - "POST /dns-query".
   --dns64
         If specified, dnsproxy will act as a DNS64 server.
   --dns64-prefix=subnet

@@ -223,7 +223,9 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			for range requestsNum {
-				_ = p.Resolve(&DNSContext{Req: req, Addr: cli})
+				ctx := testutil.ContextWithTimeout(t, defaultTimeout)
+
+				_ = p.Resolve(ctx, &DNSContext{Req: req, Addr: cli})
 			}
 
 			assert.Equal(t, wantStat, stats)

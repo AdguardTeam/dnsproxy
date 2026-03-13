@@ -129,7 +129,11 @@ func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
 // newDoHReq returns new DNS request parsed from the given HTTP request.  In
 // case of invalid request returns nil and the suitable status code for an HTTP
 // error response.  l must not be nil.
-func newDoHReq(r *http.Request, l *slog.Logger) (req *dns.Msg, statusCode int) {
+func newDoHReq(
+	ctx context.Context,
+	r *http.Request,
+	l *slog.Logger,
+) (req *dns.Msg, statusCode int) {
 	var buf []byte
 	var err error
 
@@ -138,7 +142,8 @@ func newDoHReq(r *http.Request, l *slog.Logger) (req *dns.Msg, statusCode int) {
 		dnsParam := r.URL.Query().Get("dns")
 		buf, err = base64.RawURLEncoding.DecodeString(dnsParam)
 		if len(buf) == 0 || err != nil {
-			l.Debug(
+			l.DebugContext(
+				ctx,
 				"parsing dns request from http get param",
 				"param_name", dnsParam,
 				slogutil.KeyError, err,
@@ -149,7 +154,7 @@ func newDoHReq(r *http.Request, l *slog.Logger) (req *dns.Msg, statusCode int) {
 	case http.MethodPost:
 		contentType := r.Header.Get(httphdr.ContentType)
 		if contentType != "application/dns-message" {
-			l.Debug("unsupported media type", "content_type", contentType)
+			l.DebugContext(ctx, "unsupported media type", "content_type", contentType)
 
 			return nil, http.StatusUnsupportedMediaType
 		}
@@ -157,21 +162,21 @@ func newDoHReq(r *http.Request, l *slog.Logger) (req *dns.Msg, statusCode int) {
 		// TODO(d.kolyshev): Limit reader.
 		buf, err = io.ReadAll(r.Body)
 		if err != nil {
-			l.Debug("reading http request body", slogutil.KeyError, err)
+			l.DebugContext(ctx, "reading http request body", slogutil.KeyError, err)
 
 			return nil, http.StatusBadRequest
 		}
 
-		defer slogutil.CloseAndLog(context.TODO(), l, r.Body, slog.LevelDebug)
+		defer slogutil.CloseAndLog(ctx, l, r.Body, slog.LevelDebug)
 	default:
-		l.Debug("bad http method", "method", r.Method)
+		l.DebugContext(ctx, "bad http method", "method", r.Method)
 
 		return nil, http.StatusMethodNotAllowed
 	}
 
 	req = &dns.Msg{}
 	if err = req.Unpack(buf); err != nil {
-		l.Debug("unpacking http msg", slogutil.KeyError, err)
+		l.DebugContext(ctx, "unpacking http msg", slogutil.KeyError, err)
 
 		return nil, http.StatusBadRequest
 	}
@@ -190,7 +195,11 @@ func newDoHReq(r *http.Request, l *slog.Logger) (req *dns.Msg, statusCode int) {
 //     "application/dns-message",
 //   - http.StatusMethodNotAllowed if request method is not GET or POST.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	p.logger.Debug("incoming https request", "url", r.URL)
+	ctx := r.Context()
+	ctx, cancel := p.reqCtx.New(ctx)
+	defer cancel()
+
+	p.logger.DebugContext(ctx, "incoming https request", "url", r.URL)
 
 	if !p.HTTPConfig.InsecureEnabled && r.TLS == nil {
 		statusCode := http.StatusNotFound
@@ -201,14 +210,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	raddr, prx, err := remoteAddr(r, p.logger)
 	if err != nil {
-		p.logger.Debug("getting real ip", slogutil.KeyError, err)
+		p.logger.DebugContext(ctx, "getting real ip", slogutil.KeyError, err)
 	}
 
 	if !p.checkBasicAuth(w, r, raddr) {
 		return
 	}
 
-	req, statusCode := newDoHReq(r, p.logger)
+	req, statusCode := newDoHReq(ctx, r, p.logger)
 	if req == nil {
 		http.Error(w, http.StatusText(statusCode), statusCode)
 
@@ -216,10 +225,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if prx.IsValid() {
-		p.logger.Debug("request came from proxy server", "addr", prx)
+		l := p.logger.With("addr", prx)
+
+		l.DebugContext(ctx, "request came from proxy server")
 
 		if !p.TrustedProxies.Contains(prx.Addr()) {
-			p.logger.Debug("proxy is not trusted, using original remote addr", "addr", prx)
+			l.DebugContext(ctx, "proxy is not trusted, using original remote addr")
 
 			// So the address of the proxy itself is used, as the remote address
 			// parsed from headers cannot be trusted.
@@ -233,9 +244,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.HTTPRequest = r
 	d.HTTPResponseWriter = w
 
-	err = p.handleDNSRequest(d)
+	err = p.handleDNSRequest(ctx, d)
 	if err != nil {
-		p.logger.Debug("handling dns request", "proto", d.Proto, slogutil.KeyError, err)
+		p.logger.DebugContext(ctx, "handling dns request", "proto", d.Proto, slogutil.KeyError, err)
 	}
 }
 

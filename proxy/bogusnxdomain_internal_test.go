@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -89,7 +90,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 		u.ans = tc.ans
 
 		t.Run(tc.name, func(t *testing.T) {
-			err := prx.Resolve(d)
+			err := prx.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 			require.NoError(t, err)
 			require.NotNil(t, d.Res)
 

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net"
 	"sync"
 	"testing"
@@ -17,13 +18,13 @@ func TestFilteringHandler(t *testing.T) {
 	blockResponse := false
 
 	reqHandler := &TestHandler{
-		OnHandle: func(p *Proxy, d *DNSContext) (err error) {
+		OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (err error) {
 			m.Lock()
 			defer m.Unlock()
 
 			if !blockResponse {
 				// Use the default Resolve method if response is not blocked.
-				return p.Resolve(d)
+				return p.Resolve(ctx, d)
 			}
 
 			resp := dns.Msg{}

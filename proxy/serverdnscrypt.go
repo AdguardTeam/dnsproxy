@@ -115,14 +115,18 @@ func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) (er
 	d := h.proxy.newDNSContext(ProtoDNSCrypt, req, netutil.NetAddrToAddrPort(rw.RemoteAddr()))
 	d.DNSCryptResponseWriter = rw
 
-	// TODO(d.kolyshev): Pass and use context from above.
-	err = h.reqSema.Acquire(context.Background())
+	// TODO(f.setrakov):  Use context from parameters, see AGDNS-3533.
+	ctx := context.Background()
+	ctx, cancel := h.proxy.reqCtx.New(ctx)
+	defer cancel()
+
+	err = h.reqSema.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("dnsproxy: dnscrypt: acquiring semaphore: %w", err)
 	}
 	defer h.reqSema.Release()
 
-	return h.proxy.handleDNSRequest(d)
+	return h.proxy.handleDNSRequest(ctx, d)
 }
 
 // Writes a response to the UDP client

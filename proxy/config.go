@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/contextutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -54,6 +55,10 @@ type Config struct {
 	// tracking identical requests and returning the same response for them,
 	// performing a single lookup.  If nil, it will be enabled by default.
 	PendingRequests *PendingRequestsConfig
+
+	// RequestContext is a context constructor that returns contexts for
+	// requests.  If not set, the proxy uses [contextutil.EmptyConstructor].
+	RequestContext contextutil.Constructor
 
 	// RequestHandler is an optional custom handler for DNS requests.  It's used
 	// instead of DefaultHandler if set.  In case of [ErrDrop] error returned

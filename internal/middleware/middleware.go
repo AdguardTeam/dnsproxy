@@ -60,9 +60,7 @@ var _ proxy.Middleware = (*Default)(nil)
 // and resolves the DNS request within proxyCtx.  It only calls h if the request
 // isn't handled by any of the internal handlers.
 func (mw *Default) Wrap(h proxy.Handler) (wrapped proxy.Handler) {
-	f := func(p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
-		ctx := context.TODO()
-
+	f := func(ctx context.Context, p *proxy.Proxy, proxyCtx *proxy.DNSContext) (err error) {
 		mw.logger.DebugContext(ctx, "handling request", "req", &proxyCtx.Req.Question[0])
 
 		if proxyCtx.Res = mw.haltAAAA(ctx, proxyCtx.Req); proxyCtx.Res != nil {
@@ -73,7 +71,7 @@ func (mw *Default) Wrap(h proxy.Handler) (wrapped proxy.Handler) {
 			return nil
 		}
 
-		return h.ServeDNS(p, proxyCtx)
+		return h.ServeDNS(ctx, p, proxyCtx)
 	}
 
 	return proxy.HandlerFunc(f)

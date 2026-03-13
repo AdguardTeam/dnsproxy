@@ -20,6 +20,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/contextutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -111,6 +112,9 @@ type Proxy struct {
 	// recDetector detects recursive requests that may appear when resolving
 	// requests for private addresses.
 	recDetector *recursionDetector
+
+	// reqCtx is a constructor for the request contexts.  It is never nil.
+	reqCtx contextutil.Constructor
 
 	// pendingRequests is a storage for duplicated requests.  It is used to
 	// prevent sending the same request to upstreams multiple times.
@@ -214,6 +218,10 @@ func New(c *Config) (p *Proxy, err error) {
 		privateNets: cmp.Or[netutil.SubnetSet](
 			c.PrivateSubnets,
 			netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		),
+		reqCtx: cmp.Or[contextutil.Constructor](
+			c.RequestContext,
+			contextutil.EmptyConstructor{},
 		),
 		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
@@ -338,7 +346,9 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 		return fmt.Errorf("configuring listeners: %w", errors.WithDeferred(err, closeErr))
 	}
 
-	p.serveListeners()
+	// Use context without cancel to prevent listeners' context from being
+	// canceled.
+	p.serveListeners(context.WithoutCancel(ctx))
 
 	p.started = true
 
@@ -675,12 +685,8 @@ func addDO(msg *dns.Msg) {
 const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
-// upstream servers.  It expects dctx is filled with the request, the client's
-//
-// TODO(e.burkov):  Add [context.Context].
-func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
-	ctx := context.Background()
-
+// upstream servers.  It expects dctx is filled with the client's request.
+func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 	if p.EnableEDNSClientSubnet {
 		dctx.processECS(p.EDNSAddr, p.logger)
 	}

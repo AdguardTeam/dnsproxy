@@ -395,7 +395,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 			A: net.IP{4, 3, 2, 1},
 		}}
 
-		err := dnsProxy.Resolve(d)
+		err := dnsProxy.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 		require.NoError(t, err)
 
 		ci, expired, key := dnsProxy.cache.get(d.Req)
@@ -419,8 +419,8 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 			A: net.IP{4, 3, 2, 1},
 		}}
 
-		err := dnsProxy.Resolve(d)
-		assert.Nil(t, err)
+		err := dnsProxy.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
+		require.NoError(t, err)
 
 		ci, expired, key := dnsProxy.cache.get(d.Req)
 		assert.False(t, expired)

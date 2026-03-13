@@ -2,6 +2,7 @@
 package ratelimit
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -48,14 +49,14 @@ var _ proxy.Middleware = (*middleware)(nil)
 // client is rate limited, it returns [proxy.ErrDrop] to signal that no response
 // should be sent.
 func (m *middleware) Wrap(h proxy.Handler) (wrapped proxy.Handler) {
-	f := func(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
+	f := func(ctx context.Context, p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 		if dctx.Proto == proxy.ProtoUDP && m.isRatelimited(dctx.Addr.Addr()) {
 			m.logger.Debug("ratelimited based on ip only", "addr", dctx.Addr)
 
 			return proxy.ErrDrop
 		}
 
-		return h.ServeDNS(p, dctx)
+		return h.ServeDNS(ctx, p, dctx)
 	}
 
 	return proxy.HandlerFunc(f)

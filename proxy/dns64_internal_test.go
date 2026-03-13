@@ -375,7 +375,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				Addr: localCliAddr,
 			}
 
-			err = p.handleDNSRequest(dctx)
+			err = p.handleDNSRequest(testutil.ContextWithTimeout(t, defaultTimeout), dctx)
 			require.NoError(t, err)
 
 			res := dctx.Res

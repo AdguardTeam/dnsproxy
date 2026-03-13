@@ -1,16 +1,22 @@
 package ratelimit_test
 
 import (
+	"context"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/ratelimit"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// defaultTimeout is a default timeout for tests and contexts.
+const defaultTimeout = 1 * time.Second
 
 // Subnet lengths used in tests.
 const (
@@ -65,7 +71,7 @@ func TestMiddleware_Wrap(t *testing.T) {
 	for _, tc := range testCases {
 		called := 0
 		mock := &TestHandler{
-			OnHandle: func(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
+			OnHandle: func(_ context.Context, p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 				called++
 
 				return nil
@@ -78,10 +84,12 @@ func TestMiddleware_Wrap(t *testing.T) {
 			mw := ratelimit.NewMiddleware(tc.config)
 			wrapped := mw.Wrap(mock)
 
-			err := wrapped.ServeDNS(nil, tc.dctx)
+			ctx := testutil.ContextWithTimeout(t, defaultTimeout)
+
+			err := wrapped.ServeDNS(ctx, nil, tc.dctx)
 			require.NoError(t, err, "first request should not be ratelimited")
 
-			err = wrapped.ServeDNS(nil, tc.dctx)
+			err = wrapped.ServeDNS(ctx, nil, tc.dctx)
 			assert.Equal(t, tc.wantErr, err)
 
 			assert.Equal(t, tc.want, called)
@@ -110,7 +118,7 @@ func TestMiddleware_Wrap_allowlist(t *testing.T) {
 
 	called := 0
 	mock := &TestHandler{
-		OnHandle: func(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
+		OnHandle: func(_ context.Context, p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
 			called++
 
 			return nil
@@ -125,10 +133,12 @@ func TestMiddleware_Wrap_allowlist(t *testing.T) {
 			Proto: proxy.ProtoUDP,
 		}
 
-		err := handler.ServeDNS(nil, dctx)
+		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
+
+		err := handler.ServeDNS(ctx, nil, dctx)
 		require.NoError(t, err, "first request should not be ratelimited")
 
-		err = handler.ServeDNS(nil, dctx)
+		err = handler.ServeDNS(ctx, nil, dctx)
 		require.Error(t, err, "second request should be ratelimited")
 		assert.Equal(t, proxy.ErrDrop, err)
 
@@ -141,10 +151,12 @@ func TestMiddleware_Wrap_allowlist(t *testing.T) {
 			Proto: proxy.ProtoUDP,
 		}
 
-		err := handler.ServeDNS(nil, dctx)
+		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
+
+		err := handler.ServeDNS(ctx, nil, dctx)
 		require.NoError(t, err, "first request should not be ratelimited")
 
-		err = handler.ServeDNS(nil, dctx)
+		err = handler.ServeDNS(ctx, nil, dctx)
 		require.NoError(t, err, "second request should not be ratelimited due to whitelist")
 
 		assert.Equal(t, 3, called)
@@ -155,13 +167,17 @@ func TestMiddleware_Wrap_allowlist(t *testing.T) {
 //
 // TODO(d.kolyshev):  Move to internal/dnsproxytest.
 type TestHandler struct {
-	OnHandle func(p *proxy.Proxy, dctx *proxy.DNSContext) (err error)
+	OnHandle func(ctx context.Context, p *proxy.Proxy, dctx *proxy.DNSContext) (err error)
 }
 
 // type check
 var _ proxy.Handler = (*TestHandler)(nil)
 
 // ServeDNS implements the [Handler] interface for *TestHandler.
-func (h *TestHandler) ServeDNS(p *proxy.Proxy, dctx *proxy.DNSContext) (err error) {
-	return h.OnHandle(p, dctx)
+func (h *TestHandler) ServeDNS(
+	ctx context.Context,
+	p *proxy.Proxy,
+	dctx *proxy.DNSContext,
+) (err error) {
+	return h.OnHandle(ctx, p, dctx)
 }

@@ -3,7 +3,7 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 10
+# AdGuard-Project-Version: 12
 
 verbose="${VERBOSE:-0}"
 readonly verbose
@@ -68,11 +68,37 @@ trailing_whitespace() {
 		done
 }
 
-# TODO(a.garipov):  Consider using jq for JSON validation.
+# valid_json check ensures that all the .json files in the project are valid and
+# well-formatted according to the jq.
+valid_json() {
+	find_with_ignore \
+		-type 'f' \
+		-name '*.json' \
+		-print \
+		| while read -r f; do
+			validation_msg="$(jq empty "$f" 2>&1)"
+			exitcode="$?"
+
+			if [ "$exitcode" -ne '0' ]; then
+				printf 'file %s: %s\n' "$f" "$validation_msg"
+
+				continue
+			fi
+
+			if ! jq . "$f" | diff -u "$f" - >/dev/null 2>&1; then
+				printf 'file %s has formatting issues\n' "$f"
+			fi
+		done
+}
 
 run_linter -e trailing_newlines
 
 run_linter -e trailing_whitespace
+
+run_linter -e valid_json
+
+go="${GO:-go}"
+readonly go
 
 find_with_ignore \
 	-type 'f' \
@@ -84,4 +110,4 @@ find_with_ignore \
 	-o -name '*.yaml' \
 	-o -name '*.yml' \
 	')' \
-	-exec 'misspell' '--error' '{}' '+'
+	-exec "$go" 'tool' 'misspell' '--error' '{}' '+'

@@ -3,7 +3,7 @@
 # This comment is used to simplify checking local copies of the Dockerfile.
 # Bump this number every time a significant change is made to this Dockerfile.
 #
-# AdGuard-Project-Version: 10
+# AdGuard-Project-Version: 11
 
 # Dockerfile guidelines:
 #
@@ -28,7 +28,7 @@
 #    needed.  Keep it in sync with bamboo-specs/bamboo.yaml.
 
 # NOTE:  Keep in sync with bamboo-specs/bamboo.yaml.
-ARG BASE_IMAGE=adguard/go-builder:1.25.5--1
+ARG BASE_IMAGE=adguard/go-builder:1.26.1--1
 
 # The dependencies stage is needed to install packages and tool dependencies.
 # This is also where binaries like osslsigncode, which may be required for tests
@@ -53,7 +53,6 @@ make \
 	VERBOSE=1 \
 	go-env \
 	go-deps \
-	go-tools \
 	;
 EOF
 

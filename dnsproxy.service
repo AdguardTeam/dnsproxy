@@ -1,0 +1,133 @@
+# /etc/systemd/system/dnsproxy.service
+#
+# Hardened systemd unit for adguardteam/dnsproxy
+#
+# All upstreams use encrypted protocols (DoH, DoT).
+# IP-based upstream URLs avoid bootstrap DNS entirely — no plaintext
+# DNS query ever leaves this machine.
+#
+# Upstream strategy:
+#   Primary (fastest_addr):  Cloudflare, Google via DoH (IP-based)
+#   HTTP/3:                  Enabled globally for DoH (benefits CF & Google)
+#   Fallback:                DoT endpoints for all providers
+#
+# Prerequisites:
+#   1. Download the dnsproxy binary to /usr/local/bin/dnsproxy
+#   2. chmod 755 /usr/local/bin/dnsproxy
+#   3. systemctl daemon-reload
+#   4. systemctl enable --now dnsproxy.service
+#
+# Verify no plaintext DNS leaks:
+#   sudo ss -ulnp sport = 53        # should show only 127.0.0.1
+#   sudo tcpdump -i any port 53     # should show zero outbound traffic on port 53
+
+[Unit]
+Description=dnsproxy — encrypted DNS forwarder (DoH/DoT/DoQ)
+Documentation=https://github.com/AdguardTeam/dnsproxy
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+Conflicts=systemd-resolved.service dnsmasq.service named.service
+
+[Service]
+Type=simple
+
+# Primary upstreams: DoH via IP addresses (zero bootstrap DNS needed)
+#   Cloudflare  — https://1.1.1.1 / 1.0.0.1
+#   Google      — https://8.8.8.8 / 8.8.4.4
+# Fallback (DoT): all providers, used only if DoH is down
+# --http3 enables HTTP/3 (QUIC transport) for DoH connections
+ExecStart=/usr/local/bin/dnsproxy \
+    --listen=127.0.0.1 \
+    --port=53 \
+    --http3 \
+    --upstream=https://1.1.1.1/dns-query \
+    --upstream=https://1.0.0.1/dns-query \
+    --upstream=https://8.8.8.8/dns-query \
+    --upstream=https://8.8.4.4/dns-query \
+    --fallback=tls://1.1.1.1:853 \
+    --fallback=tls://1.0.0.1:853 \
+    --fallback=tls://8.8.8.8:853 \
+    --fallback=tls://8.8.4.4:853 \
+    --cache \
+    --cache-optimistic \
+    --cache-size=4194304 \
+    --cache-min-ttl=60 \
+    --cache-max-ttl=86400 \
+    --upstream-mode=fastest_addr \
+    --pending-requests-enabled \
+    --refuse-any \
+    --timeout=10s \
+    --max-go-routines=1000
+
+# ── Identity ──────────────────────────────────────────────────────────
+# DynamicUser creates a transient uid/gid with no login shell, no
+# home directory, and no persistence beyond the service lifetime.
+DynamicUser=yes
+
+# ── Capabilities ──────────────────────────────────────────────────────
+# Port 53 requires CAP_NET_BIND_SERVICE. Grant only that, nothing else.
+# PrivateUsers=yes is intentionally omitted — it creates a user
+# namespace that strips real capabilities, breaking port 53 binding.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+
+# ── Filesystem isolation ──────────────────────────────────────────────
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=
+
+# StateDirectory creates /var/lib/private/dnsproxy owned by the
+# dynamic user. Currently unused but ready for --output if needed.
+StateDirectory=dnsproxy
+LogsDirectory=dnsproxy
+StateDirectoryMode=0750
+LogsDirectoryMode=0750
+
+# ── Kernel isolation ─────────────────────────────────────────────────
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+# ── Network isolation ────────────────────────────────────────────────
+# AF_INET/AF_INET6 — DNS listening + encrypted upstream connections
+# AF_UNIX          — journald logging socket
+# AF_NETLINK       — Go runtime enumerates network interfaces at start
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# IPAddressDeny/Allow are intentionally omitted. They use BPF cgroup
+# filters that would block dnsproxy's own outbound connections to
+# upstream resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9, etc).
+
+# ── Syscall filtering ───────────────────────────────────────────────
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# ── Misc hardening ──────────────────────────────────────────────────
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+UMask=0077
+
+# ── Resource limits ──────────────────────────────────────────────────
+LimitNOFILE=65535
+LimitNPROC=512
+
+# ── Restart policy ───────────────────────────────────────────────────
+# "No disruption": restart immediately on failure, with burst protection.
+Restart=always
+RestartSec=2
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

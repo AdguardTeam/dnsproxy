@@ -129,15 +129,6 @@ func (p *Proxy) filterNAT64Answers(rrs []dns.RR) (filtered []dns.RR, hasAnswers 
 			} else {
 				filtered, hasAnswers = append(filtered, ans), true
 			}
-		case *dns.CNAME, *dns.DNAME:
-			// If the response contains a CNAME or a DNAME, then the CNAME or
-			// DNAME chain is followed until the first terminating A or AAAA
-			// record is reached.
-			//
-			// Just treat CNAME and DNAME responses as passable answers since
-			// AdGuard Home doesn't follow any of these chains except the
-			// dnsrewrite-defined ones.
-			filtered, hasAnswers = append(filtered, ans), true
 		default:
 			filtered = append(filtered, ans)
 		}

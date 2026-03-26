@@ -521,7 +521,7 @@ func minTTL(h *dns.RR_Header, ttl uint32) uint32 {
 // Updates a given TTL to fall within the range specified by the cacheMinTTL and
 // cacheMaxTTL settings.
 func respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL uint32) uint32 {
-	if ttl < cacheMinTTL {
+	if 0 < ttl && ttl < cacheMinTTL {
 		return cacheMinTTL
 	}
 

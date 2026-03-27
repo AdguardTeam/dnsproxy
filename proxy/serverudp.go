@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -14,6 +17,7 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/miekg/dns"
+	proxyproto "github.com/pires/go-proxyproto"
 )
 
 // initUDPListeners initializes UDP listeners with configured addresses.
@@ -136,6 +140,8 @@ func (p *Proxy) udpHandlePacket(
 ) {
 	p.logger.Debug("handling new udp packet", "raddr", remoteAddr)
 
+	packet, remoteAddr = p.parseUDPProxyHeader(packet, remoteAddr)
+
 	req := &dns.Msg{}
 	err := req.Unpack(packet)
 	if err != nil {
@@ -152,6 +158,42 @@ func (p *Proxy) udpHandlePacket(
 	if err != nil {
 		p.logger.Debug("handling dns request", "proto", d.Proto, slogutil.KeyError, err)
 	}
+}
+
+// parseUDPProxyHeader attempts to parse a proxy protocol header from a UDP
+// packet.  If the remote address is in p.TrustedProxies and a valid proxy
+// protocol header is present, it returns the remaining packet data and the
+// source address from the header.  Otherwise, it returns the original packet
+// and remote address unchanged.
+func (p *Proxy) parseUDPProxyHeader(packet []byte, remoteAddr *net.UDPAddr) ([]byte, *net.UDPAddr) {
+	if p.TrustedProxies == nil || !p.TrustedProxies.Contains(netutil.NetAddrToAddrPort(remoteAddr).Addr()) {
+		return packet, remoteAddr
+	}
+
+	reader := bufio.NewReader(bytes.NewReader(packet))
+	header, err := proxyproto.Read(reader)
+	if err != nil {
+		// No proxy protocol header found; return packet as-is.
+		return packet, remoteAddr
+	}
+
+	// Read the remaining bytes after the proxy protocol header; these are the
+	// actual DNS payload.
+	remaining, err := io.ReadAll(reader)
+	if err != nil {
+		p.logger.Error("reading remaining udp data after proxy header", slogutil.KeyError, err)
+
+		return packet, remoteAddr
+	}
+
+	srcUDPAddr, ok := header.SourceAddr.(*net.UDPAddr)
+	if ok {
+		return remaining, srcUDPAddr
+	}
+
+	p.logger.Debug("proxy protocol header has unsupported source address type", "addr", header.SourceAddr)
+
+	return remaining, remoteAddr
 }
 
 // Writes a response to the UDP client

@@ -15,7 +15,9 @@ func TestProxy_tcp(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	// Create a DNS-over-TCP client connection
-	addr := dnsProxy.Addr(ProtoTCP)
+	addr, err := dnsProxy.Addr(ProtoTCP)
+	require.NoError(t, err)
+
 	conn, err := dns.Dial("tcp", addr.String())
 	require.NoError(t, err)
 
@@ -40,7 +42,9 @@ func TestProxy_tls(t *testing.T) {
 	tlsConfig := &tls.Config{ServerName: tlsServerName, RootCAs: roots}
 
 	// Create a DNS-over-TLS client connection
-	addr := dnsProxy.Addr(ProtoTLS)
+	addr, err := dnsProxy.Addr(ProtoTLS)
+	require.NoError(t, err)
+
 	conn, err := dns.DialWithTLS("tcp-tls", addr.String(), tlsConfig)
 	require.NoError(t, err)
 

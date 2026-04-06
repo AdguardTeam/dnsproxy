@@ -65,11 +65,13 @@ func TestDNS64Race(t *testing.T) {
 	g := &sync.WaitGroup{}
 	g.Add(testMessagesCount)
 
-	addr := dnsProxy.Addr(ProtoTCP).String()
+	addr, err := dnsProxy.Addr(ProtoTCP)
+	require.NoError(t, err)
+
 	for range testMessagesCount {
 		// The [dns.Conn] isn't safe for concurrent use despite the requirements
 		// from the [net.Conn] documentation.
-		conn, err := dns.Dial("tcp", addr)
+		conn, err := dns.Dial("tcp", addr.String())
 		require.NoError(t, err)
 
 		go sendTestAAAAMessageAsync(conn, g, ipv4OnlyFqdn, syncCh)
@@ -77,6 +79,21 @@ func TestDNS64Race(t *testing.T) {
 
 	close(syncCh)
 	g.Wait()
+}
+
+func TestSetupDNS64_ZeroAddressPrefix(t *testing.T) {
+	t.Parallel()
+
+	p := &Proxy{
+		Config: Config{
+			UseDNS64:   true,
+			DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("::/96")},
+		},
+	}
+
+	err := p.setupDNS64()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "zero address")
 }
 
 func sendTestAAAAMessageAsync(conn *dns.Conn, g *sync.WaitGroup, fqdn string, syncCh chan struct{}) {

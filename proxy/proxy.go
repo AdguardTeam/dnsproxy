@@ -479,21 +479,21 @@ func collectAddrs[A any](listeners []A, af addrFunc[A]) (addrs []net.Addr) {
 // Addrs returns all listen addresses for the specified proto or nil if the
 // proxy does not listen to it.  proto must be one of [Proto]: [ProtoTCP],
 // [ProtoUDP], [ProtoTLS], [ProtoHTTPS], [ProtoQUIC], or [ProtoDNSCrypt].
-func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
+func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr, err error) {
 	p.RLock()
 	defer p.RUnlock()
 
 	switch proto {
 	case ProtoTCP:
-		return collectAddrs(p.tcpListen, net.Listener.Addr)
+		return collectAddrs(p.tcpListen, net.Listener.Addr), nil
 	case ProtoTLS:
-		return collectAddrs(p.tlsListen, net.Listener.Addr)
+		return collectAddrs(p.tlsListen, net.Listener.Addr), nil
 	case ProtoHTTPS:
-		return collectAddrs(p.httpsListen, net.Listener.Addr)
+		return collectAddrs(p.httpsListen, net.Listener.Addr), nil
 	case ProtoUDP:
-		return collectAddrs(p.udpListen, (*net.UDPConn).LocalAddr)
+		return collectAddrs(p.udpListen, (*net.UDPConn).LocalAddr), nil
 	case ProtoQUIC:
-		return collectAddrs(p.quicListen, (*quic.EarlyListener).Addr)
+		return collectAddrs(p.quicListen, (*quic.EarlyListener).Addr), nil
 	case ProtoDNSCrypt:
 		// Using only UDP addrs here
 		//
@@ -501,10 +501,9 @@ func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 		// ProtoDNSCryptTCP/ProtoDNSCryptUDP or we should change the
 		// configuration so that it was not possible to set different ports for
 		// TCP/UDP listeners.
-		return collectAddrs(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
+		return collectAddrs(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr), nil
 	default:
-		// TODO(e.burkov):  Use [errors.ErrBadEnumValue].
-		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
+		return nil, fmt.Errorf("proto: %w: %q", errors.ErrBadEnumValue, proto)
 	}
 }
 
@@ -521,25 +520,25 @@ func firstAddr[A any](listeners []A, af addrFunc[A]) (addr net.Addr) {
 // Addr returns the first listen address for the specified proto or nil if the
 // proxy does not listen to it.  proto must be one of [Proto]: [ProtoTCP],
 // [ProtoUDP], [ProtoTLS], [ProtoHTTPS], [ProtoQUIC], or [ProtoDNSCrypt].
-func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
+func (p *Proxy) Addr(proto Proto) (addr net.Addr, err error) {
 	p.RLock()
 	defer p.RUnlock()
 
 	switch proto {
 	case ProtoTCP:
-		return firstAddr(p.tcpListen, net.Listener.Addr)
+		return firstAddr(p.tcpListen, net.Listener.Addr), nil
 	case ProtoTLS:
-		return firstAddr(p.tlsListen, net.Listener.Addr)
+		return firstAddr(p.tlsListen, net.Listener.Addr), nil
 	case ProtoHTTPS:
-		return firstAddr(p.httpsListen, net.Listener.Addr)
+		return firstAddr(p.httpsListen, net.Listener.Addr), nil
 	case ProtoUDP:
-		return firstAddr(p.udpListen, (*net.UDPConn).LocalAddr)
+		return firstAddr(p.udpListen, (*net.UDPConn).LocalAddr), nil
 	case ProtoQUIC:
-		return firstAddr(p.quicListen, (*quic.EarlyListener).Addr)
+		return firstAddr(p.quicListen, (*quic.EarlyListener).Addr), nil
 	case ProtoDNSCrypt:
-		return firstAddr(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
+		return firstAddr(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr), nil
 	default:
-		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
+		return nil, fmt.Errorf("proto: %w: %q", errors.ErrBadEnumValue, proto)
 	}
 }
 

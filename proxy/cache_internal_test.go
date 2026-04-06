@@ -75,7 +75,9 @@ func TestServeCached(t *testing.T) {
 	dnsProxy.cache.set(reply, upstreamWithAddr, testLogger)
 
 	// Create a DNS-over-UDP client connection.
-	addr := dnsProxy.Addr(ProtoUDP)
+	addr, err := dnsProxy.Addr(ProtoUDP)
+	require.NoError(t, err)
+
 	client := &dns.Client{
 		Net:     string(ProtoUDP),
 		Timeout: testTimeout,

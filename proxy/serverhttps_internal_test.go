@@ -435,8 +435,12 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 				tlsCfg *tls.Config,
 				cfg *quic.Config,
 			) (*quic.Conn, error) {
-				addr := dnsProxy.Addr(ProtoHTTPS).String()
-				return quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
+				addr, err := dnsProxy.Addr(ProtoHTTPS)
+				if err != nil {
+					return nil, err
+				}
+
+				return quic.DialAddrEarly(ctx, addr.String(), tlsCfg, cfg)
 			},
 			TLSClientConfig:    tlsClientConfig,
 			QUICConfig:         &quic.Config{},
@@ -448,7 +452,12 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 		}
 		dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
 			// Route request to the DNS-over-HTTPS server address.
-			return dialer.DialContext(ctx, network, dnsProxy.Addr(ProtoHTTPS).String())
+			hAddr, err := dnsProxy.Addr(ProtoHTTPS)
+			if err != nil {
+				return nil, err
+			}
+
+			return dialer.DialContext(ctx, network, hAddr.String())
 		}
 
 		tlsClientConfig.NextProtos = []string{"h2", "http/1.1"}

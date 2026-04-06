@@ -65,11 +65,13 @@ func TestDNS64Race(t *testing.T) {
 	g := &sync.WaitGroup{}
 	g.Add(testMessagesCount)
 
-	addr := dnsProxy.Addr(ProtoTCP).String()
+	addr, err := dnsProxy.Addr(ProtoTCP)
+	require.NoError(t, err)
+
 	for range testMessagesCount {
 		// The [dns.Conn] isn't safe for concurrent use despite the requirements
 		// from the [net.Conn] documentation.
-		conn, err := dns.Dial("tcp", addr)
+		conn, err := dns.Dial("tcp", addr.String())
 		require.NoError(t, err)
 
 		go sendTestAAAAMessageAsync(conn, g, ipv4OnlyFqdn, syncCh)

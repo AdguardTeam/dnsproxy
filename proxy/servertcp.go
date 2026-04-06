@@ -139,13 +139,39 @@ func (p *Proxy) handleTCPConnection(
 		}
 	}()
 
+	// Set TCP keepalive
+	var rawConn net.Conn = conn
+
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		rawConn = tlsConn.NetConn()
+	}
+
+	if tcpConn, ok := rawConn.(*net.TCPConn); ok {
+		err := tcpConn.SetKeepAlive(true)
+		if err != nil {
+			logWithNonCrit(ctx, err, "setting keepalive", ProtoTCP, p.logger)
+		} else {
+			err = tcpConn.SetKeepAlivePeriod(30 * time.Second)
+			if err != nil {
+				logWithNonCrit(ctx, err, "setting keepalive period", ProtoTCP, p.logger)
+			}
+		}
+	}
+
 	p.logger.DebugContext(ctx, "handling new request", "proto", proto, "raddr", conn.RemoteAddr())
 
 	ctx, cancel := p.reqCtx.New(ctx)
 	defer cancel()
 
 	for p.isStarted() {
-		err := conn.SetDeadline(time.Now().Add(defaultTimeout))
+		var err error
+
+		switch proto {
+		case ProtoTLS:
+			err = conn.SetDeadline(time.Now().Add(defaultTLSTimeout))
+		default:
+			err = conn.SetDeadline(time.Now().Add(defaultTimeout))
+		}
 		if err != nil {
 			// Consider deadline errors non-critical.
 			logWithNonCrit(ctx, err, "setting deadline", ProtoTCP, p.logger)

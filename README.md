@@ -1,3 +1,16 @@
+# fcchbjm/dnsproxy
+
+这是[AdguardTeam/dnsproxy](https://github.com/AdguardTeam/dnsproxy) 的fork版本，名为[fcchbjm/dnsproxy](https://github.com/fcchbjm/dnsproxy)
+
+主要修改如下
+ - 新增 TLS 专用超时配置
+ - 为 TCP 连接启用 Keep-Alive 机制
+ - 更改模块名以方便构建并与官方名称相区别
+
+以下是官方README.md内容
+
+---
+
 # DNS Proxy <!-- omit in toc -->
 
 [![Code Coverage](https://img.shields.io/codecov/c/github/AdguardTeam/dnsproxy/master.svg)](https://codecov.io/github/AdguardTeam/dnsproxy?branch=master)

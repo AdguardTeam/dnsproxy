@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/golibs/netutil"
 	rate "github.com/beefsack/go-rate"
+	"github.com/fcchbjm/dnsproxy/proxy"
 	gocache "github.com/patrickmn/go-cache"
 )
 

@@ -11,12 +11,12 @@ LABEL\
 	org.opencontainers.image.authors="AdGuard Team <devteam@adguard.com>" \
 	org.opencontainers.image.created=$BUILD_DATE \
 	org.opencontainers.image.description="Simple DNS proxy with DoH, DoT, DoQ and DNSCrypt support" \
-	org.opencontainers.image.documentation="https://github.com/AdguardTeam/dnsproxy" \
+	org.opencontainers.image.documentation="https://github.com/fcchbjm/dnsproxy" \
 	org.opencontainers.image.licenses="Apache-2.0" \
 	org.opencontainers.image.revision=$VCS_REF \
-	org.opencontainers.image.source="https://github.com/AdguardTeam/dnsproxy" \
+	org.opencontainers.image.source="https://github.com/fcchbjm/dnsproxy" \
 	org.opencontainers.image.title="dnsproxy" \
-	org.opencontainers.image.url="https://github.com/AdguardTeam/dnsproxy" \
+	org.opencontainers.image.url="https://github.com/fcchbjm/dnsproxy" \
 	org.opencontainers.image.vendor="AdGuard" \
 	org.opencontainers.image.version=$VERSION
 

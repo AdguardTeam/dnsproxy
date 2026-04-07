@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
+	"github.com/fcchbjm/dnsproxy/internal/dnsmsg"
 )
 
 // MessageConstructor creates DNS messages.

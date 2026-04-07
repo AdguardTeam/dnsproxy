@@ -12,17 +12,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
-	"github.com/AdguardTeam/dnsproxy/internal/middleware"
-	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
-	"github.com/AdguardTeam/dnsproxy/proxy"
-	"github.com/AdguardTeam/dnsproxy/ratelimit"
-	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/ameshkov/dnscrypt/v2"
+	"github.com/fcchbjm/dnsproxy/internal/dnsmsg"
+	"github.com/fcchbjm/dnsproxy/internal/middleware"
+	proxynetutil "github.com/fcchbjm/dnsproxy/internal/netutil"
+	"github.com/fcchbjm/dnsproxy/proxy"
+	"github.com/fcchbjm/dnsproxy/ratelimit"
+	"github.com/fcchbjm/dnsproxy/upstream"
 	"gopkg.in/yaml.v3"
 )
 

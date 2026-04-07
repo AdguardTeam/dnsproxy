@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/ameshkov/dnscrypt/v2"
+	"github.com/fcchbjm/dnsproxy/internal/bootstrap"
 	"github.com/miekg/dns"
 )
 

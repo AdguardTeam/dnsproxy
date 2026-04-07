@@ -8,10 +8,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/AdguardTeam/dnsproxy/internal/version"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/AdguardTeam/golibs/timeutil"
+	"github.com/fcchbjm/dnsproxy/internal/version"
 )
 
 // Indexes to help with the [commandLineOptions] initialization.

@@ -54,7 +54,7 @@ committime="${SOURCE_DATE_EPOCH:-$(git log -1 --pretty=%ct)}"
 readonly committime
 
 # Compile them in.
-version_pkg='github.com/AdguardTeam/dnsproxy/internal/version'
+version_pkg='github.com/fcchbjm/dnsproxy/internal/version'
 ldflags="-s -w"
 ldflags="${ldflags} -X ${version_pkg}.branch=${branch}"
 ldflags="${ldflags} -X ${version_pkg}.committime=${committime}"

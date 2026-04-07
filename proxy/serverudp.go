@@ -7,12 +7,12 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
-	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
+	"github.com/fcchbjm/dnsproxy/internal/bootstrap"
+	proxynetutil "github.com/fcchbjm/dnsproxy/internal/netutil"
 	"github.com/miekg/dns"
 )
 

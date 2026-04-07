@@ -6,8 +6,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/golibs/hostsfile"
+	"github.com/fcchbjm/dnsproxy/proxy"
 )
 
 // Config is the configuration for [Default].

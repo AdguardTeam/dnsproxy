@@ -35,9 +35,10 @@ import (
 )
 
 const (
-	defaultTimeout    = 10 * time.Second
-	defaultTLSTimeout = 600 * time.Second
-	minDNSPacketSize  = 12 + 5
+	defaultTimeout      = 10 * time.Second
+	defaultTLSTimeout   = 600 * time.Second
+	minDNSPacketSize    = 12 + 5
+	defaultTCPKeepAlive = 30 * time.Second
 )
 
 // Proto is the DNS protocol.

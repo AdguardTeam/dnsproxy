@@ -151,7 +151,7 @@ func (p *Proxy) handleTCPConnection(
 		if err != nil {
 			logWithNonCrit(ctx, err, "setting keepalive", ProtoTCP, p.logger)
 		} else {
-			err = tcpConn.SetKeepAlivePeriod(30 * time.Second)
+			err = tcpConn.SetKeepAlivePeriod(defaultTCPKeepAlive)
 			if err != nil {
 				logWithNonCrit(ctx, err, "setting keepalive period", ProtoTCP, p.logger)
 			}

@@ -7,13 +7,17 @@
   'push':
     'tags':
       - 'v*'
-    # Builds from the master branch will be pushed with the `dev` tag.
+    # Builds from the default branch will be pushed with the `dev` tag.
     'branches':
       - 'master'
+      - 'main'
 
 'jobs':
   'docker':
     'runs-on': 'ubuntu-latest'
+    # Optional: set repository variable DOCKER_IMAGE_NAME (e.g. docker.io/user/dnsproxy).
+    'env':
+      'DOCKER_IMAGE_NAME': '${{ vars.DOCKER_IMAGE_NAME }}'
     'steps':
       - 'name': 'Checkout'
         'uses': 'actions/checkout@v3'
@@ -50,9 +54,15 @@
             -u="${DOCKER_USER}" \
             -p="${DOCKER_PASSWORD}"
 
+          # Default image to lowercase owner/repo (fork-friendly).  Override with
+          # repository variable DOCKER_IMAGE_NAME if set.
+          if [ -z "${DOCKER_IMAGE_NAME}" ]; then
+            DOCKER_IMAGE_NAME="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          fi
+
           make \
             VERSION="${RELEASE_VERSION}" \
-            DOCKER_IMAGE_NAME="adguard/dnsproxy" \
+            DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME}" \
             DOCKER_PUSH="1" \
             VERBOSE="1" \
             docker

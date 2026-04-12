@@ -6,6 +6,9 @@
  - 新增 TLS 专用超时配置
  - 为 TCP 连接启用 Keep-Alive 机制
  - 更改模块名以方便构建并与官方名称相区别
+ - 实现TCP Fast Open(TFO)
+ - 实现TLS会话恢复
+ - 优化TCP挥手RST问题
 
 以下是官方README.md内容
 

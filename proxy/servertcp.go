@@ -22,11 +22,11 @@ import (
 const (
 	// tcpGracefulShutdownLinger is a short delay before half-closing a TCP or
 	// TLS stream so the peer can read queued data.
-	tcpGracefulShutdownLinger = 20 * time.Millisecond
+	tcpGracefulShutdownLinger = 80 * time.Millisecond
 
 	// tcpReadDrainTimeout bounds how long we wait for the peer to finish the
 	// close handshake after CloseWrite.
-	tcpReadDrainTimeout = 5 * time.Second
+	tcpReadDrainTimeout = 2 * time.Second
 )
 
 // initTCPListeners initializes TCP listeners with configured addresses.
@@ -139,7 +139,7 @@ func (p *Proxy) tcpPacketLoop(
 
 		err = reqSema.Acquire(ctx)
 		if err != nil {
-			p.logger.ErrorContext(ctx, "acquiring sema", "proto", ProtoTCP, slogutil.KeyError, err)
+			p.logger.ErrorContext(ctx, "acquiring sema", "proto", proto, slogutil.KeyError, err)
 
 			break
 		}
@@ -197,17 +197,24 @@ func (p *Proxy) handleTCPConnection(
 
 		switch proto {
 		case ProtoTLS:
-			err = conn.SetDeadline(time.Now().Add(defaultTLSTimeout))
+			// DoT: read deadline only so outbound responses are not tied to the idle
+			// read window (avoids premature full-deadline shutdown vs long-lived clients).
+			err = conn.SetReadDeadline(time.Now().Add(defaultTLSTimeout))
 		default:
 			err = conn.SetDeadline(time.Now().Add(defaultTimeout))
 		}
 
 		if err != nil {
 			// Consider deadline errors non-critical.
-			logWithNonCrit(ctx, err, "setting deadline", ProtoTCP, p.logger)
+			msg := "setting deadline"
+			if proto == ProtoTLS {
+				msg = "setting read deadline"
+			}
+
+			logWithNonCrit(ctx, err, msg, proto, p.logger)
 		}
 
-		req := p.readDNSReq(ctx, conn)
+		req := p.readDNSReq(ctx, conn, proto)
 		if req == nil {
 			return
 		}
@@ -218,17 +225,17 @@ func (p *Proxy) handleTCPConnection(
 
 		err = p.handleDNSRequest(ctx, d)
 		if err != nil {
-			logWithNonCrit(ctx, err, "handling request", ProtoTCP, p.logger)
+			logWithNonCrit(ctx, err, "handling request", proto, p.logger)
 		}
 	}
 }
 
 // readDNSReq returns DNS request message from the given connection or nil if
 // it failed to read it.  Properly logs the error if it happened.
-func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn) (req *dns.Msg) {
+func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn, proto Proto) (req *dns.Msg) {
 	packet, err := readPrefixed(conn)
 	if err != nil {
-		logWithNonCrit(ctx, err, "reading msg", ProtoTCP, p.logger)
+		logWithNonCrit(ctx, err, "reading msg", proto, p.logger)
 
 		return nil
 	}
@@ -270,32 +277,19 @@ func readPrefixed(conn net.Conn) (b []byte, err error) {
 	return b, nil
 }
 
-// shutdownTCPConnGracefully half-closes the write side, drains the read side,
-// and then closes the connection.  This follows the usual TLS shutdown sequence
-// (close_notify, then FIN) and avoids resetting the connection when the peer
-// has not finished reading.
+// shutdownTCPConnGracefully closes the connection.  For DNS-over-TLS, avoid
+// CloseWrite()+TCP half-close first: that emits server-first FIN and raises tail
+// RST risk with some clients in crossed shutdown; tls.Conn.Close sends
+// close_notify and releases the socket.  Plain TCP keeps half-close+drain.
 func (p *Proxy) shutdownTCPConnGracefully(ctx context.Context, conn net.Conn, proto Proto) {
-	time.Sleep(tcpGracefulShutdownLinger)
-
 	switch c := conn.(type) {
 	case *tls.Conn:
-		err := c.CloseWrite()
-		if err != nil {
-			logWithNonCrit(ctx, err, "tls close write", proto, p.logger)
-		}
-
-		_ = c.SetReadDeadline(time.Now().Add(tcpReadDrainTimeout))
-
-		_, err = io.Copy(io.Discard, c)
-		if err != nil && !errors.Is(err, io.EOF) {
-			logWithNonCrit(ctx, err, "draining tls conn", proto, p.logger)
-		}
-
-		err = c.Close()
+		err := c.Close()
 		if err != nil {
 			logWithNonCrit(ctx, err, "closing tls conn", proto, p.logger)
 		}
 	case *net.TCPConn:
+		time.Sleep(tcpGracefulShutdownLinger)
 		err := c.CloseWrite()
 		if err != nil {
 			logWithNonCrit(ctx, err, "tcp close write", proto, p.logger)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
@@ -16,6 +17,16 @@ import (
 	"github.com/fcchbjm/dnsproxy/internal/bootstrap"
 	proxynetutil "github.com/fcchbjm/dnsproxy/internal/netutil"
 	"github.com/miekg/dns"
+)
+
+const (
+	// tcpGracefulShutdownLinger is a short delay before half-closing a TCP or
+	// TLS stream so the peer can read queued data.
+	tcpGracefulShutdownLinger = 20 * time.Millisecond
+
+	// tcpReadDrainTimeout bounds how long we wait for the peer to finish the
+	// close handshake after CloseWrite.
+	tcpReadDrainTimeout = 5 * time.Second
 )
 
 // initTCPListeners initializes TCP listeners with configured addresses.
@@ -66,13 +77,28 @@ func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln *net.TCPLi
 // initTLSListeners initializes TLS listeners with configured addresses.
 func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
 	for _, addr := range p.TLSListenAddr {
-		p.logger.InfoContext(ctx, "creating tls server socket", "addr", addr)
+		addrStr := addr.String()
+		p.logger.InfoContext(ctx, "creating tls server socket", "addr", addrStr)
+
+		conf := proxynetutil.ListenConfigTLS(p.logger)
 
 		var tcpListen *net.TCPListener
 		err = p.bindWithRetry(ctx, func() (listenErr error) {
-			tcpListen, listenErr = net.ListenTCP("tcp", addr)
+			var listener net.Listener
+			listener, listenErr = conf.Listen(ctx, bootstrap.NetworkTCP, addrStr)
+			if listenErr != nil {
+				return listenErr
+			}
 
-			return listenErr
+			var ok bool
+			tcpListen, ok = listener.(*net.TCPListener)
+			if !ok {
+				// TODO(e.burkov):  Close the listener.
+
+				return fmt.Errorf("bad listener type: %T", listener)
+			}
+
+			return nil
 		})
 		if err != nil {
 			return fmt.Errorf("listening on tls addr %s: %w", addr, err)
@@ -132,12 +158,15 @@ func (p *Proxy) handleTCPConnection(
 ) {
 	defer slogutil.RecoverAndLog(ctx, p.logger)
 	defer reqSema.Release()
-	defer func() {
-		err := conn.Close()
-		if err != nil {
-			logWithNonCrit(ctx, err, "closing conn", ProtoTCP, p.logger)
-		}
-	}()
+
+	var shutdownOnce sync.Once
+	shutdown := func() {
+		shutdownOnce.Do(func() {
+			p.shutdownTCPConnGracefully(ctx, conn, proto)
+		})
+	}
+
+	defer shutdown()
 
 	// Set TCP keepalive
 	var rawConn net.Conn = conn
@@ -185,6 +214,7 @@ func (p *Proxy) handleTCPConnection(
 
 		d := p.newDNSContext(proto, req, netutil.NetAddrToAddrPort(conn.RemoteAddr()))
 		d.Conn = conn
+		d.tcpConnShutdown = shutdown
 
 		err = p.handleDNSRequest(ctx, d)
 		if err != nil {
@@ -240,13 +270,69 @@ func readPrefixed(conn net.Conn) (b []byte, err error) {
 	return b, nil
 }
 
+// shutdownTCPConnGracefully half-closes the write side, drains the read side,
+// and then closes the connection.  This follows the usual TLS shutdown sequence
+// (close_notify, then FIN) and avoids resetting the connection when the peer
+// has not finished reading.
+func (p *Proxy) shutdownTCPConnGracefully(ctx context.Context, conn net.Conn, proto Proto) {
+	time.Sleep(tcpGracefulShutdownLinger)
+
+	switch c := conn.(type) {
+	case *tls.Conn:
+		err := c.CloseWrite()
+		if err != nil {
+			logWithNonCrit(ctx, err, "tls close write", proto, p.logger)
+		}
+
+		_ = c.SetReadDeadline(time.Now().Add(tcpReadDrainTimeout))
+
+		_, err = io.Copy(io.Discard, c)
+		if err != nil && !errors.Is(err, io.EOF) {
+			logWithNonCrit(ctx, err, "draining tls conn", proto, p.logger)
+		}
+
+		err = c.Close()
+		if err != nil {
+			logWithNonCrit(ctx, err, "closing tls conn", proto, p.logger)
+		}
+	case *net.TCPConn:
+		err := c.CloseWrite()
+		if err != nil {
+			logWithNonCrit(ctx, err, "tcp close write", proto, p.logger)
+		}
+
+		_ = c.SetReadDeadline(time.Now().Add(tcpReadDrainTimeout))
+
+		_, err = io.Copy(io.Discard, c)
+		if err != nil && !errors.Is(err, io.EOF) {
+			logWithNonCrit(ctx, err, "draining tcp conn", proto, p.logger)
+		}
+
+		err = c.Close()
+		if err != nil {
+			logWithNonCrit(ctx, err, "closing tcp conn", proto, p.logger)
+		}
+	default:
+		err := conn.Close()
+		if err != nil {
+			logWithNonCrit(ctx, err, "closing conn", proto, p.logger)
+		}
+	}
+}
+
 // Writes a response to the TCP (or TLS) client
 func (p *Proxy) respondTCP(d *DNSContext) error {
 	resp := d.Res
 	conn := d.Conn
 
 	if resp == nil {
-		// If no response has been written, close the connection right away
+		// If no response has been written, close the connection right away.
+		if d.tcpConnShutdown != nil {
+			d.tcpConnShutdown()
+
+			return nil
+		}
+
 		return conn.Close()
 	}
 

@@ -96,6 +96,10 @@ type DNSContext struct {
 
 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
 	doBit bool
+
+	// tcpConnShutdown is set by the TCP/TLS handler to close the stream with a
+	// graceful TCP/TLS shutdown.  It is nil for non-TCP protocols.
+	tcpConnShutdown func()
 }
 
 // newDNSContext returns a new properly initialized *DNSContext.

@@ -1,14 +1,18 @@
 package cmd
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"os"
 )
 
-// NewTLSConfig returns the TLS config that includes a certificate.  Use it for
+// newTLSConfig returns the TLS config that includes a certificate.  Use it for
 // server TLS configuration or for a client certificate.  If caPath is empty,
 // system CAs will be used.
+//
+// Session ticket keys (RFC 5077) are initialized so clients can resume TLS
+// sessions per RFC 7858 Section 3.4.
 func newTLSConfig(conf *configuration) (c *tls.Config, err error) {
 	// Set default TLS min/max versions
 	tlsMinVersion := tls.VersionTLS10
@@ -37,11 +41,20 @@ func newTLSConfig(conf *configuration) (c *tls.Config, err error) {
 		return nil, fmt.Errorf("loading TLS cert: %s", err)
 	}
 
+	var sessionTicketKey [32]byte
+	_, err = rand.Read(sessionTicketKey[:])
+	if err != nil {
+		return nil, fmt.Errorf("generating tls session ticket key: %w", err)
+	}
+
 	// #nosec G402 -- TLS MinVersion is configured by user.
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   uint16(tlsMinVersion),
 		MaxVersion:   uint16(tlsMaxVersion),
+		// Session tickets stay enabled (SessionTicketsDisabled defaults to
+		// false).  SessionTicketKey encrypts tickets for resumption.
+		SessionTicketKey: sessionTicketKey,
 	}, nil
 }
 

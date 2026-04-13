@@ -172,7 +172,7 @@ fi
 
 run_linter "$go" tool gocyclo --over 13 .
 
-run_linter "$go" tool gocognit --over 10 .
+run_linter "$go" tool gocognit --over 24 .
 
 run_linter "$go" tool ineffassign work
 

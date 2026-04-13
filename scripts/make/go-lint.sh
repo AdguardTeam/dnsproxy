@@ -120,6 +120,7 @@ underscores() {
 			'!' '(' \
 			-name '*_darwin.go' \
 			-o -name '*_linux.go' \
+			-o -name '*_openbsd.go' \
 			-o -name '*_others.go' \
 			-o -name '*_plan9.go' \
 			-o -name '*_test.go' \

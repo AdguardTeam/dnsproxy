@@ -5,13 +5,13 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TODO(e.burkov):  Call [testing.T.Parallel] in this file.
+// TODO(e.burkov):  Consider making the below tests external when the
+// [UpstreamConfig]'s API is exported.
 
 // Domains specifications and their questions used in tests of [UpstreamConfig].
 const (
@@ -63,6 +63,7 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 
 	config, err := ParseUpstreamsConfig(testUpstreamConfigLines, nil)
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, config.Close)
 
 	testCases := []struct {
 		name string
@@ -76,6 +77,10 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 		name: "unqualified",
 		in:   unqualifiedFQDN,
 		want: []string{unqualifiedUpstream},
+	}, {
+		name: "root",
+		in:   ".",
+		want: []string{generalUpstream},
 	}, {
 		name: "tld",
 		in:   topLevelFQDN,
@@ -117,6 +122,7 @@ func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 
 	config, err := ParseUpstreamsConfig(testUpstreamConfigLines, nil)
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, config.Close)
 
 	testCases := []struct {
 		name string
@@ -129,6 +135,10 @@ func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 	}, {
 		name: "unqualified",
 		in:   unqualifiedFQDN,
+		want: []string{generalUpstream},
+	}, {
+		name: "root",
+		in:   ".",
 		want: []string{generalUpstream},
 	}, {
 		name: "tld",
@@ -167,6 +177,8 @@ func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 }
 
 func TestUpstreamConfig_Validate(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name    string
 		wantErr error
@@ -196,102 +208,28 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			c, err := ParseUpstreamsConfig(tc.in, nil)
 			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, c.Close)
 
 			assert.ErrorIs(t, c.validate(), tc.wantErr)
 		})
 	}
 
 	t.Run("actual_nil", func(t *testing.T) {
+		t.Parallel()
+
 		var c *UpstreamConfig
 
 		assert.Equal(t, c.validate(), errors.ErrNoValue)
 	})
 }
 
-func TestValidatePrivateConfig(t *testing.T) {
-	ss := netutil.SubnetSetFunc(netutil.IsLocallyServed)
+func TestUpstreamConfig_GetUpstreamsForDomain_wildcards(t *testing.T) {
+	t.Parallel()
 
-	testCases := []struct {
-		name    string
-		wantErr string
-		u       string
-	}{{
-		name:    "success_address",
-		wantErr: ``,
-		u:       "[/1.0.0.127.in-addr.arpa/]#",
-	}, {
-		name:    "success_subnet",
-		wantErr: ``,
-		u:       "[/127.in-addr.arpa/]#",
-	}, {
-		name:    "success_v4_family",
-		wantErr: ``,
-		u:       "[/in-addr.arpa/]#",
-	}, {
-		name:    "success_v6_family",
-		wantErr: ``,
-		u:       "[/ip6.arpa/]#",
-	}, {
-		name:    "bad_arpa_domain",
-		wantErr: `bad arpa domain name "arpa": not a reversed ip network`,
-		u:       "[/arpa/]#",
-	}, {
-		name:    "not_arpa_subnet",
-		wantErr: `bad arpa domain name "hello.world": not a reversed ip network`,
-		u:       "[/hello.world/]#",
-	}, {
-		name:    "non-private_arpa_address",
-		wantErr: `reversed subnet in "1.2.3.4.in-addr.arpa." is not private`,
-		u:       "[/1.2.3.4.in-addr.arpa/]#",
-	}, {
-		name:    "non-private_arpa_subnet",
-		wantErr: `reversed subnet in "128.in-addr.arpa." is not private`,
-		u:       "[/128.in-addr.arpa/]#",
-	}, {
-		name: "several_bad",
-		wantErr: `reversed subnet in "1.2.3.4.in-addr.arpa." is not private` +
-			"\n" + `bad arpa domain name "non.arpa": not a reversed ip network`,
-		u: "[/non.arpa/1.2.3.4.in-addr.arpa/127.in-addr.arpa/]#",
-	}, {
-		name:    "partial_good",
-		wantErr: "",
-		u:       "[/a.1.2.3.10.in-addr.arpa/a.10.in-addr.arpa/]#",
-	}}
-
-	for _, tc := range testCases {
-		set := []string{"192.168.0.1", tc.u}
-
-		t.Run(tc.name, func(t *testing.T) {
-			upsConf, err := ParseUpstreamsConfig(set, nil)
-			require.NoError(t, err)
-
-			testutil.AssertErrorMsg(t, tc.wantErr, ValidatePrivateConfig(upsConf, ss))
-		})
-	}
-}
-
-func TestGetUpstreamsForDomainWithoutDuplicates(t *testing.T) {
-	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
-	config, err := ParseUpstreamsConfig(upstreams, &upstream.Options{
-		Logger:             testLogger,
-		InsecureSkipVerify: false,
-		Bootstrap:          nil,
-		Timeout:            testTimeout,
-	})
-	assert.NoError(t, err)
-	assert.Len(t, config.Upstreams, 0)
-	assert.Len(t, config.DomainReservedUpstreams, 2)
-
-	u1 := config.DomainReservedUpstreams["example.com."][0]
-	u2 := config.DomainReservedUpstreams["example.org."][0]
-
-	// Check that the very same Upstream instance is used for both domains.
-	assert.Same(t, u1, u2)
-}
-
-func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
 	conf := []string{
 		"0.0.0.1",
 		"[/a.x/]0.0.0.2",
@@ -304,6 +242,7 @@ func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
 
 	uconf, err := ParseUpstreamsConfig(conf, nil)
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, uconf.Close)
 
 	testCases := []struct {
 		name string
@@ -349,13 +288,15 @@ func TestGetUpstreamsForDomain_wildcards(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ups := uconf.getUpstreamsForDomain(tc.in)
 			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
 
-func TestGetUpstreamsForDomain_sub_wildcards(t *testing.T) {
+func TestUpstreamConfig_GetUpstreamsForDomain_subWildcards(t *testing.T) {
 	conf := []string{
 		"0.0.0.1",
 		"[/a.x/]0.0.0.2",
@@ -365,6 +306,7 @@ func TestGetUpstreamsForDomain_sub_wildcards(t *testing.T) {
 
 	uconf, err := ParseUpstreamsConfig(conf, nil)
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, uconf.Close)
 
 	testCases := []struct {
 		name string
@@ -390,13 +332,17 @@ func TestGetUpstreamsForDomain_sub_wildcards(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ups := uconf.getUpstreamsForDomain(tc.in)
 			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
 
-func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
+func TestUpstreamConfig_GetUpstreamsForDomain_defaultWildcards(t *testing.T) {
+	t.Parallel()
+
 	conf := []string{
 		"127.0.0.1:5301",
 		"[/example.org/]127.0.0.1:5302",
@@ -407,6 +353,7 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 
 	uconf, err := ParseUpstreamsConfig(conf, nil)
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, uconf.Close)
 
 	testCases := []struct {
 		name string
@@ -432,13 +379,15 @@ func TestGetUpstreamsForDomain_default_wildcards(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ups := uconf.getUpstreamsForDomain(tc.in)
 			assertUpstreamsAddrs(t, ups, tc.want)
 		})
 	}
 }
 
-func BenchmarkGetUpstreamsForDomain(b *testing.B) {
+func BenchmarkUpstreamConfig_GetUpstreamsForDomain(b *testing.B) {
 	upstreamsAddrs := []string{
 		"[/google.com/local/]4.3.2.1",
 		"[/www.google.com//]1.2.3.4",
@@ -453,6 +402,7 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 		Bootstrap:          nil,
 		Timeout:            testTimeout,
 	})
+	testutil.CleanupAndRequireSuccess(b, config.Close)
 
 	domains := []string{
 		"www.google.com.",
@@ -478,10 +428,10 @@ func BenchmarkGetUpstreamsForDomain(b *testing.B) {
 	// Most recent results:
 	//
 	//	goos: darwin
-	//	goarch: amd64
+	//	goarch: arm64
 	//	pkg: github.com/AdguardTeam/dnsproxy/proxy
-	//	cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-	//	BenchmarkGetUpstreamsForDomain/get-12         	22438213	        46.05 ns/op	       0 B/op	       0 allocs/op
+	//	cpu: Apple M4 Pro
+	//  BenchmarkUpstreamConfig_GetUpstreamsForDomain/get-14    48695488    24.51 ns/op     0 B/op	0 allocs/op
 }
 
 // assertUpstreamsAddrs checks the addresses of ups to exactly match want.

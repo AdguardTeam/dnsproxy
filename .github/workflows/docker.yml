@@ -15,7 +15,10 @@
 'jobs':
   'docker':
     'runs-on': 'ubuntu-latest'
-    # Optional: set repository variable DOCKER_IMAGE_NAME (e.g. docker.io/user/dnsproxy).
+    'permissions':
+      'contents': 'read'
+      'packages': 'write'
+    # Optional: set repository variable DOCKER_IMAGE_NAME (e.g. ghcr.io/user/dnsproxy).
     'env':
       'DOCKER_IMAGE_NAME': '${{ vars.DOCKER_IMAGE_NAME }}'
     'steps':
@@ -39,10 +42,7 @@
         'uses': 'docker/setup-buildx-action@v3'
         'with':
           'install': true
-      - 'name': 'Publish to Docker Hub'
-        'env':
-          'DOCKER_USER': ${{ secrets.DOCKER_USER }}
-          'DOCKER_PASSWORD': ${{ secrets.DOCKER_PASSWORD }}
+      - 'name': 'Publish to GitHub Container Registry'
         'run': |-
           set -e -u -x
 
@@ -50,14 +50,12 @@
           if [[ "${RELEASE_VERSION}" != v* ]]; then RELEASE_VERSION='dev'; fi
           echo "RELEASE_VERSION=\"${RELEASE_VERSION}\"" >> $GITHUB_ENV
 
-          docker login \
-            -u="${DOCKER_USER}" \
-            -p="${DOCKER_PASSWORD}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
           # Default image to lowercase owner/repo (fork-friendly).  Override with
           # repository variable DOCKER_IMAGE_NAME if set.
           if [ -z "${DOCKER_IMAGE_NAME}" ]; then
-            DOCKER_IMAGE_NAME="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+            DOCKER_IMAGE_NAME="ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
           fi
 
           make \
@@ -82,6 +80,7 @@
       - 'name': Conclusion
         'uses': technote-space/workflow-conclusion-action@v1
       - 'name': Send Slack notif
+        'if': ${{ secrets.SLACK_WEBHOOK_URL != '' }}
         'uses': 8398a7/action-slack@v3
         'with':
           'status': ${{ env.WORKFLOW_CONCLUSION }}

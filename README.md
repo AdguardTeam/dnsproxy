@@ -10,6 +10,18 @@
  - 实现TLS会话恢复
  - 优化TCP挥手RST问题
 
+## Docker 镜像（本 fork）
+
+本仓库的 GitHub Actions 会构建并推送镜像到 GitHub Container Registry（GHCR）：
+
+- `ghcr.io/fcchbjm/dnsproxy`
+
+拉取示例：
+
+```shell
+docker pull ghcr.io/fcchbjm/dnsproxy:latest
+```
+
 以下是官方README.md内容
 
 ---

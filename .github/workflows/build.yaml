@@ -97,6 +97,7 @@ jobs:
       - name: Conclusion
         uses: technote-space/workflow-conclusion-action@v1
       - name: Send Slack notif
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ env.WORKFLOW_CONCLUSION }}

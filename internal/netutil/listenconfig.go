@@ -23,7 +23,8 @@ func ListenConfig(l *slog.Logger) (lc *net.ListenConfig) {
 }
 
 // ListenConfigTLS is like [ListenConfig] but also enables TCP Fast Open on the
-// listening socket where the OS supports it (Unix).  l must not be nil.
+// listening socket where golang.org/x/sys/unix exposes it.  OpenBSD omits TFO
+// (see listenconfig_openbsd.go).  l must not be nil.
 func ListenConfigTLS(l *slog.Logger) (lc *net.ListenConfig) {
 	lc = &net.ListenConfig{
 		Control: listenControl{logger: l}.tlsListenControl,

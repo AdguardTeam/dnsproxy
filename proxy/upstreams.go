@@ -19,6 +19,9 @@ import (
 // single label.
 const UnqualifiedNames = "unqualified_names"
 
+// labelSep is a separator between labels of a domain name.
+const labelSep = "."
+
 // UpstreamConfig maps domain names to upstreams.
 type UpstreamConfig struct {
 	// DomainReservedUpstreams maps the domains to the upstreams.
@@ -177,11 +180,9 @@ func (p *configParser) parse(lines []string) (c *UpstreamConfig, err error) {
 		}
 	}
 
-	for host, ups := range p.subdomainsOnlyUpstreams {
-		// Rewrite ups for wildcard subdomains to remove upper level domains
-		// specs.
-		p.domainReservedUpstreams[host] = ups
-	}
+	// Rewrite upstreams for wildcard subdomains to remove upper level domains
+	// specifications.
+	maps.Copy(p.domainReservedUpstreams, p.subdomainsOnlyUpstreams)
 
 	return &UpstreamConfig{
 		Upstreams:                p.upstreams,
@@ -233,8 +234,8 @@ func splitConfigLine(confLine string) (upstreams, domains []string, err error) {
 		return nil, nil, errors.Error("wrong upstream format")
 	}
 
-	// split domains list
-	for _, confHost := range strings.Split(domainsLine, "/") {
+	// Split domains list.
+	for i, confHost := range strings.Split(domainsLine, "/") {
 		if confHost == "" {
 			// empty domain specification means `unqualified names only`
 			domains = append(domains, UnqualifiedNames)
@@ -242,12 +243,12 @@ func splitConfigLine(confLine string) (upstreams, domains []string, err error) {
 			continue
 		}
 
-		host := strings.TrimPrefix(confHost, "*.")
-		if err = netutil.ValidateDomainName(host); err != nil {
-			return nil, nil, err
+		err = netutil.ValidateDomainName(strings.TrimPrefix(confHost, "*."))
+		if err != nil {
+			return nil, nil, fmt.Errorf("domain at index %d: %w", i, err)
 		}
 
-		domains = append(domains, strings.ToLower(confHost+"."))
+		domains = append(domains, strings.ToLower(confHost+labelSep))
 	}
 
 	return strings.Fields(upstreamsLine), domains, nil
@@ -293,7 +294,7 @@ func (p *configParser) specifyUpstream(domains []string, u string, idx int) (err
 // querying.
 func (p *configParser) excludeFromReserved(domains []string) {
 	for _, host := range domains {
-		if trimmed := strings.TrimPrefix(host, "*."); trimmed != host {
+		if trimmed, ok := strings.CutPrefix(host, "*."); ok {
 			p.subdomainsOnlyExclusions.Add(trimmed)
 			p.subdomainsOnlyUpstreams[trimmed] = nil
 
@@ -393,7 +394,8 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(fqdn string) (ups []upstream.Ups
 		return ups
 	}
 
-	if _, fqdn, _ = strings.Cut(fqdn, "."); fqdn == "" {
+	firstLabel, fqdn, _ := strings.Cut(fqdn, labelSep)
+	if firstLabel != "" && fqdn == "" {
 		fqdn = UnqualifiedNames
 	}
 
@@ -402,7 +404,7 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(fqdn string) (ups []upstream.Ups
 			return ups
 		}
 
-		_, fqdn, _ = strings.Cut(fqdn, ".")
+		_, fqdn, _ = strings.Cut(fqdn, labelSep)
 	}
 
 	return uc.Upstreams
@@ -418,7 +420,7 @@ func (uc *UpstreamConfig) getUpstreamsForDomain(fqdn string) (ups []upstream.Ups
 //
 // See https://datatracker.ietf.org/doc/html/rfc4035#section-2.4
 func (uc *UpstreamConfig) getUpstreamsForDS(fqdn string) (ups []upstream.Upstream) {
-	_, fqdn, _ = strings.Cut(fqdn, ".")
+	_, fqdn, _ = strings.Cut(fqdn, labelSep)
 	if fqdn == "" {
 		return uc.Upstreams
 	}
@@ -435,7 +437,7 @@ func (uc *UpstreamConfig) lookupSubdomainExclusion(host string) (u []upstream.Up
 	}
 
 	// Check if there is a spec for upper level domain.
-	h := strings.SplitAfterN(host, ".", 2)
+	h := strings.SplitAfterN(host, labelSep, 2)
 	ups, ok = uc.DomainReservedUpstreams[h[1]]
 	if ok && len(ups) > 0 {
 		return ups
@@ -460,7 +462,10 @@ func (uc *UpstreamConfig) lookupUpstreams(name string) (ups []upstream.Upstream,
 	return ups, true
 }
 
-// Close implements the io.Closer interface for *UpstreamConfig.
+// type check
+var _ io.Closer = (*UpstreamConfig)(nil)
+
+// Close implements the [io.Closer] interface for *UpstreamConfig.
 func (uc *UpstreamConfig) Close() (err error) {
 	closeErrs := closeAll(nil, uc.Upstreams...)
 

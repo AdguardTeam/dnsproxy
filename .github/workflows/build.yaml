@@ -16,10 +16,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os:
-          - windows-latest
-          - macos-latest
-          - ubuntu-latest
+        include:
+          - os: windows-latest
+            test_race: '0'
+          - os: macos-latest
+            test_race: '1'
+          - os: ubuntu-latest
+            test_race: '1'
     steps:
       - uses: actions/checkout@master
       - uses: actions/setup-go@v2
@@ -29,7 +32,7 @@ jobs:
         env:
           CI: "1"
         run: |-
-          make test
+          make test TEST_RACE=${{ matrix.test_race }}
       - name: Upload coverage
         uses: codecov/codecov-action@v1
         if: "success() && matrix.os == 'ubuntu-latest'"

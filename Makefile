@@ -7,7 +7,7 @@
 # This comment is used to simplify checking local copies of the Makefile.  Bump
 # this number every time a significant change is made to this Makefile.
 #
-# AdGuard-Project-Version: 13
+# AdGuard-Project-Version: 14
 
 # Don't name these macros "GO" etc., because GNU Make apparently makes them
 # exported environment variables with the literal value of "${GO:-go}" and so
@@ -26,6 +26,9 @@ GOTELEMETRY = off
 OUT = dnsproxy
 GOTOOLCHAIN = go1.26.1
 RACE = 0
+# Passed to go-test.sh; override with make test TEST_RACE=0 (e.g. Windows CI:
+# quic-go HTTP/3 + -race can crash with access violation).
+TEST_RACE = 1
 REVISION = $${REVISION:-$$(git rev-parse --short HEAD)}
 VERSION = 0
 
@@ -67,7 +70,7 @@ go-build:     ; $(ENV)          "$(SHELL)" ./scripts/make/go-build.sh
 go-deps:      ; $(ENV)          "$(SHELL)" ./scripts/make/go-deps.sh
 go-env:       ; $(ENV)          "$(GO.MACRO)" env
 go-lint:      ; $(ENV)          "$(SHELL)" ./scripts/make/go-lint.sh
-go-test:      ; $(ENV) RACE='1' "$(SHELL)" ./scripts/make/go-test.sh
+go-test:      ; $(ENV) RACE='$(TEST_RACE)' "$(SHELL)" ./scripts/make/go-test.sh
 go-upd-tools: ; $(ENV)          "$(SHELL)" ./scripts/make/go-upd-tools.sh
 
 .PHONY: go-check

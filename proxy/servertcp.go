@@ -160,9 +160,10 @@ func (p *Proxy) handleTCPConnection(
 	defer reqSema.Release()
 
 	var shutdownOnce sync.Once
+	clientInitiatedClose := false
 	shutdown := func() {
 		shutdownOnce.Do(func() {
-			p.shutdownTCPConnGracefully(ctx, conn, proto)
+			p.shutdownTCPConnGracefully(ctx, conn, proto, clientInitiatedClose)
 		})
 	}
 
@@ -214,7 +215,17 @@ func (p *Proxy) handleTCPConnection(
 			logWithNonCrit(ctx, err, msg, proto, p.logger)
 		}
 
-		req := p.readDNSReq(ctx, conn, proto)
+		req, rerr := p.readDNSReq(ctx, conn, proto)
+		if rerr != nil {
+			// Only treat a confirmed EOF as a peer-initiated graceful shutdown.
+			//
+			// Do not infer peer shutdown from timeouts or other errors.
+			if errors.Is(rerr, io.EOF) {
+				clientInitiatedClose = true
+			}
+
+			return
+		}
 		if req == nil {
 			return
 		}
@@ -232,12 +243,12 @@ func (p *Proxy) handleTCPConnection(
 
 // readDNSReq returns DNS request message from the given connection or nil if
 // it failed to read it.  Properly logs the error if it happened.
-func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn, proto Proto) (req *dns.Msg) {
+func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn, proto Proto) (req *dns.Msg, err error) {
 	packet, err := readPrefixed(conn)
 	if err != nil {
 		logWithNonCrit(ctx, err, "reading msg", proto, p.logger)
 
-		return nil
+		return nil, err
 	}
 
 	req = &dns.Msg{}
@@ -245,10 +256,10 @@ func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn, proto Proto) (req
 	if err != nil {
 		p.logger.ErrorContext(ctx, "handling tcp; unpacking msg", slogutil.KeyError, err)
 
-		return nil
+		return nil, err
 	}
 
-	return req
+	return req, nil
 }
 
 // errTooLarge means that a DNS message is larger than 64KiB.
@@ -281,9 +292,25 @@ func readPrefixed(conn net.Conn) (b []byte, err error) {
 // CloseWrite()+TCP half-close first: that emits server-first FIN and raises tail
 // RST risk with some clients in crossed shutdown; tls.Conn.Close sends
 // close_notify and releases the socket.  Plain TCP keeps half-close+drain.
-func (p *Proxy) shutdownTCPConnGracefully(ctx context.Context, conn net.Conn, proto Proto) {
+func (p *Proxy) shutdownTCPConnGracefully(
+	ctx context.Context,
+	conn net.Conn,
+	proto Proto,
+	clientInitiatedClose bool,
+) {
 	switch c := conn.(type) {
 	case *tls.Conn:
+		if clientInitiatedClose {
+			// The peer has already closed the connection.  Avoid writing TLS
+			// records (close_notify) and just close the underlying transport.
+			err := c.NetConn().Close()
+			if err != nil {
+				logWithNonCrit(ctx, err, "closing tls net conn", proto, p.logger)
+			}
+
+			return
+		}
+
 		err := c.Close()
 		if err != nil {
 			logWithNonCrit(ctx, err, "closing tls conn", proto, p.logger)

@@ -1,8 +1,12 @@
 'name': Docker
-
+# Permissions are disabled for all the jobs by default, and then overridden for
+# specific jobs if needed.  This is a recommended practice for security reasons,
+# and also allows to avoid mistakes with permissions when creating new jobs.
+#
+# See https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions.
+'permissions': {}
 'env':
   'GO_VERSION': '1.26.2'
-
 'on':
   'push':
     'tags':
@@ -11,9 +15,10 @@
     'branches':
       - 'master'
       - 'main'
-
 'jobs':
   'docker':
+    'permissions':
+      'contents': 'read'
     'runs-on': 'ubuntu-latest'
     'permissions':
       'contents': 'read'
@@ -23,9 +28,12 @@
       'DOCKER_IMAGE_NAME': '${{ vars.DOCKER_IMAGE_NAME }}'
     'steps':
       - 'name': 'Checkout'
-        'uses': 'actions/checkout@v3'
+        'uses': 'actions/checkout@v6'
         'with':
-          'fetch-depth': 0
+          # Set to false to avoid  GITHUB_TOKEN leaking.
+          #
+          # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
+          'persist-credentials': false
       - 'name': 'Set up Go'
         'uses': 'actions/setup-go@v3'
         'with':
@@ -64,17 +72,20 @@
             DOCKER_PUSH="1" \
             VERBOSE="1" \
             docker
-
   'notify':
     'needs':
       - 'docker'
-    'if':
+    'if': |
       ${{ always() &&
-      (
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name == github.repository
-      )
+        (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        )
       }}
+    'permissions':
+      # Required by workflow-conclusion-action to check workflow status.
+      'actions': 'read'
+      'contents': 'read'
     'runs-on': ubuntu-latest
     'env':
       'SLACK_WEBHOOK_URL': ${{ secrets.SLACK_WEBHOOK_URL }}

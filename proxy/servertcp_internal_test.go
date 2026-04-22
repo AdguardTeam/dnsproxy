@@ -66,7 +66,7 @@ func TestProxy_tcpProxyProtocolV2_RequiredHeader(t *testing.T) {
 	t.Run("reject_without_header", func(t *testing.T) {
 		conn, err := dns.Dial("tcp", addr)
 		require.NoError(t, err)
-		defer conn.Close()
+		defer func() { require.NoError(t, conn.Close()) }()
 		require.NoError(t, conn.SetReadDeadline(time.Now().Add(testTimeout)))
 
 		err = conn.WriteMsg(newTestMessage())
@@ -79,7 +79,7 @@ func TestProxy_tcpProxyProtocolV2_RequiredHeader(t *testing.T) {
 	t.Run("accept_with_header", func(t *testing.T) {
 		rawConn, err := net.Dial("tcp", addr)
 		require.NoError(t, err)
-		defer rawConn.Close()
+		defer func() { require.NoError(t, rawConn.Close()) }()
 
 		src := netutil.NetAddrToAddrPort(rawConn.LocalAddr())
 		dst := netutil.NetAddrToAddrPort(rawConn.RemoteAddr())
@@ -95,7 +95,7 @@ func TestProxy_tcpProxyProtocolV2_DisabledRejectsHeader(t *testing.T) {
 
 	rawConn, err := net.Dial("tcp", dnsProxy.Addr(ProtoTCP).String())
 	require.NoError(t, err)
-	defer rawConn.Close()
+	defer func() { require.NoError(t, rawConn.Close()) }()
 
 	src := netutil.NetAddrToAddrPort(rawConn.LocalAddr())
 	dst := netutil.NetAddrToAddrPort(rawConn.RemoteAddr())
@@ -123,7 +123,7 @@ func TestProxy_tcpProxyProtocolV2_RejectsUntrustedProxy(t *testing.T) {
 
 	rawConn, err := net.Dial("tcp", dnsProxy.Addr(ProtoTCP).String())
 	require.NoError(t, err)
-	defer rawConn.Close()
+	defer func() { require.NoError(t, rawConn.Close()) }()
 
 	src := netutil.NetAddrToAddrPort(rawConn.LocalAddr())
 	dst := netutil.NetAddrToAddrPort(rawConn.RemoteAddr())
@@ -160,7 +160,7 @@ func TestProxy_tlsProxyProtocolV2_Strict(t *testing.T) {
 	t.Run("reject_without_header", func(t *testing.T) {
 		rawConn, err := net.Dial("tcp", addr)
 		require.NoError(t, err)
-		defer rawConn.Close()
+		defer func() { require.NoError(t, rawConn.Close()) }()
 
 		tlsConn := tls.Client(rawConn, clientTLSConf)
 		require.NoError(t, tlsConn.SetDeadline(time.Now().Add(testTimeout)))
@@ -171,7 +171,7 @@ func TestProxy_tlsProxyProtocolV2_Strict(t *testing.T) {
 	t.Run("accept_with_header", func(t *testing.T) {
 		rawConn, err := net.Dial("tcp", addr)
 		require.NoError(t, err)
-		defer rawConn.Close()
+		defer func() { require.NoError(t, rawConn.Close()) }()
 
 		src := netutil.NetAddrToAddrPort(rawConn.LocalAddr())
 		dst := netutil.NetAddrToAddrPort(rawConn.RemoteAddr())
@@ -203,7 +203,7 @@ func TestProxy_tlsProxyProtocolV2_DisabledRejectsHeader(t *testing.T) {
 
 	rawConn, err := net.Dial("tcp", dnsProxy.Addr(ProtoTLS).String())
 	require.NoError(t, err)
-	defer rawConn.Close()
+	defer func() { require.NoError(t, rawConn.Close()) }()
 
 	src := netutil.NetAddrToAddrPort(rawConn.LocalAddr())
 	dst := netutil.NetAddrToAddrPort(rawConn.RemoteAddr())

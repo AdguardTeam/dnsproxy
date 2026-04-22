@@ -176,26 +176,9 @@ func (p *Proxy) handleTCPConnection(
 
 	defer shutdown()
 
-	// Set TCP keepalive
-	var rawConn net.Conn = conn
+	p.setTCPKeepAlive(ctx, conn)
 
-	if tlsConn, ok := conn.(*tls.Conn); ok {
-		rawConn = tlsConn.NetConn()
-	}
-
-	if tcpConn, ok := rawConn.(*net.TCPConn); ok {
-		err := tcpConn.SetKeepAlive(true)
-		if err != nil {
-			logWithNonCrit(ctx, err, "setting keepalive", ProtoTCP, p.logger)
-		} else {
-			err = tcpConn.SetKeepAlivePeriod(defaultTCPKeepAlive)
-			if err != nil {
-				logWithNonCrit(ctx, err, "setting keepalive period", ProtoTCP, p.logger)
-			}
-		}
-	}
-
-	clientAddr := netutil.NetAddrToAddrPort(conn.RemoteAddr())
+	var clientAddr netip.AddrPort
 	conn, clientAddr, err := p.prepareConn(ctx, conn, proto)
 	if err != nil {
 		logWithNonCrit(ctx, err, "preparing connection", proto, p.logger)
@@ -209,39 +192,10 @@ func (p *Proxy) handleTCPConnection(
 	defer cancel()
 
 	for p.isStarted() {
-		var err error
+		p.setConnReadOrFullDeadline(ctx, conn, proto)
 
-		switch proto {
-		case ProtoTLS:
-			// DoT: read deadline only so outbound responses are not tied to the idle
-			// read window (avoids premature full-deadline shutdown vs long-lived clients).
-			err = conn.SetReadDeadline(time.Now().Add(defaultTLSTimeout))
-		default:
-			err = conn.SetDeadline(time.Now().Add(defaultTimeout))
-		}
-
-		if err != nil {
-			// Consider deadline errors non-critical.
-			msg := "setting deadline"
-			if proto == ProtoTLS {
-				msg = "setting read deadline"
-			}
-
-			logWithNonCrit(ctx, err, msg, proto, p.logger)
-		}
-
-		req, rerr := p.readDNSReq(ctx, conn, proto)
-		if rerr != nil {
-			// Only treat a confirmed EOF as a peer-initiated graceful shutdown.
-			//
-			// Do not infer peer shutdown from timeouts or other errors.
-			if errors.Is(rerr, io.EOF) {
-				clientInitiatedClose = true
-			}
-
-			return
-		}
-		if req == nil {
+		req, ok := p.readDNSReqForTCP(ctx, conn, proto, &clientInitiatedClose)
+		if !ok {
 			return
 		}
 
@@ -254,6 +208,78 @@ func (p *Proxy) handleTCPConnection(
 			logWithNonCrit(ctx, err, "handling request", proto, p.logger)
 		}
 	}
+}
+
+// setTCPKeepAlive enables TCP keepalive when possible.
+func (p *Proxy) setTCPKeepAlive(ctx context.Context, conn net.Conn) {
+	rawConn := conn
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		rawConn = tlsConn.NetConn()
+	}
+
+	tcpConn, ok := rawConn.(*net.TCPConn)
+	if !ok {
+		return
+	}
+
+	err := tcpConn.SetKeepAlive(true)
+	if err != nil {
+		logWithNonCrit(ctx, err, "setting keepalive", ProtoTCP, p.logger)
+
+		return
+	}
+
+	err = tcpConn.SetKeepAlivePeriod(defaultTCPKeepAlive)
+	if err != nil {
+		logWithNonCrit(ctx, err, "setting keepalive period", ProtoTCP, p.logger)
+	}
+}
+
+// setConnReadOrFullDeadline sets the proper deadline for TCP/TLS connections.
+func (p *Proxy) setConnReadOrFullDeadline(ctx context.Context, conn net.Conn, proto Proto) {
+	err := setTCPReadOrFullDeadline(conn, proto)
+	if err != nil {
+		logWithNonCrit(ctx, err, tcpDeadlineMsg(proto), proto, p.logger)
+	}
+}
+
+func setTCPReadOrFullDeadline(conn net.Conn, proto Proto) (err error) {
+	if proto == ProtoTLS {
+		// DoT: read deadline only so outbound responses are not tied to the idle
+		// read window (avoids premature full-deadline shutdown vs long-lived clients).
+		return conn.SetReadDeadline(time.Now().Add(defaultTLSTimeout))
+	}
+
+	return conn.SetDeadline(time.Now().Add(defaultTimeout))
+}
+
+func tcpDeadlineMsg(proto Proto) (msg string) {
+	if proto == ProtoTLS {
+		return "setting read deadline"
+	}
+
+	return "setting deadline"
+}
+
+func (p *Proxy) readDNSReqForTCP(
+	ctx context.Context,
+	conn net.Conn,
+	proto Proto,
+	clientInitiatedClose *bool,
+) (req *dns.Msg, ok bool) {
+	req, rerr := p.readDNSReq(ctx, conn, proto)
+	if rerr != nil {
+		if errors.Is(rerr, io.EOF) {
+			*clientInitiatedClose = true
+		}
+
+		return nil, false
+	}
+	if req == nil {
+		return nil, false
+	}
+
+	return req, true
 }
 
 // bufferedConn preserves bytes peeked from the reader while still exposing
@@ -282,64 +308,99 @@ func (p *Proxy) prepareConn(
 		return conn, clientAddr, nil
 	}
 
-	// Bound PPv2 detection/parse and (for DoT) the TLS handshake time.
-	//
-	// Without it, a client can connect and not send anything, blocking the
-	// per-connection handler on Peek/ReadFull.
-	switch proto {
-	case ProtoTLS:
-		err = conn.SetReadDeadline(time.Now().Add(defaultTLSTimeout))
-	default:
-		err = conn.SetReadDeadline(time.Now().Add(defaultTimeout))
-	}
-	if err != nil {
-		logWithNonCrit(ctx, err, "setting initial read deadline", proto, p.logger)
-	}
-
 	bconn := &bufferedConn{
 		Conn:   conn,
 		reader: bufio.NewReader(conn),
 	}
 
-	var hasHeader bool
-	hasHeader, err = hasProxyProtocolV2Signature(bconn.reader)
+	p.setInitialReadDeadline(ctx, conn, proto)
+
+	bconn, clientAddr, err = p.applyProxyProtocolV2(ctx, bconn, clientAddr, ppEnabled)
 	if err != nil {
-		return nil, netip.AddrPort{}, fmt.Errorf("detecting proxy protocol v2: %w", err)
-	}
-
-	if !ppEnabled && hasHeader {
-		return nil, netip.AddrPort{}, errors.Error("proxy protocol v2 header is not allowed")
-	}
-
-	if ppEnabled && !hasHeader {
-		return nil, netip.AddrPort{}, errors.Error("proxy protocol v2 header is required")
-	}
-
-	if hasHeader {
-		clientAddr, err = p.consumeProxyProtocolV2(ctx, bconn.reader, clientAddr)
-		if err != nil {
-			return nil, netip.AddrPort{}, err
-		}
+		return nil, netip.AddrPort{}, err
 	}
 
 	if proto != ProtoTLS {
 		return bconn, clientAddr, nil
 	}
 
-	err = bconn.SetDeadline(time.Now().Add(defaultTLSTimeout))
+	prepared, err = p.prepareTLSConn(ctx, bconn)
 	if err != nil {
-		logWithNonCrit(ctx, err, "setting tls handshake deadline", proto, p.logger)
+		return nil, netip.AddrPort{}, err
 	}
 
-	tlsConn := tls.Server(bconn, p.TLSConfig)
+	return prepared, clientAddr, nil
+}
+
+func (p *Proxy) setInitialReadDeadline(ctx context.Context, conn net.Conn, proto Proto) {
+	timeout := defaultTimeout
+	if proto == ProtoTLS {
+		timeout = defaultTLSTimeout
+	}
+
+	// Bound PPv2 detection/parse and (for DoT) the TLS handshake time.
+	//
+	// Without it, a client can connect and not send anything, blocking the
+	// per-connection handler on Peek/ReadFull.
+	err := conn.SetReadDeadline(time.Now().Add(timeout))
+	if err != nil {
+		logWithNonCrit(ctx, err, "setting initial read deadline", proto, p.logger)
+	}
+}
+
+func (p *Proxy) applyProxyProtocolV2(
+	ctx context.Context,
+	conn *bufferedConn,
+	clientAddr netip.AddrPort,
+	ppEnabled bool,
+) (prepared *bufferedConn, effectiveClientAddr netip.AddrPort, err error) {
+	hasHeader, err := hasProxyProtocolV2Signature(conn.reader)
+	if err != nil {
+		return nil, netip.AddrPort{}, fmt.Errorf("detecting proxy protocol v2: %w", err)
+	}
+
+	err = validateProxyProtocolV2Policy(ppEnabled, hasHeader)
+	if err != nil {
+		return nil, netip.AddrPort{}, err
+	}
+
+	effectiveClientAddr = clientAddr
+	if hasHeader {
+		effectiveClientAddr, err = p.consumeProxyProtocolV2(ctx, conn.reader, clientAddr)
+		if err != nil {
+			return nil, netip.AddrPort{}, err
+		}
+	}
+
+	return conn, effectiveClientAddr, nil
+}
+
+func validateProxyProtocolV2Policy(ppEnabled, hasHeader bool) (err error) {
+	switch {
+	case !ppEnabled && hasHeader:
+		return errors.Error("proxy protocol v2 header is not allowed")
+	case ppEnabled && !hasHeader:
+		return errors.Error("proxy protocol v2 header is required")
+	default:
+		return nil
+	}
+}
+
+func (p *Proxy) prepareTLSConn(ctx context.Context, conn net.Conn) (tlsConn *tls.Conn, err error) {
+	err = conn.SetDeadline(time.Now().Add(defaultTLSTimeout))
+	if err != nil {
+		logWithNonCrit(ctx, err, "setting tls handshake deadline", ProtoTLS, p.logger)
+	}
+
+	tlsConn = tls.Server(conn, p.TLSConfig)
 	err = tlsConn.Handshake()
 	if err != nil {
-		return nil, netip.AddrPort{}, fmt.Errorf("tls handshake: %w", err)
+		return nil, fmt.Errorf("tls handshake: %w", err)
 	}
 
 	_ = tlsConn.SetDeadline(time.Time{})
 
-	return tlsConn, clientAddr, nil
+	return tlsConn, nil
 }
 
 // proxyProtocolV2Enabled returns true if Proxy Protocol v2 is enabled for proto.
@@ -518,44 +579,62 @@ func (p *Proxy) shutdownTCPConnGracefully(
 	case *bufferedConn:
 		p.shutdownTCPConnGracefully(ctx, c.Conn, proto, clientInitiatedClose)
 	case *tls.Conn:
-		if clientInitiatedClose {
-			// The peer has already closed the connection.  Avoid writing TLS
-			// records (close_notify) and just close the underlying transport.
-			err := c.NetConn().Close()
-			if err != nil {
-				logWithNonCrit(ctx, err, "closing tls net conn", proto, p.logger)
-			}
-
-			return
-		}
-
-		err := c.Close()
-		if err != nil {
-			logWithNonCrit(ctx, err, "closing tls conn", proto, p.logger)
-		}
+		p.shutdownTLSConnGracefully(ctx, c, proto, clientInitiatedClose)
 	case *net.TCPConn:
-		time.Sleep(tcpGracefulShutdownLinger)
-		err := c.CloseWrite()
-		if err != nil {
-			logWithNonCrit(ctx, err, "tcp close write", proto, p.logger)
-		}
-
-		_ = c.SetReadDeadline(time.Now().Add(tcpReadDrainTimeout))
-
-		_, err = io.Copy(io.Discard, c)
-		if err != nil && !errors.Is(err, io.EOF) {
-			logWithNonCrit(ctx, err, "draining tcp conn", proto, p.logger)
-		}
-
-		err = c.Close()
-		if err != nil {
-			logWithNonCrit(ctx, err, "closing tcp conn", proto, p.logger)
-		}
+		p.shutdownPlainTCPConnGracefully(ctx, c, proto)
 	default:
-		err := conn.Close()
+		p.shutdownGenericConn(ctx, conn, proto)
+	}
+}
+
+func (p *Proxy) shutdownTLSConnGracefully(
+	ctx context.Context,
+	conn *tls.Conn,
+	proto Proto,
+	clientInitiatedClose bool,
+) {
+	if clientInitiatedClose {
+		// The peer has already closed the connection.  Avoid writing TLS
+		// records (close_notify) and just close the underlying transport.
+		err := conn.NetConn().Close()
 		if err != nil {
-			logWithNonCrit(ctx, err, "closing conn", proto, p.logger)
+			logWithNonCrit(ctx, err, "closing tls net conn", proto, p.logger)
 		}
+
+		return
+	}
+
+	err := conn.Close()
+	if err != nil {
+		logWithNonCrit(ctx, err, "closing tls conn", proto, p.logger)
+	}
+}
+
+func (p *Proxy) shutdownPlainTCPConnGracefully(ctx context.Context, conn *net.TCPConn, proto Proto) {
+	time.Sleep(tcpGracefulShutdownLinger)
+
+	err := conn.CloseWrite()
+	if err != nil {
+		logWithNonCrit(ctx, err, "tcp close write", proto, p.logger)
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(tcpReadDrainTimeout))
+
+	_, err = io.Copy(io.Discard, conn)
+	if err != nil && !errors.Is(err, io.EOF) {
+		logWithNonCrit(ctx, err, "draining tcp conn", proto, p.logger)
+	}
+
+	err = conn.Close()
+	if err != nil {
+		logWithNonCrit(ctx, err, "closing tcp conn", proto, p.logger)
+	}
+}
+
+func (p *Proxy) shutdownGenericConn(ctx context.Context, conn net.Conn, proto Proto) {
+	err := conn.Close()
+	if err != nil {
+		logWithNonCrit(ctx, err, "closing conn", proto, p.logger)
 	}
 }
 

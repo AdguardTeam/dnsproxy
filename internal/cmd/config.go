@@ -209,6 +209,14 @@ type configuration struct {
 	// lookups of private addresses, including the requests for authority
 	// records, such as SOA and NS.
 	UsePrivateRDNS bool `yaml:"use-private-rdns"`
+
+	// TCPProxyProtocolV2Enabled defines whether plain DNS-over-TCP listeners
+	// require Proxy Protocol v2 headers.
+	TCPProxyProtocolV2Enabled bool `yaml:"tcp-proxy-protocol-v2"`
+
+	// TLSProxyProtocolV2Enabled defines whether DNS-over-TLS listeners require
+	// Proxy Protocol v2 headers before TLS handshake.
+	TLSProxyProtocolV2Enabled bool `yaml:"tls-proxy-protocol-v2"`
 }
 
 // parseConfig returns options parsed from the command args or config file.  If

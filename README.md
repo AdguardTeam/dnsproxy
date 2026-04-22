@@ -6,6 +6,8 @@
  - 新增 TLS 专用超时配置
  - 为 TCP 连接启用 Keep-Alive 机制
  - 更改模块名以方便构建并与官方名称相区别
+ - 实现 Proxy Protocol v2（官方版本不支持）
+ - 网络相关测试默认跳过，可通过环境变量 DNSPROXY_ENABLE_NETWORK_TESTS=1 开启
  - 实现TCP Fast Open(TFO)
  - 实现TLS会话恢复
  - 优化TCP挥手RST问题

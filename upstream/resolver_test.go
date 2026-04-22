@@ -3,6 +3,7 @@ package upstream_test
 import (
 	"context"
 	"net/netip"
+	"os"
 	"testing"
 	"time"
 
@@ -45,6 +46,10 @@ func TestNewUpstreamResolver(t *testing.T) {
 }
 
 func TestNewUpstreamResolver_validity(t *testing.T) {
+	if os.Getenv("DNSPROXY_ENABLE_NETWORK_TESTS") == "" {
+		t.Skip("network-dependent test; set DNSPROXY_ENABLE_NETWORK_TESTS=1 to enable")
+	}
+
 	t.Parallel()
 
 	withTimeoutOpt := &upstream.Options{

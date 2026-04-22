@@ -117,6 +117,14 @@ type Config struct {
 	// requests.
 	TLSListenAddr []*net.TCPAddr
 
+	// TCPProxyProtocolV2Enabled defines whether plain DNS-over-TCP listeners
+	// require Proxy Protocol v2 headers.
+	TCPProxyProtocolV2Enabled bool
+
+	// TLSProxyProtocolV2Enabled defines whether DNS-over-TLS listeners require
+	// Proxy Protocol v2 headers before TLS handshake.
+	TLSProxyProtocolV2Enabled bool
+
 	// QUICListenAddr is the set of UDP addresses to listen for DNS-over-QUIC
 	// requests.
 	QUICListenAddr []*net.UDPAddr

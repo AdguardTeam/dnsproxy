@@ -10,6 +10,10 @@ listen-addrs:
   - "0.0.0.0"
 listen-ports:
   - 53
+# Require Proxy Protocol v2 headers for plain DNS-over-TCP listeners.
+tcp-proxy-protocol-v2: false
+# Require Proxy Protocol v2 headers for DNS-over-TLS listeners.
+tls-proxy-protocol-v2: false
 max-go-routines: 0
 ratelimit: 0
 ratelimit-subnet-len-ipv4: 24

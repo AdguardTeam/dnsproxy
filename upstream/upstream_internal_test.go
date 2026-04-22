@@ -37,6 +37,14 @@ var testLogger = slogutil.NewDiscardLogger()
 
 // TODO(ameshkov): Make tests here not depend on external servers.
 
+func requireNetwork(t *testing.T) {
+	t.Helper()
+
+	if os.Getenv("DNSPROXY_ENABLE_NETWORK_TESTS") == "" {
+		t.Skip("network-dependent test; set DNSPROXY_ENABLE_NETWORK_TESTS=1 to enable")
+	}
+}
+
 // TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
 func TestMain(m *testing.M) {
 	// See https://github.com/quic-go/quic-go/issues/4228.
@@ -117,6 +125,7 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 }
 
 func TestUpstreams(t *testing.T) {
+	requireNetwork(t)
 	t.Parallel()
 
 	const upsTimeout = 10 * time.Second
@@ -369,6 +378,7 @@ func TestAddressToUpstream_bads(t *testing.T) {
 }
 
 func TestUpstreamDoTBootstrap(t *testing.T) {
+	requireNetwork(t)
 	t.Parallel()
 
 	upstreams := []struct {
@@ -405,6 +415,7 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 
 // Test for DoH and DoT upstreams with two bootstraps (only one is valid)
 func TestUpstreamsInvalidBootstrap(t *testing.T) {
+	requireNetwork(t)
 	t.Parallel()
 
 	upstreams := []struct {

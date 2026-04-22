@@ -69,6 +69,8 @@ const (
 	usePrivateRDNSIdx
 	dohRoutesIdx
 	dohInsecureEnabledIdx
+	tcpProxyProtocolV2Idx
+	tlsProxyProtocolV2Idx
 )
 
 // commandLineOption contains information about a command-line option: its long
@@ -419,6 +421,18 @@ var commandLineOptions = []*commandLineOption{
 		short:       "",
 		valueType:   "",
 	},
+	tcpProxyProtocolV2Idx: {
+		description: "If specified, plain DNS-over-TCP listeners require Proxy Protocol v2 headers.",
+		long:        "tcp-proxy-protocol-v2",
+		short:       "",
+		valueType:   "",
+	},
+	tlsProxyProtocolV2Idx: {
+		description: "If specified, DNS-over-TLS listeners require Proxy Protocol v2 headers.",
+		long:        "tls-proxy-protocol-v2",
+		short:       "",
+		valueType:   "",
+	},
 }
 
 // parseCmdLineOptions parses the command-line options.  conf must not be nil.
@@ -480,6 +494,8 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		usePrivateRDNSIdx:           &conf.UsePrivateRDNS,
 		dohRoutesIdx:                &conf.DoHRoutes,
 		dohInsecureEnabledIdx:       &conf.DoHInsecureEnabled,
+		tcpProxyProtocolV2Idx:       &conf.TCPProxyProtocolV2Enabled,
+		tlsProxyProtocolV2Idx:       &conf.TLSProxyProtocolV2Enabled,
 	} {
 		addOption(flags, fieldPtr, commandLineOptions[i])
 	}

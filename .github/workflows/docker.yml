@@ -17,8 +17,6 @@
       - 'main'
 'jobs':
   'docker':
-    'permissions':
-      'contents': 'read'
     'runs-on': 'ubuntu-latest'
     'permissions':
       'contents': 'read'

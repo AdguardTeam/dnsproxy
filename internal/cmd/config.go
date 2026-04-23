@@ -194,6 +194,10 @@ type configuration struct {
 	// RefuseAny makes the server to refuse requests of type ANY.
 	RefuseAny bool `yaml:"refuse-any"`
 
+	// DNSSECEnabled defines whether the proxy should set the DO bits in the
+	// upstream requests.
+	DNSSECEnabled bool `yaml:"dnssec"`
+
 	// EnableEDNSSubnet uses EDNS Client Subnet extension.
 	EnableEDNSSubnet bool `yaml:"edns"`
 
@@ -223,6 +227,7 @@ func parseConfig() (conf *configuration, exitCode int, err error) {
 		OptimisticMaxAge:       timeutil.Duration(proxy.DefaultOptimisticMaxAge),
 		RatelimitSubnetLenIPv4: 24,
 		RatelimitSubnetLenIPv6: 56,
+		DNSSECEnabled:          true,
 		HostsFileEnabled:       true,
 		PendingRequestsEnabled: true,
 	}

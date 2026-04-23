@@ -98,6 +98,7 @@ func createProxyConfig(
 			netip.MustParsePrefix("0.0.0.0/0"),
 			netip.MustParsePrefix("::0/0"),
 		},
+		DNSSECEnabled:          conf.DNSSECEnabled,
 		EnableEDNSClientSubnet: conf.EnableEDNSSubnet,
 		UDPBufferSize:          conf.UDPBufferSize,
 		MaxGoroutines:          conf.MaxGoRoutines,

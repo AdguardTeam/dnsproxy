@@ -117,6 +117,7 @@ func TestPendingRequests(t *testing.T) {
 		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		CacheSizeBytes:         testCacheSize,
 		CacheEnabled:           true,
+		DNSSECEnabled:          true,
 		EnableEDNSClientSubnet: true,
 	})
 	require.NoError(t, err)

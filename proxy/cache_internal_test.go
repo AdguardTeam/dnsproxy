@@ -57,6 +57,7 @@ func TestServeCached(t *testing.T) {
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
 		TrustedProxies: defaultTrustedProxies,
+		DNSSECEnabled:  true,
 		CacheEnabled:   true,
 	})
 
@@ -374,6 +375,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		},
 		TrustedProxies: defaultTrustedProxies,
 		CacheEnabled:   true,
+		DNSSECEnabled:  true,
 		CacheMinTTL:    20,
 		CacheMaxTTL:    40,
 	})

@@ -124,7 +124,9 @@ func TestPendingRequests(t *testing.T) {
 
 	servicetest.RequireRun(t, p, testTimeout)
 
-	addr := p.Addr(proxy.ProtoTCP).String()
+	addr, err := p.Addr(proxy.ProtoTCP)
+	require.NoError(t, err)
+
 	client := &dns.Client{
 		Net:     string(proxy.ProtoTCP),
 		Timeout: testTimeout,
@@ -143,7 +145,7 @@ func TestPendingRequests(t *testing.T) {
 			defer resolveWG.Done()
 
 			reqCtx := testutil.ContextWithTimeout(t, testTimeout)
-			responses[i], _, errs[i] = client.ExchangeContext(reqCtx, req, addr)
+			responses[i], _, errs[i] = client.ExchangeContext(reqCtx, req, addr.String())
 		}()
 	}
 

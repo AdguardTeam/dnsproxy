@@ -18,6 +18,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -313,7 +314,9 @@ func TestProxyRace(t *testing.T) {
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr(ProtoUDP)
+	addr, err := dnsProxy.Addr(ProtoUDP)
+	require.NoError(t, err)
+
 	conn, err := dns.Dial("udp", addr.String())
 	require.NoError(t, err)
 
@@ -611,7 +614,9 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Create a DNS-over-TCP client connection.
-	addr := dnsProxy.Addr(ProtoTCP)
+	addr, err := dnsProxy.Addr(ProtoTCP)
+	require.NoError(t, err)
+
 	conn, err := dns.Dial("tcp", addr.String())
 	require.NoError(t, err)
 
@@ -676,7 +681,9 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// create a DNS-over-TCP client connection
-	addr := dnsProxy.Addr(ProtoTCP)
+	addr, err := dnsProxy.Addr(ProtoTCP)
+	require.NoError(t, err)
+
 	conn, err := dns.Dial("tcp", addr.String())
 	require.NoError(t, err)
 
@@ -772,7 +779,10 @@ func TestFallback(t *testing.T) {
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
-	conn, err := dns.Dial("tcp", dnsProxy.Addr(ProtoTCP).String())
+	addr, err := dnsProxy.Addr(ProtoTCP)
+	require.NoError(t, err)
+
+	conn, err := dns.Dial("tcp", addr.String())
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -857,7 +867,9 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr(ProtoUDP)
+	addr, err := dnsProxy.Addr(ProtoUDP)
+	require.NoError(t, err)
+
 	conn, err := dns.Dial("udp", addr.String())
 	require.NoError(t, err)
 
@@ -879,7 +891,9 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 func TestResponseInRequest(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
-	addr := dnsProxy.Addr(ProtoUDP)
+	addr, err := dnsProxy.Addr(ProtoUDP)
+	require.NoError(t, err)
+
 	client := &dns.Client{
 		Net:     string(ProtoUDP),
 		Timeout: testTimeout,
@@ -1512,4 +1526,22 @@ func TestProxy_validateRequest(t *testing.T) {
 			assert.Equal(t, tc.wantRcode, resp.Rcode)
 		})
 	}
+}
+
+func TestProxy_Addr_InvalidProto(t *testing.T) {
+	t.Parallel()
+
+	p := &Proxy{}
+	_, err := p.Addr(Proto("invalid"))
+	require.Error(t, err)
+	require.ErrorIs(t, err, errors.ErrBadEnumValue)
+}
+
+func TestProxy_Addrs_InvalidProto(t *testing.T) {
+	t.Parallel()
+
+	p := &Proxy{}
+	_, err := p.Addrs(Proto("invalid"))
+	require.Error(t, err)
+	require.ErrorIs(t, err, errors.ErrBadEnumValue)
 }

@@ -51,6 +51,10 @@ func (p *Proxy) setupDNS64() (err error) {
 	}
 
 	for i, pref := range p.Config.DNS64Prefs {
+		if pref.Addr() == netip.MustParseAddr("::") {
+			return fmt.Errorf("prefix at index %d: %q has zero address", i, pref)
+		}
+
 		if !pref.Addr().Is6() {
 			return fmt.Errorf("prefix at index %d: %q is not an IPv6 prefix", i, pref)
 		}

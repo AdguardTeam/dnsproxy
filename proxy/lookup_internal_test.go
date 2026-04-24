@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,14 +15,14 @@ func TestLookupNetIP(t *testing.T) {
 	dnsUpstream, err := upstream.AddressToUpstream(
 		"94.140.14.14",
 		&upstream.Options{
-			Logger:  slogutil.NewDiscardLogger(),
+			Logger:  testLogger,
 			Timeout: defaultTimeout,
 		},
 	)
 	require.NoError(t, err)
 
 	conf := &Config{
-		Logger: slogutil.NewDiscardLogger(),
+		Logger: testLogger,
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{dnsUpstream},
 		},

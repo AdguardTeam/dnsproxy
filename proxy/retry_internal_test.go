@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -76,7 +75,7 @@ func TestWithRetry(t *testing.T) {
 	}}
 
 	p := &Proxy{
-		logger:         slogutil.NewDiscardLogger(),
+		logger:         testLogger,
 		bindRetryCount: 1,
 		bindRetryIvl:   0,
 	}

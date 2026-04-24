@@ -1,4 +1,4 @@
-package handler
+package middleware
 
 import (
 	"context"
@@ -91,7 +91,10 @@ func readHostsFile(ctx context.Context, strg *hostsfile.DefaultStorage, path str
 
 // resolveFromHosts resolves the DNS query from the hosts file.  It fills the
 // response with the A, AAAA, and PTR records from the hosts file.
-func (h *Default) resolveFromHosts(ctx context.Context, req *dns.Msg) (resp *dns.Msg) {
+func (mw *Default) resolveFromHosts(
+	ctx context.Context,
+	req *dns.Msg,
+) (resp *dns.Msg) {
 	var addrs []netip.Addr
 	var ptrs []string
 
@@ -99,35 +102,35 @@ func (h *Default) resolveFromHosts(ctx context.Context, req *dns.Msg) (resp *dns
 	name := strings.TrimSuffix(q.Name, ".")
 	switch q.Qtype {
 	case dns.TypeA:
-		addrs = slices.Clone(h.hosts.ByName(name))
+		addrs = slices.Clone(mw.hosts.ByName(name))
 		addrs = slices.DeleteFunc(addrs, netip.Addr.Is6)
 	case dns.TypeAAAA:
-		addrs = slices.Clone(h.hosts.ByName(name))
+		addrs = slices.Clone(mw.hosts.ByName(name))
 		addrs = slices.DeleteFunc(addrs, netip.Addr.Is4)
 	case dns.TypePTR:
 		addr, err := netutil.IPFromReversedAddr(name)
 		if err != nil {
-			h.logger.DebugContext(ctx, "failed parsing ptr", slogutil.KeyError, err)
+			mw.logger.DebugContext(ctx, "failed parsing ptr", slogutil.KeyError, err)
 
 			return nil
 		}
 
-		ptrs = h.hosts.ByAddr(addr)
+		ptrs = mw.hosts.ByAddr(addr)
 	default:
 		return nil
 	}
 
 	switch {
 	case len(addrs) > 0:
-		resp = h.messages.NewIPResponse(req, addrs)
+		resp = mw.messages.NewIPResponse(req, addrs)
 	case len(ptrs) > 0:
-		resp = h.messages.NewCompressedResponse(req, dns.RcodeSuccess)
+		resp = mw.messages.NewCompressedResponse(req, dns.RcodeSuccess)
 		name = req.Question[0].Name
 		for _, ptr := range ptrs {
-			resp.Answer = append(resp.Answer, h.messages.NewPTRAnswer(name, dns.Fqdn(ptr)))
+			resp.Answer = append(resp.Answer, mw.messages.NewPTRAnswer(name, dns.Fqdn(ptr)))
 		}
 	default:
-		h.logger.DebugContext(ctx, "no hosts records found", "name", name, "qtype", q.Qtype)
+		mw.logger.DebugContext(ctx, "no hosts records found", "name", name, "qtype", q.Qtype)
 	}
 
 	return resp

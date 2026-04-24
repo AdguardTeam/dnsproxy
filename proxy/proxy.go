@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/contextutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -30,7 +30,6 @@ import (
 	"github.com/AdguardTeam/golibs/validate"
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
-	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
@@ -89,17 +88,14 @@ type Proxy struct {
 	// messages constructs DNS messages.
 	messages MessageConstructor
 
-	// beforeRequestHandler handles the request's context before it is resolved.
-	beforeRequestHandler BeforeRequestHandler
+	// requestHandler handles the DNS request.  It is never nil.
+	requestHandler Handler
 
 	// dnsCryptServer serves DNSCrypt queries.
 	dnsCryptServer *dnscrypt.Server
 
 	// logger is used for logging in the proxy service.  It is never nil.
 	logger *slog.Logger
-
-	// ratelimitBuckets is a storage for ratelimiters for individual IPs.
-	ratelimitBuckets *gocache.Cache
 
 	// fastestAddr finds the fastest IP address for the resolved domain.
 	fastestAddr *fastip.FastestAddr
@@ -116,6 +112,9 @@ type Proxy struct {
 	// recDetector detects recursive requests that may appear when resolving
 	// requests for private addresses.
 	recDetector *recursionDetector
+
+	// reqCtx is a constructor for the request contexts.  It is never nil.
+	reqCtx contextutil.Constructor
 
 	// pendingRequests is a storage for duplicated requests.  It is used to
 	// prevent sending the same request to upstreams multiple times.
@@ -199,9 +198,6 @@ type Proxy struct {
 	// Also make it a pointer.
 	sync.RWMutex
 
-	// ratelimitLock protects ratelimitBuckets.
-	ratelimitLock sync.Mutex
-
 	// rttLock protects upstreamRTTStats.
 	//
 	// TODO(e.burkov):  Make it a pointer.
@@ -223,13 +219,13 @@ func New(c *Config) (p *Proxy, err error) {
 			c.PrivateSubnets,
 			netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		),
-		beforeRequestHandler: cmp.Or[BeforeRequestHandler](
-			c.BeforeRequestHandler,
-			noopRequestHandler{},
+		reqCtx: cmp.Or[contextutil.Constructor](
+			c.RequestContext,
+			contextutil.EmptyConstructor{},
 		),
+		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
 		rttLock:          sync.Mutex{},
-		ratelimitLock:    sync.Mutex{},
 		RWMutex:          sync.RWMutex{},
 		// 2 bytes may be used to store packet length (see TCP/TLS).
 		bytesPool:  syncutil.NewSlicePool[byte](2 + dns.MaxMsgSize),
@@ -250,6 +246,9 @@ func New(c *Config) (p *Proxy, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
+	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
 
 	p.initCache()
 
@@ -279,10 +278,6 @@ func New(c *Config) (p *Proxy, err error) {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
 	}
 
-	// TODO(e.burkov):  Clone all mutable fields of Config.
-	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
-	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
-
 	return p, nil
 }
 
@@ -306,15 +301,14 @@ func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
 	return slog.Default().With(slogutil.KeyPrefix, LogPrefix)
 }
 
-// validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
-// is set.
+// validateBasicAuth validates the HTTP settings if HTTPConfig.Userinfo is set.
 func (p *Proxy) validateBasicAuth() (err error) {
-	conf := p.Config
-	if conf.Userinfo == nil {
+	conf := p.Config.HTTPConfig
+	if conf == nil || conf.Userinfo == nil {
 		return nil
 	}
 
-	return validate.NotEmptySlice("HTTPSListenAddr", conf.HTTPSListenAddr)
+	return validate.NotEmptySlice("HTTPConfig.ListenAddresses", conf.ListenAddresses)
 }
 
 // Returns true if proxy is started.  It is safe for concurrent use.
@@ -352,7 +346,9 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 		return fmt.Errorf("configuring listeners: %w", errors.WithDeferred(err, closeErr))
 	}
 
-	p.serveListeners()
+	// Use context without cancel to prevent listeners' context from being
+	// canceled.
+	p.serveListeners(context.WithoutCancel(ctx))
 
 	p.started = true
 
@@ -672,8 +668,14 @@ func (p *Proxy) handleExchangeResult(
 	}
 }
 
-// addDO adds EDNS0 RR if needed and sets DO bit of msg to true.
-func addDO(msg *dns.Msg) {
+// addDO adds EDNS0 RR if needed and sets DO bit of msg to true.  msg must not
+// be nil.
+func (p *Proxy) addDO(msg *dns.Msg) {
+	if !p.DNSSECEnabled {
+		// Do nothing if DNSSEC is disabled in the proxy.
+		return
+	}
+
 	if o := msg.IsEdns0(); o != nil {
 		if !o.Do() {
 			o.SetDo()
@@ -689,12 +691,8 @@ func addDO(msg *dns.Msg) {
 const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
-// upstream servers.  It expects dctx is filled with the request, the client's
-//
-// TODO(e.burkov):  Add [context.Context].
-func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
-	ctx := context.Background()
-
+// upstream servers.  It expects dctx is filled with the client's request.
+func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 	if p.EnableEDNSClientSubnet {
 		dctx.processECS(p.EDNSAddr, p.logger)
 	}
@@ -723,7 +721,7 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 
 		// On cache miss request for DNSSEC from the upstream to cache it
 		// afterwards.
-		addDO(dctx.Req)
+		p.addDO(dctx.Req)
 	}
 
 	var ok bool
@@ -748,11 +746,39 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	// Complete the response.
 	dctx.scrub()
 
-	if p.ResponseHandler != nil {
-		p.ResponseHandler(dctx, err)
-	}
-
 	return err
+}
+
+// validateRequest returns a response for invalid request or nil if the request
+// is ok.
+func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
+	switch {
+	case len(d.Req.Question) != 1:
+		p.logger.Debug("invalid number of questions", "req_questions_len", len(d.Req.Question))
+
+		// TODO(e.burkov):  Probably, FORMERR would be a better choice here.
+		// Check out RFC.
+		return p.messages.NewMsgSERVFAIL(d.Req)
+	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
+		// Refuse requests of type ANY (anti-DDOS measure).
+		p.logger.Debug("refusing dns type any request")
+
+		return p.messages.NewMsgNOTIMPLEMENTED(d.Req)
+	case p.recDetector.check(d.Req):
+		p.logger.Debug("recursion detected", "req_question", d.Req.Question[0].Name)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
+	case d.isForbiddenARPA(p.privateNets, p.logger):
+		p.logger.Debug(
+			"private arpa domain is requested",
+			"addr", d.Addr,
+			"arpa", d.Req.Question[0].Name,
+		)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
+	default:
+		return nil
+	}
 }
 
 // cacheWorks returns true if the cache works for the given context.  If not, it
@@ -774,6 +800,12 @@ func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 		// Don't cache the requests intended for local upstream servers, those
 		// should be fast enough as is.
 		reason = "requested address is private"
+	case !p.DNSSECEnabled && !dctx.doBit:
+		// Don't cache the responses without DNSSEC RRs if DNSSEC is disabled
+		// and DO bit is not set, since those responses may differ from the ones
+		// with DNSSEC RRs and thus may be not the desired result for user.  In
+		// case DNSSEC is enabled in the proxy, the DO bit will be enforced.
+		reason = "dnssec disabled"
 	case dctx.Req.CheckingDisabled:
 		// Also don't lookup the cache for responses with DNSSEC checking
 		// disabled since only validated responses are cached and those may be

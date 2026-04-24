@@ -6,13 +6,12 @@ import (
 	"net"
 	"testing"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 )
 
-func TestTcpProxy(t *testing.T) {
+func TestProxy_tcp(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	// Create a DNS-over-TCP client connection
@@ -23,18 +22,15 @@ func TestTcpProxy(t *testing.T) {
 	sendTestMessages(t, conn)
 }
 
-func TestTlsProxy(t *testing.T) {
+func TestProxy_tls(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
 	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TLSConfig:              serverConfig,
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		Logger:         testLogger,
+		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TLSConfig:      serverConfig,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)

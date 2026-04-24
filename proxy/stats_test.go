@@ -9,8 +9,8 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,12 +49,10 @@ func TestCollectQueryStats(t *testing.T) {
 	}
 
 	conf := &proxy.Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		Logger:         testLogger,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		TrustedProxies: defaultTrustedProxies,
 	}
 
 	testCases := []struct {
@@ -220,7 +218,7 @@ func TestCollectQueryStats(t *testing.T) {
 
 			d := &proxy.DNSContext{Req: testReq}
 
-			err = p.Resolve(d)
+			err = p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 			tc.wantErr(t, err)
 
 			stats := d.QueryStatistics()

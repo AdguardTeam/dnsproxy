@@ -37,7 +37,7 @@ There are several options how to install `dnsproxy`.
 
 ## How to build
 
-You will need Go 1.25 or later.
+You will need Go 1.26 or later.
 
 ```shell
 make build
@@ -63,6 +63,16 @@ Usage of ./dnsproxy:
         Cache size (in bytes). Default: 64k.
   --config-path=path
         YAML configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
+  --dnssec
+        Defines whether the proxy should set the DO bits in the upstream requests.  Default: true.
+  --doh-insecure-enabled
+        If specified, the DoH server will skip TLS certificate verification.
+  --doh-routes
+        Routes for DNS-over-HTTPS.  If not specified, the default routes are registered:
+        - "GET /", deprecated and will soon be removed,
+        - "POST /", deprecated and will soon be removed.
+        - "GET /dns-query",
+        - "POST /dns-query".
   --dns64
         If specified, dnsproxy will act as a DNS64 server.
   --dns64-prefix=subnet
@@ -99,6 +109,10 @@ Usage of ./dnsproxy:
         Listening addresses.
   --max-go-routines=uint
         Set the maximum number of go routines. A zero value will not not set a maximum.
+  --optimistic-answer-ttl
+        Default TTL value for expired DNS entries in optimistic cache.  Default: 30s
+  --optimistic-max-age
+        Period of time after which entries are removed from optimistic cache in human-readable form. Default: 12h.
   --output=path/-o path
         Path to the log file.
   --pending-requests-enabled

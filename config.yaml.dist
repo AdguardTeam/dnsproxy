@@ -6,6 +6,9 @@
 ---
 bootstrap:
   - "8.8.8.8:53"
+# DNSSEC validation is enabled by default, if you want to disable it set it to
+# false.
+dnssec: true
 listen-addrs:
   - "0.0.0.0"
 listen-ports:

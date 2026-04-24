@@ -277,12 +277,12 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	})
 
 	// Create a DNS-over-HTTPS upstream.
-	tracer := &quicTracer{}
+	tracer := &testTracer{}
 	address := fmt.Sprintf("h3://%s/dns-query", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
 		Logger:             testLogger,
 		InsecureSkipVerify: true,
-		QUICTracer:         tracer.TracerForConnection,
+		QUICTracer:         tracer,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -312,7 +312,7 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	requireResponse(t, req, resp)
 
 	// Check traced connections info.
-	conns := tracer.getConnectionsInfo()
+	conns := tracer.connectionsInfo()
 	require.Len(t, conns, 2)
 
 	// Examine the first connection (no 0-RTT there).

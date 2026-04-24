@@ -122,11 +122,14 @@ func (p *Proxy) listenQUIC(
 // quicPacketLoop listens for incoming QUIC packets.
 //
 // See also the comment on Proxy.requestsSema.
-func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, reqSema syncutil.Semaphore) {
-	p.logger.Info("entering dns-over-quic listener loop", "addr", l.Addr())
+func (p *Proxy) quicPacketLoop(
+	ctx context.Context,
+	l *quic.EarlyListener,
+	reqSema syncutil.Semaphore,
+) {
+	p.logger.InfoContext(ctx, "entering dns-over-quic listener loop", "addr", l.Addr())
 
 	for {
-		ctx := context.Background()
 		conn, err := l.Accept(ctx)
 		if err != nil {
 			logQUICError(ctx, "accepting quic conn", err, p.logger)
@@ -148,7 +151,7 @@ func (p *Proxy) quicPacketLoop(l *quic.EarlyListener, reqSema syncutil.Semaphore
 		go func() {
 			defer reqSema.Release()
 
-			p.handleQUICConnection(conn, reqSema)
+			p.handleQUICConnection(ctx, conn, reqSema)
 		}()
 	}
 }
@@ -171,10 +174,12 @@ func logQUICError(ctx context.Context, prefix string, err error, l *slog.Logger)
 // and passes them to handleQUICStream.
 //
 // See also the comment on Proxy.requestsSema.
-func (p *Proxy) handleQUICConnection(conn *quic.Conn, reqSema syncutil.Semaphore) {
+func (p *Proxy) handleQUICConnection(
+	ctx context.Context,
+	conn *quic.Conn,
+	reqSema syncutil.Semaphore,
+) {
 	for {
-		ctx := context.Background()
-
 		// The stub to resolver DNS traffic follows a simple pattern in which
 		// the client sends a query, and the server provides a response.  This
 		// design specifies that for each subsequent query on a QUIC connection
@@ -218,6 +223,9 @@ func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn 
 	bufPtr := p.bytesPool.Get()
 	defer p.bytesPool.Put(bufPtr)
 
+	ctx, cancel := p.reqCtx.New(ctx)
+	defer cancel()
+
 	// One query - one stream.
 	// The client MUST select the next available client-initiated bidirectional
 	// stream for each subsequent query on a QUIC connection.
@@ -248,9 +256,9 @@ func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn 
 	// draft DNS messages were not prefixed with the message length.
 	packetLen := binary.BigEndian.Uint16(buf[:2])
 	if packetLen == uint16(n-2) {
-		err = req.Unpack(buf[2:])
+		err = req.Unpack(buf[2:n])
 	} else {
-		err = req.Unpack(buf)
+		err = req.Unpack(buf[:n])
 		doqVersion = DoQv1Draft
 	}
 
@@ -276,7 +284,7 @@ func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn 
 	d.QUICConnection = conn
 	d.DoQVersion = doqVersion
 
-	err = p.handleDNSRequest(d)
+	err = p.handleDNSRequest(ctx, d)
 	if err != nil {
 		p.logger.DebugContext(
 			ctx,

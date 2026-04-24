@@ -20,12 +20,11 @@ import (
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpstreamDoQ(t *testing.T) {
+func TestDNSOverQUIC(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
 	srv := startDoQServer(t, tlsConf, 0)
@@ -78,7 +77,7 @@ func TestUpstreamDoQ(t *testing.T) {
 	checkRaceCondition(u)
 }
 
-func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
+func TestDNSOverQUIC_Exchange_quicCloseConn(t *testing.T) {
 	// Use the same tlsConf for all servers to preserve the data necessary for
 	// 0-RTT connections.
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
@@ -130,7 +129,7 @@ func TestUpstream_Exchange_quicServerCloseConn(t *testing.T) {
 	wg.Wait()
 }
 
-func TestUpstreamDoQ_serverRestart(t *testing.T) {
+func TestDNSOverQUIC_serverRestart(t *testing.T) {
 	t.Parallel()
 
 	// Use the same tlsConf for all servers to preserve the data necessary for
@@ -183,16 +182,16 @@ func TestUpstreamDoQ_serverRestart(t *testing.T) {
 	})
 }
 
-func TestUpstreamDoQ_0RTT(t *testing.T) {
+func TestDNSOverQUIC_0RTT(t *testing.T) {
 	tlsConf, rootCAs := createServerTLSConfig(t, "127.0.0.1")
 
 	srv := startDoQServer(t, tlsConf, 0)
 
-	tracer := &quicTracer{}
+	tracer := &testTracer{}
 	address := fmt.Sprintf("quic://%s", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
 		Logger:     testLogger,
-		QUICTracer: tracer.TracerForConnection,
+		QUICTracer: tracer,
 		RootCAs:    rootCAs,
 	})
 	require.NoError(t, err)
@@ -223,7 +222,7 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 	requireResponse(t, req, resp)
 
 	// Check traced connections info.
-	conns := tracer.getConnectionsInfo()
+	conns := tracer.connectionsInfo()
 	require.Len(t, conns, 2)
 
 	// Examine the first connection (no 0-RTT there).
@@ -231,6 +230,112 @@ func TestUpstreamDoQ_0RTT(t *testing.T) {
 
 	// Examine the second connection (the one that used 0-RTT).
 	require.True(t, conns[1].is0RTT())
+}
+
+func TestDNSOverQUIC_ReadMsg_partialRead(t *testing.T) {
+	oldReq := createHostTestMessage("old.example")
+	oldResp := (&dns.Msg{}).SetReply(oldReq)
+	oldResp.Answer = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn("old.example"),
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		A: net.IP{192, 0, 2, 1},
+	}}
+
+	oldPacked, err := oldResp.Pack()
+	require.NoError(t, err)
+
+	oldBuf := make([]byte, 2+len(oldPacked))
+	binary.BigEndian.PutUint16(oldBuf, uint16(len(oldPacked)))
+	copy(oldBuf[2:], oldPacked)
+
+	pool := &sync.Pool{
+		New: func() (buf any) {
+			b := make([]byte, dns.MaxMsgSize)
+			copy(b, oldBuf)
+
+			return &b
+		},
+	}
+
+	ups, err := newDoQ(&url.URL{Host: "example:853"}, &Options{})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, ups.Close)
+
+	doq := testutil.RequireTypeAssert[*dnsOverQUIC](t, ups)
+	doq.bytesPool = pool
+
+	newAnsIP := net.IP{192, 0, 2, 2}
+
+	newReq := createHostTestMessage("new.example")
+	newResp := (&dns.Msg{}).SetReply(newReq)
+	newResp.Answer = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn("new.example"),
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		A: newAnsIP,
+	}}
+
+	newPacked, err := newResp.Pack()
+	require.NoError(t, err)
+
+	newBuf := make([]byte, 2+len(newPacked))
+	binary.BigEndian.PutUint16(newBuf, uint16(len(newPacked)))
+	copy(newBuf[2:], newPacked)
+
+	stream := &testQUICStream{
+		onRead: func(p []byte) (n int, err error) {
+			if len(newBuf) == 0 {
+				return 0, io.EOF
+			}
+
+			n = min(1, len(newBuf), len(p))
+
+			copy(p, newBuf[:n])
+			newBuf = newBuf[n:]
+
+			return n, nil
+		},
+		onCancelRead: func(code quic.StreamErrorCode) {
+			assert.Equal(t, quic.StreamErrorCode(0), code)
+		},
+	}
+
+	got, err := doq.readMsg(stream)
+	require.NoError(t, err)
+	require.Len(t, got.Answer, 1)
+
+	assert.Equal(t, dns.Fqdn("new.example"), got.Question[0].Name)
+
+	a := testutil.RequireTypeAssert[*dns.A](t, got.Answer[0])
+
+	assert.Equal(t, newAnsIP, a.A)
+}
+
+// testQUICStream is a mock implementation of the [quicStream] interface for
+// tests.
+type testQUICStream struct {
+	onRead       func(p []byte) (n int, err error)
+	onCancelRead func(code quic.StreamErrorCode)
+}
+
+// type check
+var _ quicStream = (*testQUICStream)(nil)
+
+// Read implements the [quicStream] interface for *testQUICStream.
+func (s *testQUICStream) Read(p []byte) (n int, err error) {
+	return s.onRead(p)
+}
+
+// CancelRead implements the [quicStream] interface for *testQUICStream.
+func (s *testQUICStream) CancelRead(code quic.StreamErrorCode) {
+	s.onCancelRead(code)
 }
 
 // testDoHServer is an instance of a test DNS-over-QUIC server.
@@ -423,86 +528,4 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 	testutil.CleanupAndRequireSuccess(t, s.Shutdown)
 
 	return s
-}
-
-// quicTracer implements the logging.Tracer interface.
-type quicTracer struct {
-	tracers []*quicConnTracer
-
-	// mu protects fields of *quicTracer and also protects fields of every
-	// nested *quicConnTracer.
-	mu sync.Mutex
-}
-
-// TracerForConnection implements the logging.Tracer interface for *quicTracer.
-func (q *quicTracer) TracerForConnection(
-	_ context.Context,
-	_ logging.Perspective,
-	odcid logging.ConnectionID,
-) (connTracer *logging.ConnectionTracer) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	tracer := &quicConnTracer{id: odcid, parent: q}
-	q.tracers = append(q.tracers, tracer)
-
-	return &logging.ConnectionTracer{
-		SentLongHeaderPacket: tracer.SentLongHeaderPacket,
-	}
-}
-
-// connInfo contains information about packets that we've logged.
-type connInfo struct {
-	packets []logging.Header
-	id      logging.ConnectionID
-}
-
-// is0RTT returns true if this connection's packets contain 0-RTT packets.
-func (c *connInfo) is0RTT() (ok bool) {
-	for _, packet := range c.packets {
-		hdr := packet
-		packetType := logging.PacketTypeFromHeader(&hdr)
-		if packetType == logging.PacketType0RTT {
-			return true
-		}
-	}
-
-	return false
-}
-
-// getConnectionsInfo returns the traced connections' information.
-func (q *quicTracer) getConnectionsInfo() (conns []connInfo) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	for _, tracer := range q.tracers {
-		conns = append(conns, connInfo{
-			id:      tracer.id,
-			packets: tracer.packets,
-		})
-	}
-
-	return conns
-}
-
-// quicConnTracer implements the logging.ConnectionTracer interface.
-type quicConnTracer struct {
-	parent  *quicTracer
-	packets []logging.Header
-	id      logging.ConnectionID
-}
-
-// SentLongHeaderPacket implements the logging.ConnectionTracer interface for
-// *quicConnTracer.
-func (q *quicConnTracer) SentLongHeaderPacket(
-	hdr *logging.ExtendedHeader,
-	_ logging.ByteCount,
-	_ logging.ECN,
-	_ *logging.AckFrame,
-	_ []logging.Frame,
-) {
-	q.parent.mu.Lock()
-	defer q.parent.mu.Unlock()
-
-	q.packets = append(q.packets, hdr.Header)
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/contextutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/ameshkov/dnscrypt/v2"
@@ -18,23 +19,15 @@ import (
 // LogPrefix is a prefix for logging.
 const LogPrefix = "dnsproxy"
 
-// RequestHandler is an optional custom handler for DNS requests.  It's used
-// instead of [Proxy.Resolve] if set.  The resulting error doesn't affect the
-// request processing.  The custom handler is responsible for calling
-// [ResponseHandler], if it doesn't call [Proxy.Resolve].
-//
-// TODO(e.burkov):  Use the same interface-based approach as
-// [BeforeRequestHandler].
-type RequestHandler func(p *Proxy, dctx *DNSContext) (err error)
+const (
+	// DefaultOptimisticMaxAge is default value for
+	// [Config.CacheOptimisticMaxAge].
+	DefaultOptimisticMaxAge = 12 * time.Hour
 
-// ResponseHandler is an optional custom handler called when DNS query has been
-// processed.  When called from [Proxy.Resolve], dctx will contain the response
-// message if the upstream or cache succeeded.  err is only not nil if the
-// upstream failed to respond.
-//
-// TODO(e.burkov):  Use the same interface-based approach as
-// [BeforeRequestHandler].
-type ResponseHandler func(dctx *DNSContext, err error)
+	// DefaultOptimisticAnswerTTL is default value for
+	// [Config.CacheOptimisticAnswerTTL].
+	DefaultOptimisticAnswerTTL = 30 * time.Second
+)
 
 // Config contains all the fields necessary for proxy configuration.
 //
@@ -63,18 +56,14 @@ type Config struct {
 	// performing a single lookup.  If nil, it will be enabled by default.
 	PendingRequests *PendingRequestsConfig
 
-	// BeforeRequestHandler is an optional custom handler called before each DNS
-	// request is started processing, see [BeforeRequestHandler].  The default
-	// no-op implementation is used, if it's nil.
-	BeforeRequestHandler BeforeRequestHandler
+	// RequestContext is a context constructor that returns contexts for
+	// requests.  If not set, the proxy uses [contextutil.EmptyConstructor].
+	RequestContext contextutil.Constructor
 
 	// RequestHandler is an optional custom handler for DNS requests.  It's used
-	// instead of [Proxy.Resolve] if set.  See [RequestHandler].
-	RequestHandler RequestHandler
-
-	// ResponseHandler is an optional custom handler called when DNS query has
-	// been processed.  See [ResponseHandler].
-	ResponseHandler ResponseHandler
+	// instead of DefaultHandler if set.  In case of [ErrDrop] error returned
+	// from this handler, the proxy will not send any response to the client.
+	RequestHandler Handler
 
 	// UpstreamConfig is a general set of DNS servers to forward requests to.
 	UpstreamConfig *UpstreamConfig
@@ -92,11 +81,6 @@ type Config struct {
 	// TODO(e.burkov):  Add explicit boolean for disabling fallbacks.
 	Fallbacks *UpstreamConfig
 
-	// Userinfo is the sole permitted userinfo for the DoH basic authentication.
-	// If Userinfo is set, all DoH queries are required to have this basic
-	// authentication information.
-	Userinfo *url.Userinfo
-
 	// TLSConfig is the TLS configuration.  Required for DNS-over-TLS,
 	// DNS-over-HTTP, and DNS-over-QUIC servers.
 	TLSConfig *tls.Config
@@ -109,13 +93,13 @@ type Config struct {
 	// retries are disabled.
 	BindRetryConfig *BindRetryConfig
 
+	// HTTPConfig is the configuration for HTTP requests proxying.  Required for
+	// DoH server.  If nil, the DoH server is disabled.
+	HTTPConfig *HTTPConfig
+
 	// DNSCryptProviderName is the DNSCrypt provider name.  Required for
 	// DNSCrypt server.
 	DNSCryptProviderName string
-
-	// HTTPSServerName sets the Server header of the HTTPS server responses, if
-	// not empty.
-	HTTPSServerName string
 
 	// UpstreamMode determines the logic through which upstreams will be used.
 	// If not specified the [proxy.UpstreamModeLoadBalance] is used.
@@ -128,10 +112,6 @@ type Config struct {
 	// TCPListenAddr is the set of TCP addresses to listen for plain
 	// DNS-over-TCP requests.
 	TCPListenAddr []*net.TCPAddr
-
-	// HTTPSListenAddr is the set of TCP addresses to listen for DNS-over-HTTPS
-	// requests.
-	HTTPSListenAddr []*net.TCPAddr
 
 	// TLSListenAddr is the set of TCP addresses to listen for DNS-over-TLS
 	// requests.
@@ -159,25 +139,8 @@ type Config struct {
 	// default Well-Known Prefix.
 	DNS64Prefs []netip.Prefix
 
-	// RatelimitWhitelist is a list of IP addresses excluded from rate limiting.
-	RatelimitWhitelist []netip.Addr
-
 	// EDNSAddr is the ECS IP used in request.
 	EDNSAddr net.IP
-
-	// TODO(s.chzhen):  Extract ratelimit settings to a separate structure.
-
-	// RatelimitSubnetLenIPv4 is a subnet length for IPv4 addresses used for
-	// rate limiting requests.
-	RatelimitSubnetLenIPv4 int
-
-	// RatelimitSubnetLenIPv6 is a subnet length for IPv6 addresses used for
-	// rate limiting requests.
-	RatelimitSubnetLenIPv6 int
-
-	// Ratelimit is a maximum number of requests per second from a given IP (0
-	// to disable).
-	Ratelimit int
 
 	// CacheSizeBytes is the maximum cache size in bytes.
 	CacheSizeBytes int
@@ -187,6 +150,14 @@ type Config struct {
 
 	// CacheMaxTTL is the maximum TTL for cached DNS responses in seconds.
 	CacheMaxTTL uint32
+
+	// CacheOptimisticAnswerTTL is the default TTL for expired cached responses.
+	// Default value is [DefaultOptimisticAnswerTTL].
+	CacheOptimisticAnswerTTL time.Duration
+
+	// CacheOptimisticMaxAge is the maximum time entries remain in the cache
+	// when cache is optimistic.  Default value is [DefaultOptimisticMaxAge].
+	CacheOptimisticMaxAge time.Duration
 
 	// MaxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.
@@ -207,8 +178,9 @@ type Config struct {
 	// RefuseAny makes proxy refuse the requests of type ANY.
 	RefuseAny bool
 
-	// HTTP3 enables HTTP/3 support for HTTPS server.
-	HTTP3 bool
+	// DNSSECEnabled specifies if the proxy should set the DO bits in the
+	// upstream requests.
+	DNSSECEnabled bool
 
 	// Enable EDNS Client Subnet option DNS requests to the upstream server will
 	// contain an OPT record with Client Subnet option.  If the original request
@@ -262,6 +234,45 @@ type PendingRequestsConfig struct {
 	Enabled bool
 }
 
+// HTTPConfig is the configuration for HTTP requests proxying.
+type HTTPConfig struct {
+	// Userinfo is the sole permitted userinfo for the DoH basic authentication.
+	// If Userinfo is set, all DoH queries are required to have this basic
+	// authentication information.
+	Userinfo *url.Userinfo
+
+	// ServerHeader sets the Server header of the HTTPS server responses, if not
+	// empty.
+	ServerHeader string
+
+	// ListenAddresses is the set of addresses to listen for DNS-over-HTTPS
+	// requests.  If it is empty the proxy doesn't start the HTTPS server, but
+	// still can be used as an http.Handler with [Proxy.ServeHTTP].
+	ListenAddresses []netip.AddrPort
+
+	// Routes is the set of routes to handle.  It must be a slice of valid route
+	// patterns, if it is empty, the default routes are registered.  It is
+	// ignored if ListenAddresses is empty.
+	Routes []string
+
+	// ReadTimeout is the maximum duration before timing out reads of the
+	// request.  A zero or negative value means there will be no timeout.  It is
+	// ignored if ListenAddresses is empty.
+	ReadTimeout time.Duration
+
+	// WriteTimeout is the maximum duration before timing out writes of the
+	// response.  A zero or negative value means there will be no timeout.  It
+	// is ignored if ListenAddresses is empty.
+	WriteTimeout time.Duration
+
+	// HTTP3Enabled specifies if HTTP/3 support for HTTPS server.  It is ignored
+	// if ListenAddresses is empty.
+	HTTP3Enabled bool
+
+	// InsecureEnabled specifies if unencrypted DoH requests are allowed.
+	InsecureEnabled bool
+}
+
 // validateConfig verifies that the supplied configuration is valid and returns
 // an error if it's not.
 //
@@ -286,11 +297,6 @@ func (p *Proxy) validateConfig() (err error) {
 		return fmt.Errorf("fallbacks: %w", err)
 	}
 
-	err = p.validateRatelimit()
-	if err != nil {
-		return fmt.Errorf("ratelimit: %w", err)
-	}
-
 	switch p.UpstreamMode {
 	case
 		"",
@@ -312,55 +318,10 @@ func (p *Proxy) validateConfig() (err error) {
 	return nil
 }
 
-// validateRatelimit validates ratelimit configuration and returns an error if
-// it's invalid.
-func (p *Proxy) validateRatelimit() (err error) {
-	if p.Ratelimit == 0 {
-		return nil
-	}
-
-	err = checkInclusion(p.RatelimitSubnetLenIPv4, 0, netutil.IPv4BitLen)
-	if err != nil {
-		return fmt.Errorf("ratelimit subnet len ipv4 is invalid: %w", err)
-	}
-
-	err = checkInclusion(p.RatelimitSubnetLenIPv6, 0, netutil.IPv6BitLen)
-	if err != nil {
-		return fmt.Errorf("ratelimit subnet len ipv6 is invalid: %w", err)
-	}
-
-	return nil
-}
-
-// checkInclusion returns an error if a n is not in the inclusive range between
-// minN and maxN.
-func checkInclusion(n, minN, maxN int) (err error) {
-	switch {
-	case n < minN:
-		return fmt.Errorf("value %d less than min %d", n, minN)
-	case n > maxN:
-		return fmt.Errorf("value %d greater than max %d", n, maxN)
-	}
-
-	return nil
-}
-
 // logConfigInfo logs proxy configuration information.
 func (p *Proxy) logConfigInfo() {
 	if p.CacheMinTTL > 0 || p.CacheMaxTTL > 0 {
 		p.logger.Info("cache ttl override is enabled", "min", p.CacheMinTTL, "max", p.CacheMaxTTL)
-	}
-
-	if p.Ratelimit > 0 {
-		p.logger.Info(
-			"ratelimit is enabled",
-			"rps",
-			p.Ratelimit,
-			"ipv4_subnet_mask_len",
-			p.RatelimitSubnetLenIPv4,
-			"ipv6_subnet_mask_len",
-			p.RatelimitSubnetLenIPv6,
-		)
 	}
 
 	if p.RefuseAny {
@@ -414,7 +375,7 @@ func (p *Proxy) validateTLSConfig() (err error) {
 		return errors.Error("tls listener configuration not found")
 	}
 
-	if p.HTTPSListenAddr != nil {
+	if p.HTTPConfig != nil && p.HTTPConfig.ListenAddresses != nil {
 		return errors.Error("https listener configuration not found")
 	}
 
@@ -426,11 +387,11 @@ func (p *Proxy) validateTLSConfig() (err error) {
 }
 
 // hasListenAddrs - is there any addresses to listen to?
-func (p *Proxy) hasListenAddrs() bool {
+func (p *Proxy) hasListenAddrs() (ok bool) {
 	return p.UDPListenAddr != nil ||
 		p.TCPListenAddr != nil ||
 		p.TLSListenAddr != nil ||
-		p.HTTPSListenAddr != nil ||
+		(p.HTTPConfig != nil && p.HTTPConfig.ListenAddresses != nil) ||
 		p.QUICListenAddr != nil ||
 		p.DNSCryptUDPListenAddr != nil ||
 		p.DNSCryptTCPListenAddr != nil

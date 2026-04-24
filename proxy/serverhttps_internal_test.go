@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
@@ -39,17 +38,19 @@ func TestHttpsProxy(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tlsConf, caPem := newTLSConfig(t)
+
+			httpConf := &HTTPConfig{
+				ListenAddresses: []netip.AddrPort{localhostAnyPort},
+				HTTP3Enabled:    tc.http3,
+			}
 			dnsProxy := mustNew(t, &Config{
-				Logger:                 slogutil.NewDiscardLogger(),
-				TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-				TLSConfig:              tlsConf,
-				UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-				TrustedProxies:         defaultTrustedProxies,
-				RatelimitSubnetLenIPv4: 24,
-				RatelimitSubnetLenIPv6: 64,
-				HTTP3:                  tc.http3,
+				Logger:         testLogger,
+				TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TLSConfig:      tlsConf,
+				UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+				TrustedProxies: defaultTrustedProxies,
+				HTTPConfig:     httpConf,
 			})
 
 			servicetest.RequireRun(t, dnsProxy, testTimeout)
@@ -75,26 +76,30 @@ func TestProxy_trustedProxies(t *testing.T) {
 	)
 
 	doRequest := func(t *testing.T, addr, expectedClientIP netip.Addr) {
+		var gotAddr netip.Addr
+		reqHandler := &TestHandler{
+			OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (err error) {
+				gotAddr = d.Addr.Addr()
+
+				return p.Resolve(ctx, d)
+			},
+		}
+
 		// Prepare the proxy server.
 		tlsConf, caPem := newTLSConfig(t)
-		dnsProxy := mustNew(t, &Config{
-			Logger:                 slogutil.NewDiscardLogger(),
-			TLSListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			HTTPSListenAddr:        []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			QUICListenAddr:         []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-			TLSConfig:              tlsConf,
-			UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-			TrustedProxies:         defaultTrustedProxies,
-			RatelimitSubnetLenIPv4: 24,
-			RatelimitSubnetLenIPv6: 64,
-		})
-
-		var gotAddr netip.Addr
-		dnsProxy.RequestHandler = func(_ *Proxy, d *DNSContext) (err error) {
-			gotAddr = d.Addr.Addr()
-
-			return dnsProxy.Resolve(d)
+		httpConf := &HTTPConfig{
+			ListenAddresses: []netip.AddrPort{localhostAnyPort},
 		}
+		dnsProxy := mustNew(t, &Config{
+			Logger:         testLogger,
+			UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+			TrustedProxies: defaultTrustedProxies,
+			RequestHandler: reqHandler,
+			TLSConfig:      tlsConf,
+			TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+			QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+			HTTPConfig:     httpConf,
+		})
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)
 
@@ -327,8 +332,6 @@ func TestRemoteAddr(t *testing.T) {
 		wantProxy: netip.AddrPort{},
 	}}
 
-	l := slogutil.NewDiscardLogger()
-
 	for _, tc := range testCases {
 		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
 		require.NoError(t, err)
@@ -340,7 +343,7 @@ func TestRemoteAddr(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			var addr, prx netip.AddrPort
-			addr, prx, err = remoteAddr(r, l)
+			addr, prx, err = remoteAddr(r, testLogger)
 			if tc.wantErr != "" {
 				testutil.AssertErrorMsg(t, tc.wantErr, err)
 

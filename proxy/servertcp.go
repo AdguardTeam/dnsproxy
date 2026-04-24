@@ -117,55 +117,67 @@ func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
 // [ProtoTCP] or [ProtoTLS].
 //
 // See also the comment on Proxy.requestsSema.
-func (p *Proxy) tcpPacketLoop(l net.Listener, proto Proto, reqSema syncutil.Semaphore) {
-	p.logger.Info("entering listener loop", "proto", proto, "addr", l.Addr())
+func (p *Proxy) tcpPacketLoop(
+	ctx context.Context,
+	l net.Listener,
+	proto Proto,
+	reqSema syncutil.Semaphore,
+) {
+	p.logger.InfoContext(ctx, "entering listener loop", "proto", proto, "addr", l.Addr())
 
 	for {
 		clientConn, err := l.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				p.logger.Debug("tcp connection closed", "addr", l.Addr())
+				p.logger.DebugContext(ctx, "tcp connection closed", "addr", l.Addr())
 			} else {
-				p.logger.Error("reading from tcp", slogutil.KeyError, err)
+				p.logger.ErrorContext(ctx, "reading from tcp", slogutil.KeyError, err)
 			}
 
 			break
 		}
 
-		// TODO(d.kolyshev): Pass and use context from above.
-		err = reqSema.Acquire(context.Background())
+		err = reqSema.Acquire(ctx)
 		if err != nil {
-			p.logger.Error("acquiring semaphore", "proto", ProtoTCP, slogutil.KeyError, err)
+			p.logger.ErrorContext(ctx, "acquiring sema", "proto", ProtoTCP, slogutil.KeyError, err)
 
 			break
 		}
 
-		go p.handleTCPConnection(clientConn, proto, reqSema)
+		go p.handleTCPConnection(ctx, clientConn, proto, reqSema)
 	}
 }
 
 // handleTCPConnection starts a loop that handles an incoming TCP connection.
 // proto must be either [ProtoTCP] or [ProtoTLS].
-func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto, reqSema syncutil.Semaphore) {
-	defer slogutil.RecoverAndLog(context.TODO(), p.logger)
+func (p *Proxy) handleTCPConnection(
+	ctx context.Context,
+	conn net.Conn,
+	proto Proto,
+	reqSema syncutil.Semaphore,
+) {
+	defer slogutil.RecoverAndLog(ctx, p.logger)
 	defer reqSema.Release()
 	defer func() {
 		err := conn.Close()
 		if err != nil {
-			logWithNonCrit(err, "closing conn", ProtoTCP, p.logger)
+			logWithNonCrit(ctx, err, "closing conn", ProtoTCP, p.logger)
 		}
 	}()
 
-	p.logger.Debug("handling new request", "proto", proto, "raddr", conn.RemoteAddr())
+	p.logger.DebugContext(ctx, "handling new request", "proto", proto, "raddr", conn.RemoteAddr())
+
+	ctx, cancel := p.reqCtx.New(ctx)
+	defer cancel()
 
 	for p.isStarted() {
 		err := conn.SetDeadline(time.Now().Add(defaultTimeout))
 		if err != nil {
 			// Consider deadline errors non-critical.
-			logWithNonCrit(err, "setting deadline", ProtoTCP, p.logger)
+			logWithNonCrit(ctx, err, "setting deadline", ProtoTCP, p.logger)
 		}
 
-		req := p.readDNSReq(conn)
+		req := p.readDNSReq(ctx, conn)
 		if req == nil {
 			return
 		}
@@ -173,19 +185,19 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto, reqSema syncutil
 		d := p.newDNSContext(proto, req, netutil.NetAddrToAddrPort(conn.RemoteAddr()))
 		d.Conn = conn
 
-		err = p.handleDNSRequest(d)
+		err = p.handleDNSRequest(ctx, d)
 		if err != nil {
-			logWithNonCrit(err, "handling request", ProtoTCP, p.logger)
+			logWithNonCrit(ctx, err, "handling request", ProtoTCP, p.logger)
 		}
 	}
 }
 
 // readDNSReq returns DNS request message from the given connection or nil if
 // it failed to read it.  Properly logs the error if it happened.
-func (p *Proxy) readDNSReq(conn net.Conn) (req *dns.Msg) {
+func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn) (req *dns.Msg) {
 	packet, err := readPrefixed(conn)
 	if err != nil {
-		logWithNonCrit(err, "reading msg", ProtoTCP, p.logger)
+		logWithNonCrit(ctx, err, "reading msg", ProtoTCP, p.logger)
 
 		return nil
 	}
@@ -193,7 +205,7 @@ func (p *Proxy) readDNSReq(conn net.Conn) (req *dns.Msg) {
 	req = &dns.Msg{}
 	err = req.Unpack(packet)
 	if err != nil {
-		p.logger.Error("handling tcp; unpacking msg", slogutil.KeyError, err)
+		p.logger.ErrorContext(ctx, "handling tcp; unpacking msg", slogutil.KeyError, err)
 
 		return nil
 	}

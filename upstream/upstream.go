@@ -25,7 +25,7 @@ import (
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlogwriter"
 )
 
 // Upstream is an interface for a DNS resolver.  All the methods must be safe
@@ -45,13 +45,16 @@ type Upstream interface {
 	io.Closer
 }
 
-// QUICTraceFunc is a function that returns a [logging.ConnectionTracer]
-// specific for a given role and connection ID.
-type QUICTraceFunc func(
-	ctx context.Context,
-	role logging.Perspective,
-	connID quic.ConnectionID,
-) (tracer *logging.ConnectionTracer)
+// QUICTracer creates [qlogwriter.Trace] instances for QUIC connection tracing.
+type QUICTracer interface {
+	// TraceForConnection creates a [qlogwriter.Trace] specific for a given
+	// role and connection ID.
+	TraceForConnection(
+		ctx context.Context,
+		isClient bool,
+		connID quic.ConnectionID,
+	) (trace qlogwriter.Trace)
+}
 
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
@@ -73,9 +76,9 @@ type Options struct {
 	// Upstream.Exchange method returns any error caused by it.
 	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
 
-	// QUICTracer is an optional callback that allows tracing every QUIC
-	// connection and logging every packet that goes through.
-	QUICTracer QUICTraceFunc
+	// QUICTracer allows tracing every QUIC connection and logging every packet
+	// that goes through.
+	QUICTracer QUICTracer
 
 	// RootCAs is the CertPool that must be used by all upstreams.  Redefining
 	// RootCAs makes sense on iOS to overcome the 15MB memory limit of the

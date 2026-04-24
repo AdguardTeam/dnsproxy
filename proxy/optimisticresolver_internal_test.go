@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,7 +52,7 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 	sameKey := []byte{1, 2, 3}
 
 	// Start the primary goroutine.
-	go s.resolveOnce(nil, sameKey, slogutil.NewDiscardLogger())
+	go s.resolveOnce(nil, sameKey, testLogger)
 	// Block until the primary goroutine reaches the resolve function.
 	<-out
 
@@ -65,7 +64,7 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			s.resolveOnce(nil, sameKey, slogutil.NewDiscardLogger())
+			s.resolveOnce(nil, sameKey, testLogger)
 		}()
 	}
 
@@ -109,7 +108,7 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return false, nil },
 			onCacheResp:         func(_ *DNSContext) { cached = true },
 		})
-		s.resolveOnce(nil, key, slogutil.NewDiscardLogger())
+		s.resolveOnce(nil, key, testLogger)
 
 		assert.False(t, cached)
 	})

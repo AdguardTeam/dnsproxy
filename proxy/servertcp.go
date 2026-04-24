@@ -16,12 +16,14 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/miekg/dns"
+
+	proxyproto "github.com/pires/go-proxyproto"
 )
 
 // initTCPListeners initializes TCP listeners with configured addresses.
 func (p *Proxy) initTCPListeners(ctx context.Context) (err error) {
 	for _, addr := range p.TCPListenAddr {
-		var ln *net.TCPListener
+		var ln net.Listener
 		ln, err = p.listenTCP(ctx, addr)
 		if err != nil {
 			return fmt.Errorf("listening on tcp addr %s: %w", addr, err)
@@ -34,7 +36,7 @@ func (p *Proxy) initTCPListeners(ctx context.Context) (err error) {
 }
 
 // listenTCP returns a new TCP listener listening on addr.
-func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln *net.TCPListener, err error) {
+func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln net.Listener, err error) {
 	addrStr := addr.String()
 	p.logger.InfoContext(ctx, "creating tcp server socket", "addr", addrStr)
 
@@ -60,7 +62,29 @@ func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln *net.TCPLi
 
 	p.logger.InfoContext(ctx, "listening to tcp", "addr", ln.Addr())
 
-	return ln, nil
+	return p.wrapProxyListener(ln), nil
+}
+
+// wrapProxyListener wraps a net.Listener with a proxyproto.Listener that
+// implements the ConnPolicy callback.  If the upstream address is in
+// p.TrustedProxies, it returns proxyproto.USE; otherwise, it returns
+// proxyproto.REJECT.
+func (p *Proxy) wrapProxyListener(ln net.Listener) net.Listener {
+	return &proxyproto.Listener{
+		Listener: ln,
+		ConnPolicy: func(options proxyproto.ConnPolicyOptions) (proxyproto.Policy, error) {
+			if p.TrustedProxies != nil && p.TrustedProxies.Contains(netutil.NetAddrToAddrPort(options.Upstream).Addr()) {
+				// If a proxyproto header is present, use it to determine the
+				// upstream address.
+				return proxyproto.USE, nil
+			}
+
+			// Reject connections if the proxyproto header is present,
+			// with reason (will be logged):
+			// proxyproto: upstream connection sent PROXY header but isn't allowed to send one
+			return proxyproto.REJECT, nil
+		},
+	}
 }
 
 // initTLSListeners initializes TLS listeners with configured addresses.
@@ -78,7 +102,9 @@ func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
 			return fmt.Errorf("listening on tls addr %s: %w", addr, err)
 		}
 
-		l := tls.NewListener(tcpListen, p.TLSConfig)
+		proxyListen := p.wrapProxyListener(tcpListen)
+
+		l := tls.NewListener(proxyListen, p.TLSConfig)
 		p.tlsListen = append(p.tlsListen, l)
 
 		p.logger.InfoContext(ctx, "listening to tls", "addr", l.Addr())

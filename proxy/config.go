@@ -117,14 +117,6 @@ type Config struct {
 	// requests.
 	TLSListenAddr []*net.TCPAddr
 
-	// TCPProxyProtocolV2Enabled defines whether plain DNS-over-TCP listeners
-	// require Proxy Protocol v2 headers.
-	TCPProxyProtocolV2Enabled bool
-
-	// TLSProxyProtocolV2Enabled defines whether DNS-over-TLS listeners require
-	// Proxy Protocol v2 headers before TLS handshake.
-	TLSProxyProtocolV2Enabled bool
-
 	// QUICListenAddr is the set of UDP addresses to listen for DNS-over-QUIC
 	// requests.
 	QUICListenAddr []*net.UDPAddr
@@ -185,6 +177,14 @@ type Config struct {
 
 	// RefuseAny makes proxy refuse the requests of type ANY.
 	RefuseAny bool
+
+	// TCPProxyProtocolV2Enabled defines whether plain DNS-over-TCP listeners
+	// require Proxy Protocol v2 headers.
+	TCPProxyProtocolV2Enabled bool
+
+	// TLSProxyProtocolV2Enabled defines whether DNS-over-TLS listeners require
+	// Proxy Protocol v2 headers before TLS handshake.
+	TLSProxyProtocolV2Enabled bool
 
 	// Enable EDNS Client Subnet option DNS requests to the upstream server will
 	// contain an OPT record with Client Subnet option.  If the original request

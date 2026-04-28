@@ -103,7 +103,7 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 		addr:       "sdns://AQMAAAAAAAAAETk0LjE0MC4xNC4xNDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20",
 		wantErrMsg: "",
 	}, {
-		name:       "tcp",
+		name: "tcp",
 		// Use the same resolver address for TCP tests so that restricted
 		// environments can override it with DNSPROXY_TEST_RESOLVER_IP.
 		addr:       "tcp://" + testIP,

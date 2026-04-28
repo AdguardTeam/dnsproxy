@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,11 +38,47 @@ var testLogger = slogutil.NewDiscardLogger()
 
 // TODO(ameshkov): Make tests here not depend on external servers.
 
+func envOrDefault(k, def string) string {
+	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+		return v
+	}
+
+	return def
+}
+
+func envCSV(k string) (items []string) {
+	raw := strings.TrimSpace(os.Getenv(k))
+	if raw == "" {
+		return nil
+	}
+
+	for _, s := range strings.Split(raw, ",") {
+		if v := strings.TrimSpace(s); v != "" {
+			items = append(items, v)
+		}
+	}
+
+	return items
+}
+
+func isNetworkTestsEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("DNSPROXY_ENABLE_NETWORK_TESTS")))
+	switch v {
+	case "", "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		// Be conservative: any non-empty value enables.
+		return true
+	}
+}
+
 func requireNetwork(t *testing.T) {
 	t.Helper()
 
-	if os.Getenv("DNSPROXY_ENABLE_NETWORK_TESTS") == "" {
-		t.Skip("network-dependent test; set DNSPROXY_ENABLE_NETWORK_TESTS=1 to enable")
+	if !isNetworkTestsEnabled() {
+		t.Skip("network-dependent test; set DNSPROXY_ENABLE_NETWORK_TESTS=0 to disable")
 	}
 }
 
@@ -132,12 +169,15 @@ func TestUpstreams(t *testing.T) {
 
 	l := testLogger
 
-	googleRslv, err := NewUpstreamResolver("8.8.8.8:53", &Options{
+	bootstrap1 := envOrDefault("DNSPROXY_TEST_BOOTSTRAP_1", "8.8.8.8:53")
+	bootstrap2 := envOrDefault("DNSPROXY_TEST_BOOTSTRAP_2", "1.0.0.1:53")
+
+	googleRslv, err := NewUpstreamResolver(bootstrap1, &Options{
 		Logger:  l,
 		Timeout: upsTimeout,
 	})
 	require.NoError(t, err)
-	cloudflareRslv, err := NewUpstreamResolver("1.0.0.1:53", &Options{
+	cloudflareRslv, err := NewUpstreamResolver(bootstrap2, &Options{
 		Logger:  l,
 		Timeout: upsTimeout,
 	})
@@ -146,7 +186,7 @@ func TestUpstreams(t *testing.T) {
 	googleBoot := NewCachingResolver(googleRslv)
 	cloudflareBoot := NewCachingResolver(cloudflareRslv)
 
-	upstreams := []struct {
+	defaultUpstreams := []struct {
 		bootstrap Resolver
 		address   string
 	}{{
@@ -226,7 +266,26 @@ func TestUpstreams(t *testing.T) {
 		address:   "h3://dns.google/dns-query",
 	}}
 
-	for _, test := range upstreams {
+	// Allow overriding the list of upstreams for environments where the default
+	// public resolvers are not reachable (e.g. restricted networks).  This keeps
+	// network tests usable without changing production code.
+	//
+	// Example (China):
+	//   DNSPROXY_TEST_UPSTREAMS="223.5.5.5:53,tcp://223.5.5.5:53"
+	if addrs := envCSV("DNSPROXY_TEST_UPSTREAMS"); len(addrs) > 0 {
+		defaultUpstreams = defaultUpstreams[:0]
+		for _, a := range addrs {
+			defaultUpstreams = append(defaultUpstreams, struct {
+				bootstrap Resolver
+				address   string
+			}{
+				bootstrap: googleBoot,
+				address:   a,
+			})
+		}
+	}
+
+	for _, test := range defaultUpstreams {
 		t.Run(test.address, func(t *testing.T) {
 			t.Parallel()
 
@@ -381,15 +440,24 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 	requireNetwork(t)
 	t.Parallel()
 
+	// If the user explicitly overrides the network-test upstream list, assume a
+	// restricted environment profile unless encrypted tests are explicitly
+	// enabled as well.
+	if os.Getenv("DNSPROXY_TEST_UPSTREAMS") != "" &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("DNSPROXY_TEST_INCLUDE_ENCRYPTED")), "1") &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("DNSPROXY_TEST_INCLUDE_ENCRYPTED")), "true") {
+		t.Skip("restricted network profile; set DNSPROXY_TEST_INCLUDE_ENCRYPTED=1 to enable DoT bootstrap tests")
+	}
+
 	upstreams := []struct {
 		address   string
 		bootstrap string
 	}{{
-		address:   "tls://one.one.one.one/",
-		bootstrap: "tls://1.1.1.1",
+		address:   envOrDefault("DNSPROXY_TEST_DOT_UPSTREAM", "tls://one.one.one.one/"),
+		bootstrap: envOrDefault("DNSPROXY_TEST_DOT_BOOTSTRAP_1", "tls://1.1.1.1"),
 	}, {
-		address:   "tls://one.one.one.one/",
-		bootstrap: "https://1.1.1.1/dns-query",
+		address:   envOrDefault("DNSPROXY_TEST_DOT_UPSTREAM", "tls://one.one.one.one/"),
+		bootstrap: envOrDefault("DNSPROXY_TEST_DOT_BOOTSTRAP_2", "https://1.1.1.1/dns-query"),
 	}}
 
 	for _, tc := range upstreams {
@@ -417,6 +485,13 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	requireNetwork(t)
 	t.Parallel()
+
+	// See TestUpstreamDoTBootstrap for rationale.
+	if os.Getenv("DNSPROXY_TEST_UPSTREAMS") != "" &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("DNSPROXY_TEST_INCLUDE_ENCRYPTED")), "1") &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("DNSPROXY_TEST_INCLUDE_ENCRYPTED")), "true") {
+		t.Skip("restricted network profile; set DNSPROXY_TEST_INCLUDE_ENCRYPTED=1 to enable invalid-bootstrap encrypted tests")
+	}
 
 	upstreams := []struct {
 		address   string

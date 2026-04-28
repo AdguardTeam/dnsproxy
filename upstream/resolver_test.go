@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func envOrDefault(k, def string) string {
+	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+		return v
+	}
+
+	return def
+}
+
+func isNetworkTestsEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("DNSPROXY_ENABLE_NETWORK_TESTS")))
+	switch v {
+	case "", "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		// Be conservative: any non-empty value enables.
+		return true
+	}
+}
 
 func TestNewUpstreamResolver(t *testing.T) {
 	ups := &dnsproxytest.Upstream{
@@ -39,15 +61,15 @@ func TestNewUpstreamResolver(t *testing.T) {
 
 	r := &upstream.UpstreamResolver{Upstream: ups}
 
-	ipAddrs, err := r.LookupNetIP(context.Background(), "ip", "cloudflare-dns.com")
+	ipAddrs, err := r.LookupNetIP(context.Background(), "ip", envOrDefault("DNSPROXY_TEST_LOOKUP_HOST", "cloudflare-dns.com"))
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, ipAddrs)
 }
 
 func TestNewUpstreamResolver_validity(t *testing.T) {
-	if os.Getenv("DNSPROXY_ENABLE_NETWORK_TESTS") == "" {
-		t.Skip("network-dependent test; set DNSPROXY_ENABLE_NETWORK_TESTS=1 to enable")
+	if !isNetworkTestsEnabled() {
+		t.Skip("network-dependent test; set DNSPROXY_ENABLE_NETWORK_TESTS=0 to disable")
 	}
 
 	t.Parallel()
@@ -57,21 +79,24 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 		Timeout: 3 * time.Second,
 	}
 
+	testIP := envOrDefault("DNSPROXY_TEST_RESOLVER_IP", "1.1.1.1")
+	testLookupHost := envOrDefault("DNSPROXY_TEST_LOOKUP_HOST", "cloudflare-dns.com")
+
 	testCases := []struct {
 		name       string
 		addr       string
 		wantErrMsg string
 	}{{
 		name:       "udp",
-		addr:       "1.1.1.1:53",
+		addr:       testIP + ":53",
 		wantErrMsg: "",
 	}, {
 		name:       "dot",
-		addr:       "tls://1.1.1.1",
+		addr:       "tls://" + testIP,
 		wantErrMsg: "",
 	}, {
 		name:       "doh",
-		addr:       "https://1.1.1.1/dns-query",
+		addr:       "https://" + testIP + "/dns-query",
 		wantErrMsg: "",
 	}, {
 		name:       "sdns",
@@ -79,7 +104,9 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 		wantErrMsg: "",
 	}, {
 		name:       "tcp",
-		addr:       "tcp://9.9.9.9",
+		// Use the same resolver address for TCP tests so that restricted
+		// environments can override it with DNSPROXY_TEST_RESOLVER_IP.
+		addr:       "tcp://" + testIP,
 		wantErrMsg: "",
 	}, {
 		name: "invalid_tls",
@@ -119,7 +146,7 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 
 			require.NoError(t, err)
 
-			addrs, err := r.LookupNetIP(context.Background(), "ip", "cloudflare-dns.com")
+			addrs, err := r.LookupNetIP(context.Background(), "ip", testLookupHost)
 			require.NoError(t, err)
 
 			assert.NotEmpty(t, addrs)

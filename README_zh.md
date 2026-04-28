@@ -1,89 +1,96 @@
 # fcchbjm/dnsproxy
 
-Language: **English** | [中文](README_zh.md)
+Language: [English](README.md) | **中文**
 
-This repository is based on [AdguardTeam/dnsproxy](https://github.com/AdguardTeam/dnsproxy).
+本仓库基于上游项目 [AdguardTeam/dnsproxy](https://github.com/AdguardTeam/dnsproxy)。
 
-Key differences from upstream:
- - Dedicated TLS timeout behavior for DoT connections.
- - TCP Keep-Alive enabled for incoming TCP/DoT sockets.
- - Module path isolation for build/distribution (`github.com/fcchbjm/dnsproxy`).
- - Proxy Protocol v2 support for DNS-over-TCP and DNS-over-TLS.
- - TCP Fast Open (TFO) on supported DoT listener platforms.
- - TLS session resumption paths (server and upstream client side).
- - Protocol-level behavior correction for TCP close-phase RST scenarios.
+主要修改如下
+ - 新增 TLS 专用超时配置
+ - 为 TCP 连接启用 Keep-Alive 机制
+ - 更改模块名以方便构建并与官方名称相区别
+ - 实现 Proxy Protocol v2（上游当前未提供）
+ - 实现TCP Fast Open(TFO)
+ - 实现TLS会话恢复
+ - 优化TCP挥手RST问题
 
-## Quick Start
+## 快速开始
 
-### Option 1: Docker
+### 方式一：Docker（推荐用于快速验证）
 
-Image is published to GHCR by this repository's GitHub Actions:
+镜像由本仓库的 GitHub Actions 构建并推送到 GHCR：
 
 - `ghcr.io/fcchbjm/dnsproxy`
+
+拉取示例：
 
 ```shell
 docker pull ghcr.io/fcchbjm/dnsproxy:latest
 ```
 
-### Option 2: Release binary
+### 方式二：Release 二进制
 
-Download the matching binary from GitHub Releases.
-For automated deployments, this is usually preferred over local build chains.
+从 GitHub Releases 下载与你的系统匹配的二进制文件（自动化部署场景建议优先使用该方式，以减少构建链依赖）。
 
-### Option 3: Build from source
+### 方式三：从源码构建
 
-Build with Go (toolchain/version details are in the upstream section below under "How to build").
+使用 Go 构建（依赖版本与构建命令见下方上游 README 的 “How to build” 部分）。
 
-## Change Notes
+## 改动说明
 
-### Proxy Protocol v2 (PPv2): restore real client identity behind LB/proxy
+下面按功能点说明这些改动在生产部署中的语义与边界。
 
-In production, DNS is often deployed behind L4/L7 proxies (HAProxy/Nginx/Caddy/cloud LB).
-Without transport-level client identity propagation, backend services only see the LB source address, which degrades per-client rate limiting, abuse attribution, GeoDNS decisions, and security observability.
+### Proxy Protocol v2（PPv2）：LB 后置部署中恢复真实 Client IP 语义
 
-This project implements PPv2 on DNS-over-TCP and DNS-over-TLS listeners.
+在现代基础设施里，DNS 服务通常被放在 L4/L7 负载均衡/代理之后（HAProxy/Nginx/Caddy/云 LB）。如果缺少传输层的客户端身份承载机制，后端只能看到 LB 的源地址，从而使按客户端维度的限流、滥用归因、GeoDNS 与安全观测整体退化为“按 LB”。
 
-#### Flags and strict semantics
+本项目为 DNS-over-TCP 与 DNS-over-TLS（DoT）入口实现了 Proxy Protocol v2（PPv2），用于在 `LB -> dnsproxy` 架构下恢复真实客户端地址语义，并将信任边界固定在可运维的层面。
 
-When enabled, strict mode requires PPv2 headers; missing headers are rejected.
+#### 开关与严格语义（Strict semantics）
 
-- CLI
-  - `--tcp-proxy-protocol-v2`: require PPv2 on DNS-over-TCP listeners.
-  - `--tls-proxy-protocol-v2`: require PPv2 on DoT listeners (parsed before TLS handshake).
-- YAML (`config.yaml.dist`)
+开启后为**严格模式**：连接若缺失 PPv2 header 将被拒绝，以避免生产环境出现“部分走 LB、部分直连”的语义漂移。
+
+- **命令行**
+  - `--tcp-proxy-protocol-v2`：对 DNS-over-TCP 监听端严格要求 PPv2。
+  - `--tls-proxy-protocol-v2`：对 DoT 监听端严格要求 PPv2（PPv2 在 TLS 握手之前解析；缺失即拒绝）。
+- **YAML（见 `config.yaml.dist`）**
   - `tcp-proxy-protocol-v2: true|false`
   - `tls-proxy-protocol-v2: true|false`
 
-#### Architecture: disabled vs enabled PPv2
+#### 两种系统架构：不开 PPv2 vs 开 PPv2
 
-PPv2 disabled:
+不开 PPv2（默认形态，语义退化）：
 
 ```text
-+--------+      +-------------------+      +----------+
-| Client | ---> | HAProxy/Nginx/LB  | ---> | dnsproxy |
-+--------+      +-------------------+      +----------+
-
-Note: dnsproxy sees remote addr = LB address.
++--------+     +-------------------+     +----------+
+| Client | --> | HAProxy/Nginx/LB  | --> | dnsproxy |
++--------+     +-------------------+     +----------+
+                         ^
+                         | dnsproxy 看到的 remote addr = LB 地址
 ```
 
-PPv2 enabled:
+开 PPv2（生产入口形态，语义恢复）：
 
 ```text
 +--------+      +-------------------+   send-proxy-v2 / PPv2   +----------+      +--------------+
 | Client | ---> | HAProxy/Nginx/LB  | -----------------------> | dnsproxy | ---> | Upstream DNS |
 +--------+      +-------------------+     (require PPv2)       +----------+      +--------------+
 
-Note: Client -> LB does not carry PPv2.
-PPv2 is injected by LB on the LB -> dnsproxy backend connection.
+注：Client -> LB 链路不携带 PPv2；PPv2 由 LB 注入到 LB -> dnsproxy 的后端连接上。
 ```
 
-#### Trust boundary (mandatory)
+#### 信任边界（必须明确）
 
-- Configure `TrustedProxies` to only trusted LB/proxy CIDRs.
-- Restrict network access so only LB/proxy can reach PPv2-enabled listeners.
-- Do not accept client-provided PPv2 at the public edge (e.g. `accept-proxy` at boundary listeners), otherwise source address spoofing becomes possible.
+PPv2 使代理层能够携带“其所见的客户端地址”。因此必须把 PPv2 的信任边界收紧到你的代理层：
 
-#### Minimal HAProxy fragment (DoT example)
+- 配置 `TrustedProxies`（仅信任 LB/代理网段）；不在可信集合内的来源将不会被接受为有效的 PPv2 来源。
+- 在网络层（ACL/安全组/路由隔离）限制：只允许 LB/代理到达启用 PPv2 的监听端，避免直连与伪造风险。
+- 不要在公网入口接受来自客户端的 PPv2（例如在边界 listener 上启用 `accept-proxy` 一类配置），否则等同于允许客户端伪造源地址。
+
+`TrustedProxies` 的配置入口位于配置文件（见 `config.yaml.dist`）与对应的命令行参数解析逻辑中；建议在生产部署时将其收敛到 LB/代理所在的网段集合，并配合网络隔离使用。
+
+#### 5 分钟迁移：最小 HAProxy 配置片段
+
+后端启用 `send-proxy-v2`（示例以 DoT 853 为例）：
 
 ```haproxy
 frontend ft_dot_853
@@ -94,62 +101,68 @@ backend bk_dnsproxy_dot_853
   server dnsproxy 127.0.0.1:853 send-proxy-v2
 ```
 
-Enable strict mode in dnsproxy with `--tls-proxy-protocol-v2` (and `--tcp-proxy-protocol-v2` if needed).
+然后在 dnsproxy 启用严格模式开关：`--tls-proxy-protocol-v2`（如需 TCP 同理启用 `--tcp-proxy-protocol-v2`）。
+具体请参照 HAProxy 官方文档。
 
-#### DoQ/UDP and PPv2
+#### DoQ（QUIC/UDP）与 PPv2：状态与讨论
 
-DoQ/UDP identity propagation cannot be treated as a direct TCP/DoT extension because of different semantics (datagram model, address validation, connection migration, and proxy injection trade-offs).
+QUIC/UDP 的语义与代价模型不同（逐包语义、地址验证、connection migration、代理注入的安全边界与性能开销均不同），因此 DoQ/UDP 上的“客户端语义传递”不能简单复用 TCP/DoT 的做法。
 
-Current implementation scope is TCP/DoT PPv2.
-DoQ/UDP is in evaluation scope and will be driven by real deployment topologies plus executable acceptance criteria.
-Discussion: [Proxy Protocol v2 support (Discussion #1)](https://github.com/fcchbjm/dnsproxy/discussions/1)
+本项目当前仅对 TCP/DoT 提供 PPv2 入口语义；DoQ/UDP 方向已纳入评估范围：在具备真实部署拓扑与可执行验收标准的前提下进入评估与 PoC，并在讨论区沉淀结论与约束。欢迎在 [Proxy Protocol v2 support（Discussion #1）](https://github.com/fcchbjm/dnsproxy/discussions/1) 提供部署形态、流量特征与需求目标。
 
-### TCP RST: protocol-level behavior correction
+### TCP RST：协议层行为纠正（Protocol-level behavior correction）
 
-In complex LB + encrypted DNS deployments, this project applies a dedicated connection lifecycle state machine to avoid request loss caused by abnormal RST behavior at close phase under high concurrency.
+在复杂负载均衡与加密 DNS 场景下，本项目通过独有的连接状态机控制，避免了因异常 RST 导致的请求丢失，重塑了高并发环境下连接关闭阶段的可靠性。
 
-### TLS timeout behavior (DoT)
+### TLS 专用超时（DoT）
 
-- Scope: DoT inbound connections (`--tls-port` / `ProtoTLS`).
-- Default: `defaultTLSTimeout = 600s` (compile-time default, not exposed as CLI/YAML yet).
-- Behavior:
-  - DoT idle window uses read deadline (not full deadline).
-  - TLS handshake has explicit deadline to avoid indefinite connection occupancy.
+本项目为 DoT（DNS-over-TLS）连接引入独立的超时语义，使其更贴合长连接复用与 LB 后置场景下的连接生命周期。
 
-### TCP Keep-Alive (TCP/DoT)
+- **作用域**：仅影响 DoT（`--tls-port` / `ProtoTLS`）入口连接。
+- **默认值**：`defaultTLSTimeout = 600s`（当前为编译期默认值，尚未暴露为 CLI/YAML）。
+- **关键语义**：
+  - DoT 在 idle 期间采用 **read deadline**（而非 full deadline），避免把响应写入绑定到空闲读窗口，导致长连接在边界条件下被过早 teardown。
+  - TLS 握手阶段也有显式 deadline，避免“连接建立但不发送数据”长期占用连接处理协程与资源。
+- **如何验证**：使用 DoT 长连接复用（或通过 LB 复用到后端），观察连接空闲时的超时行为与关闭阶段是否仍能完成在途请求/响应。
 
-- Scope: DNS-over-TCP and DoT inbound connections.
-- Default: `defaultTCPKeepAlive = 30s` (compile-time default).
-- Goal: reduce connection churn and repeated handshake cost.
+### TCP Keep-Alive（TCP/DoT）
 
-### TCP Fast Open (TFO)
+对进入的 TCP 连接启用 keep-alive，并设置固定周期，用于降低连接抖动并提升连接复用的可控性（尤其在 LB/中间盒存在时）。
 
-- Scope: DoT listener socket path only.
-- Platform:
-  - Unix (except OpenBSD): attempts `TCP_FASTOPEN` (queue length 256).
-  - Windows: no-op.
-- Unsupported kernel/platform is non-fatal (logged and continued).
+- **作用域**：DNS-over-TCP 与 DoT 入口连接（对 DoT 会作用在底层 TCP 连接上）。
+- **默认值**：`defaultTCPKeepAlive = 30s`（当前为编译期默认值，尚未暴露为 CLI/YAML）。
+- **预期效果**：减少高并发环境下的连接频繁建立/回收，从而降低握手频率与尾部关闭的复杂度暴露面。
 
-### TLS session resumption
+### TCP Fast Open（TFO）
 
-- Server side (DoT/HTTPS): session ticket key initialized for resumption.
-- Upstream client side (DoH/DoQ/DoT): `ClientSessionCache` enabled to reduce repeated handshakes.
+在支持的平台上，对 **DoT 的监听 socket** 尝试启用 TCP Fast Open（TFO），以降低部分连接建立成本。
 
-### Network-dependent tests
+- **作用域**：仅对 DoT 监听（TLS listener 的底层 TCP listen socket）尝试开启；不影响 UDP/TCP 明文监听。
+- **平台边界**：
+  - Unix 且非 OpenBSD：尝试设置 `TCP_FASTOPEN`（队列长度当前为 256）。
+  - Windows：不应用该设置（实现上显式保持为 no-op）。
+- **失败策略**：若平台/内核不支持该选项，会记录日志并继续运行，不将其视为致命错误。
 
-Network-dependent tests are enabled by default.
-Disable in constrained/offline environments with:
+### TLS 会话恢复（Resumption）
+
+同时覆盖“作为服务端入口”和“作为上游客户端”两类会话恢复语义，目的都是减少重复握手成本，并降低连接抖动对尾部语义的冲击。
+
+- **作为 DoT/HTTPS 服务端**：初始化 session ticket key，使客户端能够按 TLS 机制恢复会话。
+- **作为 DoH/DoQ/DoT 上游客户端**：启用 `ClientSessionCache`，让与上游的 TLS 连接具备会话恢复能力，从而降低重复握手成本；与 HTTP/3 0-RTT/重连等路径协同工作。
+
+### 模块名变更（构建与分发隔离）
+
+module path 已变更为 `github.com/fcchbjm/dnsproxy`，用于与上游在构建产物、依赖引用与镜像分发层面保持明确区分，避免“同名不同义”的工程风险。
+
+## 开发与测试：网络相关测试
+
+部分测试用例需要访问公共递归/加密 DNS 端点，可能受运行环境网络条件影响。如需在 CI/离线/受限网络中禁用这类测试，设置环境变量：
 
 - `DNSPROXY_ENABLE_NETWORK_TESTS=0`
 
-For restricted networks, test endpoints can be overridden via `DNSPROXY_TEST_*` in:
+在受限网络（例如部分国内网络）中，测试目标端点可能不可达；可通过环境变量覆写测试端点（例如将 UDP/TCP 指向 `223.5.5.5`）。相关选项见 `upstream/resolver_test.go` 与 `upstream/upstream_internal_test.go` 中的 `DNSPROXY_TEST_*`。
 
-- `upstream/resolver_test.go`
-- `upstream/upstream_internal_test.go`
-
----
-
-Below is the upstream README content.
+以下是官方README.md内容
 
 ---
 

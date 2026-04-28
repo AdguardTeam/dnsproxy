@@ -186,6 +186,10 @@ type Config struct {
 	// Proxy Protocol v2 headers before TLS handshake.
 	TLSProxyProtocolV2Enabled bool
 
+	// DNSSECEnabled specifies if the proxy should set the DO bits in the
+	// upstream requests.
+	DNSSECEnabled bool
+
 	// Enable EDNS Client Subnet option DNS requests to the upstream server will
 	// contain an OPT record with Client Subnet option.  If the original request
 	// already has this option set, we pass it through as is.  Otherwise, we set

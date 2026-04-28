@@ -504,6 +504,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		UpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 		TrustedProxies: defaultTrustedProxies,
 		CacheEnabled:   true,
+		DNSSECEnabled:  true,
 		CacheSizeBytes: defaultCacheSize,
 	})
 
@@ -1012,6 +1013,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
 		TrustedProxies: defaultTrustedProxies,
 		CacheEnabled:   true,
+		DNSSECEnabled:  true,
 	})
 
 	servicetest.RequireRun(t, prx, testTimeout)
@@ -1141,6 +1143,7 @@ func TestECSProxy(t *testing.T) {
 			Upstreams: []upstream.Upstream{u},
 		},
 		TrustedProxies:         defaultTrustedProxies,
+		DNSSECEnabled:          true,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,
 	})
@@ -1250,6 +1253,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig:         &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 		TrustedProxies:         defaultTrustedProxies,
+		DNSSECEnabled:          true,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,
 		CacheMinTTL:            20,
@@ -1343,6 +1347,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			CacheOptimistic:          true,
 			CacheOptimisticAnswerTTL: testOptimisticTTL,
 			CacheOptimisticMaxAge:    testOptimisticMaxAge,
+			DNSSECEnabled:            true,
 		},
 		logger:          testLogger,
 		pendingRequests: newDefaultPendingRequests(),

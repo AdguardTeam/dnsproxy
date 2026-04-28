@@ -93,37 +93,50 @@ func TestProxy_Resolve_cache(t *testing.T) {
 		wantCachedWithConf assert.BoolAssertionFunc
 		wantCachedGlobal   assert.BoolAssertionFunc
 		name               string
+		dnssecEnabled      bool
 		prxCacheEnabled    bool
 	}{{
 		customUpstreamConf: nil,
 		wantCachedWithConf: assert.True,
 		wantCachedGlobal:   assert.True,
 		name:               "global_cache",
+		dnssecEnabled:      true,
 		prxCacheEnabled:    true,
 	}, {
 		customUpstreamConf: newCustomUpstreamConfig(ups, true),
 		wantCachedWithConf: assert.True,
 		wantCachedGlobal:   assert.False,
 		name:               "custom_cache",
+		dnssecEnabled:      true,
 		prxCacheEnabled:    false,
 	}, {
 		customUpstreamConf: newCustomUpstreamConfig(ups, false),
 		wantCachedWithConf: assert.False,
 		wantCachedGlobal:   assert.False,
 		name:               "custom_cache_only_upstreams",
+		dnssecEnabled:      true,
 		prxCacheEnabled:    false,
 	}, {
 		customUpstreamConf: newCustomUpstreamConfig(ups, true),
 		wantCachedWithConf: assert.True,
 		wantCachedGlobal:   assert.False,
 		name:               "two_caches_enabled",
+		dnssecEnabled:      true,
 		prxCacheEnabled:    true,
 	}, {
 		customUpstreamConf: nil,
 		wantCachedWithConf: assert.False,
 		wantCachedGlobal:   assert.False,
-		name:               "two_caches_disabled",
+		name:               "proxy_cache_disabled",
+		dnssecEnabled:      true,
 		prxCacheEnabled:    false,
+	}, {
+		customUpstreamConf: nil,
+		wantCachedWithConf: assert.False,
+		wantCachedGlobal:   assert.False,
+		name:               "dnssec_disabled",
+		dnssecEnabled:      false,
+		prxCacheEnabled:    true,
 	}}
 
 	for _, tc := range testCases {
@@ -132,6 +145,7 @@ func TestProxy_Resolve_cache(t *testing.T) {
 				UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 				UpstreamConfig: upsConf,
 				CacheEnabled:   tc.prxCacheEnabled,
+				DNSSECEnabled:  tc.dnssecEnabled,
 			})
 			require.NoError(t, err)
 			require.NotNil(t, p)

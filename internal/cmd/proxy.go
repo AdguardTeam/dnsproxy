@@ -102,6 +102,7 @@ func createProxyConfig(
 		UDPBufferSize:             conf.UDPBufferSize,
 		MaxGoroutines:             conf.MaxGoRoutines,
 		UsePrivateRDNS:            conf.UsePrivateRDNS,
+		DNSSECEnabled:             conf.DNSSECEnabled,
 		TCPProxyProtocolV2Enabled: conf.TCPProxyProtocolV2Enabled,
 		TLSProxyProtocolV2Enabled: conf.TLSProxyProtocolV2Enabled,
 		PrivateSubnets:            netutil.SubnetSetFunc(netutil.IsLocallyServed),

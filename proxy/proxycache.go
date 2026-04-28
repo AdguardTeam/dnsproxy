@@ -56,7 +56,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 		}
 		if d.Req != nil {
 			minCtxClone.Req = d.Req.Copy()
-			addDO(minCtxClone.Req)
+			p.addDO(minCtxClone.Req)
 		}
 
 		go p.shortFlighter.resolveOnce(minCtxClone, key, p.logger)

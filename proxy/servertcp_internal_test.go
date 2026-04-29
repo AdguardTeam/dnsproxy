@@ -358,18 +358,7 @@ func TestProxy_tlsProxyProtocolV2_ProductionLikeConcurrentMix(t *testing.T) {
 
 	addr := dnsProxy.Addr(ProtoTLS).String()
 
-	// Start slow peers: send incomplete PPv2 preface and keep the connection
-	// open.
-	slowConns := make([]net.Conn, 0, slowPeers)
-	for i := 0; i < slowPeers; i++ {
-		rawConn, err := net.Dial("tcp", addr)
-		require.NoError(t, err)
-		_, err = rawConn.Write([]byte{0x0d})
-		require.NoError(t, err)
-		slowConns = append(slowConns, rawConn)
-		conn := rawConn
-		time.AfterFunc(holdDuration, func() { _ = conn.Close() })
-	}
+	slowConns := startSlowPPv2Peers(t, addr, slowPeers, holdDuration)
 	defer func() {
 		for _, c := range slowConns {
 			_ = c.Close()
@@ -389,48 +378,12 @@ func TestProxy_tlsProxyProtocolV2_ProductionLikeConcurrentMix(t *testing.T) {
 	for i := 0; i < fastPeers; i++ {
 		go func() {
 			defer wg.Done()
-
-			rawConn, err := net.Dial("tcp", addr)
+			elapsed, err := runFastPPv2Peer(addr, clientTLSConf)
 			if err != nil {
 				errCh <- err
 				return
 			}
-			defer func() { _ = rawConn.Close() }()
-
-			src := netutil.NetAddrToAddrPort(rawConn.LocalAddr())
-			dst := netutil.NetAddrToAddrPort(rawConn.RemoteAddr())
-			_, err = rawConn.Write(proxyProtocolV2Header(src, dst))
-			if err != nil {
-				errCh <- err
-				return
-			}
-
-			tlsConn := tls.Client(rawConn, clientTLSConf)
-			if err := tlsConn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
-				errCh <- err
-				return
-			}
-			if err := tlsConn.Handshake(); err != nil {
-				errCh <- err
-				return
-			}
-
-			dnsConn := &dns.Conn{Conn: tlsConn}
-			if err := dnsConn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
-				errCh <- err
-				return
-			}
-
-			start := time.Now()
-			if err := dnsConn.WriteMsg(newTestMessage()); err != nil {
-				errCh <- err
-				return
-			}
-			if _, err := dnsConn.ReadMsg(); err != nil {
-				errCh <- err
-				return
-			}
-			elapsedCh <- time.Since(start)
+			elapsedCh <- elapsed
 		}()
 	}
 
@@ -450,6 +403,70 @@ func TestProxy_tlsProxyProtocolV2_ProductionLikeConcurrentMix(t *testing.T) {
 	}
 
 	require.Less(t, maxElapsed, maxFastPeerElapsed, fmt.Sprintf("expected fast peers to complete under %v, max elapsed=%v", maxFastPeerElapsed, maxElapsed))
+}
+
+func startSlowPPv2Peers(t *testing.T, addr string, peers int, holdDuration time.Duration) (conns []net.Conn) {
+	t.Helper()
+
+	conns = make([]net.Conn, 0, peers)
+	for i := 0; i < peers; i++ {
+		rawConn, err := net.Dial("tcp", addr)
+		require.NoError(t, err)
+
+		_, err = rawConn.Write([]byte{0x0d})
+		require.NoError(t, err)
+
+		conns = append(conns, rawConn)
+		conn := rawConn
+		time.AfterFunc(holdDuration, func() { _ = conn.Close() })
+	}
+
+	return conns
+}
+
+func runFastPPv2Peer(addr string, clientTLSConf *tls.Config) (elapsed time.Duration, err error) {
+	rawConn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rawConn.Close() }()
+
+	src := netutil.NetAddrToAddrPort(rawConn.LocalAddr())
+	dst := netutil.NetAddrToAddrPort(rawConn.RemoteAddr())
+	_, err = rawConn.Write(proxyProtocolV2Header(src, dst))
+	if err != nil {
+		return 0, err
+	}
+
+	tlsConn := tls.Client(rawConn, clientTLSConf)
+	err = tlsConn.SetDeadline(time.Now().Add(3 * time.Second))
+	if err != nil {
+		return 0, err
+	}
+
+	err = tlsConn.Handshake()
+	if err != nil {
+		return 0, err
+	}
+
+	dnsConn := &dns.Conn{Conn: tlsConn}
+	err = dnsConn.SetDeadline(time.Now().Add(3 * time.Second))
+	if err != nil {
+		return 0, err
+	}
+
+	start := time.Now()
+	err = dnsConn.WriteMsg(newTestMessage())
+	if err != nil {
+		return 0, err
+	}
+
+	_, err = dnsConn.ReadMsg()
+	if err != nil {
+		return 0, err
+	}
+
+	return time.Since(start), nil
 }
 
 func TestParseProxyProtocolV2Addr_IPv6(t *testing.T) {

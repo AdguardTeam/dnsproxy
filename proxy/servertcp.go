@@ -444,66 +444,24 @@ func (p *Proxy) consumeProxyProtocolV2(
 	r *bufio.Reader,
 	remoteAddr netip.AddrPort,
 ) (clientAddr netip.AddrPort, err error) {
-	if !p.TrustedProxies.Contains(remoteAddr.Addr()) {
-		return netip.AddrPort{}, fmt.Errorf("proxy protocol source %s is not trusted", remoteAddr)
-	}
-
-	header := make([]byte, proxyProtocolV2HeaderLen)
-	_, err = io.ReadFull(r, header)
+	cmd, famProto, payloadLen, err := p.readProxyProtocolV2Meta(r, remoteAddr)
 	if err != nil {
-		return netip.AddrPort{}, fmt.Errorf("reading proxy protocol v2 header: %w", err)
+		return netip.AddrPort{}, err
 	}
 
-	if !bytes.Equal(header[:len(proxyProtocolV2Signature)], proxyProtocolV2Signature[:]) {
-		return netip.AddrPort{}, errors.Error("bad proxy protocol v2 signature")
+	localCmd, err := consumeProxyProtocolV2Command(r, cmd, payloadLen)
+	if err != nil {
+		return netip.AddrPort{}, err
 	}
-
-	verCmd := header[12]
-	if verCmd>>4 != 0x2 {
-		return netip.AddrPort{}, fmt.Errorf("unsupported proxy protocol version: %d", verCmd>>4)
-	}
-
-	cmd := verCmd & 0x0f
-	famProto := header[13]
-	payloadLen := int(binary.BigEndian.Uint16(header[14:16]))
-
-	switch cmd {
-	case 0x00:
-		// LOCAL command intentionally preserves the immediate peer address.
-		//
-		// We still must consume the whole payload to keep the stream aligned.
-		_, err = io.CopyN(io.Discard, r, int64(payloadLen))
-		if err != nil {
-			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload: %w", err)
-		}
-
+	if localCmd {
 		return remoteAddr, nil
-	case 0x01:
-		// PROXY command.
-	default:
-		// Consume payload to keep stream aligned even though we'll error out.
-		_, err = io.CopyN(io.Discard, r, int64(payloadLen))
-		if err != nil {
-			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload: %w", err)
-		}
-
-		return netip.AddrPort{}, fmt.Errorf("unsupported proxy protocol command: %d", cmd)
 	}
 
-	requiredPayloadLen := 0
-	switch famProto >> 4 {
-	case 0x1:
-		requiredPayloadLen = 12 // ipv4 (10 bytes address fields + ports)
-	case 0x2:
-		requiredPayloadLen = 36 // ipv6
-	default:
-		// Unsupported family. Consume the whole payload and return an error.
-		_, err = io.CopyN(io.Discard, r, int64(payloadLen))
-		if err != nil {
-			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload: %w", err)
-		}
+	requiredPayloadLen, err := requiredProxyProtocolV2PayloadLen(famProto)
+	if err != nil {
+		err = errors.WithDeferred(err, discardProxyProtocolV2Payload(r, payloadLen))
 
-		return netip.AddrPort{}, fmt.Errorf("unsupported proxy protocol v2 address family: %d", famProto>>4)
+		return netip.AddrPort{}, err
 	}
 
 	if payloadLen < requiredPayloadLen {
@@ -515,20 +473,9 @@ func (p *Proxy) consumeProxyProtocolV2(
 		return netip.AddrPort{}, errors.Error("proxy protocol v2 payload is too short for ipv6")
 	}
 
-	// Read only what's required to extract client source address and port.
-	payload := make([]byte, requiredPayloadLen)
-	_, err = io.ReadFull(r, payload)
+	payload, err := readProxyProtocolV2AddrPayload(r, payloadLen, requiredPayloadLen)
 	if err != nil {
-		return netip.AddrPort{}, fmt.Errorf("reading proxy protocol v2 payload: %w", err)
-	}
-
-	// Discard any trailing TLVs/fields we don't need for client address.
-	discarded := payloadLen - requiredPayloadLen
-	if discarded > 0 {
-		_, err = io.CopyN(io.Discard, r, int64(discarded))
-		if err != nil {
-			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload remainder: %w", err)
-		}
+		return netip.AddrPort{}, err
 	}
 
 	addr, parseErr := parseProxyProtocolV2Addr(famProto, payload)
@@ -539,6 +486,100 @@ func (p *Proxy) consumeProxyProtocolV2(
 	p.logger.DebugContext(ctx, "accepted proxy protocol v2 header", "proxy_addr", remoteAddr, "client_addr", addr)
 
 	return addr, nil
+}
+
+func (p *Proxy) readProxyProtocolV2Meta(
+	r *bufio.Reader,
+	remoteAddr netip.AddrPort,
+) (cmd, famProto byte, payloadLen int, err error) {
+	if !p.TrustedProxies.Contains(remoteAddr.Addr()) {
+		return 0, 0, 0, fmt.Errorf("proxy protocol source %s is not trusted", remoteAddr)
+	}
+
+	header := make([]byte, proxyProtocolV2HeaderLen)
+	_, err = io.ReadFull(r, header)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("reading proxy protocol v2 header: %w", err)
+	}
+
+	if !bytes.Equal(header[:len(proxyProtocolV2Signature)], proxyProtocolV2Signature[:]) {
+		return 0, 0, 0, errors.Error("bad proxy protocol v2 signature")
+	}
+
+	verCmd := header[12]
+	if verCmd>>4 != 0x2 {
+		return 0, 0, 0, fmt.Errorf("unsupported proxy protocol version: %d", verCmd>>4)
+	}
+
+	return verCmd & 0x0f, header[13], int(binary.BigEndian.Uint16(header[14:16])), nil
+}
+
+func consumeProxyProtocolV2Command(r *bufio.Reader, cmd byte, payloadLen int) (local bool, err error) {
+	switch cmd {
+	case 0x00:
+		// LOCAL command intentionally preserves the immediate peer address.
+		//
+		// We still must consume the whole payload to keep the stream aligned.
+		err = discardProxyProtocolV2Payload(r, payloadLen)
+		if err != nil {
+			return false, err
+		}
+
+		return true, nil
+	case 0x01:
+		return false, nil
+	default:
+		err = errors.WithDeferred(
+			fmt.Errorf("unsupported proxy protocol command: %d", cmd),
+			discardProxyProtocolV2Payload(r, payloadLen),
+		)
+
+		return false, err
+	}
+}
+
+func requiredProxyProtocolV2PayloadLen(famProto byte) (requiredPayloadLen int, err error) {
+	switch famProto >> 4 {
+	case 0x1:
+		return 12, nil // ipv4 (10 bytes address fields + ports)
+	case 0x2:
+		return 36, nil // ipv6
+	default:
+		return 0, fmt.Errorf("unsupported proxy protocol v2 address family: %d", famProto>>4)
+	}
+}
+
+func discardProxyProtocolV2Payload(r *bufio.Reader, payloadLen int) (err error) {
+	_, err = io.CopyN(io.Discard, r, int64(payloadLen))
+	if err != nil {
+		return fmt.Errorf("discarding proxy protocol v2 payload: %w", err)
+	}
+
+	return nil
+}
+
+func readProxyProtocolV2AddrPayload(
+	r *bufio.Reader,
+	payloadLen int,
+	requiredPayloadLen int,
+) (payload []byte, err error) {
+	// Read only what's required to extract client source address and port.
+	payload = make([]byte, requiredPayloadLen)
+	_, err = io.ReadFull(r, payload)
+	if err != nil {
+		return nil, fmt.Errorf("reading proxy protocol v2 payload: %w", err)
+	}
+
+	// Discard any trailing TLVs/fields we don't need for client address.
+	discarded := payloadLen - requiredPayloadLen
+	if discarded > 0 {
+		_, err = io.CopyN(io.Discard, r, int64(discarded))
+		if err != nil {
+			return nil, fmt.Errorf("discarding proxy protocol v2 payload remainder: %w", err)
+		}
+	}
+
+	return payload, nil
 }
 
 // parseProxyProtocolV2Addr extracts source address from Proxy Protocol v2 payload.

@@ -104,6 +104,20 @@ Current implementation scope is TCP/DoT PPv2.
 DoQ/UDP is in evaluation scope and will be driven by real deployment topologies plus executable acceptance criteria.
 Discussion: [Proxy Protocol v2 support (Discussion #1)](https://github.com/fcchbjm/dnsproxy/discussions/1)
 
+#### Real-world deployments
+
+If you are running this behind a load balancer in production,
+feedback on real deployment patterns is valuable.
+
+Particularly interested in:
+
+- HAProxy / Nginx / Caddy / Envoy based setups
+- Traffic scale (QPS range)
+- Scenarios requiring real client identity (rate limiting, abuse control, GeoDNS)
+
+-> Discussions: <https://github.com/fcchbjm/dnsproxy/discussions>
+-> Issues: <https://github.com/fcchbjm/dnsproxy/issues>
+
 ### TCP RST: protocol-level behavior correction
 
 In complex LB + encrypted DNS deployments, this project applies a dedicated connection lifecycle state machine to avoid request loss caused by abnormal RST behavior at close phase under high concurrency.

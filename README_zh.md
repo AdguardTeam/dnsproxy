@@ -110,6 +110,19 @@ QUIC/UDP 的语义与代价模型不同（逐包语义、地址验证、connecti
 
 本项目当前仅对 TCP/DoT 提供 PPv2 入口语义；DoQ/UDP 方向已纳入评估范围：在具备真实部署拓扑与可执行验收标准的前提下进入评估与 PoC，并在讨论区沉淀结论与约束。欢迎在 [Proxy Protocol v2 support（Discussion #1）](https://github.com/fcchbjm/dnsproxy/discussions/1) 提供部署形态、流量特征与需求目标。
 
+#### 真实环境部署反馈
+
+如果你正在生产环境中以负载均衡后置方式运行，欢迎反馈真实部署形态，这些信息很有价值。
+
+当前特别关注以下信息：
+
+- 基于 HAProxy / Nginx / Caddy / Envoy 的部署形态
+- 流量规模（QPS 区间）
+- 需要真实客户端身份语义的场景（限速、滥用治理、GeoDNS）
+
+-> Discussions: <https://github.com/fcchbjm/dnsproxy/discussions>
+-> Issues: <https://github.com/fcchbjm/dnsproxy/issues>
+
 ### TCP RST：协议层行为纠正（Protocol-level behavior correction）
 
 在复杂负载均衡与加密 DNS 场景下，本项目通过独有的连接状态机控制，避免了因异常 RST 导致的请求丢失，重塑了高并发环境下连接关闭阶段的可靠性。

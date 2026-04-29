@@ -6,6 +6,8 @@ This repository is based on [AdguardTeam/dnsproxy](https://github.com/AdguardTea
 
 Key differences from upstream:
  - Dedicated TLS timeout behavior for DoT connections.
+ - Configurable PPv2 read timeout (`3s` default, tunable).
+ - `max-go-routines` default adjusted to `32` (tunable).
  - TCP Keep-Alive enabled for incoming TCP/DoT sockets.
  - Module path isolation for build/distribution (`github.com/fcchbjm/dnsproxy`).
  - Proxy Protocol v2 support for DNS-over-TCP and DNS-over-TLS.
@@ -50,9 +52,18 @@ When enabled, strict mode requires PPv2 headers; missing headers are rejected.
 - CLI
   - `--tcp-proxy-protocol-v2`: require PPv2 on DNS-over-TCP listeners.
   - `--tls-proxy-protocol-v2`: require PPv2 on DoT listeners (parsed before TLS handshake).
+  - `--proxy-protocol-v2-read-timeout=duration`: timeout for reading PPv2 preface and payload on new TCP/DoT connections (default: `3s`).
 - YAML (`config.yaml.dist`)
   - `tcp-proxy-protocol-v2: true|false`
   - `tls-proxy-protocol-v2: true|false`
+  - `proxy-protocol-v2-read-timeout: 3s`
+
+Recommended baseline with tuning headroom:
+
+- Keep `proxy-protocol-v2-read-timeout=3s` for most LB -> dnsproxy deployments.
+- Reduce to `1s-2s` in low-latency trusted networks for faster slow-connection eviction.
+- Increase to around `5s` only when cross-region/LB jitter causes false timeout drops.
+- Keep `max-go-routines=32` as the default baseline for PPv2 deployments; tune based on CPU/memory.
 
 #### Architecture: disabled vs enabled PPv2
 

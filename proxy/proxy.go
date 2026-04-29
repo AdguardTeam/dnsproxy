@@ -37,6 +37,7 @@ import (
 const (
 	defaultTimeout      = 10 * time.Second
 	defaultTLSTimeout   = 600 * time.Second
+	defaultPPv2Timeout  = 3 * time.Second
 	minDNSPacketSize    = 12 + 5
 	defaultTCPKeepAlive = 30 * time.Second
 )
@@ -251,11 +252,18 @@ func New(c *Config) (p *Proxy, err error) {
 
 	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
 	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
+	p.ProxyProtocolV2ReadTimeout = cmp.Or(p.ProxyProtocolV2ReadTimeout, defaultPPv2Timeout)
 
 	p.initCache()
 
 	if p.MaxGoroutines > 0 {
 		p.logger.Info("max goroutines is set", "count", p.MaxGoroutines)
+		if (p.TCPProxyProtocolV2Enabled || p.TLSProxyProtocolV2Enabled) && p.MaxGoroutines == 1 {
+			p.logger.Warn(
+				"max goroutines is 1 while PPv2 is enabled; this can cause request queueing under concurrency",
+				"count", p.MaxGoroutines,
+			)
+		}
 
 		p.requestsSema = syncutil.NewChanSemaphore(p.MaxGoroutines)
 	} else {

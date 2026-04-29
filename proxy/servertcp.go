@@ -144,13 +144,6 @@ func (p *Proxy) tcpPacketLoop(
 			break
 		}
 
-		err = reqSema.Acquire(ctx)
-		if err != nil {
-			p.logger.ErrorContext(ctx, "acquiring sema", "proto", proto, slogutil.KeyError, err)
-
-			break
-		}
-
 		go p.handleTCPConnection(ctx, clientConn, proto, reqSema)
 	}
 }
@@ -164,7 +157,6 @@ func (p *Proxy) handleTCPConnection(
 	reqSema syncutil.Semaphore,
 ) {
 	defer slogutil.RecoverAndLog(ctx, p.logger)
-	defer reqSema.Release()
 
 	var shutdownOnce sync.Once
 	clientInitiatedClose := false
@@ -203,7 +195,15 @@ func (p *Proxy) handleTCPConnection(
 		d.Conn = conn
 		d.tcpConnShutdown = shutdown
 
+		err = reqSema.Acquire(ctx)
+		if err != nil {
+			p.logger.ErrorContext(ctx, "acquiring sema for tcp request", "proto", proto, slogutil.KeyError, err)
+
+			return
+		}
+
 		err = p.handleDNSRequest(ctx, d)
+		reqSema.Release()
 		if err != nil {
 			logWithNonCrit(ctx, err, "handling request", proto, p.logger)
 		}
@@ -313,7 +313,7 @@ func (p *Proxy) prepareConn(
 		reader: bufio.NewReader(conn),
 	}
 
-	p.setInitialReadDeadline(ctx, conn, proto)
+	p.setInitialReadDeadline(ctx, conn, proto, ppEnabled)
 
 	bconn, clientAddr, err = p.applyProxyProtocolV2(ctx, bconn, clientAddr, ppEnabled)
 	if err != nil {
@@ -332,10 +332,19 @@ func (p *Proxy) prepareConn(
 	return prepared, clientAddr, nil
 }
 
-func (p *Proxy) setInitialReadDeadline(ctx context.Context, conn net.Conn, proto Proto) {
+func (p *Proxy) setInitialReadDeadline(
+	ctx context.Context,
+	conn net.Conn,
+	proto Proto,
+	ppEnabled bool,
+) {
 	timeout := defaultTimeout
 	if proto == ProtoTLS {
 		timeout = defaultTLSTimeout
+	}
+
+	if ppEnabled && timeout > p.ProxyProtocolV2ReadTimeout {
+		timeout = p.ProxyProtocolV2ReadTimeout
 	}
 
 	// Bound PPv2 detection/parse and (for DoT) the TLS handshake time.
@@ -458,20 +467,68 @@ func (p *Proxy) consumeProxyProtocolV2(
 	famProto := header[13]
 	payloadLen := int(binary.BigEndian.Uint16(header[14:16]))
 
-	payload := make([]byte, payloadLen)
+	switch cmd {
+	case 0x00:
+		// LOCAL command intentionally preserves the immediate peer address.
+		//
+		// We still must consume the whole payload to keep the stream aligned.
+		_, err = io.CopyN(io.Discard, r, int64(payloadLen))
+		if err != nil {
+			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload: %w", err)
+		}
+
+		return remoteAddr, nil
+	case 0x01:
+		// PROXY command.
+	default:
+		// Consume payload to keep stream aligned even though we'll error out.
+		_, err = io.CopyN(io.Discard, r, int64(payloadLen))
+		if err != nil {
+			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload: %w", err)
+		}
+
+		return netip.AddrPort{}, fmt.Errorf("unsupported proxy protocol command: %d", cmd)
+	}
+
+	requiredPayloadLen := 0
+	switch famProto >> 4 {
+	case 0x1:
+		requiredPayloadLen = 12 // ipv4 (10 bytes address fields + ports)
+	case 0x2:
+		requiredPayloadLen = 36 // ipv6
+	default:
+		// Unsupported family. Consume the whole payload and return an error.
+		_, err = io.CopyN(io.Discard, r, int64(payloadLen))
+		if err != nil {
+			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload: %w", err)
+		}
+
+		return netip.AddrPort{}, fmt.Errorf("unsupported proxy protocol v2 address family: %d", famProto>>4)
+	}
+
+	if payloadLen < requiredPayloadLen {
+		// Keep the error shape identical to parseProxyProtocolV2Addr.
+		if requiredPayloadLen == 12 {
+			return netip.AddrPort{}, errors.Error("proxy protocol v2 payload is too short for ipv4")
+		}
+
+		return netip.AddrPort{}, errors.Error("proxy protocol v2 payload is too short for ipv6")
+	}
+
+	// Read only what's required to extract client source address and port.
+	payload := make([]byte, requiredPayloadLen)
 	_, err = io.ReadFull(r, payload)
 	if err != nil {
 		return netip.AddrPort{}, fmt.Errorf("reading proxy protocol v2 payload: %w", err)
 	}
 
-	switch cmd {
-	case 0x00:
-		// LOCAL command intentionally preserves the immediate peer address.
-		return remoteAddr, nil
-	case 0x01:
-		// PROXY command.
-	default:
-		return netip.AddrPort{}, fmt.Errorf("unsupported proxy protocol command: %d", cmd)
+	// Discard any trailing TLVs/fields we don't need for client address.
+	discarded := payloadLen - requiredPayloadLen
+	if discarded > 0 {
+		_, err = io.CopyN(io.Discard, r, int64(discarded))
+		if err != nil {
+			return netip.AddrPort{}, fmt.Errorf("discarding proxy protocol v2 payload remainder: %w", err)
+		}
 	}
 
 	addr, parseErr := parseProxyProtocolV2Addr(famProto, payload)

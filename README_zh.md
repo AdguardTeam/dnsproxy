@@ -6,6 +6,8 @@ Language: [English](README.md) | **中文**
 
 主要修改如下
  - 新增 TLS 专用超时配置
+ - 新增 PPv2 读取超时配置（默认 3s，可调）
+ - `max-go-routines` 默认值调整为 `32`（可调）
  - 为 TCP 连接启用 Keep-Alive 机制
  - 更改模块名以方便构建并与官方名称相区别
  - 实现 Proxy Protocol v2（上游当前未提供）
@@ -52,9 +54,18 @@ docker pull ghcr.io/fcchbjm/dnsproxy:latest
 - **命令行**
   - `--tcp-proxy-protocol-v2`：对 DNS-over-TCP 监听端严格要求 PPv2。
   - `--tls-proxy-protocol-v2`：对 DoT 监听端严格要求 PPv2（PPv2 在 TLS 握手之前解析；缺失即拒绝）。
+  - `--proxy-protocol-v2-read-timeout=duration`：新建 TCP/DoT 连接上读取 PPv2 前缀和负载的超时（默认 `3s`）。
 - **YAML（见 `config.yaml.dist`）**
   - `tcp-proxy-protocol-v2: true|false`
   - `tls-proxy-protocol-v2: true|false`
+  - `proxy-protocol-v2-read-timeout: 3s`
+
+建议值（保留可调空间）：
+
+- 默认使用 `3s`，适合大多数 LB -> dnsproxy 部署。
+- 低时延内网可降到 `1s-2s`（更快淘汰慢连接）。
+- 跨地域或链路抖动明显时可升到 `5s` 左右。
+- `max-go-routines` 默认建议 `32`，再按机器资源（CPU/内存）调优。
 
 #### 两种系统架构：不开 PPv2 vs 开 PPv2
 

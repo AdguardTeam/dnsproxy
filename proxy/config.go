@@ -186,6 +186,12 @@ type Config struct {
 	// Proxy Protocol v2 headers before TLS handshake.
 	TLSProxyProtocolV2Enabled bool
 
+	// ProxyProtocolV2ReadTimeout bounds the pre-DNS stage when waiting for the
+	// PPv2 signature and payload from a newly accepted connection.
+	//
+	// Zero value means using a built-in default.
+	ProxyProtocolV2ReadTimeout time.Duration
+
 	// DNSSECEnabled specifies if the proxy should set the DO bits in the
 	// upstream requests.
 	DNSSECEnabled bool

@@ -250,12 +250,32 @@ func New(c *Config) (p *Proxy, err error) {
 		return nil, err
 	}
 
-	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
-	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
-	p.ProxyProtocolV2ReadTimeout = cmp.Or(p.ProxyProtocolV2ReadTimeout, defaultPPv2Timeout)
+	p.applyDefaults()
 
 	p.initCache()
 
+	p.initRequestsSema()
+
+	p.initFastestAddr()
+
+	p.initBindRetry(c)
+
+	err = p.setupDNS64()
+	if err != nil {
+		return nil, fmt.Errorf("setting up DNS64: %w", err)
+	}
+
+	return p, nil
+}
+
+func (p *Proxy) applyDefaults() {
+	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
+	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
+	p.ProxyProtocolV2ReadTimeout = cmp.Or(p.ProxyProtocolV2ReadTimeout, defaultPPv2Timeout)
+	p.UpstreamMode = cmp.Or(p.UpstreamMode, UpstreamModeLoadBalance)
+}
+
+func (p *Proxy) initRequestsSema() {
 	if p.MaxGoroutines > 0 {
 		p.logger.Info("max goroutines is set", "count", p.MaxGoroutines)
 		if (p.TCPProxyProtocolV2Enabled || p.TLSProxyProtocolV2Enabled) && p.MaxGoroutines == 1 {
@@ -266,29 +286,32 @@ func New(c *Config) (p *Proxy, err error) {
 		}
 
 		p.requestsSema = syncutil.NewChanSemaphore(p.MaxGoroutines)
-	} else {
-		p.requestsSema = syncutil.EmptySemaphore{}
+
+		return
 	}
 
-	p.UpstreamMode = cmp.Or(p.UpstreamMode, UpstreamModeLoadBalance)
-	if p.UpstreamMode == UpstreamModeFastestAddr {
-		p.fastestAddr = fastip.New(&fastip.Config{
-			Logger:          p.Logger,
-			PingWaitTimeout: p.FastestPingTimeout,
-		})
+	p.requestsSema = syncutil.EmptySemaphore{}
+}
+
+func (p *Proxy) initFastestAddr() {
+	if p.UpstreamMode != UpstreamModeFastestAddr {
+		return
 	}
 
-	if bindRetries := c.BindRetryConfig; bindRetries != nil && bindRetries.Enabled {
-		p.bindRetryCount = bindRetries.Count
-		p.bindRetryIvl = bindRetries.Interval
+	p.fastestAddr = fastip.New(&fastip.Config{
+		Logger:          p.Logger,
+		PingWaitTimeout: p.FastestPingTimeout,
+	})
+}
+
+func (p *Proxy) initBindRetry(c *Config) {
+	bindRetries := c.BindRetryConfig
+	if bindRetries == nil || !bindRetries.Enabled {
+		return
 	}
 
-	err = p.setupDNS64()
-	if err != nil {
-		return nil, fmt.Errorf("setting up DNS64: %w", err)
-	}
-
-	return p, nil
+	p.bindRetryCount = bindRetries.Count
+	p.bindRetryIvl = bindRetries.Interval
 }
 
 // pendingRequestsOrDefault returns the pending requests if it's not nil,

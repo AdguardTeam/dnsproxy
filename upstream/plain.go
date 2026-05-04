@@ -95,11 +95,14 @@ func (p *plainDNS) dialExchange(
 	client := &dns.Client{Timeout: p.timeout}
 
 	conn := &dns.Conn{}
-	if network == networkUDP {
-		conn.UDPSize = dns.MinMsgSize
-	}
+	upstreamReq := setRequestForNetwork(req, conn, network)
+	defer func() {
+		if resp != nil {
+			resp.Id = req.Id
+		}
+	}()
 
-	logBegin(p.logger, addr, network, req)
+	logBegin(p.logger, addr, network, upstreamReq)
 	defer func() { logFinish(p.logger, addr, network, err) }()
 
 	ctx := context.Background()
@@ -109,7 +112,7 @@ func (p *plainDNS) dialExchange(
 	}
 	defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
 
-	resp, _, err = client.ExchangeWithConn(req, conn)
+	resp, _, err = client.ExchangeWithConn(upstreamReq, conn)
 	if isExpectedConnErr(err) {
 		conn.Conn, err = dial(ctx, network, "")
 		if err != nil {
@@ -117,14 +120,35 @@ func (p *plainDNS) dialExchange(
 		}
 		defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
 
-		resp, _, err = client.ExchangeWithConn(req, conn)
+		resp, _, err = client.ExchangeWithConn(upstreamReq, conn)
 	}
 
 	if err != nil {
 		return resp, fmt.Errorf("exchanging with %s over %s: %w", addr, network, err)
 	}
 
-	return resp, validatePlainResponse(req, resp)
+	return resp, validatePlainResponse(upstreamReq, resp)
+}
+
+// setRequestForNetwork sets connection options in conn and overrides the
+// upstream request, if necessary, depending on network.  If network is
+// [networkUDP] and orig has a zero ID, req is a copy of orig with a new ID to
+// increase entropy.  network must be either [networkUDP] or [networkTCP].  orig
+// and conn must not be nil.
+func setRequestForNetwork(orig *dns.Msg, conn *dns.Conn, network network) (req *dns.Msg) {
+	req = orig
+	if network != networkUDP {
+		return req
+	}
+
+	conn.UDPSize = dns.MinMsgSize
+
+	if orig.Id == 0 {
+		req = orig.Copy()
+		req.Id = dns.Id()
+	}
+
+	return req
 }
 
 // isExpectedConnErr returns true if the error is expected.  In this case,

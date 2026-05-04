@@ -289,10 +289,7 @@ func writeQUICStream(buf []byte, stream *quic.Stream) (err error) {
 	chunkSize := 400
 	for i := 0; i < len(buf); i += chunkSize {
 		chunkStart := i
-		chunkEnd := i + chunkSize
-		if chunkEnd > len(buf) {
-			chunkEnd = len(buf)
-		}
+		chunkEnd := min(i+chunkSize, len(buf))
 
 		_, err = stream.Write(buf[chunkStart:chunkEnd])
 		if err != nil {

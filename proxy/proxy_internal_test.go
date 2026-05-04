@@ -370,10 +370,7 @@ func newTxts(tb testing.TB, txtDataLen int) (txts []string) {
 
 	// *dns.TXT requires splitting the actual data into 256-byte chunks.
 	for i := range txtDataChunkNum {
-		r := txtDataChunkLen * (i + 1)
-		if r > txtDataLen {
-			r = txtDataLen
-		}
+		r := min(txtDataChunkLen*(i+1), txtDataLen)
 		txts[i] = string(randData[txtDataChunkLen*i : r])
 	}
 
@@ -600,8 +597,8 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 		UpstreamConfig: newTestUpstreamConfigWithBoot(
 			t,
 			testTimeout,
-			"[/adguard.com/]1.2.3.4",
-			"[/google.ru/]2.3.4.5",
+			"[/adguard.com/]192.0.2.1",
+			"[/google.ru/]192.0.2.2",
 			"[/maps.google.ru/]#",
 			"1.1.1.1",
 		),

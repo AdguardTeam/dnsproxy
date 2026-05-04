@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -695,13 +696,7 @@ func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tl
 
 // supportsH3 returns true if HTTP/3 is supported by this upstream.
 func (p *dnsOverHTTPS) supportsH3() (ok bool) {
-	for _, v := range p.tlsConf.NextProtos {
-		if v == string(HTTPVersion3) {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(p.tlsConf.NextProtos, string(HTTPVersion3))
 }
 
 // supportsHTTP returns true if HTTP/1.1 or HTTP2 is supported by this upstream.

@@ -66,17 +66,14 @@ func TestUpstream_dnsOverTLS_race(t *testing.T) {
 	// Use this upstream from multiple goroutines in parallel.
 	wg := sync.WaitGroup{}
 	for range count {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			pt := testutil.PanicT{}
 
 			req := createTestMessage()
 			resp, uErr := u.Exchange(req)
 			require.NoError(pt, uErr)
 			requireResponse(pt, req, resp)
-		}()
+		})
 	}
 
 	wg.Wait()

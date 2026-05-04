@@ -337,7 +337,15 @@ func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
 		qname = req.Question[0].Name
 	}
 
-	l.Debug("sending request", "addr", addr, "proto", n, "qtype", qtype, "qname", qname)
+	l.DebugContext(
+		context.TODO(),
+		"sending request",
+		"addr", addr,
+		"proto", n,
+		"qtype", qtype,
+		"qname", qname,
+		"id", req.Id,
+	)
 }
 
 // logFinish logs the end of DNS request resolution.  It should be called right

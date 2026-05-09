@@ -31,9 +31,12 @@ There are several options how to install `dnsproxy`.
 1. Grab the binary for your device/OS from the [Releases][releases] page.
 2. Use the [official Docker image][docker].
 3. Build it yourself (see the instruction below).
+4. Use the included [systemd service file][service] for running as a system
+   service on Linux.
 
 [releases]: https://github.com/AdguardTeam/dnsproxy/releases
 [docker]: https://hub.docker.com/r/adguard/dnsproxy
+[service]: dnsproxy.service
 
 ## How to build
 

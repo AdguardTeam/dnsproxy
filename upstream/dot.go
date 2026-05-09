@@ -170,12 +170,19 @@ func (p *dnsOverTLS) conn(h bootstrap.DialHandler) (conn net.Conn, err error) {
 
 	p.conns, conn = p.conns[:l-1], p.conns[l-1]
 
+	// Check if the connection is still alive before using it.
+	if !isConnAlive(conn) {
+		p.logger.Debug("dot upstream conn from pool is dead")
+		_ = conn.Close()
+
+		return nil, nil
+	}
+
 	err = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err != nil {
 		p.logger.Debug("dot upstream setting deadline to conn from pool", slogutil.KeyError, err)
+		_ = conn.Close()
 
-		// If deadLine can't be updated it means that connection was already
-		// closed.
 		return nil, nil
 	}
 
@@ -260,4 +267,29 @@ func isCriticalTCP(err error) (ok bool) {
 	default:
 		return true
 	}
+}
+
+// isConnAlive checks if a connection is still alive. A connection is
+// considered dead if it has been closed by the peer (CLOSE_WAIT state).
+func isConnAlive(conn net.Conn) (ok bool) {
+	// Set a very short read deadline to perform a non-blocking check.
+	// For TCP connections, this won't fail even if the connection is closed.
+	_ = conn.SetReadDeadline(time.Now().Add(time.Millisecond))
+	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
+
+	// Attempt a zero-byte read. For a closed connection, this returns
+	// an error immediately (EOF or connection reset).
+	var buf [1]byte
+	_, err := conn.Read(buf[:0])
+
+	// Timeout means no data available but connection is still open.
+	if err != nil {
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return true
+		}
+		return false
+	}
+
+	return true
 }

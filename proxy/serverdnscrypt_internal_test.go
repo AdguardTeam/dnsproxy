@@ -11,6 +11,7 @@ import (
 	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
@@ -66,7 +67,10 @@ func TestDNSCryptProxy(t *testing.T) {
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Generate a DNS stamp
-	port := testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoDNSCrypt)).Port
+	addrProto, err := dnsProxy.Addr(ProtoDNSCrypt)
+	require.NoError(t, err)
+
+	port := testutil.RequireTypeAssert[*net.UDPAddr](t, addrProto).Port
 	addr := netutil.JoinHostPort(listenIP, uint16(port))
 	stamp, err := rc.CreateStamp(addr)
 	assert.Nil(t, err)

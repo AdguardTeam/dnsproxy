@@ -44,7 +44,10 @@ func TestProxy_quic(t *testing.T) {
 
 		servicetest.RequireRun(t, dnsProxy, testTimeout)
 
-		addr = testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoQUIC))
+		addrProto, err := dnsProxy.Addr(ProtoQUIC)
+		require.NoError(t, err)
+
+		addr = testutil.RequireTypeAssert[*net.UDPAddr](t, addrProto)
 
 		conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
 		require.NoError(t, err)
@@ -113,7 +116,8 @@ func TestProxy_quicLargePackets(t *testing.T) {
 	}
 
 	// Create a DNS-over-QUIC client connection.
-	addr := dnsProxy.Addr(ProtoQUIC)
+	addr, err := dnsProxy.Addr(ProtoQUIC)
+	require.NoError(t, err)
 
 	// Open a QUIC connection.
 	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
@@ -181,7 +185,8 @@ func TestProxy_quicTruncatedRequest(t *testing.T) {
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
-	addr := dnsProxy.Addr(ProtoQUIC)
+	addr, err := dnsProxy.Addr(ProtoQUIC)
+	require.NoError(t, err)
 
 	roots := x509.NewCertPool()
 	require.True(t, roots.AppendCertsFromPEM(caPem))

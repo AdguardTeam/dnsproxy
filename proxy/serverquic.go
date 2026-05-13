@@ -49,6 +49,14 @@ const quicAddrValidatorCacheSize = 1000
 const quicAddrValidatorCacheTTL = 30 * time.Minute
 
 const (
+	// DefaultDoQReadTimeout is the default timeout for DoQ reading operations.
+	DefaultDoQReadTimeout = 2 * time.Second
+
+	// DefaultDoQWriteTimeout is the default timeout for DoQ writing operations.
+	DefaultDoQWriteTimeout = 2 * time.Second
+)
+
+const (
 	// DoQCodeNoError is used when the connection or stream needs to be closed,
 	// but there is no error to signal.
 	DoQCodeNoError quic.ApplicationErrorCode = 0
@@ -129,7 +137,7 @@ func (p *Proxy) quicPacketLoop(
 	p.logger.InfoContext(ctx, "entering dns-over-quic listener loop", "addr", l.Addr())
 
 	for {
-		conn, err := l.Accept(ctx)
+		conn, err := p.acceptQUICConn(ctx, l)
 		if err != nil {
 			logQUICError(ctx, "accepting quic conn", err, p.logger)
 
@@ -153,6 +161,17 @@ func (p *Proxy) quicPacketLoop(
 			p.handleQUICConnection(ctx, conn, reqSema)
 		}()
 	}
+}
+
+// acceptQUICConn reads and accepts a single QUIC connection.
+func (p *Proxy) acceptQUICConn(
+	ctx context.Context,
+	l *quic.EarlyListener,
+) (conn *quic.Conn, err error) {
+	acceptCtx, cancel := context.WithDeadline(ctx, time.Now().Add(DefaultDoQReadTimeout))
+	defer cancel()
+
+	return l.Accept(acceptCtx)
 }
 
 // logQUICError writes suitable log message for the given err.
@@ -184,7 +203,7 @@ func (p *Proxy) handleQUICConnection(
 		// design specifies that for each subsequent query on a QUIC connection
 		// the client MUST select the next available client-initiated
 		// bidirectional stream.
-		stream, err := conn.AcceptStream(ctx)
+		stream, err := acceptStream(ctx, conn)
 		if err != nil {
 			logQUICError(ctx, "accepting quic stream", err, p.logger)
 
@@ -214,6 +233,48 @@ func (p *Proxy) handleQUICConnection(
 			_ = stream.Close()
 		}()
 	}
+}
+
+// acceptStream accepts and starts processing a single QUIC stream.  All
+// arguments must not be nil.
+//
+// NOTE:  Any error returned from this method stops handling on conn.
+func acceptStream(parent context.Context, conn *quic.Conn) (stream *quic.Stream, err error) {
+	// The stub to resolver DNS traffic follows a simple pattern in which the
+	// client sends a query, and the server provides a response.  This design
+	// specifies that for each subsequent query on a QUIC connection the client
+	// MUST select the next available client-initiated bidirectional stream.
+	ctx, cancel := context.WithDeadline(parent, time.Now().Add(maxQUICIdleTimeout))
+	defer cancel()
+
+	// For some reason AcceptStream below seems to get stuck even when ctx is
+	// canceled.  As a mitigation, check the context manually right before
+	// feeding it into AcceptStream.
+	//
+	// TODO(a.garipov): Try to reproduce and report.
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("checking accept ctx: %w", ctx.Err())
+	default:
+		// Go on.
+	}
+
+	stream, err = conn.AcceptStream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("accepting quic stream: %w", err)
+	}
+
+	err = stream.SetReadDeadline(time.Now().Add(DefaultDoQReadTimeout))
+	if err != nil {
+		return nil, fmt.Errorf("setting read deadline: %w", err)
+	}
+
+	err = stream.SetWriteDeadline(time.Now().Add(DefaultDoQWriteTimeout))
+	if err != nil {
+		return nil, fmt.Errorf("setting write deadline: %w", err)
+	}
+
+	return stream, nil
 }
 
 // handleQUICStream reads DNS queries from the stream, processes them,

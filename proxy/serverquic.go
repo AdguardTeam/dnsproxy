@@ -32,10 +32,9 @@ const NextProtoDQ = "doq"
 // includes previous drafts.
 var compatProtoDQ = []string{NextProtoDQ, "doq-i02", "doq-i00", "dq"}
 
-// maxQUICIdleTimeout is maximum QUIC idle timeout.  The default value in
-// quic-go is 30 seconds, but our internal tests show that a higher value works
-// better for clients written with ngtcp2.
-const maxQUICIdleTimeout = 5 * time.Minute
+// maxQUICIdleTimeout is maximum QUIC idle timeout.  It corresponds with the
+// default value in quic-go.
+const maxQUICIdleTimeout = 30 * time.Second
 
 // quicAddrValidatorCacheSize is the size of the cache that we use in the QUIC
 // address validator.  The value is chosen arbitrarily and we should consider

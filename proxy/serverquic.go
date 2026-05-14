@@ -168,7 +168,7 @@ func (p *Proxy) acceptQUICConn(
 	ctx context.Context,
 	l *quic.EarlyListener,
 ) (conn *quic.Conn, err error) {
-	acceptCtx, cancel := context.WithDeadline(ctx, time.Now().Add(DefaultDoQReadTimeout))
+	acceptCtx, cancel := context.WithDeadline(ctx, p.time.Now().Add(DefaultDoQReadTimeout))
 	defer cancel()
 
 	return l.Accept(acceptCtx)
@@ -203,7 +203,7 @@ func (p *Proxy) handleQUICConnection(
 		// design specifies that for each subsequent query on a QUIC connection
 		// the client MUST select the next available client-initiated
 		// bidirectional stream.
-		stream, err := acceptStream(ctx, conn)
+		stream, err := p.acceptStream(ctx, conn)
 		if err != nil {
 			logQUICError(ctx, "accepting quic stream", err, p.logger)
 
@@ -239,12 +239,15 @@ func (p *Proxy) handleQUICConnection(
 // arguments must not be nil.
 //
 // NOTE:  Any error returned from this method stops handling on conn.
-func acceptStream(parent context.Context, conn *quic.Conn) (stream *quic.Stream, err error) {
+func (p *Proxy) acceptStream(
+	parent context.Context,
+	conn *quic.Conn,
+) (stream *quic.Stream, err error) {
 	// The stub to resolver DNS traffic follows a simple pattern in which the
 	// client sends a query, and the server provides a response.  This design
 	// specifies that for each subsequent query on a QUIC connection the client
 	// MUST select the next available client-initiated bidirectional stream.
-	ctx, cancel := context.WithDeadline(parent, time.Now().Add(maxQUICIdleTimeout))
+	ctx, cancel := context.WithDeadline(parent, p.time.Now().Add(maxQUICIdleTimeout))
 	defer cancel()
 
 	// For some reason AcceptStream below seems to get stuck even when ctx is

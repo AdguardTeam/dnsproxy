@@ -49,6 +49,10 @@ const quicAddrValidatorCacheSize = 1000
 const quicAddrValidatorCacheTTL = 30 * time.Minute
 
 const (
+	// DefaultDoQIdleTimeout is the default timeout for accepting DoQ
+	// connections.
+	DefaultDoQIdleTimeout = 2 * time.Second
+
 	// DefaultDoQReadTimeout is the default timeout for DoQ reading operations.
 	DefaultDoQReadTimeout = 2 * time.Second
 
@@ -126,7 +130,8 @@ func (p *Proxy) listenQUIC(
 	return conn, l, tr, nil
 }
 
-// quicPacketLoop listens for incoming QUIC packets.
+// quicPacketLoop listens for incoming QUIC packets.  This method is supposed to
+// be run in a separate goroutine.  l and reqSema must not be nil.
 //
 // See also the comment on Proxy.requestsSema.
 func (p *Proxy) quicPacketLoop(
@@ -139,6 +144,12 @@ func (p *Proxy) quicPacketLoop(
 	for {
 		conn, err := p.acceptQUICConn(ctx, l)
 		if err != nil {
+			if isNonCriticalNetError(err) {
+				// Non-critical errors, do not register in the metrics or log
+				// anywhere.
+				continue
+			}
+
 			logQUICError(ctx, "accepting quic conn", err, p.logger)
 
 			break
@@ -169,10 +180,27 @@ func (p *Proxy) acceptQUICConn(
 	ctx context.Context,
 	l *quic.EarlyListener,
 ) (conn *quic.Conn, err error) {
-	acceptCtx, cancel := context.WithDeadline(ctx, p.time.Now().Add(DefaultDoQReadTimeout))
+	acceptCtx, cancel := context.WithDeadline(ctx, p.time.Now().Add(DefaultDoQIdleTimeout))
 	defer cancel()
 
 	return l.Accept(acceptCtx)
+}
+
+// isNonCriticalNetError is a helper that returns true if err is a
+// [context.ErrDeadlineExceeded], or [net.Error] with its Timeout method
+// returning true.  This is used to filter out non-critical errors in accept
+// loops.
+func isNonCriticalNetError(err error) (ok bool) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var netErr net.Error
+	if netErr, ok = errors.AsType[net.Error](err); ok && netErr.Timeout() {
+		return true
+	}
+
+	return false
 }
 
 // logQUICError writes suitable log message for the given err.
@@ -479,7 +507,7 @@ func isQUICErrorForDebugLog(err error) (ok bool) {
 	}
 
 	var qAppErr *quic.ApplicationError
-	if errors.As(err, &qAppErr) &&
+	if qAppErr, ok = errors.AsType[*quic.ApplicationError](err); ok &&
 		(qAppErr.ErrorCode == qCodeNoError || qAppErr.ErrorCode == qCodeApplicationErrorError) {
 		// No need to have detailed logs for these error codes either.
 		//

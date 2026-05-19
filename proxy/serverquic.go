@@ -163,7 +163,8 @@ func (p *Proxy) quicPacketLoop(
 	}
 }
 
-// acceptQUICConn reads and accepts a single QUIC connection.
+// acceptQUICConn reads and accepts a single QUIC connection.  l must not be
+// nil.
 func (p *Proxy) acceptQUICConn(
 	ctx context.Context,
 	l *quic.EarlyListener,
@@ -267,12 +268,12 @@ func (p *Proxy) acceptStream(
 		return nil, fmt.Errorf("accepting quic stream: %w", err)
 	}
 
-	err = stream.SetReadDeadline(time.Now().Add(DefaultDoQReadTimeout))
+	err = stream.SetReadDeadline(p.time.Now().Add(DefaultDoQReadTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("setting read deadline: %w", err)
 	}
 
-	err = stream.SetWriteDeadline(time.Now().Add(DefaultDoQWriteTimeout))
+	err = stream.SetWriteDeadline(p.time.Now().Add(DefaultDoQWriteTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("setting write deadline: %w", err)
 	}
@@ -490,6 +491,11 @@ func isQUICErrorForDebugLog(err error) (ok bool) {
 		// This error is returned on AcceptStream calls when the server rejects
 		// 0-RTT for some reason.  This is a common scenario, no need for extra
 		// logs.
+		return true
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		// Timeouts are expected in accept/read loops and shouldn't be noisy.
 		return true
 	}
 

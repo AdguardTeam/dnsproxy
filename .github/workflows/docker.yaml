@@ -50,16 +50,11 @@
         'run': |-
           set -e -u -x
 
-          RELEASE_VERSION="${GITHUB_REF##*/}"
-          if [[ "${RELEASE_VERSION}" != v* ]]; then RELEASE_VERSION='dev'; fi
-          echo "RELEASE_VERSION=\"${RELEASE_VERSION}\"" >> $GITHUB_ENV
-
           docker login \
             -u="${DOCKER_USER}" \
             -p="${DOCKER_PASSWORD}"
 
           make \
-            VERSION="${RELEASE_VERSION}" \
             DOCKER_IMAGE_NAME="adguard/dnsproxy" \
             DOCKER_PUSH="1" \
             VERBOSE="1" \

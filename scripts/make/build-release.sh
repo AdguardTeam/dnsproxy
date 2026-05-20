@@ -10,20 +10,39 @@ elif [ "$verbose" -gt '1' ]; then
 	set -x
 fi
 
-set -e -f -u
+# Don't use -f, because we use globs in this script.
+set -e -u
 
 log() {
 	if [ "$verbose" -gt '0' ]; then
 		# Don't use quotes to get word splitting.
-		echo "$1" 1>&2
+		printf '%s\n' "$1" 1>&2
 	fi
 }
 
 log 'starting to build dnsproxy release'
 
 version="${VERSION:-}"
-readonly version
 
+if [ -z "$version" ]; then
+	version="${GITHUB_REF:-}"
+	version="${version##*/}"
+fi
+
+case "$version" in
+v*)
+	if ! printf '%s\n' "$version" | grep -E -e '^v[0-9]+\.[0-9]+\.[0-9]+$' -q; then
+		printf "version is invalid '%s'\n" "$version" 1>&2
+
+		exit 1
+	fi
+	;;
+*)
+	version='dev'
+	;;
+esac
+
+readonly version
 log "version '$version'"
 
 dist="${DIST_DIR:-build}"

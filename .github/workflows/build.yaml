@@ -67,11 +67,7 @@ jobs:
         run: |-
           set -e -u -x
 
-          RELEASE_VERSION="${GITHUB_REF##*/}"
-          if [[ "${RELEASE_VERSION}" != v* ]]; then RELEASE_VERSION='dev'; fi
-          echo "RELEASE_VERSION=\"${RELEASE_VERSION}\"" >> $GITHUB_ENV
-
-          make VERBOSE=1 VERSION="${RELEASE_VERSION}" release
+          make VERBOSE=1 release
 
           ls -l build/dnsproxy-*
       - name: Create release

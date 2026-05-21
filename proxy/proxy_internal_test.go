@@ -1311,6 +1311,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 			CacheOptimisticAnswerTTL: testOptimisticTTL,
 			CacheOptimisticMaxAge:    testOptimisticMaxAge,
 			DNSSECEnabled:            true,
+			// TODO(e.burkov):  Set panicking upstream configuration.
 		},
 		logger:          testLogger,
 		pendingRequests: newDefaultPendingRequests(),
@@ -1332,7 +1333,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 			p.cacheResp(dctx)
 
-			// Report adding tocache is finished.
+			// Report adding to cache is finished.
 			out <- unit{}
 		},
 	}
@@ -1342,7 +1343,8 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	firstCtx, secondCtx := buildCtx(), buildCtx()
 
 	// Add expired response into cache.
-	req := firstCtx.Req
+	req := firstCtx.Req.Copy()
+	p.addDO(req)
 	key := msgToKey(req)
 	data := (&cacheItem{
 		m: buildResp(req, 0),

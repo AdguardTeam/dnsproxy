@@ -56,7 +56,6 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 		}
 		if d.Req != nil {
 			minCtxClone.Req = d.Req.Copy()
-			p.addDO(minCtxClone.Req)
 		}
 
 		go p.shortFlighter.resolveOnce(minCtxClone, key, p.logger)
@@ -83,7 +82,7 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 	dctxCache := p.cacheForContext(d)
 
 	if !p.EnableEDNSClientSubnet {
-		dctxCache.set(d.Res, d.Upstream, p.logger)
+		dctxCache.set(d.Req, d.Res, d.Upstream, p.logger)
 
 		return
 	}
@@ -123,13 +122,13 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 
 		p.logger.Debug("caching response", "ecs", ecs)
 
-		dctxCache.setWithSubnet(d.Res, d.Upstream, ecs, p.logger)
+		dctxCache.setWithSubnet(d.Req, d.Res, d.Upstream, ecs, p.logger)
 	case d.ReqECS != nil:
 		// Cache the response for all subnets since the server doesn't support
 		// EDNS Client Subnet option.
-		dctxCache.setWithSubnet(d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil}, p.logger)
+		dctxCache.setWithSubnet(d.Req, d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil}, p.logger)
 	default:
-		dctxCache.set(d.Res, d.Upstream, p.logger)
+		dctxCache.set(d.Req, d.Res, d.Upstream, p.logger)
 	}
 }
 

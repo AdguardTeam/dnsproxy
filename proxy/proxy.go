@@ -587,7 +587,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	if len(upstreams) == 0 {
 		d.Res = p.messages.NewMsgNXDOMAIN(req)
 
-		return false, fmt.Errorf("selecting upstream: %w", upstream.ErrNoUpstreams)
+		return false, fmt.Errorf("selecting upstream: %w for %q", upstream.ErrNoUpstreams, req.Question[0].Name)
 	}
 
 	if isPrivate {

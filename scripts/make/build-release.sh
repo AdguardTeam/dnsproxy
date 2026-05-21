@@ -22,9 +22,9 @@ log() {
 
 log 'starting to build dnsproxy release'
 
-version="${VERSION:-}"
+version="${VERSION:-0}"
 
-if [ -z "$version" ]; then
+if [ "$version" = '0' ]; then
 	version="${GITHUB_REF:-}"
 	version="${version##*/}"
 fi

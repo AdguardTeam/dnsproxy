@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"time"
 
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
@@ -154,7 +153,7 @@ func (dctx *DNSContext) isForbiddenARPA(privateNets netutil.SubnetSet, l *slog.L
 func (p *Proxy) respond(ctx context.Context, d *DNSContext) {
 	// d.Conn can be nil in the case of a DoH request.
 	if d.Conn != nil {
-		_ = d.Conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
+		_ = d.Conn.SetWriteDeadline(p.time.Now().Add(defaultTimeout))
 	}
 
 	var err error

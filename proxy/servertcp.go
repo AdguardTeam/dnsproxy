@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
@@ -145,7 +144,7 @@ func (p *Proxy) handleTCPConnection(
 	defer cancel()
 
 	for p.isStarted() {
-		err := conn.SetDeadline(time.Now().Add(defaultTimeout))
+		err := conn.SetDeadline(p.time.Now().Add(defaultTimeout))
 		if err != nil {
 			// Consider deadline errors non-critical.
 			logWithNonCrit(ctx, err, "setting deadline", ProtoTCP, p.logger)

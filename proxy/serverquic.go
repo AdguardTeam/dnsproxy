@@ -32,10 +32,9 @@ const NextProtoDQ = "doq"
 // includes previous drafts.
 var compatProtoDQ = []string{NextProtoDQ, "doq-i02", "doq-i00", "dq"}
 
-// maxQUICIdleTimeout is maximum QUIC idle timeout.  The default value in
-// quic-go is 30 seconds, but our internal tests show that a higher value works
-// better for clients written with ngtcp2.
-const maxQUICIdleTimeout = 5 * time.Minute
+// maxQUICIdleTimeout is maximum QUIC idle timeout.  It corresponds with the
+// default value in quic-go.
+const maxQUICIdleTimeout = 30 * time.Second
 
 // quicAddrValidatorCacheSize is the size of the cache that we use in the QUIC
 // address validator.  The value is chosen arbitrarily and we should consider
@@ -119,7 +118,8 @@ func (p *Proxy) listenQUIC(
 	return conn, l, tr, nil
 }
 
-// quicPacketLoop listens for incoming QUIC packets.
+// quicPacketLoop listens for incoming QUIC packets.  This method is supposed to
+// be run in a separate goroutine.  l and reqSema must not be nil.
 //
 // See also the comment on Proxy.requestsSema.
 func (p *Proxy) quicPacketLoop(
@@ -130,8 +130,14 @@ func (p *Proxy) quicPacketLoop(
 	p.logger.InfoContext(ctx, "entering dns-over-quic listener loop", "addr", l.Addr())
 
 	for {
-		conn, err := l.Accept(ctx)
+		conn, err := p.acceptQUICConn(ctx, l)
 		if err != nil {
+			if isNonCriticalNetError(err) {
+				// Non-critical errors, do not register in the metrics or log
+				// anywhere.
+				continue
+			}
+
 			logQUICError(ctx, "accepting quic conn", err, p.logger)
 
 			break
@@ -154,6 +160,35 @@ func (p *Proxy) quicPacketLoop(
 			p.handleQUICConnection(ctx, conn, reqSema)
 		}()
 	}
+}
+
+// acceptQUICConn reads and accepts a single QUIC connection.  l must not be
+// nil.
+func (p *Proxy) acceptQUICConn(
+	ctx context.Context,
+	l *quic.EarlyListener,
+) (conn *quic.Conn, err error) {
+	acceptCtx, cancel := context.WithDeadline(ctx, p.time.Now().Add(defaultTimeout))
+	defer cancel()
+
+	return l.Accept(acceptCtx)
+}
+
+// isNonCriticalNetError is a helper that returns true if err is a
+// [context.ErrDeadlineExceeded], or [net.Error] with its Timeout method
+// returning true.  This is used to filter out non-critical errors in accept
+// loops.
+func isNonCriticalNetError(err error) (ok bool) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var netErr net.Error
+	if netErr, ok = errors.AsType[net.Error](err); ok && netErr.Timeout() {
+		return true
+	}
+
+	return false
 }
 
 // logQUICError writes suitable log message for the given err.
@@ -185,9 +220,9 @@ func (p *Proxy) handleQUICConnection(
 		// design specifies that for each subsequent query on a QUIC connection
 		// the client MUST select the next available client-initiated
 		// bidirectional stream.
-		stream, err := conn.AcceptStream(ctx)
+		stream, err := p.acceptStream(ctx, conn)
 		if err != nil {
-			logQUICError(ctx, "accepting quic stream", err, p.logger)
+			logQUICStreamError(ctx, "accepting quic stream", err, p.logger)
 
 			// Close the connection to make sure resources are freed.
 			closeQUICConn(conn, DoQCodeNoError, p.logger)
@@ -215,6 +250,61 @@ func (p *Proxy) handleQUICConnection(
 			_ = stream.Close()
 		}()
 	}
+}
+
+// logQUICStreamError writes suitable log message for the given err.  Skips
+// [context.ErrDeadlineExceeded] and timeout errors.  l must not be nil.
+func logQUICStreamError(ctx context.Context, prefix string, err error, l *slog.Logger) {
+	if isNonCriticalNetError(err) {
+		return
+	}
+
+	logQUICError(ctx, prefix, err, l)
+}
+
+// acceptStream accepts and starts processing a single QUIC stream.  All
+// arguments must not be nil.
+//
+// NOTE:  Any error returned from this method stops handling on conn.
+func (p *Proxy) acceptStream(
+	parent context.Context,
+	conn *quic.Conn,
+) (stream *quic.Stream, err error) {
+	// The stub to resolver DNS traffic follows a simple pattern in which the
+	// client sends a query, and the server provides a response.  This design
+	// specifies that for each subsequent query on a QUIC connection the client
+	// MUST select the next available client-initiated bidirectional stream.
+	ctx, cancel := context.WithDeadline(parent, p.time.Now().Add(maxQUICIdleTimeout))
+	defer cancel()
+
+	// For some reason AcceptStream below seems to get stuck even when ctx is
+	// canceled.  As a mitigation, check the context manually right before
+	// feeding it into AcceptStream.
+	//
+	// TODO(a.garipov): Try to reproduce and report.
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("checking accept ctx: %w", ctx.Err())
+	default:
+		// Go on.
+	}
+
+	stream, err = conn.AcceptStream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("accepting quic stream: %w", err)
+	}
+
+	err = stream.SetReadDeadline(p.time.Now().Add(defaultTimeout))
+	if err != nil {
+		return nil, fmt.Errorf("setting read deadline: %w", err)
+	}
+
+	err = stream.SetWriteDeadline(p.time.Now().Add(defaultTimeout))
+	if err != nil {
+		return nil, fmt.Errorf("setting write deadline: %w", err)
+	}
+
+	return stream, nil
 }
 
 // handleQUICStream reads DNS queries from the stream, processes them,
@@ -415,7 +505,7 @@ func isQUICErrorForDebugLog(err error) (ok bool) {
 	}
 
 	var qAppErr *quic.ApplicationError
-	if errors.As(err, &qAppErr) &&
+	if qAppErr, ok = errors.AsType[*quic.ApplicationError](err); ok &&
 		(qAppErr.ErrorCode == qCodeNoError || qAppErr.ErrorCode == qCodeApplicationErrorError) {
 		// No need to have detailed logs for these error codes either.
 		//
@@ -427,6 +517,11 @@ func isQUICErrorForDebugLog(err error) (ok bool) {
 		// This error is returned on AcceptStream calls when the server rejects
 		// 0-RTT for some reason.  This is a common scenario, no need for extra
 		// logs.
+		return true
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		// Timeouts are expected in accept/read loops and shouldn't be noisy.
 		return true
 	}
 

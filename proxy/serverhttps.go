@@ -15,6 +15,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/httphdr"
+	"github.com/AdguardTeam/golibs/ioutil"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -159,8 +160,8 @@ func newDoHReq(
 			return nil, http.StatusUnsupportedMediaType
 		}
 
-		// TODO(d.kolyshev): Limit reader.
-		buf, err = io.ReadAll(r.Body)
+		limitBody := ioutil.LimitReader(r.Body, dns.MaxMsgSize)
+		buf, err = io.ReadAll(limitBody)
 		if err != nil {
 			l.DebugContext(ctx, "reading http request body", slogutil.KeyError, err)
 

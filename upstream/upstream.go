@@ -422,7 +422,7 @@ const errQuestion errors.Error = "bad question section"
 
 // validateResponse validates resp from an upstream DNS server for compliance
 // with req.  Any error returned wraps [ErrQuestion], since it essentially
-// validates the question section of resp.
+// validates the question section of resp.  req and resp must not be nil.
 func validateResponse(req, resp *dns.Msg) (err error) {
 	if qlen := len(resp.Question); qlen != 1 {
 		return fmt.Errorf("%w: only 1 question allowed; got %d", errQuestion, qlen)

@@ -151,7 +151,8 @@ var _ Upstream = (*dnsOverHTTPS)(nil)
 // password, the password is replaced with "xxxxx".
 func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
-// Exchange implements the [Upstream] interface for *dnsOverHTTPS.
+// Exchange implements the [Upstream] interface for *dnsOverHTTPS.  req must not
+// be nil.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	defer func() {
 		// Restore the original request ID, since it was set to 0.

@@ -153,18 +153,12 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
 // Exchange implements the [Upstream] interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	// In order to maximize HTTP cache friendliness, DoH clients using media
-	// formats that include the ID field from the DNS message header, such as
-	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
-	//
-	// See https://www.rfc-editor.org/rfc/rfc8484.html.
-	id := req.Id
-	req.Id = 0
 	defer func() {
-		// Restore the original ID to not break compatibility with proxies.
-		req.Id = id
+		// Restore the original request ID, since it was set to 0.
+		//
+		// See https://www.rfc-editor.org/rfc/rfc8484.html.
 		if resp != nil {
-			resp.Id = id
+			resp.Id = req.Id
 		}
 	}()
 
@@ -252,6 +246,14 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	if err != nil {
 		return nil, fmt.Errorf("packing message: %w", err)
 	}
+
+	// In order to maximize HTTP cache friendliness, DoH clients using media
+	// formats that include the ID field from the DNS message header, such as
+	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+	buf[0] = 0
+	buf[1] = 0
 
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.

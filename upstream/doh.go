@@ -315,11 +315,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 		)
 	}
 
-	if resp.Id != req.Id {
-		err = dns.ErrId
-	}
-
-	return resp, err
+	return resp, validateResponse(req, resp)
 }
 
 // shouldRetry checks what error we have received and returns true if we should
@@ -336,6 +332,11 @@ func (p *dnsOverHTTPS) shouldRetry(err error) (ok bool) {
 		// stalling after a network change.
 		//
 		// See https://github.com/AdguardTeam/AdGuardHome/issues/3217.
+		return true
+	}
+
+	if errors.Is(err, errQuestion) {
+		// The upstream responded with malformed message.
 		return true
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
@@ -151,8 +152,7 @@ var _ Upstream = (*dnsOverHTTPS)(nil)
 // password, the password is replaced with "xxxxx".
 func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
-// Exchange implements the [Upstream] interface for *dnsOverHTTPS.  req must not
-// be nil.
+// Exchange implements the [Upstream] interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	// Check if there was already an active client before sending the request.
 	// We'll only attempt to re-connect if there was one.
@@ -236,8 +236,7 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
 	//
 	// See https://www.rfc-editor.org/rfc/rfc8484.html.
-	buf[0] = 0
-	buf[1] = 0
+	binary.BigEndian.PutUint16(buf, 0)
 
 	resp, err = p.exchangeHTTPSClient(client, buf)
 	if err != nil {
@@ -245,7 +244,7 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 	}
 
 	if resp.Id != 0 {
-		return nil, fmt.Errorf("unexpected non-zero ID in response: %d", resp.Id)
+		return nil, fmt.Errorf("unexpected non-zero id in response: %d", resp.Id)
 	}
 
 	// Restore the original request ID, since it was set to 0.
@@ -342,11 +341,6 @@ func (p *dnsOverHTTPS) shouldRetry(err error) (ok bool) {
 		// stalling after a network change.
 		//
 		// See https://github.com/AdguardTeam/AdGuardHome/issues/3217.
-		return true
-	}
-
-	if errors.Is(err, errQuestion) {
-		// The upstream responded with malformed message.
 		return true
 	}
 

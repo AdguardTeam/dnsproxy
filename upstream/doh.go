@@ -154,15 +154,6 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 // Exchange implements the [Upstream] interface for *dnsOverHTTPS.  req must not
 // be nil.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	defer func() {
-		// Restore the original request ID, since it was set to 0.
-		//
-		// See https://www.rfc-editor.org/rfc/rfc8484.html.
-		if resp != nil {
-			resp.Id = req.Id
-		}
-	}()
-
 	// Check if there was already an active client before sending the request.
 	// We'll only attempt to re-connect if there was one.
 	client, isCached, err := p.getClient()
@@ -225,6 +216,7 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
 }
 
 // exchangeHTTPS logs the request and its result and calls exchangeHTTPSClient.
+// client and req must not be nil.
 func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *dns.Msg, err error) {
 	n := networkTCP
 	if isHTTP3(client) {
@@ -234,15 +226,6 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 	logBegin(p.logger, p.addrRedacted, n, req)
 	defer func() { logFinish(p.logger, p.addrRedacted, n, err) }()
 
-	return p.exchangeHTTPSClient(client, req)
-}
-
-// exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
-// http.Client instance.
-func (p *dnsOverHTTPS) exchangeHTTPSClient(
-	client *http.Client,
-	req *dns.Msg,
-) (resp *dns.Msg, err error) {
 	buf, err := req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("packing message: %w", err)
@@ -256,6 +239,30 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	buf[0] = 0
 	buf[1] = 0
 
+	resp, err = p.exchangeHTTPSClient(client, buf)
+	if err != nil {
+		return nil, fmt.Errorf("exchanging: %w", err)
+	}
+
+	if resp.Id != 0 {
+		return nil, fmt.Errorf("unexpected non-zero ID in response: %d", resp.Id)
+	}
+
+	// Restore the original request ID, since it was set to 0.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+	resp.Id = req.Id
+
+	return resp, validateResponse(req, resp)
+}
+
+// exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
+// http.Client instance.  buf is the packed DNS message that will be sent to the
+// resolver.  client must not be nil.  The returned resp is never nil.
+func (p *dnsOverHTTPS) exchangeHTTPSClient(
+	client *http.Client,
+	buf []byte,
+) (resp *dns.Msg, err error) {
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.
 	method := http.MethodGet
@@ -318,7 +325,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 		)
 	}
 
-	return resp, validateResponse(req, resp)
+	return resp, nil
 }
 
 // shouldRetry checks what error we have received and returns true if we should

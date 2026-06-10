@@ -257,7 +257,7 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 
 // exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
 // http.Client instance.  buf is the packed DNS message that will be sent to the
-// resolver.  client must not be nil.  The returned resp is never nil.
+// resolver.  client must not be nil.
 func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	client *http.Client,
 	buf []byte,

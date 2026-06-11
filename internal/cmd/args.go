@@ -124,7 +124,7 @@ var commandLineOptions = []*commandLineOption{
 	},
 	dnsCryptConfigPathIdx: {
 		description: "Path to a file with DNSCrypt configuration. You can generate one using " +
-			"https://github.com/ameshkov/dnscrypt.",
+			"https://github.com/AdguardTeam/dnscrypt.",
 		long:      "dnscrypt-config",
 		short:     "g",
 		valueType: "path",

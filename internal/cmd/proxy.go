@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	"github.com/AdguardTeam/dnsproxy/internal/middleware"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
@@ -22,7 +23,6 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
-	"github.com/ameshkov/dnscrypt/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -340,7 +340,7 @@ func (conf *configuration) initTLSConfig(config *proxy.Config) (err error) {
 	return nil
 }
 
-// initDNSCryptConfig inits the DNSCrypt config.
+// initDNSCryptConfig inits the DNSCrypt config.  config must not be nil.
 func (conf *configuration) initDNSCryptConfig(config *proxy.Config) (err error) {
 	if conf.DNSCryptConfigPath == "" {
 		return nil
@@ -357,9 +357,19 @@ func (conf *configuration) initDNSCryptConfig(config *proxy.Config) (err error) 
 		return fmt.Errorf("unmarshalling DNSCrypt config: %w", err)
 	}
 
-	cert, err := rc.CreateCert()
+	err = rc.Validate()
+	if err != nil {
+		return fmt.Errorf("validating DNSCrypt config: %w", err)
+	}
+
+	cert, err := rc.NewCert()
 	if err != nil {
 		return fmt.Errorf("creating DNSCrypt certificate: %w", err)
+	}
+
+	err = cert.Validate()
+	if err != nil {
+		return fmt.Errorf("validating DNSCrypt certificate: %w", err)
 	}
 
 	config.DNSCryptResolverCert = cert

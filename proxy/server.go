@@ -77,14 +77,6 @@ func (p *Proxy) serveListeners(ctx context.Context) {
 	for _, l := range p.quicListen {
 		go p.quicPacketLoop(ctx, l, p.requestsSema)
 	}
-
-	for _, l := range p.dnsCryptUDPListen {
-		go func(l *net.UDPConn) { _ = p.dnsCryptServer.ServeUDP(l) }(l)
-	}
-
-	for _, l := range p.dnsCryptTCPListen {
-		go func(l net.Listener) { _ = p.dnsCryptServer.ServeTCP(l) }(l)
-	}
 }
 
 // handleDNSRequest processes the context.  The only error it returns is the one
@@ -170,7 +162,7 @@ func (p *Proxy) respond(ctx context.Context, d *DNSContext) {
 	case ProtoQUIC:
 		err = p.respondQUIC(d)
 	case ProtoDNSCrypt:
-		err = p.respondDNSCrypt(d)
+		err = p.respondDNSCrypt(ctx, d)
 	default:
 		err = fmt.Errorf("SHOULD NOT HAPPEN - unknown protocol: %s", d.Proto)
 	}

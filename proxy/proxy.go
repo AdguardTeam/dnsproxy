@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/fastip"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
@@ -28,7 +29,6 @@ import (
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/AdguardTeam/golibs/validate"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -91,8 +91,8 @@ type Proxy struct {
 	// requestHandler handles the DNS request.  It is never nil.
 	requestHandler Handler
 
-	// dnsCryptServer serves DNSCrypt queries.
-	dnsCryptServer *dnscrypt.Server
+	// dnsCryptServers serves DNSCrypt queries.
+	dnsCryptServers []*dnscrypt.Server
 
 	// logger is used for logging in the proxy service.  It is never nil.
 	logger *slog.Logger
@@ -156,12 +156,6 @@ type Proxy struct {
 
 	// h3Server serves queries received over HTTP/3.
 	h3Server *http3.Server
-
-	// dnsCryptUDPListen are the listened UDP connections for DNSCrypt.
-	dnsCryptUDPListen []*net.UDPConn
-
-	// dnsCryptTCPListen are the listened TCP connections for DNSCrypt.
-	dnsCryptTCPListen []net.Listener
 
 	// upstreamRTTStats maps the upstream address to its round-trip time
 	// statistics.  It's holds the statistics for all upstreams to perform a
@@ -350,6 +344,14 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 	// canceled.
 	p.serveListeners(context.WithoutCancel(ctx))
 
+	for _, s := range p.dnsCryptServers {
+		err = s.Start(context.WithoutCancel(ctx))
+		if err != nil {
+			// Don't wrap the error since it's informative enough as is.
+			return err
+		}
+	}
+
 	p.started = true
 
 	return nil
@@ -400,6 +402,10 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 		if u != nil {
 			errs = closeAll(errs, u)
 		}
+	}
+
+	for _, s := range p.dnsCryptServers {
+		errs = append(errs, s.Shutdown(ctx))
 	}
 
 	p.started = false
@@ -454,12 +460,6 @@ func (p *Proxy) closeListeners(errs []error) (res []error) {
 	res = closeAll(res, p.quicConns...)
 	p.quicConns = nil
 
-	res = closeAll(res, p.dnsCryptUDPListen...)
-	p.dnsCryptUDPListen = nil
-
-	res = closeAll(res, p.dnsCryptTCPListen...)
-	p.dnsCryptTCPListen = nil
-
 	return res
 }
 
@@ -495,13 +495,12 @@ func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 	case ProtoQUIC:
 		return collectAddrs(p.quicListen, (*quic.EarlyListener).Addr)
 	case ProtoDNSCrypt:
-		// Using only UDP addrs here
-		//
-		// TODO(ameshkov): To do it better we should either do
-		// ProtoDNSCryptTCP/ProtoDNSCryptUDP or we should change the
-		// configuration so that it was not possible to set different ports for
-		// TCP/UDP listeners.
-		return collectAddrs(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
+		addrs = make([]net.Addr, 0, len(p.dnsCryptServers))
+		for _, l := range p.dnsCryptServers {
+			addrs = append(addrs, l.LocalAddr())
+		}
+
+		return addrs
 	default:
 		// TODO(e.burkov):  Use [errors.ErrBadEnumValue].
 		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
@@ -537,7 +536,11 @@ func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
 	case ProtoQUIC:
 		return firstAddr(p.quicListen, (*quic.EarlyListener).Addr)
 	case ProtoDNSCrypt:
-		return firstAddr(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
+		if len(p.dnsCryptServers) > 0 {
+			return p.dnsCryptServers[0].LocalAddr()
+		}
+
+		return nil
 	default:
 		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
 	}

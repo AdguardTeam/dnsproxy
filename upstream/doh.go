@@ -252,7 +252,12 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 	// See https://www.rfc-editor.org/rfc/rfc8484.html.
 	resp.Id = req.Id
 
-	return resp, validateResponse(req, resp)
+	err = validateResponse(req, resp)
+	if err != nil {
+		return nil, fmt.Errorf("validating response: %w", err)
+	}
+
+	return resp, nil
 }
 
 // exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified

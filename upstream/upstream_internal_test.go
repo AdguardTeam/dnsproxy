@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -188,9 +189,9 @@ func TestUpstreams(t *testing.T) {
 		bootstrap: googleBoot,
 		address:   "sdns://AQMAAAAAAAAAETk0LjE0MC4xNC4xNTo1NDQzILgxXdexS27jIKRw3C7Wsao5jMnlhvhdRUXWuMm1AFq6ITIuZG5zY3J5cHQuZmFtaWx5Lm5zMS5hZGd1YXJkLmNvbQ",
 	}, {
-		// Cloudflare DNS (DNS-over-HTTPS)
+		// Cloudflare DNS (DNS-over-HTTPS, no pinned hashes)
 		bootstrap: googleBoot,
-		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
+		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjEAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5",
 	}, {
 		// Google (Plain)
 		bootstrap: nil,
@@ -420,8 +421,8 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		address:   "https://1dot1dot1dot1.cloudflare-dns.com/dns-query",
 		bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 	}, {
-		// Cloudflare DNS (DoH)
-		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
+		// Cloudflare DNS (DoH, no pinned hashes)
+		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjEAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5",
 		bootstrap: []string{"8.8.8.8:53", "8.8.8.1:53"},
 	}, {
 		// AdGuard DNS (DNS-over-TLS)
@@ -872,4 +873,187 @@ func (r *headerRecorder) headersWithLock() (res []qlog.PacketHeader) {
 // *headerRecorder.
 func (*headerRecorder) Close() (err error) {
 	return nil
+}
+
+func TestVerifyTBSPinning(t *testing.T) {
+	t.Parallel()
+
+	tlsConf, _ := createServerTLSConfig(t, "127.0.0.1")
+	cert, err := x509.ParseCertificate(tlsConf.Certificates[0].Certificate[0])
+	require.NoError(t, err)
+
+	tbsHash := sha256.Sum256(cert.RawTBSCertificate)
+
+	t.Run("match", func(t *testing.T) {
+		t.Parallel()
+
+		err := verifyTBSPinning([]*x509.Certificate{cert}, [][]uint8{tbsHash[:]})
+		assert.NoError(t, err)
+	})
+
+	t.Run("no_match", func(t *testing.T) {
+		t.Parallel()
+
+		wrongHash := make([]byte, 32)
+		err := verifyTBSPinning([]*x509.Certificate{cert}, [][]uint8{wrongHash})
+		assert.Error(t, err)
+	})
+
+	t.Run("empty_certs", func(t *testing.T) {
+		t.Parallel()
+
+		err := verifyTBSPinning(nil, [][]uint8{tbsHash[:]})
+		assert.Error(t, err)
+	})
+
+	t.Run("empty_hashes", func(t *testing.T) {
+		t.Parallel()
+
+		err := verifyTBSPinning([]*x509.Certificate{cert}, nil)
+		assert.Error(t, err)
+	})
+}
+
+func TestParseStamp_tbsPinning(t *testing.T) {
+	t.Parallel()
+
+	handler := func(w dns.ResponseWriter, req *dns.Msg) {
+		require.NoError(testutil.PanicT{}, w.WriteMsg(respondToTestMessage(req)))
+	}
+
+	dotSrv := startDoTServer(t, handler)
+	dohSrv := startDoHServer(t, testDoHServerOptions{})
+
+	doqTLSConf, _ := createServerTLSConfig(t, "127.0.0.1")
+	doqSrv := startDoQServer(t, doqTLSConf, 0)
+
+	testCases := []struct {
+		name      string
+		tlsConfig *tls.Config
+		addr      string
+		proto     dnsstamps.StampProtoType
+		path      string
+	}{{
+		name:      "dot",
+		tlsConfig: dotSrv.tlsConfig,
+		addr:      fmt.Sprintf("127.0.0.1:%d", dotSrv.port),
+		proto:     dnsstamps.StampProtoTypeTLS,
+	}, {
+		name:      "doh",
+		tlsConfig: dohSrv.tlsConfig,
+		addr:      dohSrv.addr,
+		proto:     dnsstamps.StampProtoTypeDoH,
+		path:      "/dns-query",
+	}, {
+		name:      "doq",
+		tlsConfig: doqTLSConf,
+		addr:      doqSrv.addr,
+		proto:     dnsstamps.StampProtoTypeDoQ,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			serverCert, err := x509.ParseCertificate(tc.tlsConfig.Certificates[0].Certificate[0])
+			require.NoError(t, err)
+
+			tbsHash := sha256.Sum256(serverCert.RawTBSCertificate)
+			correctHash := tbsHash[:]
+
+			wrongHash := make([]byte, 32)
+			copy(wrongHash, correctHash)
+			wrongHash[0] ^= 0xFF
+
+			t.Run("correct_hash", func(t *testing.T) {
+				t.Parallel()
+
+				stamp := dnsstamps.ServerStamp{
+					ServerAddrStr: tc.addr,
+					Proto:         tc.proto,
+					ProviderName:  tc.addr,
+					Hashes:        [][]uint8{correctHash},
+					Path:          tc.path,
+				}
+				stampStr := stamp.String()
+				u, err := AddressToUpstream(stampStr, &Options{
+					Logger:             testLogger,
+					InsecureSkipVerify: true,
+					Timeout:            5 * time.Second,
+				})
+				require.NoError(t, err)
+				testutil.CleanupAndRequireSuccess(t, u.Close)
+
+				checkUpstream(t, u, stampStr)
+			})
+
+			t.Run("wrong_hash", func(t *testing.T) {
+				t.Parallel()
+
+				stamp := dnsstamps.ServerStamp{
+					ServerAddrStr: tc.addr,
+					Proto:         tc.proto,
+					ProviderName:  tc.addr,
+					Hashes:        [][]uint8{wrongHash},
+					Path:          tc.path,
+				}
+				stampStr := stamp.String()
+				u, err := AddressToUpstream(stampStr, &Options{
+					Logger:             testLogger,
+					InsecureSkipVerify: true,
+					Timeout:            5 * time.Second,
+				})
+				require.NoError(t, err)
+				testutil.CleanupAndRequireSuccess(t, u.Close)
+
+				req := createTestMessage()
+				_, err = u.Exchange(req)
+				require.Error(t, err)
+				assert.ErrorContains(t, err, "tbs certificate hash pinning failed")
+			})
+
+			t.Run("multiple_hashes_one_correct", func(t *testing.T) {
+				t.Parallel()
+
+				stamp := dnsstamps.ServerStamp{
+					ServerAddrStr: tc.addr,
+					Proto:         tc.proto,
+					ProviderName:  tc.addr,
+					Hashes:        [][]uint8{wrongHash, correctHash},
+					Path:          tc.path,
+				}
+				stampStr := stamp.String()
+				u, err := AddressToUpstream(stampStr, &Options{
+					Logger:             testLogger,
+					InsecureSkipVerify: true,
+					Timeout:            5 * time.Second,
+				})
+				require.NoError(t, err)
+				testutil.CleanupAndRequireSuccess(t, u.Close)
+
+				checkUpstream(t, u, stampStr)
+			})
+
+			t.Run("no_hashes", func(t *testing.T) {
+				t.Parallel()
+
+				stamp := dnsstamps.ServerStamp{
+					ServerAddrStr: tc.addr,
+					Proto:         tc.proto,
+					ProviderName:  tc.addr,
+					Path:          tc.path,
+				}
+				stampStr := stamp.String()
+				u, err := AddressToUpstream(stampStr, &Options{
+					Logger:             testLogger,
+					InsecureSkipVerify: true,
+					Timeout:            5 * time.Second,
+				})
+				require.NoError(t, err)
+				testutil.CleanupAndRequireSuccess(t, u.Close)
+
+				checkUpstream(t, u, stampStr)
+			})
+		})
+	}
 }

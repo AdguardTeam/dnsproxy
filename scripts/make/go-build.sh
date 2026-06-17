@@ -9,7 +9,13 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 2
+# AdGuard-Project-Version: 3
+
+# Exit the script if a pipeline fails (-e), prevent accidental filename
+# expansion (-f), and consider undefined variables as errors (-u).
+#
+# TODO(a.garipov): Use set -o 'pipefail' when the image supports it
+set -e -f -u
 
 # The default verbosity level is 0.  Show every command that is run and every
 # package that is processed if the caller requested verbosity level greater than
@@ -34,10 +40,6 @@ else
 fi
 readonly x_flags v_flags
 
-# Exit the script if a pipeline fails (-e), prevent accidental filename
-# expansion (-f), and consider undefined variables as errors (-u).
-set -e -f -u
-
 # Allow users to override the go command from environment.  For example, to
 # build two releases with two different Go versions and test the difference.
 go="${GO:-go}"
@@ -46,7 +48,7 @@ readonly go
 # Set the build parameters unless already set.
 branch="${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
 revision="${REVISION:-$(git rev-parse --short HEAD)}"
-version="${VERSION:-0}"
+version="${APP_VERSION:-0}"
 readonly branch revision version
 
 # Set date and time of the latest commit unless already set.
@@ -54,7 +56,7 @@ committime="${SOURCE_DATE_EPOCH:-$(git log -1 --pretty=%ct)}"
 readonly committime
 
 # Compile them in.
-version_pkg='github.com/AdguardTeam/dnsproxy/internal/version'
+version_pkg='github.com/AdguardTeam/golibs/version'
 ldflags="-s -w"
 ldflags="${ldflags} -X ${version_pkg}.branch=${branch}"
 ldflags="${ldflags} -X ${version_pkg}.committime=${committime}"

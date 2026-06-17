@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -32,6 +33,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testTimeout is common timeout for tests.
+const testTimeout = 2 * time.Second
+
 // testLogger is common logger for tests.
 var testLogger = slogutil.NewDiscardLogger()
 
@@ -45,13 +49,18 @@ func TestMain(m *testing.M) {
 	testutil.DiscardLogOutput(m)
 }
 
+// TODO(a.garipov):  Refactor.
 func TestUpstream_bootstrapTimeout(t *testing.T) {
 	t.Parallel()
 
-	const (
+	const count = 10
+
+	var timeout time.Duration
+	if runtime.GOOS == "windows" {
+		timeout = 300 * time.Millisecond
+	} else {
 		timeout = 100 * time.Millisecond
-		count   = 10
-	)
+	}
 
 	// Test listener that never accepts connections to emulate faulty bootstrap.
 	udpListener, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -74,9 +83,10 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	ch := make(chan int, count)
-	abort := make(chan string, 1)
-	for i := range count {
-		go func(idx int) {
+	for idx := range count {
+		go func() {
+			pt := testutil.NewPanicT(t)
+
 			t.Logf("Start %d", idx)
 			req := createTestMessage()
 
@@ -84,32 +94,24 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 			_, rErr := u.Exchange(req)
 			elapsed := time.Since(start)
 
-			if rErr == nil {
-				// Must not happen since bootstrap server cannot work.
-				abort <- fmt.Sprintf("the upstream must have timed out: %v", rErr)
-			}
+			// Require an error, since the bootstrap server cannot work.
+			require.Error(pt, rErr)
 
 			// Check that the test didn't take too much time compared to the
 			// configured timeout.  The actual elapsed time may be higher than
-			// the timeout due to the execution environment, 3 is an arbitrarily
+			// the timeout due to the execution environment; 3 is an arbitrarily
 			// chosen multiplier to account for that.
-			if elapsed > 3*timeout {
-				abort <- fmt.Sprintf(
-					"exchange took more time than the configured timeout: %s",
-					elapsed,
-				)
-			}
+			require.Less(pt, elapsed, 3*timeout)
+
 			t.Logf("Finished %d", idx)
 			ch <- idx
-		}(i)
+		}()
 	}
 
 	for range count {
 		select {
 		case res := <-ch:
 			t.Logf("Got result from %d", res)
-		case msg := <-abort:
-			t.Fatalf("Aborted from the goroutine: %s", msg)
 		case <-time.After(timeout * 10):
 			t.Fatalf("No response in time")
 		}
@@ -386,14 +388,14 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 		t.Run(tc.address, func(t *testing.T) {
 			rslv, err := NewUpstreamResolver(tc.bootstrap, &Options{
 				Logger:  testLogger,
-				Timeout: timeout,
+				Timeout: testTimeout,
 			})
 			require.NoError(t, err)
 
 			u, err := AddressToUpstream(tc.address, &Options{
 				Logger:    testLogger,
 				Bootstrap: NewCachingResolver(rslv),
-				Timeout:   timeout,
+				Timeout:   testTimeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -439,7 +441,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			for _, b := range tc.bootstrap {
 				r, err := NewUpstreamResolver(b, &Options{
 					Logger:  l,
-					Timeout: timeout,
+					Timeout: testTimeout,
 				})
 				require.NoError(t, err)
 
@@ -449,7 +451,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			u, err := AddressToUpstream(tc.address, &Options{
 				Logger:    l,
 				Bootstrap: rslv,
-				Timeout:   timeout,
+				Timeout:   testTimeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -518,7 +520,7 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 			opts := &Options{
 				Logger:             testLogger,
 				Bootstrap:          tc.rslv,
-				Timeout:            timeout,
+				Timeout:            testTimeout,
 				InsecureSkipVerify: true,
 			}
 			u, uErr := AddressToUpstream(tc.address, opts)

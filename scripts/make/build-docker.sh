@@ -15,7 +15,7 @@ set -e -f -u
 # Require these to be set.
 commit="${REVISION:?please set REVISION}"
 dist_dir="${DIST_DIR:?please set DIST_DIR}"
-version="${VERSION:?please set VERSION}"
+version="${APP_VERSION:?please set APP_VERSION}"
 readonly commit dist_dir version
 
 # Allow users to use sudo.
@@ -90,10 +90,10 @@ docker_build_opt_tag() {
 		docker \
 		buildx \
 		build \
+		--build-arg APP_VERSION="$version" \
 		--build-arg BUILD_DATE="$build_date" \
 		--build-arg DIST_DIR="$dist_dir" \
 		--build-arg VCS_REF="$commit" \
-		--build-arg VERSION="$version" \
 		--platform "$docker_platforms" \
 		--progress 'plain' \
 		;

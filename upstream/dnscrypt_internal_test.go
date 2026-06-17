@@ -47,7 +47,7 @@ func startTestDNSCryptServer(
 		Logger:       testLogger,
 	}
 	testutil.CleanupAndRequireSuccess(tb, func() (err error) {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
 		return s.Shutdown(ctx)
@@ -141,7 +141,7 @@ func TestDNSCrypt_Exchange_truncated(t *testing.T) {
 
 	u, err := AddressToUpstream(srvStamp.String(), &Options{
 		Logger:  testLogger,
-		Timeout: timeout,
+		Timeout: testTimeout,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)

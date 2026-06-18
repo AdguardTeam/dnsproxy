@@ -1,3 +1,4 @@
+# TODO(a.garipov):  Refactor this workflow.
 'name': Docker
 # Permissions are disabled for all the jobs by default, and then overridden for
 # specific jobs if needed.  This is a recommended practice for security reasons,
@@ -6,7 +7,7 @@
 # See https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions.
 'permissions': {}
 'env':
-  'GO_VERSION': '1.26.3'
+  'GO_VERSION': '1.26.4'
 'on':
   'push':
     'tags':
@@ -16,6 +17,8 @@
       - 'master'
 'jobs':
   'docker':
+    'if': |
+      ${{ github.repository_owner != 'AdGuardSoftwareLimited' }}
     'permissions':
       'contents': 'read'
     'runs-on': 'ubuntu-latest'
@@ -28,7 +31,7 @@
           # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
           'persist-credentials': false
       - 'name': 'Set up Go'
-        'uses': 'actions/setup-go@v3'
+        'uses': 'actions/setup-go@v6'
         'with':
           'go-version': '${{ env.GO_VERSION }}'
       - 'name': 'Set up Go modules cache'
@@ -51,37 +54,13 @@
           set -e -u -x
 
           docker login \
-            -u="${DOCKER_USER}" \
-            -p="${DOCKER_PASSWORD}"
+              -u="${DOCKER_USER}" \
+              -p="${DOCKER_PASSWORD}" \
+              ;
 
           make \
-            DOCKER_IMAGE_NAME="adguard/dnsproxy" \
-            DOCKER_PUSH="1" \
-            VERBOSE="1" \
-            docker
-  'notify':
-    'needs':
-      - 'docker'
-    'if': |
-      ${{ always() &&
-        (
-          github.event_name == 'push' ||
-          github.event.pull_request.head.repo.full_name == github.repository
-        )
-      }}
-    'permissions':
-      # Required by workflow-conclusion-action to check workflow status.
-      'actions': 'read'
-      'contents': 'read'
-    'runs-on': ubuntu-latest
-    'steps':
-      - 'name': Conclusion
-        'uses': technote-space/workflow-conclusion-action@v1
-      - 'name': Send Slack notif
-        'uses': 8398a7/action-slack@v3
-        'with':
-          'status': ${{ env.WORKFLOW_CONCLUSION }}
-          'fields': workflow, repo, message, commit, author, eventName,ref
-        'env':
-          'GITHUB_TOKEN': ${{ secrets.GITHUB_TOKEN }}
-          'SLACK_WEBHOOK_URL': ${{ secrets.SLACK_WEBHOOK_URL }}
+              DOCKER_IMAGE_NAME='adguard/dnsproxy' \
+              DOCKER_PUSH='1' \
+              VERBOSE='1' \
+              docker \
+              ;

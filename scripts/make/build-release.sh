@@ -22,7 +22,7 @@ log() {
 
 log 'starting to build dnsproxy release'
 
-version="${VERSION:-0}"
+version="${APP_VERSION:-0}"
 
 if [ "$version" = '0' ]; then
 	version="${GITHUB_REF:-}"
@@ -118,13 +118,14 @@ build() {
 	#
 	# Don't use quotes with $build_par because we want an empty space if
 	# parallelism wasn't set.
-	env GOARCH="$build_arch" \
+	env \
+		APP_VERSION="$version" \
+		GOARCH="$build_arch" \
 		GOARM="${build_arm#0}" \
 		GOMIPS="${build_mips#0}" \
 		GOOS="$os" \
-		VERBOSE="$((verbose - 1))" \
-		VERSION="$version" \
 		OUT="$build_output" \
+		VERBOSE="$((verbose - 1))" \
 		sh ./scripts/make/go-build.sh
 
 	log "$build_output"

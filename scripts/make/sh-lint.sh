@@ -3,13 +3,13 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 4
+# AdGuard-Project-Version: 5
+
+# Don't use -f, because we use globs in this script.
+set -e -o 'pipefail' -u
 
 verbose="${VERBOSE:-0}"
 readonly verbose
-
-# Don't use -f, because we use globs in this script.
-set -e -u
 
 if [ "$verbose" -gt '0' ]; then
 	set -x
@@ -26,7 +26,7 @@ run_linter -e "$go" tool shfmt --binary-next-line -d -p -s \
 	./scripts/make/*.sh \
 	;
 
-shellcheck -e 'SC2250' -f 'gcc' -o 'all' -x -- \
+shellcheck -e 'SC2250,SC3040' -f 'gcc' -o 'all' -x -- \
 	./scripts/hooks/* \
 	./scripts/make/*.sh \
 	;

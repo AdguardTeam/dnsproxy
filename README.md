@@ -1,8 +1,7 @@
 # DNS Proxy <!-- omit in toc -->
 
-[![Code Coverage](https://img.shields.io/codecov/c/github/AdguardTeam/dnsproxy/master.svg)](https://codecov.io/github/AdguardTeam/dnsproxy?branch=master)
+[![Go Reference](https://pkg.go.dev/badge/github.com/AdguardTeam/dnsproxy.svg)](https://pkg.go.dev/github.com/AdguardTeam/dnsproxy)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AdguardTeam/dnsproxy)](https://goreportcard.com/report/AdguardTeam/dnsproxy)
-[![Go Doc](https://godoc.org/github.com/AdguardTeam/dnsproxy?status.svg)](https://godoc.org/github.com/AdguardTeam/dnsproxy)
 
 A simple DNS proxy server that supports all existing DNS protocols including
 `DNS-over-TLS`, `DNS-over-HTTPS`, `DNSCrypt`, and `DNS-over-QUIC`. Moreover,

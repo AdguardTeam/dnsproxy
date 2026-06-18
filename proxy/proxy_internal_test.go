@@ -600,7 +600,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 			"[/adguard.com/]192.0.2.1",
 			"[/google.ru/]192.0.2.2",
 			"[/maps.google.ru/]#",
-			"1.1.1.1",
+			"tls://1.1.1.1",
 		),
 		TrustedProxies: defaultTrustedProxies,
 	})

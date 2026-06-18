@@ -73,7 +73,7 @@ func startTestDNSCryptServer(
 	})
 	require.NoError(tb, err)
 
-	servicetest.RequireRun(tb, srvUDP, timeout)
+	servicetest.RequireRun(tb, srvUDP, testTimeout)
 
 	addrStr := srvUDP.LocalAddr().String()
 	stamp, err = rc.CreateStamp(addrStr)
@@ -88,7 +88,7 @@ func startTestDNSCryptServer(
 		Proto:        dnscrypt.ProtoTCP,
 	})
 	require.NoError(tb, err)
-	servicetest.RequireRun(tb, srvTCP, timeout)
+	servicetest.RequireRun(tb, srvTCP, testTimeout)
 
 	return stamp
 }
@@ -150,7 +150,7 @@ func TestDNSCrypt_Exchange_truncated(t *testing.T) {
 	srvStamp := startTestDNSCryptServer(t, rc, h)
 	u, err := AddressToUpstream(srvStamp.String(), &Options{
 		Logger:  testLogger,
-		Timeout: timeout,
+		Timeout: testTimeout,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)

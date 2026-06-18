@@ -3,7 +3,10 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 18
+# AdGuard-Project-Version: 19
+
+# TODO(a.garipov): Use set -o 'pipefail' when the image supports it
+set -e -f -u
 
 verbose="${VERBOSE:-0}"
 readonly verbose
@@ -11,15 +14,6 @@ readonly verbose
 if [ "$verbose" -gt '0' ]; then
 	set -x
 fi
-
-# Set $EXIT_ON_ERROR to zero to see all errors.
-if [ "${EXIT_ON_ERROR:-1}" -eq '0' ]; then
-	set +e
-else
-	set -e
-fi
-
-set -f -u
 
 # Source the common helpers, including not_found and run_linter.
 . ./scripts/make/helper.sh
@@ -154,15 +148,12 @@ run_linter -e "$go" tool gofumpt --extra -e -l .
 
 run_linter "$go" vet work
 
-# govulncheck is not stricly reproducible, because it queries the VulnDB, which
-# is updated constantly.  If a stricly reproducible lint is desired, for example
-# for Docker lint stages, set IGNORE_NON_REPRODUCIBLE to 1 to ignore the exit
-# code from govulncheck.
-#
-# TODO(a.garipov):  Return the default to 0 and update the Go version once
-# https://github.com/quic-go/quic-go/issues/5543 is fixed.
-if [ "${IGNORE_NON_REPRODUCIBLE:-1}" -gt '0' ]; then
-	# run_linter calls set +e, so don't mind the cancelling effect of ||.
+# govulncheck is not strictly reproducible, because it queries the VulnDB, which
+# is updated constantly.  If a strictly reproducible lint is desired, for
+# example for Docker lint stages, set IGNORE_NON_REPRODUCIBLE to 1 to ignore the
+# exit code from govulncheck.
+if [ "${IGNORE_NON_REPRODUCIBLE:-0}" -gt '0' ]; then
+	# run_linter calls set +e, so don't mind the canceling effect of ||.
 	# shellcheck disable=SC2310
 	run_linter "$go" tool govulncheck work || :
 else

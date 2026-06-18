@@ -12,10 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	timeout = 2 * time.Second
-)
-
 // TestExchangeParallel launches several parallel exchanges
 func TestExchangeParallel(t *testing.T) {
 	upstreams := []Upstream{}
@@ -24,7 +20,7 @@ func TestExchangeParallel(t *testing.T) {
 	for _, s := range upstreamList {
 		u, err := AddressToUpstream(s, &Options{
 			Logger:  testLogger,
-			Timeout: timeout,
+			Timeout: testTimeout,
 		})
 		if err != nil {
 			t.Fatalf("cannot create upstream: %s", err)
@@ -45,7 +41,7 @@ func TestExchangeParallel(t *testing.T) {
 
 	requireResponse(t, req, resp)
 	elapsed := time.Since(start)
-	if elapsed > timeout {
+	if elapsed > testTimeout {
 		t.Fatalf("exchange took more time than the configured timeout: %v", elapsed)
 	}
 }

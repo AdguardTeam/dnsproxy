@@ -1,9 +1,9 @@
 # A docker file for scripts/make/build-docker.sh.
 
-FROM alpine:3.18
+FROM alpine:3.24
 
+ARG APP_VERSION
 ARG BUILD_DATE
-ARG VERSION
 ARG VCS_REF
 
 LABEL\
@@ -18,7 +18,7 @@ LABEL\
 	org.opencontainers.image.title="dnsproxy" \
 	org.opencontainers.image.url="https://github.com/AdguardTeam/dnsproxy" \
 	org.opencontainers.image.vendor="AdGuard" \
-	org.opencontainers.image.version=$VERSION
+	org.opencontainers.image.version=$APP_VERSION
 
 # Update certificates.
 RUN apk --no-cache add ca-certificates libcap tzdata && \
@@ -33,8 +33,8 @@ COPY --chown=nobody:nogroup\
 	./${DIST_DIR}/docker/dnsproxy_${TARGETOS}_${TARGETARCH}_${TARGETVARIANT}\
 	/opt/dnsproxy/dnsproxy
 COPY --chown=nobody:nogroup\
-    ./${DIST_DIR}/docker/config.yaml\
-    /opt/dnsproxy/config.yaml
+	./${DIST_DIR}/docker/config.yaml\
+	/opt/dnsproxy/config.yaml
 
 RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
 
@@ -45,11 +45,11 @@ RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
 # 5443   : TCP, UDP : DNSCrypt (alt)
 # 6060   : TCP      : HTTP (pprof)
 EXPOSE 53/tcp 53/udp \
-       80/tcp \
-       443/tcp 443/udp \
-       853/tcp 853/udp \
-       5443/tcp 5443/udp \
-       6060/tcp
+	80/tcp \
+	443/tcp 443/udp \
+	853/tcp 853/udp \
+	5443/tcp 5443/udp \
+	6060/tcp
 
 WORKDIR /opt/dnsproxy
 

@@ -25,10 +25,9 @@
 #    Docker daemon, which can invalidate the cache.
 #
 # 6. Add a CACHE_BUSTER argument to stages to be able to rerun the stages if
-#    needed.  Keep it in sync with bamboo-specs/bamboo.yaml.
+#    needed.  Keep it in sync with .github/workflows/.
 
-# NOTE:  Keep in sync with bamboo-specs/bamboo.yaml.
-ARG BASE_IMAGE=adguard/go-builder:1.26.3--1
+ARG BASE_IMAGE=adguard/go-builder:1.26.4--1
 
 # The dependencies stage is needed to install packages and tool dependencies.
 # This is also where binaries like osslsigncode, which may be required for tests

@@ -7,7 +7,7 @@
 # This comment is used to simplify checking local copies of the Makefile.  Bump
 # this number every time a significant change is made to this Makefile.
 #
-# AdGuard-Project-Version: 13
+# AdGuard-Project-Version: 18
 
 # Don't name these macros "GO" etc., because GNU Make apparently makes them
 # exported environment variables with the literal value of "${GO:-go}" and so
@@ -18,18 +18,21 @@
 GO.MACRO = $${GO:-go}
 VERBOSE.MACRO = $${VERBOSE:-0}
 
+APP_VERSION = 0
 BRANCH = $${BRANCH:-$$(git rev-parse --abbrev-ref HEAD)}
 DIST_DIR = build
 GOAMD64 = v1
 GOPROXY = https://proxy.golang.org|direct
 GOTELEMETRY = off
 OUT = dnsproxy
-GOTOOLCHAIN = go1.26.3
+GOTOOLCHAIN = go1.26.4
 RACE = 0
 REVISION = $${REVISION:-$$(git rev-parse --short HEAD)}
-VERSION = 0
 
+# TODO(f.setrakov): Remove the bin directory from the paths, as it is no longer
+# needed.
 ENV = env \
+	APP_VERSION="$(APP_VERSION)" \
 	BRANCH="$(BRANCH)" \
 	DIST_DIR='$(DIST_DIR)' \
 	GO="$(GO.MACRO)" \
@@ -42,7 +45,6 @@ ENV = env \
 	RACE='$(RACE)' \
 	REVISION="$(REVISION)" \
 	VERBOSE="$(VERBOSE.MACRO)" \
-	VERSION="$(VERSION)" \
 
 # Keep the line above blank.
 

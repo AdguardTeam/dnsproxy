@@ -13,6 +13,7 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
+	"github.com/AdguardTeam/golibs/validate"
 	"github.com/miekg/dns"
 )
 
@@ -79,9 +80,9 @@ func (p *Proxy) listenUDP(ctx context.Context, addr *net.UDPAddr) (conn *net.UDP
 	return conn, nil
 }
 
-// udpPacketLoop listens for incoming UDP packets.
+// udpPacketLoop listens for incoming UDP packets and handles them.
 //
-// See also the comment on Proxy.requestsSema.
+// See also the comment on [Proxy.requestsSema].
 func (p *Proxy) udpPacketLoop(ctx context.Context, conn *net.UDPConn, reqSema syncutil.Semaphore) {
 	p.logger.InfoContext(ctx, "entering udp listener loop", "addr", conn.LocalAddr())
 
@@ -142,32 +143,50 @@ func (p *Proxy) udpHandlePacket(
 	ctx, cancel := p.reqCtx.New(ctx)
 	defer cancel()
 
-	p.logger.DebugContext(ctx, "handling new udp packet", "raddr", remoteAddr)
+	p.logger.DebugContext(ctx, "handling new packet", "proto", ProtoUDP, "raddr", remoteAddr)
 
 	req := &dns.Msg{}
 	err := req.Unpack(packet)
 	if err != nil {
-		p.logger.ErrorContext(ctx, "unpacking udp packet", slogutil.KeyError, err)
+		if req.MsgHdr == (dns.MsgHdr{}) {
+			p.logger.ErrorContext(ctx, "unpacking", "proto", ProtoUDP, slogutil.KeyError, err)
 
-		return
+			return
+		}
+
+		p.logger.DebugContext(ctx, "unpacking", "proto", ProtoUDP, slogutil.KeyError, err)
+
+		// Dropping a UDP request with a valid header is considered bad practice
+		// since it creates a denial-of-service (DoS) vulnerability for the
+		// client.  RFC generally recommends replying with FORMERR in such
+		// cases.
+		//
+		// See https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1.
+		resp := p.messages.NewMsgFORMERR(req)
+		err = p.respondUDP(resp, conn, remoteAddr, localIP)
+	} else {
+		d := p.newDNSContext(ProtoUDP, req, netutil.NetAddrToAddrPort(remoteAddr))
+		d.Conn = conn
+		d.localIP = localIP
+
+		err = p.handleDNSRequest(ctx, d)
 	}
-
-	d := p.newDNSContext(ProtoUDP, req, netutil.NetAddrToAddrPort(remoteAddr))
-	d.Conn = conn
-	d.localIP = localIP
-
-	err = p.handleDNSRequest(ctx, d)
 	if err != nil {
-		p.logger.DebugContext(ctx, "handling dns request", "proto", d.Proto, slogutil.KeyError, err)
+		p.logger.DebugContext(ctx, "handling request", "proto", ProtoUDP, slogutil.KeyError, err)
 	}
 }
 
-// Writes a response to the UDP client
-func (p *Proxy) respondUDP(d *DNSContext) error {
-	resp := d.Res
-
+// respondUDP sends the response message to the client.  It does nothing if resp
+// is nil.  It returns an error if writing the response fails, or if the number
+// of bytes written is not equal to the length of the packed message.
+func (p *Proxy) respondUDP(
+	resp *dns.Msg,
+	conn *net.UDPConn,
+	rAddr *net.UDPAddr,
+	lAddr netip.Addr,
+) (err error) {
 	if resp == nil {
-		// Do nothing if no response has been written
+		// Do nothing if no response has been written.
 		return nil
 	}
 
@@ -176,9 +195,7 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 		return fmt.Errorf("packing message: %w", err)
 	}
 
-	conn := d.Conn.(*net.UDPConn)
-	rAddr := net.UDPAddrFromAddrPort(d.Addr)
-	n, err := proxynetutil.UDPWrite(bytes, conn, rAddr, d.localIP)
+	n, err := proxynetutil.UDPWrite(bytes, conn, rAddr, lAddr)
 	if err != nil {
 		if errors.Is(err, net.ErrClosed) {
 			return nil
@@ -187,9 +204,5 @@ func (p *Proxy) respondUDP(d *DNSContext) error {
 		return fmt.Errorf("writing message: %w", err)
 	}
 
-	if n != len(bytes) {
-		return fmt.Errorf("udpWrite() returned with %d != %d", n, len(bytes))
-	}
-
-	return nil
+	return validate.Equal("bytes written", n, len(bytes))
 }

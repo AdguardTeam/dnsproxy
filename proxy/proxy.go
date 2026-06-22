@@ -754,9 +754,7 @@ func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 	case len(d.Req.Question) != 1:
 		p.logger.Debug("invalid number of questions", "req_questions_len", len(d.Req.Question))
 
-		// TODO(e.burkov):  Probably, FORMERR would be a better choice here.
-		// Check out RFC.
-		return p.messages.NewMsgSERVFAIL(d.Req)
+		return p.messages.NewMsgFORMERR(d.Req)
 	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
 		// Refuse requests of type ANY (anti-DDOS measure).
 		p.logger.Debug("refusing dns type any request")

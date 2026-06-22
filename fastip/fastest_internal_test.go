@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -73,7 +74,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 			Logger:          l,
 			PingWaitTimeout: DefaultPingWaitTimeout,
 		})
-		f.pingPorts = []uint{getFreePort(t)}
+		f.pingPorts = []uint{dnsproxytest.NewFreePort(t)}
 
 		firstIP := netip.MustParseAddr("127.0.0.1")
 		ups := &testAUpstream{

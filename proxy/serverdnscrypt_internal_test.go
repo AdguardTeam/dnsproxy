@@ -3,9 +3,9 @@ package proxy
 import (
 	"net"
 	"testing"
-	"time"
 
 	"github.com/AdguardTeam/dnscrypt"
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -44,7 +44,7 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 	cert, err := rc.NewCert()
 	require.NoError(tb, err)
 
-	port := getFreePort(tb)
+	port := dnsproxytest.NewFreePort(tb)
 	upstreamConf := newTestUpstreamConfig(tb, defaultTimeout, testDefaultUpstreamAddr)
 	p = mustNew(tb, &Config{
 		Logger: testLogger,
@@ -65,26 +65,6 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 	})
 
 	return p, rc
-}
-
-// getFreePort is helper function that returns a free TCP port that can be
-// used for testing.
-func getFreePort(tb testing.TB) (p uint) {
-	tb.Helper()
-
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(tb, err)
-
-	p = uint(l.Addr().(*net.TCPAddr).Port)
-
-	// Stop listening immediately.
-	err = l.Close()
-	require.NoError(tb, err)
-
-	// Sleep for 100ms (may be necessary on Windows).
-	time.Sleep(100 * time.Millisecond)
-
-	return p
 }
 
 // checkDNSCryptProxy is a helper function that checks the DNSCrypt proxy by

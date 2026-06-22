@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
@@ -127,7 +126,7 @@ func (p *plainDNS) dialExchange(
 		return resp, fmt.Errorf("exchanging with %s over %s: %w", addr, network, err)
 	}
 
-	return resp, validatePlainResponse(upstreamReq, resp)
+	return resp, validateResponse(upstreamReq, resp)
 }
 
 // setRequestForNetwork sets connection options in conn and overrides the
@@ -207,30 +206,5 @@ func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 // Close implements the [Upstream] interface for *plainDNS.
 func (p *plainDNS) Close() (err error) {
-	return nil
-}
-
-// errQuestion is returned when a message has malformed question section.
-const errQuestion errors.Error = "bad question section"
-
-// validatePlainResponse validates resp from an upstream DNS server for
-// compliance with req.  Any error returned wraps [ErrQuestion], since it
-// essentially validates the question section of resp.
-func validatePlainResponse(req, resp *dns.Msg) (err error) {
-	if qlen := len(resp.Question); qlen != 1 {
-		return fmt.Errorf("%w: only 1 question allowed; got %d", errQuestion, qlen)
-	}
-
-	reqQ, respQ := req.Question[0], resp.Question[0]
-
-	if reqQ.Qtype != respQ.Qtype {
-		return fmt.Errorf("%w: mismatched type %s", errQuestion, dns.Type(respQ.Qtype))
-	}
-
-	// Compare the names case-insensitively, just like CoreDNS does.
-	if !strings.EqualFold(reqQ.Name, respQ.Name) {
-		return fmt.Errorf("%w: mismatched name %q", errQuestion, respQ.Name)
-	}
-
 	return nil
 }

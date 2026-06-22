@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
@@ -153,21 +154,6 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
 // Exchange implements the [Upstream] interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	// In order to maximize HTTP cache friendliness, DoH clients using media
-	// formats that include the ID field from the DNS message header, such as
-	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
-	//
-	// See https://www.rfc-editor.org/rfc/rfc8484.html.
-	id := req.Id
-	req.Id = 0
-	defer func() {
-		// Restore the original ID to not break compatibility with proxies.
-		req.Id = id
-		if resp != nil {
-			resp.Id = id
-		}
-	}()
-
 	// Check if there was already an active client before sending the request.
 	// We'll only attempt to re-connect if there was one.
 	client, isCached, err := p.getClient()
@@ -230,6 +216,7 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
 }
 
 // exchangeHTTPS logs the request and its result and calls exchangeHTTPSClient.
+// client and req must not be nil.
 func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *dns.Msg, err error) {
 	n := networkTCP
 	if isHTTP3(client) {
@@ -239,20 +226,47 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 	logBegin(p.logger, p.addrRedacted, n, req)
 	defer func() { logFinish(p.logger, p.addrRedacted, n, err) }()
 
-	return p.exchangeHTTPSClient(client, req)
-}
-
-// exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
-// http.Client instance.
-func (p *dnsOverHTTPS) exchangeHTTPSClient(
-	client *http.Client,
-	req *dns.Msg,
-) (resp *dns.Msg, err error) {
 	buf, err := req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("packing message: %w", err)
 	}
 
+	// In order to maximize HTTP cache friendliness, DoH clients using media
+	// formats that include the ID field from the DNS message header, such as
+	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+	binary.BigEndian.PutUint16(buf, 0)
+
+	resp, err = p.exchangeHTTPSClient(client, buf)
+	if err != nil {
+		return nil, fmt.Errorf("exchanging: %w", err)
+	}
+
+	if resp.Id != 0 {
+		return nil, fmt.Errorf("unexpected non-zero id in response: %d", resp.Id)
+	}
+
+	// Restore the original request ID, since it was set to 0.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+	resp.Id = req.Id
+
+	err = validateResponse(req, resp)
+	if err != nil {
+		return nil, fmt.Errorf("validating response: %w", err)
+	}
+
+	return resp, nil
+}
+
+// exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
+// http.Client instance.  buf is the packed DNS message that will be sent to the
+// resolver.  client must not be nil.
+func (p *dnsOverHTTPS) exchangeHTTPSClient(
+	client *http.Client,
+	buf []byte,
+) (resp *dns.Msg, err error) {
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.
 	method := http.MethodGet
@@ -315,11 +329,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 		)
 	}
 
-	if resp.Id != req.Id {
-		err = dns.ErrId
-	}
-
-	return resp, err
+	return resp, nil
 }
 
 // shouldRetry checks what error we have received and returns true if we should

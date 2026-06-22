@@ -34,7 +34,8 @@ type Upstream interface {
 	// Exchange sends req to this upstream and returns the response that has
 	// been received or an error if something went wrong.  The implementations
 	// must not modify req as well as the caller must not modify it until the
-	// method returns.  It shouldn't be called after closing.
+	// method returns.  It shouldn't be called after closing.  req must not be
+	// nil.
 	Exchange(req *dns.Msg) (resp *dns.Msg, err error)
 
 	// Address returns the human-readable address of the upstream DNS resolver.
@@ -415,4 +416,29 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
 	return func() (h bootstrap.DialHandler, err error) {
 		return bootstrap.ResolveDialContext(u, opts.Timeout, boot, opts.PreferIPv6, l)
 	}
+}
+
+// errQuestion is returned when a message has malformed question section.
+const errQuestion errors.Error = "bad question section"
+
+// validateResponse validates resp from an upstream DNS server for compliance
+// with req.  Any error returned wraps [errQuestion], since it essentially
+// validates the question section of resp.  req and resp must not be nil.
+func validateResponse(req, resp *dns.Msg) (err error) {
+	if qlen := len(resp.Question); qlen != 1 {
+		return fmt.Errorf("%w: only 1 question allowed; got %d", errQuestion, qlen)
+	}
+
+	reqQ, respQ := req.Question[0], resp.Question[0]
+
+	if reqQ.Qtype != respQ.Qtype {
+		return fmt.Errorf("%w: mismatched type %s", errQuestion, dns.Type(respQ.Qtype))
+	}
+
+	// Compare the names case-insensitively, just like CoreDNS does.
+	if !strings.EqualFold(reqQ.Name, respQ.Name) {
+		return fmt.Errorf("%w: mismatched name %q", errQuestion, respQ.Name)
+	}
+
+	return nil
 }

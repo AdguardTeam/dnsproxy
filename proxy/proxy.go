@@ -647,7 +647,7 @@ func (p *Proxy) handleExchangeResult(
 	resp *dns.Msg,
 	u upstream.Upstream,
 ) {
-	if resp == nil {
+	if resp == nil || len(resp.Question) != 1 {
 		d.Res = p.messages.NewMsgSERVFAIL(req)
 		d.hasEDNS0 = false
 
@@ -658,14 +658,6 @@ func (p *Proxy) handleExchangeResult(
 	d.Res = resp
 
 	p.setMinMaxTTL(ctx, resp)
-	if len(req.Question) > 0 && len(resp.Question) == 0 {
-		// Explicitly construct the question section since some upstreams may
-		// respond with invalidly constructed messages which cause out-of-range
-		// panics afterwards.
-		//
-		// See https://github.com/AdguardTeam/AdGuardHome/issues/3551.
-		resp.Question = []dns.Question{req.Question[0]}
-	}
 }
 
 // addDO adds EDNS0 RR if needed and sets DO bit of msg to true.  msg must not

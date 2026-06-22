@@ -101,7 +101,7 @@ func (p *dnsCrypt) exchangeDNSCrypt(ctx context.Context, req *dns.Msg) (resp *dn
 	// Check the client and server info are set and the certificate is not
 	// expired, since any of these cases require a client reset.
 	//
-	// TODO(ameshkov):  Consider using [time.Time] for [dnscrypt.Cert.NotAfter].
+	// TODO(a.garipov): Consider using [time.Time] for [dnscrypt.Cert.NotAfter].
 	switch {
 	case
 		client == nil,

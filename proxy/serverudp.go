@@ -162,7 +162,7 @@ func (p *Proxy) udpHandlePacket(
 	}
 }
 
-// Writes a response to the UDP client
+// respondUDP writes a response to the UDP client.  d must not be nil.
 func (p *Proxy) respondUDP(d *DNSContext) error {
 	resp := d.Res
 

@@ -348,28 +348,28 @@ func (conf *configuration) initDNSCryptConfig(config *proxy.Config) (err error) 
 
 	b, err := os.ReadFile(conf.DNSCryptConfigPath)
 	if err != nil {
-		return fmt.Errorf("reading DNSCrypt config %q: %w", conf.DNSCryptConfigPath, err)
+		return fmt.Errorf("reading dnscrypt config %q: %w", conf.DNSCryptConfigPath, err)
 	}
 
 	rc := &dnscrypt.ResolverConfig{}
 	err = yaml.Unmarshal(b, rc)
 	if err != nil {
-		return fmt.Errorf("unmarshalling DNSCrypt config: %w", err)
+		return fmt.Errorf("unmarshalling dnscrypt config: %w", err)
 	}
 
 	err = rc.Validate()
 	if err != nil {
-		return fmt.Errorf("validating DNSCrypt config: %w", err)
+		return fmt.Errorf("validating dnscrypt config: %w", err)
 	}
 
 	cert, err := rc.NewCert()
 	if err != nil {
-		return fmt.Errorf("creating DNSCrypt certificate: %w", err)
+		return fmt.Errorf("creating dnscrypt certificate: %w", err)
 	}
 
 	err = cert.Validate()
 	if err != nil {
-		return fmt.Errorf("validating DNSCrypt certificate: %w", err)
+		return fmt.Errorf("validating dnscrypt certificate: %w", err)
 	}
 
 	config.DNSCryptResolverCert = cert

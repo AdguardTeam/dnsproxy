@@ -21,6 +21,8 @@ import (
 
 // dnsCryptHandlerFunc is a function-based implementation of the
 // [dnscrypt.Handler] interface.
+//
+// TODO(d.kolyshev):  Move to dnscrypt.
 type dnsCryptHandlerFunc func(
 	ctx context.Context,
 	w dnscrypt.ResponseWriter,
@@ -42,6 +44,8 @@ func (f dnsCryptHandlerFunc) ServeDNS(
 // emptyDNSCryptHandler is a [dnscrypt.Handler] that does nothing and always
 // returns nil error.  It can be used in tests when the server's response is
 // not important.
+//
+// TODO(d.kolyshev):  Move to dnscrypt.
 var emptyDNSCryptHandler = dnsCryptHandlerFunc(func(
 	ctx context.Context,
 	w dnscrypt.ResponseWriter,

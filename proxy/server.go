@@ -44,11 +44,6 @@ func (p *Proxy) startListeners(ctx context.Context) (err error) {
 		return err
 	}
 
-	err = p.initDNSCryptListeners(ctx)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 

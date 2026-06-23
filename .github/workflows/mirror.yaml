@@ -16,6 +16,7 @@
 'on':
   'push':
     'branches': ['master']
+  'workflow_dispatch': null
 # Permissions are disabled for all the jobs by default, and then overridden for
 # specific jobs if needed.  This is a recommended practice for security reasons,
 # and also allows to avoid mistakes with permissions when creating new jobs.

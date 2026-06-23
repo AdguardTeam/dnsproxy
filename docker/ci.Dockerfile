@@ -111,12 +111,13 @@ make \
 	TEST_REPORTS_DIR="$TEST_REPORTS_DIR" \
 	VERBOSE=1 \
 	go-test \
+	go-bench \
 	;
 
 exit_code="$(cat "${TEST_REPORTS_DIR}/test-exit-code.txt")"
 readonly exit_code
 
-# TODO(d.kolyshev):  Run go-fuzz and go-bench.
+# TODO(d.kolyshev):  Run go-fuzz.
 
 exit "$exit_code"
 EOF

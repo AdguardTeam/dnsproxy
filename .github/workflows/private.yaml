@@ -65,6 +65,7 @@
               go-os-check \
               go-lint \
               go-test \
+              go-bench \
               ;
   'LintAndTestJobWindows':
     'if': |
@@ -100,6 +101,11 @@
               VERBOSE=1 \
               CGO_ENABLED=1 \
               go-test \
+              ;
+
+          make \
+              VERBOSE=1 \
+              go-bench \
               ;
         'shell': 'bash'
 'name': 'Lint and test workflow (private)'

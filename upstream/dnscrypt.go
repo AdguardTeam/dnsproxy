@@ -161,9 +161,7 @@ func (p *dnsCrypt) resetClient(
 	ri, err = client.DialContext(ctx, addr)
 	if err != nil {
 		// Trigger client and server info renewal on the next request.
-		client, ri = nil, nil
-
-		return client, ri, fmt.Errorf("fetching certificate info from %s: %w", addr, err)
+		return nil, nil, fmt.Errorf("fetching certificate info from %s: %w", addr, err)
 	}
 
 	if p.verifyCert == nil {
@@ -174,9 +172,8 @@ func (p *dnsCrypt) resetClient(
 	err = p.verifyCert(ri.ResolverCert)
 	if err != nil {
 		// Trigger client and server info renewal on the next request.
-		client, ri = nil, nil
-		err = fmt.Errorf("verifying certificate info from %s: %w", addr, err)
+		return nil, nil, fmt.Errorf("verifying certificate info from %s: %w", addr, err)
 	}
 
-	return client, ri, err
+	return client, ri, nil
 }

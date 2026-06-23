@@ -8,7 +8,7 @@
       'id-token': 'write'
     'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/mirror.yml@master'
     'with':
-      'disable_workflows_source': 'build.yaml docker.yaml lint.yaml'
+      'disable_workflows_source': 'release.yaml workflow.yaml'
       'disable_workflows_target': 'mirror.yaml private.yaml'
       'target_repo': 'git@github.com:AdguardTeam/dnsproxy.git'
       'team': 'go'

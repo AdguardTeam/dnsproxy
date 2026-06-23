@@ -1,0 +1,48 @@
+'jobs':
+  'TestJob':
+    'if': |
+      ${{ github.repository_owner != 'AdGuardSoftwareLimited' }}
+    'permissions':
+      'contents': 'read'
+    'runs-on': '${{ matrix.os }}'
+    'strategy':
+      'matrix':
+        'os':
+          - 'windows-latest'
+          - 'macos-latest'
+          - 'ubuntu-latest'
+    'steps':
+      - 'uses': 'actions/checkout@v6'
+        'with':
+          'fetch-depth': 0
+          # Set to false to avoid GITHUB_TOKEN leaking.
+          #
+          # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
+          'persist-credentials': false
+      - 'uses': 'actions/setup-go@v6'
+        'with':
+          'go-version': '1.26.x'
+      - 'name': 'Lint and test step'
+        'run': |
+          #!/bin/sh
+
+          set -e -f -u -x
+
+          # NOTE: Only run those checks that only need Go and Go tools.
+          make \
+              VERBOSE=1 \
+              go-deps \
+              go-os-check \
+              go-lint \
+              go-test \
+              go-bench \
+              ;
+        'shell': 'bash'
+'name': 'Lint and test workflow'
+'on': 'push'
+# Permissions are disabled for all the jobs by default, and then overridden for
+# specific jobs if needed.  This is a recommended practice for security reasons,
+# and also allows to avoid mistakes with permissions when creating new jobs.
+#
+# See https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions.
+'permissions': {}

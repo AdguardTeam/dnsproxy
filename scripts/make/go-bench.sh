@@ -36,7 +36,7 @@ benchtime_flags="${BENCHTIME_FLAGS:---benchtime=1x}"
 count_flags='--count=2'
 go="${GO:-go}"
 shuffle_flags='--shuffle=on'
-timeout_flags="${TIMEOUT_FLAGS:---timeout=5m}"
+timeout_flags="${TIMEOUT_FLAGS:---timeout=2m}"
 readonly benchtime_flags count_flags go shuffle_flags timeout_flags
 
 env \

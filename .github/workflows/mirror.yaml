@@ -10,8 +10,7 @@
     'with':
       'disable_workflows_source': 'release.yaml workflow.yaml'
       'disable_workflows_target': 'mirror.yaml private.yaml'
-      # TODO(d.kolyshev): !! Change back to AdguardTeam.
-      'target_repo': 'git@github.com:Mizzick/dnsproxy.git'
+      'target_repo': 'git@github.com:AdguardTeam/dnsproxy.git'
       'team': 'go'
 'name': 'Mirror'
 'on':

@@ -3,8 +3,7 @@ module github.com/AdguardTeam/dnsproxy
 go 1.26.4
 
 require (
-	// TODO(d.kolyshev): !! Use tagged version.
-	github.com/AdguardTeam/dnscrypt v0.0.0-20260604031830-b5d331f13d41
+	github.com/AdguardTeam/dnscrypt v0.0.1
 	github.com/AdguardTeam/golibs v0.35.13
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0

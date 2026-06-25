@@ -17,11 +17,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -75,7 +75,7 @@ type Options struct {
 	// VerifyDNSCryptCertificate is the callback the DNSCrypt server certificate
 	// will be passed to.  It's called in dnsCrypt.exchangeDNSCrypt.
 	// Upstream.Exchange method returns any error caused by it.
-	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
+	VerifyDNSCryptCertificate func(cert *dnscrypt.Certificate) error
 
 	// QUICTracer allows tracing every QUIC connection and logging every packet
 	// that goes through.

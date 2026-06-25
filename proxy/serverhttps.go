@@ -286,7 +286,7 @@ func matchesUserinfo(userinfo *url.Userinfo, user, pass string) (ok bool) {
 	return user == userinfo.Username() && pass == requiredPassword
 }
 
-// Writes a response to the DoH client.
+// respondHTTPS writes a response to the DoH client.  d must not be nil.
 func (p *Proxy) respondHTTPS(d *DNSContext) (err error) {
 	resp := d.Res
 	w := d.HTTPResponseWriter

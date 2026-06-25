@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 )

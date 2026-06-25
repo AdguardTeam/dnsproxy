@@ -77,7 +77,7 @@ Usage of ./dnsproxy:
   --dns64-prefix=subnet
         Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times.
   --dnscrypt-config=path/-g path
-        Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt.
+        Path to a file with DNSCrypt configuration. You can generate one using https://github.com/AdguardTeam/dnscrypt.
   --dnscrypt-port=port/-y port
         Listening ports for DNSCrypt.
   --edns
@@ -291,7 +291,9 @@ Runs a DNSCrypt proxy on `127.0.0.1:443`.
 ```
 
 > [!TIP]
-> In order to run a DNSCrypt proxy, you need to obtain DNSCrypt configuration first. You can use https://github.com/ameshkov/dnscrypt command-line tool to do that with a command like this `./dnscrypt generate --provider-name=2.dnscrypt-cert.example.org --out=dnscrypt-config.yaml`.
+> In order to run a DNSCrypt proxy, you need to obtain DNSCrypt configuration first. You can use [dnscrypt][dnscrypt] command-line tool to do that with a command like this `./dnscrypt generate --provider-name=2.dnscrypt-cert.example.org --out=dnscrypt-config.yaml`.
+
+[dnscrypt]: https://github.com/AdguardTeam/dnscrypt
 
 ### Additional features
 

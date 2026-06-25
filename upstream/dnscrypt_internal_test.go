@@ -2,17 +2,17 @@ package upstream
 
 import (
 	"context"
-	"net"
-	"os"
+	"net/netip"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/ameshkov/dnscrypt/v2"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -21,15 +21,41 @@ import (
 
 // dnsCryptHandlerFunc is a function-based implementation of the
 // [dnscrypt.Handler] interface.
-type dnsCryptHandlerFunc func(w dnscrypt.ResponseWriter, r *dns.Msg) (err error)
+//
+// TODO(d.kolyshev):  Move to dnscrypt.
+type dnsCryptHandlerFunc func(
+	ctx context.Context,
+	w dnscrypt.ResponseWriter,
+	r *dns.Msg,
+) (err error)
 
-// ServeDNS implements the [dnscrypt.Handler] interface for DNSCryptHandlerFunc.
-func (f dnsCryptHandlerFunc) ServeDNS(w dnscrypt.ResponseWriter, r *dns.Msg) (err error) {
-	return f(w, r)
+// type check
+var _ dnscrypt.Handler = dnsCryptHandlerFunc(nil)
+
+// ServeDNS implements the [dnscrypt.Handler] interface for dnsCryptHandlerFunc.
+func (f dnsCryptHandlerFunc) ServeDNS(
+	ctx context.Context,
+	w dnscrypt.ResponseWriter,
+	r *dns.Msg,
+) (err error) {
+	return f(ctx, w, r)
 }
 
+// emptyDNSCryptHandler is a [dnscrypt.Handler] that does nothing and always
+// returns nil error.  It can be used in tests when the server's response is
+// not important.
+//
+// TODO(d.kolyshev):  Move to dnscrypt.
+var emptyDNSCryptHandler = dnsCryptHandlerFunc(func(
+	ctx context.Context,
+	w dnscrypt.ResponseWriter,
+	r *dns.Msg,
+) (err error) {
+	return nil
+})
+
 // startTestDNSCryptServer starts a test DNSCrypt server with the specified
-// resolver config and handler.
+// resolver config and handler.  rc and h must not be nil.
 func startTestDNSCryptServer(
 	tb testing.TB,
 	rc dnscrypt.ResolverConfig,
@@ -37,53 +63,36 @@ func startTestDNSCryptServer(
 ) (stamp dnsstamps.ServerStamp) {
 	tb.Helper()
 
-	cert, err := rc.CreateCert()
+	cert, err := rc.NewCert()
 	require.NoError(tb, err)
 
-	s := &dnscrypt.Server{
-		ProviderName: rc.ProviderName,
-		ResolverCert: cert,
+	addr := netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
+	srvUDP, err := dnscrypt.NewServer(&dnscrypt.ServerConfig{
 		Handler:      h,
+		ResolverCert: cert,
 		Logger:       testLogger,
-	}
-	testutil.CleanupAndRequireSuccess(tb, func() (err error) {
-		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-		defer cancel()
-
-		return s.Shutdown(ctx)
+		ProviderName: rc.ProviderName,
+		Addr:         addr,
+		Proto:        dnscrypt.ProtoUDP,
 	})
-
-	localhost := netutil.IPv4Localhost().AsSlice()
-
-	// Prepare TCP listener.
-	tcpAddr := &net.TCPAddr{IP: localhost, Port: 0}
-	tcpConn, err := net.ListenTCP("tcp", tcpAddr)
-	require.NoError(tb, err)
-	testutil.CleanupAndRequireSuccess(tb, tcpConn.Close)
-
-	// Prepare UDP listener on the same port.
-	port := testutil.RequireTypeAssert[*net.TCPAddr](tb, tcpConn.Addr()).Port
-	udpAddr := &net.UDPAddr{IP: localhost, Port: port}
-	udpConn, err := net.ListenUDP("udp", udpAddr)
-	require.NoError(tb, err)
-	testutil.CleanupAndRequireSuccess(tb, udpConn.Close)
-
-	// Start the server.
-	go func() {
-		udpErr := s.ServeUDP(udpConn)
-		require.ErrorIs(testutil.PanicT{}, udpErr, net.ErrClosed)
-	}()
-
-	go func() {
-		tcpErr := s.ServeTCP(tcpConn)
-		require.NoError(testutil.PanicT{}, tcpErr)
-	}()
-
-	stamp, err = rc.CreateStamp(udpConn.LocalAddr().String())
 	require.NoError(tb, err)
 
-	_, err = net.Dial("tcp", udpAddr.String())
+	servicetest.RequireRun(tb, srvUDP, testTimeout)
+
+	addrStr := srvUDP.LocalAddr().String()
+	stamp, err = rc.CreateStamp(addrStr)
 	require.NoError(tb, err)
+
+	srvTCP, err := dnscrypt.NewServer(&dnscrypt.ServerConfig{
+		Handler:      h,
+		ResolverCert: cert,
+		Logger:       testLogger,
+		ProviderName: rc.ProviderName,
+		Addr:         netutil.NetAddrToAddrPort(srvUDP.LocalAddr()),
+		Proto:        dnscrypt.ProtoTCP,
+	})
+	require.NoError(tb, err)
+	servicetest.RequireRun(tb, srvTCP, testTimeout)
 
 	return stamp
 }
@@ -107,12 +116,16 @@ func TestUpstreamDNSCrypt(t *testing.T) {
 }
 
 func TestDNSCrypt_Exchange_truncated(t *testing.T) {
-	// Prepare the test DNSCrypt server config
-	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil)
+	// Prepare the test DNSCrypt server config.
+	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil, 0)
 	require.NoError(t, err)
 
 	var udpNum, tcpNum atomic.Uint32
-	h := dnsCryptHandlerFunc(func(w dnscrypt.ResponseWriter, r *dns.Msg) (err error) {
+	h := dnsCryptHandlerFunc(func(
+		ctx context.Context,
+		w dnscrypt.ResponseWriter,
+		r *dns.Msg,
+	) (err error) {
 		if w.RemoteAddr().Network() == networkUDP {
 			udpNum.Add(1)
 		} else {
@@ -135,10 +148,10 @@ func TestDNSCrypt_Exchange_truncated(t *testing.T) {
 			answer.Txt = append(answer.Txt, veryLongString)
 		}
 
-		return w.WriteMsg(res)
+		return w.WriteMsg(ctx, res)
 	})
-	srvStamp := startTestDNSCryptServer(t, rc, h)
 
+	srvStamp := startTestDNSCryptServer(t, rc, h)
 	u, err := AddressToUpstream(srvStamp.String(), &Options{
 		Logger:  testLogger,
 		Timeout: testTimeout,
@@ -161,14 +174,10 @@ func TestDNSCrypt_Exchange_deadline(t *testing.T) {
 	t.Parallel()
 
 	// Prepare the test DNSCrypt server config
-	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil)
+	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil, 0)
 	require.NoError(t, err)
 
-	h := dnsCryptHandlerFunc(func(w dnscrypt.ResponseWriter, r *dns.Msg) (err error) {
-		return nil
-	})
-
-	srvStamp := startTestDNSCryptServer(t, rc, h)
+	srvStamp := startTestDNSCryptServer(t, rc, emptyDNSCryptHandler)
 
 	// Use a shorter timeout to speed up the test.
 	u, err := AddressToUpstream(srvStamp.String(), &Options{
@@ -181,25 +190,21 @@ func TestDNSCrypt_Exchange_deadline(t *testing.T) {
 	req := (&dns.Msg{}).SetQuestion("unit-test2.dns.adguard.com.", dns.TypeTXT)
 
 	res, err := u.Exchange(req)
-	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	assert.Nil(t, res)
 }
 
 func TestDNSCrypt_Exchange_dialFail(t *testing.T) {
-	// Prepare the test DNSCrypt server config
-	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil)
+	// Prepare the test DNSCrypt server config.
+	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil, 0)
 	require.NoError(t, err)
-
-	h := dnsCryptHandlerFunc(func(w dnscrypt.ResponseWriter, r *dns.Msg) (err error) {
-		return nil
-	})
 
 	req := (&dns.Msg{}).SetQuestion("unit-test2.dns.adguard.com.", dns.TypeTXT)
 	var u Upstream
 
 	require.True(t, t.Run("run_and_shutdown", func(t *testing.T) {
-		srvStamp := startTestDNSCryptServer(t, rc, h)
+		srvStamp := startTestDNSCryptServer(t, rc, emptyDNSCryptHandler)
 
 		// Use a shorter timeout to speed up the test.
 		u, err = AddressToUpstream(srvStamp.String(), &Options{
@@ -222,13 +227,13 @@ func TestDNSCrypt_Exchange_dialFail(t *testing.T) {
 	t.Run("restart", func(t *testing.T) {
 		const validationErr errors.Error = "bad cert"
 
-		srvStamp := startTestDNSCryptServer(t, rc, h)
+		srvStamp := startTestDNSCryptServer(t, rc, emptyDNSCryptHandler)
 
 		// Use a shorter timeout to speed up the test.
 		u, err = AddressToUpstream(srvStamp.String(), &Options{
 			Logger:  testLogger,
 			Timeout: 100 * time.Millisecond,
-			VerifyDNSCryptCertificate: func(cert *dnscrypt.Cert) (err error) {
+			VerifyDNSCryptCertificate: func(cert *dnscrypt.Certificate) (err error) {
 				return validationErr
 			},
 		})

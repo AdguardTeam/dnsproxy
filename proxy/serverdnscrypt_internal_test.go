@@ -3,42 +3,50 @@ package proxy
 import (
 	"net"
 	"testing"
-	"time"
 
+	"github.com/AdguardTeam/dnscrypt"
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
-func TestMain(m *testing.M) {
-	testutil.DiscardLogOutput(m)
+func TestDNSCryptProxy(t *testing.T) {
+	t.Parallel()
+
+	// Prepare the proxy server.
+	dnsProxy, rc := newTestDNSCryptProxy(t)
+
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
+
+	// Generate a DNS stamp.
+	port := testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoDNSCrypt)).Port
+	addr := netutil.JoinHostPort(listenIP, uint16(port))
+	stamp, err := rc.CreateStamp(addr)
+	require.NoError(t, err)
+
+	// Test DNSCrypt proxy on both UDP and TCP.
+	checkDNSCryptProxy(t, dnscrypt.ProtoUDP, stamp)
+	checkDNSCryptProxy(t, dnscrypt.ProtoTCP, stamp)
 }
 
-func getFreePort() uint {
-	l, _ := net.Listen("tcp", "127.0.0.1:0")
-	port := uint(l.Addr().(*net.TCPAddr).Port)
+// newTestDNSCryptProxy is a helper function that creates a DNSCrypt proxy and
+// the corresponding resolver configuration for testing.
+func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) {
+	tb.Helper()
 
-	// stop listening immediately
-	_ = l.Close()
+	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil, 0)
+	require.NoError(tb, err)
 
-	// sleep for 100ms (may be necessary on Windows)
-	time.Sleep(100 * time.Millisecond)
-	return port
-}
+	cert, err := rc.NewCert()
+	require.NoError(tb, err)
 
-func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
-	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil)
-	assert.NoError(t, err)
-
-	cert, err := rc.CreateCert()
-	assert.NoError(t, err)
-
-	port := getFreePort()
-	p := mustNew(t, &Config{
+	port := dnsproxytest.NewFreePort(tb)
+	upstreamConf := newTestUpstreamConfig(tb, defaultTimeout, testDefaultUpstreamAddr)
+	p = mustNew(tb, &Config{
 		Logger: testLogger,
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{
 			Port: int(port), IP: net.ParseIP(listenIP),
@@ -46,7 +54,7 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 		DNSCryptTCPListenAddr: []*net.TCPAddr{{
 			Port: int(port), IP: net.ParseIP(listenIP),
 		}},
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig:         upstreamConf,
 		TrustedProxies:         defaultTrustedProxies,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,
@@ -59,37 +67,26 @@ func createTestDNSCryptProxy(t *testing.T) (*Proxy, dnscrypt.ResolverConfig) {
 	return p, rc
 }
 
-func TestDNSCryptProxy(t *testing.T) {
-	// Prepare the proxy server
-	dnsProxy, rc := createTestDNSCryptProxy(t)
+// checkDNSCryptProxy is a helper function that checks the DNSCrypt proxy by
+// sending a test message and verifying the response.
+func checkDNSCryptProxy(tb testing.TB, proto dnscrypt.Proto, stamp dnsstamps.ServerStamp) {
+	tb.Helper()
 
-	servicetest.RequireRun(t, dnsProxy, testTimeout)
+	// Create a DNSCrypt client.
+	c := dnscrypt.NewClient(&dnscrypt.ClientConfig{
+		Logger: slogutil.NewDiscardLogger(),
+		Proto:  proto,
+	})
 
-	// Generate a DNS stamp
-	port := testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoDNSCrypt)).Port
-	addr := netutil.JoinHostPort(listenIP, uint16(port))
-	stamp, err := rc.CreateStamp(addr)
-	assert.Nil(t, err)
+	ctx := testutil.ContextWithTimeout(tb, testTimeout)
 
-	// Test DNSCrypt proxy on both UDP and TCP
-	checkDNSCryptProxy(t, "udp", stamp)
-	checkDNSCryptProxy(t, "tcp", stamp)
-}
+	// Fetch the server certificate.
+	ri, err := c.DialStampContext(ctx, stamp)
+	require.NoError(tb, err)
 
-func checkDNSCryptProxy(t *testing.T, proto string, stamp dnsstamps.ServerStamp) {
-	// Create a DNSCrypt client
-	c := &dnscrypt.Client{
-		Timeout: defaultTimeout,
-		Net:     proto,
-	}
-
-	// Fetch the server certificate
-	ri, err := c.DialStamp(stamp)
-	assert.Nil(t, err)
-
-	// Send the test message
+	// Send the test message.
 	msg := newTestMessage()
-	reply, err := c.Exchange(msg, ri)
-	assert.Nil(t, err)
-	requireResponse(t, msg, reply)
+	reply, err := c.ExchangeContext(ctx, msg, ri)
+	require.NoError(tb, err)
+	requireResponse(tb, msg, reply)
 }

@@ -4,7 +4,7 @@
   'CACHE_BUSTER': |-
     ${{ vars.CACHE_BUSTER || '0' }}
 'jobs':
-  'GitHubRelease':
+  'Build':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
     'permissions':
@@ -40,14 +40,21 @@
           'name': 'dnsproxy'
           path: |
             build/dnsproxy-*
-      - 'name': 'Publish release'
-        'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/create-gh-release.yml@master'
-        'with':
-          'artifact_name': 'dnsproxy'
-          'tag_name': ''
-          'team': 'go'
-          'target_repo': 'AdGuardTeam/dnsproxy'
-          'draft': true
+  'PublishGitHubRelease':
+    'if': |
+      ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
+    'permissions':
+      # Download the artifact.
+      'contents': 'read'
+      # Octopass OIDC for the cross-repo token
+      'id-token': 'write'
+    'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/create-gh-release.yml@master'
+    'with':
+      'artifact_name': 'dnsproxy'
+      'tag_name': ''
+      'team': 'go'
+      'target_repo': 'AdGuardTeam/dnsproxy'
+      'draft': true
 'name': 'Build and release on GitHub'
 'on':
   'push':

@@ -43,6 +43,7 @@
   'PublishGitHubRelease':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
+    'needs': 'Build'
     'permissions':
       # Download the artifact.
       'contents': 'read'
@@ -53,7 +54,7 @@
       'artifact_name': 'dnsproxy'
       'tag_name': ''
       'team': 'go'
-      'target_repo': 'AdGuardTeam/dnsproxy'
+      # TODO(d.kolyshev): !! Add 'target_repo': 'AdGuardTeam/dnsproxy'.
       'draft': true
 'name': 'Build and release on GitHub'
 'on':

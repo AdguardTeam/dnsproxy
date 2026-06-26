@@ -8,10 +8,7 @@
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
     'permissions':
-      # TODO(d.kolyshev): !! Back to read.
-      'contents': 'write'
-      # Octopass OIDC for the cross-repo token
-      'id-token': 'write'
+      'contents': 'read'
     'runs-on': 'team-go'
     'steps':
       - 'uses': 'actions/checkout@v6'
@@ -47,7 +44,9 @@
     'needs': 'Build'
     'permissions':
       # Download the artifact.
-      'contents': 'read'
+      #
+      # TODO(d.kolyshev): !! Back to read.
+      'contents': 'write'
       # Octopass OIDC for the cross-repo token
       'id-token': 'write'
     'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/create-gh-release.yml@master'

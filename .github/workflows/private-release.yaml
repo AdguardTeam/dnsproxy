@@ -18,23 +18,18 @@
           # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
           'persist-credentials': false
       - 'name': 'Build'
-        'run': |
-          #!/bin/sh
-
-          set -e -f -o pipefail -u -x
-
-          # TODO(d.kolyshev): !! Use AdGuardSoftwareLimited/actions/.
-          docker build \
-              --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
-              --build-arg "BRANCH=${{ github.ref_name }}" \
-              --build-arg "CACHE_BUSTER=${CACHE_BUSTER}" \
-              --build-arg "REVISION=${{ github.sha }}" \
-              --build-arg "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" \
-              --output '.' \
-              --progress 'plain' \
-              --target 'builder-exporter' \
-              -f ./docker/release.Dockerfile \
-              .
+        'uses': 'AdGuardSoftwareLimited/actions/actions/docker-build@master'
+        'with':
+          'dockerfile': 'docker/release.Dockerfile'
+          'context': '.'
+          'target': 'builder-exporter'
+          'output': '.'
+          'build-args': |
+            BASE_IMAGE=${BASE_IMAGE}
+            BRANCH=${{ github.ref_name }}
+            CACHE_BUSTER=${CACHE_BUSTER}
+            REVISION=${{ github.sha }}
+            SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
       - 'uses': 'actions/upload-artifact@v7'
         'with':
           'name': 'dnsproxy'

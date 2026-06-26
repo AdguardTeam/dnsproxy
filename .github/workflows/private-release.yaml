@@ -23,11 +23,13 @@
 
           set -e -f -o pipefail -u -x
 
-          # TODO(d.kolyshev): !! Set version, revision etc.
-          # TODO(d.kolyshev): !! Use AdGuardSoftwareLimited/actions.
+          # TODO(d.kolyshev): !! Use AdGuardSoftwareLimited/actions/.
           docker build \
               --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+              --build-arg "BRANCH=${{ github.ref_name }}" \
               --build-arg "CACHE_BUSTER=${CACHE_BUSTER}" \
+              --build-arg "REVISION=${ substring(github.sha, 0, 7) }" \
+              --build-arg "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" \
               --output '.' \
               --progress 'plain' \
               --target 'builder-exporter' \
@@ -52,6 +54,7 @@
     'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/create-gh-release.yml@master'
     'with':
       'artifact_name': 'dnsproxy'
+      # TODO(d.kolyshev): !! Set tag_name to ${{ github.ref }}.
       'tag_name': ''
       'team': 'go'
       # TODO(d.kolyshev): !! Add 'target_repo': 'AdGuardTeam/dnsproxy'.

@@ -1,0 +1,52 @@
+'env':
+  'BASE_IMAGE': |-
+    ${{ vars.BASE_IMAGE || 'adguard/go-builder:1.26.4--1' }}
+  'CACHE_BUSTER': |-
+    ${{ vars.CACHE_BUSTER || '0' }}
+'jobs':
+  'GitHubRelease':
+    'if': |
+      ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
+    'permissions':
+      'contents': 'read'
+    'runs-on': 'team-go'
+    'steps':
+      - 'uses': 'actions/checkout@v6'
+        'with':
+          # Set to false to avoid GITHUB_TOKEN leaking.
+          #
+          # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
+          'persist-credentials': false
+      - 'name': 'Build'
+        'run': |
+          #!/bin/sh
+
+          set -e -f -o pipefail -u -x
+
+          # TODO(d.kolyshev):  Set version, revision etc.
+          # TODO(d.kolyshev):  Use AdGuardSoftwareLimited/actions.
+          docker build \
+              --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+              --build-arg "CACHE_BUSTER=${CACHE_BUSTER}" \
+              --output '.' \
+              --progress 'plain' \
+              --target 'builder-exporter' \
+              -f ./docker/release.Dockerfile \
+              .
+
+          cd ./build
+          ls -la
+'name': 'Build and release on GitHub'
+'on':
+  'push':
+    'tags':
+      - 'v*'
+    'branches':
+      - 'master'
+  'workflow_dispatch': null
+# Permissions are disabled for all the jobs by default, and then overridden for
+# specific jobs if needed.  This is a recommended practice for security reasons,
+# and also allows to avoid mistakes with permissions when creating new jobs.
+#
+# See https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions.
+'permissions': {}

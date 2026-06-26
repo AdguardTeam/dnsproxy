@@ -3,8 +3,6 @@
     ${{ vars.BASE_IMAGE || 'adguard/go-builder:1.26.4--1' }}
   'CACHE_BUSTER': |-
     ${{ vars.CACHE_BUSTER || '0' }}
-  'SOURCE_DATE_EPOCH': |-
-    $(git log -1 --format=%ct)
 'jobs':
   'Build':
     'if': |
@@ -19,6 +17,8 @@
           #
           # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
           'persist-credentials': false
+      - 'name': 'Set source date epoch'
+        'run': echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - 'name': 'Build'
         'uses': 'AdGuardSoftwareLimited/actions/actions/docker-build@master'
         'with':

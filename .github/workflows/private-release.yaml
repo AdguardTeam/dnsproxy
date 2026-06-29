@@ -51,7 +51,7 @@
       'artifact_name': 'dnsproxy'
       'tag_name': ${{ github.ref }}
       'team': 'go'
-      'target_repo': 'AdGuardTeam/dnsproxy'
+      'target_repo': 'AdguardTeam/dnsproxy'
       'draft': true
 'name': 'Build and release on GitHub'
 'on':
@@ -59,8 +59,7 @@
     'tags':
       - 'v*'
     'branches':
-      # TODO(d.kolyshev): !! Set back to master.
-      - '*'
+      - 'master'
   'workflow_dispatch': null
 # Permissions are disabled for all the jobs by default, and then overridden for
 # specific jobs if needed.  This is a recommended practice for security reasons,

@@ -42,17 +42,18 @@
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
     'needs': 'Build'
     'permissions':
-      # Download the artifact.
+      # Download the artifact (release write goes via the Octopass token).
       'contents': 'read'
-      # Octopass OIDC for the cross-repo token
+      # Octopass OIDC for the cross-repo token.
       'id-token': 'write'
     'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/create-gh-release.yml@master'
     'with':
       'artifact_name': 'dnsproxy'
+      'prerelease': true
+      'draft': true
       'tag_name': ${{ github.ref }}
       'team': 'go'
       'target_repo': 'AdguardTeam/dnsproxy'
-      'draft': true
 'name': 'Build and release on GitHub'
 'on':
   'push':

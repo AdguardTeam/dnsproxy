@@ -75,18 +75,8 @@
           'name': 'dnsproxy'
           'path': 'build'
       - 'name': 'Publish to Docker Hub'
-        'env':
-          'DOCKER_USER': ${{ secrets.DOCKER_USER }}
-          'DOCKER_PASSWORD': ${{ secrets.DOCKER_PASSWORD }}
         'run': |-
           set -e -u -x
-
-          ls -la ./build
-
-          docker login \
-              -u="${DOCKER_USER}" \
-              -p="${DOCKER_PASSWORD}" \
-              ;
 
           # TODO(d.kolyshev): !! Set back to DOCKER_PUSH='1'.
           make \

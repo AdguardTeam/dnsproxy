@@ -76,17 +76,17 @@
           'path': 'build'
       - 'name': 'Publish to Docker Hub'
         'run': |-
-          set -e -u -x
+          set -e -o pipefail -u -x
 
           # TODO(d.kolyshev): !! Set back to DOCKER_PUSH='1'.
-          make \
+          env \
               DOCKER_IMAGE_NAME='adguard/dnsproxy' \
               DOCKER_PUSH='0' \
               REVISION=${{ github.sha }} \
               DIST_DIR='build' \
-              APP_VERSION=${{ github.ref }} \
+              APP_VERSION=${{ github.ref_name }} \
               VERBOSE='1' \
-              ./scripts/make/build-docker.sh \
+              sh ./scripts/make/build-docker.sh \
               ;
 'name': 'Build and release'
 'on':

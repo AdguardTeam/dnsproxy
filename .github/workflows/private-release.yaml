@@ -73,6 +73,7 @@
         'uses': 'actions/download-artifact@v8'
         'with':
           'name': 'dnsproxy'
+          'path': 'build'
       - 'name': 'Publish to Docker Hub'
         'env':
           'DOCKER_USER': ${{ secrets.DOCKER_USER }}
@@ -80,7 +81,7 @@
         'run': |-
           set -e -u -x
 
-          ls -la ./build/*
+          ls -la ./build
 
           docker login \
               -u="${DOCKER_USER}" \
@@ -93,11 +94,11 @@
               DOCKER_PUSH='0' \
               REVISION=${{ github.sha }} \
               DIST_DIR='build' \
-              APP_VERSION='0' \
+              APP_VERSION=${{ github.ref }} \
               VERBOSE='1' \
               ./scripts/make/build-docker.sh \
               ;
-'name': 'Build and release on GitHub'
+'name': 'Build and release'
 'on':
   'push':
     'tags':

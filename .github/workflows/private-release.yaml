@@ -4,7 +4,7 @@
   'CACHE_BUSTER': |-
     ${{ vars.CACHE_BUSTER || '0' }}
 'jobs':
-  'Build':
+  'BuildAndPublishDocker':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
     'permissions':
@@ -37,6 +37,19 @@
           'name': 'dnsproxy'
           path: |
             build/dnsproxy-*
+      - 'name': 'Publish to Docker Hub'
+        'run': |-
+          set -e -o pipefail -u -x
+
+          env \
+              DOCKER_IMAGE_NAME='adguard/dnsproxy' \
+              DOCKER_PUSH='1' \
+              REVISION=${{ github.sha }} \
+              DIST_DIR='build' \
+              APP_VERSION=${{ github.ref_name }} \
+              VERBOSE='1' \
+              sh ./scripts/make/build-docker.sh \
+              ;
   'PublishGitHubRelease':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
@@ -59,7 +72,8 @@
     'tags':
       - 'v*'
     'branches':
-      - 'master'
+      # TODO(d.kolyshev): !! Set back to master.
+      - '*'
   'workflow_dispatch': null
 # Permissions are disabled for all the jobs by default, and then overridden for
 # specific jobs if needed.  This is a recommended practice for security reasons,

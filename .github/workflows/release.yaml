@@ -74,15 +74,24 @@
           'name': 'dnsproxy'
           'path': 'build'
       - 'name': 'Publish to Docker Hub'
+        'env':
+          'DOCKER_USER': ${{ secrets.DOCKER_USER }}
+          'DOCKER_PASSWORD': ${{ secrets.DOCKER_PASSWORD }}
         'run': |-
           set -e -o pipefail -u -x
 
-          # TODO(d.kolyshev): !! Set back to DOCKER_PUSH='1'.
+          docker login \
+              -u="${DOCKER_USER}" \
+              -p="${DOCKER_PASSWORD}" \
+              ;
+
+          # TODO(d.kolyshev):  Use AdGuardSoftwareLimited/actions/actions/docker-build.
           env \
               DOCKER_IMAGE_NAME='adguard/dnsproxy' \
               DOCKER_PUSH='0' \
               REVISION=${{ github.sha }} \
               DIST_DIR='build' \
+              DOCKER_PUSH='1' \
               APP_VERSION=${{ github.ref_name }} \
               VERBOSE='1' \
               sh ./scripts/make/build-docker.sh \

@@ -1,0 +1,106 @@
+'env':
+  'BASE_IMAGE': |-
+    ${{ vars.BASE_IMAGE || 'adguard/go-builder:1.26.4--1' }}
+  'CACHE_BUSTER': |-
+    ${{ vars.CACHE_BUSTER || '0' }}
+'jobs':
+  'Build':
+    'if': |
+      ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
+    'permissions':
+      'contents': 'read'
+    'runs-on': 'team-go'
+    'steps':
+      - 'uses': 'actions/checkout@v6'
+        'with':
+          # Set to false to avoid GITHUB_TOKEN leaking.
+          #
+          # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
+          'persist-credentials': false
+      - 'name': 'Set source date epoch'
+        'run': echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - 'name': 'Build'
+        'uses': 'AdGuardSoftwareLimited/actions/actions/docker-build@master'
+        'with':
+          'dockerfile': 'docker/release.Dockerfile'
+          'context': '.'
+          'target': 'builder-exporter'
+          'output': '.'
+          'build-args': |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+            BRANCH=${{ github.ref_name }}
+            CACHE_BUSTER=${ env.CACHE_BUSTER }}
+            REVISION=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+      - 'uses': 'actions/upload-artifact@v7'
+        'with':
+          'name': 'dnsproxy'
+          path: |
+            build
+  'PublishGitHubRelease':
+    'if': |
+      ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
+    'needs': 'Build'
+    'permissions':
+      # Download the artifact (release write goes via the Octopass token).
+      'contents': 'read'
+      # Octopass OIDC for the cross-repo token.
+      'id-token': 'write'
+    'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/create-gh-release.yml@master'
+    'with':
+      'artifact_name': 'dnsproxy'
+      'draft': true
+      'tag_name': ${{ github.ref_name }}
+      'team': 'go'
+      'target_repo': 'AdguardTeam/dnsproxy'
+  PublishDockerHub:
+    'if': |
+      ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
+    'needs': 'Build'
+    'permissions':
+      # Download the artifact.
+      'contents': 'read'
+    'runs-on': 'team-go'
+    'steps':
+      - 'uses': 'actions/checkout@v6'
+        'with':
+          # Set to false to avoid GITHUB_TOKEN leaking.
+          #
+          # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
+          'persist-credentials': false
+      - 'name': 'Download build artifact'
+        'uses': 'actions/download-artifact@v8'
+        'with':
+          'name': 'dnsproxy'
+          'path': 'build'
+      - 'name': 'Publish to Docker Hub'
+        'run': |-
+          set -e -o pipefail -u -x
+
+          ls -la build
+
+          # TODO(d.kolyshev): !! Set back to DOCKER_PUSH='1'.
+          env \
+              DOCKER_IMAGE_NAME='adguard/dnsproxy' \
+              DOCKER_PUSH='0' \
+              REVISION=${{ github.sha }} \
+              DIST_DIR='build' \
+              APP_VERSION=${{ github.ref_name }} \
+              VERBOSE='1' \
+              sh ./scripts/make/build-docker.sh \
+              ;
+'name': 'Build and release'
+'on':
+  'push':
+    'tags':
+      - 'v*'
+    'branches':
+      # TODO(d.kolyshev): !! Set back to master.
+      - '*'
+  'workflow_dispatch': null
+# Permissions are disabled for all the jobs by default, and then overridden for
+# specific jobs if needed.  This is a recommended practice for security reasons,
+# and also allows to avoid mistakes with permissions when creating new jobs.
+#
+# See https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions.
+'permissions': {}

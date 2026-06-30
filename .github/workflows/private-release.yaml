@@ -36,7 +36,7 @@
         'with':
           'name': 'dnsproxy'
           path: |
-            build
+            build/dnsproxy-*
   'PublishGitHubRelease':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
@@ -53,42 +53,6 @@
       'tag_name': ${{ github.ref_name }}
       'team': 'go'
       'target_repo': 'AdguardTeam/dnsproxy'
-  PublishDockerHub:
-    'if': |
-      ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
-    'needs': 'Build'
-    'permissions':
-      # Download the artifact.
-      'contents': 'read'
-    'runs-on': 'team-go'
-    'steps':
-      - 'uses': 'actions/checkout@v6'
-        'with':
-          # Set to false to avoid GITHUB_TOKEN leaking.
-          #
-          # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
-          'persist-credentials': false
-      - 'name': 'Download build artifact'
-        'uses': 'actions/download-artifact@v8'
-        'with':
-          'name': 'dnsproxy'
-          'path': 'build'
-      - 'name': 'Publish to Docker Hub'
-        'run': |-
-          set -e -o pipefail -u -x
-
-          ls -la build
-
-          # TODO(d.kolyshev): !! Set back to DOCKER_PUSH='1'.
-          env \
-              DOCKER_IMAGE_NAME='adguard/dnsproxy' \
-              DOCKER_PUSH='0' \
-              REVISION=${{ github.sha }} \
-              DIST_DIR='build' \
-              APP_VERSION=${{ github.ref_name }} \
-              VERBOSE='1' \
-              sh ./scripts/make/build-docker.sh \
-              ;
 'name': 'Build and release'
 'on':
   'push':

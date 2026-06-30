@@ -53,7 +53,7 @@
   'PublishGitHubRelease':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
-    'needs': 'Build'
+    'needs': 'BuildAndPublishDocker'
     'permissions':
       # Download the artifact (release write goes via the Octopass token).
       'contents': 'read'

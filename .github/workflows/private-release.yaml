@@ -4,7 +4,7 @@
   'CACHE_BUSTER': |-
     ${{ vars.CACHE_BUSTER || '0' }}
 'jobs':
-  'Build':
+  'BuildAndPublishDocker':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
     'permissions':
@@ -37,6 +37,22 @@
           'name': 'dnsproxy'
           path: |
             build/dnsproxy-*
+      - 'name': 'Publish to Docker Hub'
+        'run': |-
+          set -e -o pipefail -u -x
+
+          // Build contains archives now, so we need to extract them first.
+
+          # TODO(d.kolyshev): !! Set back to DOCKER_PUSH='1'.
+          env \
+              DOCKER_IMAGE_NAME='adguard/dnsproxy' \
+              DOCKER_PUSH='0' \
+              REVISION=${{ github.sha }} \
+              DIST_DIR='build' \
+              APP_VERSION=${{ github.ref_name }} \
+              VERBOSE='1' \
+              sh ./scripts/make/build-docker.sh \
+              ;
   'PublishGitHubRelease':
     'if': |
       ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
@@ -49,45 +65,10 @@
     'uses': 'AdGuardSoftwareLimited/actions/.github/workflows/create-gh-release.yml@master'
     'with':
       'artifact_name': 'dnsproxy'
-      'prerelease': true
       'draft': true
-      'tag_name': ${{ github.ref }}
+      'tag_name': ${{ github.ref_name }}
       'team': 'go'
       'target_repo': 'AdguardTeam/dnsproxy'
-  PublishDockerHub:
-    'if': |
-      ${{ github.repository_owner == 'AdGuardSoftwareLimited' }}
-    'needs': 'Build'
-    'permissions':
-      # Download the artifact.
-      'contents': 'read'
-    'runs-on': 'team-go'
-    'steps':
-      - 'uses': 'actions/checkout@v6'
-        'with':
-          # Set to false to avoid GITHUB_TOKEN leaking.
-          #
-          # See https://github.com/actions/checkout/issues/485#issuecomment-934422611.
-          'persist-credentials': false
-      - 'name': 'Download build artifact'
-        'uses': 'actions/download-artifact@v8'
-        'with':
-          'name': 'dnsproxy'
-          'path': 'build'
-      - 'name': 'Publish to Docker Hub'
-        'run': |-
-          set -e -o pipefail -u -x
-
-          # TODO(d.kolyshev): !! Set back to DOCKER_PUSH='1'.
-          env \
-              DOCKER_IMAGE_NAME='adguard/dnsproxy' \
-              DOCKER_PUSH='0' \
-              REVISION=${{ github.sha }} \
-              DIST_DIR='build' \
-              APP_VERSION=${{ github.ref_name }} \
-              VERBOSE='1' \
-              sh ./scripts/make/build-docker.sh \
-              ;
 'name': 'Build and release'
 'on':
   'push':

@@ -39,12 +39,16 @@ jobs:
         'run': |-
           set -e -u -x
 
+          # TODO(d.kolyshev):  Make it private and use
+          # AdGuardSoftwareLimited/actions/actions/docker-build.
+
           docker login \
               -u="${DOCKER_USER}" \
               -p="${DOCKER_PASSWORD}" \
               ;
 
           make \
+              APP_VERSION=${{ github.ref_name }} \
               DOCKER_IMAGE_NAME='adguard/dnsproxy' \
               DOCKER_PUSH='1' \
               VERBOSE='1' \

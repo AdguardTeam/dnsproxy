@@ -1,6 +1,7 @@
 'env':
   'GO_VERSION': '1.26.4'
-# TODO(d.kolyshev):  Use AdGuardSoftwareLimited/actions.
+# TODO(d.kolyshev):  Make it private and use
+# AdGuardSoftwareLimited/actions/actions/docker-build.
 jobs:
   'Docker':
     'if': |
@@ -38,9 +39,6 @@ jobs:
           'DOCKER_PASSWORD': ${{ secrets.DOCKER_PASSWORD }}
         'run': |-
           set -e -u -x
-
-          # TODO(d.kolyshev):  Make it private and use
-          # AdGuardSoftwareLimited/actions/actions/docker-build.
 
           docker login \
               -u="${DOCKER_USER}" \

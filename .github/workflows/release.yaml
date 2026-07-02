@@ -49,6 +49,7 @@
           env \
               APP_VERSION=${{ github.ref_name }} \
               DOCKER_IMAGE_NAME='adguard/dnsproxy' \
+              DOCKER_PUSH='1' \
               DIST_DIR=${{ env.DIST_DIR }} \
               REVISION=${{ github.sha }} \
               VERBOSE='1' \
@@ -76,8 +77,7 @@
     'tags':
       - 'v*'
     'branches':
-      # TODO(d.kolyshev): !! Set back to master.
-      - '*'
+      - 'master'
   'workflow_dispatch': null
 # Permissions are disabled for all the jobs by default, and then overridden for
 # specific jobs if needed.  This is a recommended practice for security reasons,

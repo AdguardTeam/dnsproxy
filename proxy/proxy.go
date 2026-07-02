@@ -58,6 +58,9 @@ const (
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
 
+// logKeyProto is the key for the DNS protocol in logs.
+const logKeyProto = "proto"
+
 // Proxy combines the proxy server state and configuration.
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.

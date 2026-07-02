@@ -137,24 +137,25 @@ func (p *Proxy) udpHandlePacket(
 	ctx context.Context,
 	packet []byte,
 	localIP netip.Addr,
-	remoteAddr *net.UDPAddr,
+	raddr *net.UDPAddr,
 	conn *net.UDPConn,
 ) {
 	ctx, cancel := p.reqCtx.New(ctx)
 	defer cancel()
 
-	p.logger.DebugContext(ctx, "handling new packet", "proto", ProtoUDP, "raddr", remoteAddr)
+	l := p.logger.With("raddr", raddr, "laddr", localIP, logKeyProto, ProtoUDP)
+	l.DebugContext(ctx, "handling new packet")
 
 	req := &dns.Msg{}
 	err := req.Unpack(packet)
 	if err != nil {
 		if req.MsgHdr == (dns.MsgHdr{}) {
-			p.logger.ErrorContext(ctx, "unpacking", "proto", ProtoUDP, slogutil.KeyError, err)
+			l.ErrorContext(ctx, "unpacking", slogutil.KeyError, err)
 
 			return
 		}
 
-		p.logger.DebugContext(ctx, "unpacking", "proto", ProtoUDP, slogutil.KeyError, err)
+		l.DebugContext(ctx, "unpacking", slogutil.KeyError, err)
 
 		// Dropping a UDP request with a valid header is considered bad practice
 		// since it creates a denial-of-service (DoS) vulnerability for the
@@ -163,27 +164,28 @@ func (p *Proxy) udpHandlePacket(
 		//
 		// See https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1.
 		resp := p.messages.NewMsgFORMERR(req)
-		err = p.respondUDP(resp, conn, remoteAddr, localIP)
+		err = p.respondUDP(resp, conn, raddr, localIP)
 	} else {
-		d := p.newDNSContext(ProtoUDP, req, netutil.NetAddrToAddrPort(remoteAddr))
+		d := p.newDNSContext(ProtoUDP, req, netutil.NetAddrToAddrPort(raddr))
 		d.Conn = conn
 		d.localIP = localIP
 
 		err = p.handleDNSRequest(ctx, d)
 	}
 	if err != nil {
-		p.logger.DebugContext(ctx, "handling request", "proto", ProtoUDP, slogutil.KeyError, err)
+		l.DebugContext(ctx, "handling request", slogutil.KeyError, err)
 	}
 }
 
 // respondUDP sends the response message to the client.  It does nothing if resp
 // is nil.  It returns an error if writing the response fails, or if the number
-// of bytes written is not equal to the length of the packed message.
+// of bytes written is not equal to the length of the packed message.  resp,
+// conn, raddr must not be nil.  laddr must be valid.
 func (p *Proxy) respondUDP(
 	resp *dns.Msg,
 	conn *net.UDPConn,
-	rAddr *net.UDPAddr,
-	lAddr netip.Addr,
+	raddr *net.UDPAddr,
+	laddr netip.Addr,
 ) (err error) {
 	if resp == nil {
 		// Do nothing if no response has been written.
@@ -195,7 +197,7 @@ func (p *Proxy) respondUDP(
 		return fmt.Errorf("packing message: %w", err)
 	}
 
-	n, err := proxynetutil.UDPWrite(bytes, conn, rAddr, lAddr)
+	n, err := proxynetutil.UDPWrite(bytes, conn, raddr, laddr)
 	if err != nil {
 		if errors.Is(err, net.ErrClosed) {
 			return nil

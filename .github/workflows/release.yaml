@@ -32,7 +32,7 @@
             APP_VERSION=${{ github.ref_name }}
             BASE_IMAGE=${{ env.BASE_IMAGE }}
             BRANCH=${{ github.ref_name }}
-            CACHE_BUSTER=${ env.CACHE_BUSTER }}
+            CACHE_BUSTER=${{ env.CACHE_BUSTER }}
             DIST_DIR=${{ env.DIST_DIR }}
             REVISION=${{ github.sha }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}

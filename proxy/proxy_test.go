@@ -129,6 +129,7 @@ func TestProxy_Resolve_cache(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := proxy.New(&proxy.Config{
+				Logger:         testLogger,
 				UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 				UpstreamConfig: upsConf,
 				CacheEnabled:   tc.prxCacheEnabled,
@@ -165,6 +166,7 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 	}
 
 	p, err := proxy.New(&proxy.Config{
+		Logger: testLogger,
 		// Add a free address.
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		// Add a bound address.

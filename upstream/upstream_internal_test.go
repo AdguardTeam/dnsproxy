@@ -41,12 +41,11 @@ var testLogger = slogutil.NewDiscardLogger()
 
 // TODO(ameshkov): Make tests here not depend on external servers.
 
-// TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
 func TestMain(m *testing.M) {
 	// See https://github.com/quic-go/quic-go/issues/4228.
 	errors.Check(os.Setenv("QUIC_GO_DISABLE_GSO", "1"))
 
-	testutil.DiscardLogOutput(m)
+	os.Exit(m.Run())
 }
 
 // TODO(a.garipov):  Refactor.

@@ -3,7 +3,6 @@ package middleware
 import (
 	"net"
 	"net/netip"
-	"os"
 	"path"
 	"path/filepath"
 	"testing"
@@ -22,13 +21,6 @@ import (
 
 // testLogger is a common logger for tests.
 var testLogger = slogutil.NewDiscardLogger()
-
-// TODO(e.burkov):  Remove when [hostsfile.DefaultStorage] stops using [log].
-func TestMain(m *testing.M) {
-	testutil.DiscardLogOutput(m)
-
-	os.Exit(m.Run())
-}
 
 // TODO(e.burkov):  Add helpers to initialize [proxy.Proxy] to [dnsproxytest]
 // and rewrite the tests.

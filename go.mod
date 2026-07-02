@@ -3,15 +3,13 @@ module github.com/AdguardTeam/dnsproxy
 go 1.26.4
 
 require (
-	github.com/AdguardTeam/dnscrypt v0.0.1
+	github.com/AdguardTeam/dnscrypt v0.0.2
 	github.com/AdguardTeam/golibs v0.35.13
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 	github.com/bluele/gcache v0.0.2
 	github.com/miekg/dns v1.1.72
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	// TODO(s.chzhen):  Update after investigation of the 0-RTT bug/behavior
-	// when TestUpstreamDoH_serverRestart/http3/second_try keeps failing.
 	github.com/quic-go/quic-go v0.60.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976 // indirect

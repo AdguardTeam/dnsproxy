@@ -147,7 +147,7 @@ func (p *Proxy) respond(ctx context.Context, d *DNSContext) {
 
 	switch d.Proto {
 	case ProtoUDP:
-		err = p.respondUDP(d)
+		err = p.respondUDP(d.Res, d.Conn.(*net.UDPConn), net.UDPAddrFromAddrPort(d.Addr), d.localIP)
 	case ProtoTCP:
 		err = p.respondTCP(d)
 	case ProtoTLS:

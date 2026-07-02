@@ -41,6 +41,7 @@ type MessageConstructor struct {
 	OnNewMsgSERVFAIL       func(req *dns.Msg) (resp *dns.Msg)
 	OnNewMsgNOTIMPLEMENTED func(req *dns.Msg) (resp *dns.Msg)
 	OnNewMsgNODATA         func(req *dns.Msg) (resp *dns.Msg)
+	OnNewMsgFORMERR        func(req *dns.Msg) (resp *dns.Msg)
 }
 
 // NewMessageConstructor creates a new *TestMessageConstructor with all it's
@@ -59,6 +60,9 @@ func NewMessageConstructor() (c *MessageConstructor) {
 		OnNewMsgNODATA: func(req *dns.Msg) (_ *dns.Msg) {
 			panic(testutil.UnexpectedCall(req))
 		},
+		OnNewMsgFORMERR: func(req *dns.Msg) (_ *dns.Msg) {
+			panic(testutil.UnexpectedCall(req))
+		},
 	}
 }
 
@@ -66,25 +70,31 @@ func NewMessageConstructor() (c *MessageConstructor) {
 var _ dnsmsg.MessageConstructor = (*MessageConstructor)(nil)
 
 // NewMsgNXDOMAIN implements the [proxy.MessageConstructor] interface for
-// *TestMessageConstructor.
+// *MessageConstructor.
 func (c *MessageConstructor) NewMsgNXDOMAIN(req *dns.Msg) (resp *dns.Msg) {
 	return c.OnNewMsgNXDOMAIN(req)
 }
 
 // NewMsgSERVFAIL implements the [proxy.MessageConstructor] interface for
-// *TestMessageConstructor.
+// *MessageConstructor.
 func (c *MessageConstructor) NewMsgSERVFAIL(req *dns.Msg) (resp *dns.Msg) {
 	return c.OnNewMsgSERVFAIL(req)
 }
 
 // NewMsgNOTIMPLEMENTED implements the [proxy.MessageConstructor] interface for
-// *TestMessageConstructor.
+// *MessageConstructor.
 func (c *MessageConstructor) NewMsgNOTIMPLEMENTED(req *dns.Msg) (resp *dns.Msg) {
 	return c.OnNewMsgNOTIMPLEMENTED(req)
 }
 
-// NewMsgNODATA implements the [MessageConstructor] interface for
-// *TestMessageConstructor.
+// NewMsgNODATA implements the [proxy.MessageConstructor] interface for
+// *MessageConstructor.
 func (c *MessageConstructor) NewMsgNODATA(req *dns.Msg) (resp *dns.Msg) {
 	return c.OnNewMsgNODATA(req)
+}
+
+// NewMsgFORMERR implements the [proxy.MessageConstructor] interface for
+// *MessageConstructor.
+func (c *MessageConstructor) NewMsgFORMERR(req *dns.Msg) (resp *dns.Msg) {
+	return c.OnNewMsgFORMERR(req)
 }

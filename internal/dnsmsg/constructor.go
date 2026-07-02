@@ -27,6 +27,12 @@ type MessageConstructor interface {
 	//
 	// See https://www.rfc-editor.org/rfc/rfc2308#section-2.2.
 	NewMsgNODATA(req *dns.Msg) (resp *dns.Msg)
+
+	// NewMsgFORMERR creates a new response message replying to req with the
+	// FORMERR code.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1.
+	NewMsgFORMERR(req *dns.Msg) (resp *dns.Msg)
 }
 
 // DefaultMessageConstructor is a default implementation of
@@ -102,6 +108,12 @@ func (DefaultMessageConstructor) NewMsgNODATA(req *dns.Msg) (resp *dns.Msg) {
 	resp.Ns = append(resp.Ns, soa)
 
 	return resp
+}
+
+// NewMsgFORMERR implements the [MessageConstructor] interface for
+// DefaultMessageConstructor.
+func (DefaultMessageConstructor) NewMsgFORMERR(req *dns.Msg) (resp *dns.Msg) {
+	return reply(req, dns.RcodeFormatError)
 }
 
 // reply creates a new response message replying to req with the given code.

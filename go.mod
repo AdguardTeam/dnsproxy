@@ -3,8 +3,8 @@ module github.com/AdguardTeam/dnsproxy
 go 1.26.4
 
 require (
+	github.com/AdguardTeam/dnscrypt v0.0.1
 	github.com/AdguardTeam/golibs v0.35.13
-	github.com/ameshkov/dnscrypt/v2 v2.4.0
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 	github.com/bluele/gcache v0.0.2

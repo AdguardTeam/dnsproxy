@@ -3,17 +3,17 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"net"
+	"net/netip"
 
-	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/syncutil"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 )
 
-func (p *Proxy) initDNSCryptListeners(ctx context.Context) (err error) {
+// initDNSCryptServers initializes the DNSCrypt servers.
+func (p *Proxy) initDNSCryptServers(ctx context.Context) (err error) {
 	if len(p.DNSCryptUDPListenAddr) == 0 && len(p.DNSCryptTCPListenAddr) == 0 {
 		// Do nothing if DNSCrypt listen addresses are not specified.
 		return nil
@@ -24,99 +24,107 @@ func (p *Proxy) initDNSCryptListeners(ctx context.Context) (err error) {
 	}
 
 	p.logger.InfoContext(ctx, "initializing dnscrypt", "provider", p.DNSCryptProviderName)
-	p.dnsCryptServer = &dnscrypt.Server{
-		ProviderName: p.DNSCryptProviderName,
-		ResolverCert: p.DNSCryptResolverCert,
-		Handler: &dnsCryptHandler{
-			proxy:   p,
-			reqSema: p.requestsSema,
-		},
-		Logger: p.logger,
-	}
 
 	for _, addr := range p.DNSCryptUDPListenAddr {
-		udp, lErr := p.listenDNSCryptUDP(ctx, addr)
-		if lErr != nil {
-			return fmt.Errorf("listening to dnscrypt udp on addr %s: %w", addr, lErr)
+		s, sErr := p.newDNSCryptServer(ctx, netutil.NetAddrToAddrPort(addr), dnscrypt.ProtoUDP)
+		if sErr != nil {
+			return fmt.Errorf("listening to dnscrypt udp on addr %s: %w", addr, sErr)
 		}
 
-		p.dnsCryptUDPListen = append(p.dnsCryptUDPListen, udp)
+		p.dnsCryptServers = append(p.dnsCryptServers, s)
 	}
 
 	for _, addr := range p.DNSCryptTCPListenAddr {
-		tcp, lErr := p.listenDNSCryptTCP(ctx, addr)
-		if lErr != nil {
-			return fmt.Errorf("listening to dnscrypt tcp on addr %s: %w", addr, lErr)
+		s, sErr := p.newDNSCryptServer(ctx, netutil.NetAddrToAddrPort(addr), dnscrypt.ProtoTCP)
+		if sErr != nil {
+			return fmt.Errorf("listening to dnscrypt tcp on addr %s: %w", addr, sErr)
 		}
 
-		p.dnsCryptTCPListen = append(p.dnsCryptTCPListen, tcp)
+		p.dnsCryptServers = append(p.dnsCryptServers, s)
 	}
 
 	return nil
 }
 
-// listenDNSCryptUDP returns a new UDP connection for DNSCrypt listening on
-// addr.
-func (p *Proxy) listenDNSCryptUDP(
-	ctx context.Context,
-	addr *net.UDPAddr,
-) (conn *net.UDPConn, err error) {
-	addrStr := addr.String()
-	p.logger.InfoContext(ctx, "creating dnscrypt udp server socket", "addr", addrStr)
+// startDNSCryptServers starts the DNSCrypt servers.
+func (p *Proxy) startDNSCryptServers(ctx context.Context) (err error) {
+	var started []*dnscrypt.Server
 
-	err = p.bindWithRetry(ctx, func() (listenErr error) {
-		conn, listenErr = net.ListenUDP(bootstrap.NetworkUDP, addr)
+	for i, s := range p.dnsCryptServers {
+		err = s.Start(ctx)
+		if err != nil {
+			closeErr := shutdownDNSCryptServers(ctx, started)
 
-		return listenErr
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listening to udp socket: %w", err)
+			return fmt.Errorf(
+				"starting dnscrypt server at index %d: %w",
+				i,
+				errors.WithDeferred(err, closeErr),
+			)
+		}
+
+		started = append(started, s)
 	}
 
-	p.logger.InfoContext(ctx, "listening for dnscrypt messages on udp", "addr", conn.LocalAddr())
-
-	return conn, nil
+	return nil
 }
 
-// listenDNSCryptTCP returns a new TCP listener for DNSCrypt listening on addr.
-func (p *Proxy) listenDNSCryptTCP(
-	ctx context.Context,
-	addr *net.TCPAddr,
-) (conn *net.TCPListener, err error) {
-	addrStr := addr.String()
-	p.logger.InfoContext(ctx, "creating dnscrypt tcp server socket", "addr", addrStr)
+// shutdownDNSCryptServers shuts down the DNSCrypt servers.  If it returns an
+// error, some servers may be still running.
+func shutdownDNSCryptServers(ctx context.Context, srvs []*dnscrypt.Server) (err error) {
+	var errs []error
 
-	err = p.bindWithRetry(ctx, func() (listenErr error) {
-		conn, listenErr = net.ListenTCP(bootstrap.NetworkTCP, addr)
-
-		return listenErr
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listening to tcp socket: %w", err)
+	for i, s := range srvs {
+		err = s.Shutdown(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("shutting down dnscrypt server at index %d: %w", i, err))
+		}
 	}
 
-	p.logger.InfoContext(ctx, "listening for dnscrypt messages on tcp", "addr", conn.Addr())
-
-	return conn, nil
+	return errors.Join(errs...)
 }
 
-// dnsCryptHandler - dnscrypt.Handler implementation
+// newDNSCryptServer returns a new DNSCrypt server for the given address and
+// protocol.
+func (p *Proxy) newDNSCryptServer(
+	ctx context.Context,
+	addr netip.AddrPort,
+	proto dnscrypt.Proto,
+) (s *dnscrypt.Server, err error) {
+	p.logger.InfoContext(ctx, "creating dnscrypt server", "addr", addr, "proto", proto)
+
+	return dnscrypt.NewServer(&dnscrypt.ServerConfig{
+		Handler: &dnsCryptHandler{
+			proxy:   p,
+			reqSema: p.requestsSema,
+		},
+		ResolverCert: p.DNSCryptResolverCert,
+		Logger:       p.logger,
+		ProviderName: p.DNSCryptProviderName,
+		Addr:         addr,
+		Proto:        proto,
+	})
+}
+
+// dnsCryptHandler is the [dnscrypt.Handler] implementation that handles
+// requests in the Proxy.
 type dnsCryptHandler struct {
-	proxy *Proxy
-
+	proxy   *Proxy
 	reqSema syncutil.Semaphore
 }
 
-// compile-time type check
+// type check
 var _ dnscrypt.Handler = &dnsCryptHandler{}
 
-// ServeDNS - processes the DNS query
-func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) (err error) {
-	d := h.proxy.newDNSContext(ProtoDNSCrypt, req, netutil.NetAddrToAddrPort(rw.RemoteAddr()))
+// ServeDNS implements the [dnscrypt.Handler] interface for *dnsCryptHandler.
+func (h *dnsCryptHandler) ServeDNS(
+	ctx context.Context,
+	rw dnscrypt.ResponseWriter,
+	req *dns.Msg,
+) (err error) {
+	addr := netutil.NetAddrToAddrPort(rw.RemoteAddr())
+	d := h.proxy.newDNSContext(ProtoDNSCrypt, req, addr)
 	d.DNSCryptResponseWriter = rw
 
-	// TODO(f.setrakov):  Use context from parameters, see AGDNS-3533.
-	ctx := context.Background()
 	ctx, cancel := h.proxy.reqCtx.New(ctx)
 	defer cancel()
 
@@ -129,12 +137,13 @@ func (h *dnsCryptHandler) ServeDNS(rw dnscrypt.ResponseWriter, req *dns.Msg) (er
 	return h.proxy.handleDNSRequest(ctx, d)
 }
 
-// Writes a response to the UDP client
-func (p *Proxy) respondDNSCrypt(d *DNSContext) error {
+// respondDNSCrypt writes a response to the client using the DNSCrypt response
+// writer.  d must not be nil.
+func (p *Proxy) respondDNSCrypt(ctx context.Context, d *DNSContext) error {
 	if d.Res == nil {
-		// If no response has been written, do nothing and let it drop
+		// If no response has been written, do nothing and let it drop.
 		return nil
 	}
 
-	return d.DNSCryptResponseWriter.WriteMsg(d.Res)
+	return d.DNSCryptResponseWriter.WriteMsg(ctx, d.Res)
 }

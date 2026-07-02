@@ -385,7 +385,7 @@ func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn 
 	}
 }
 
-// respondQUIC writes a response to the QUIC stream.
+// respondQUIC writes a response to the QUIC stream.  d must not be nil.
 func (p *Proxy) respondQUIC(d *DNSContext) error {
 	resp := d.Res
 

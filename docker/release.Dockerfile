@@ -32,12 +32,12 @@ ARG BASE_IMAGE=adguard/go-builder:1.26.4--1
 # The builder stage is used to build release artifacts.  Real BRANCH, REVISION,
 # and SOURCE_DATE_EPOCH must be used here.
 FROM "$BASE_IMAGE" AS builder
+ARG APP_VERSION=""
 ARG BRANCH=master
 ARG CACHE_BUSTER=0
 ARG DIST_DIR="build"
 ARG REVISION=0000000000000000000000000000000000000000
 ARG SOURCE_DATE_EPOCH=0
-ARG VERSION=""
 ADD . /app/
 WORKDIR /app
 RUN \
@@ -46,12 +46,12 @@ RUN \
 <<-'EOF'
 set -e -f -o 'pipefail' -u -x
 make \
+	APP_VERSION="${APP_VERSION}" \
 	BRANCH="${BRANCH}" \
 	DIST_DIR="${DIST_DIR}" \
 	REVISION="${REVISION}" \
 	SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" \
 	VERBOSE=1 \
-	VERSION="${VERSION}" \
 	release \
 	;
 EOF
@@ -60,4 +60,5 @@ EOF
 # could be published.  This stage should only be used in a CI.
 FROM scratch AS builder-exporter
 ARG CACHE_BUSTER=0
-COPY --from=builder /app/build /build
+ARG DIST_DIR="build"
+COPY --from=builder "/app/$DIST_DIR" "$DIST_DIR"

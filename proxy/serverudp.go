@@ -179,8 +179,8 @@ func (p *Proxy) udpHandlePacket(
 
 // respondUDP sends the response message to the client.  It does nothing if resp
 // is nil.  It returns an error if writing the response fails, or if the number
-// of bytes written is not equal to the length of the packed message.  resp,
-// conn, raddr must not be nil.  laddr must be valid.
+// of bytes written is not equal to the length of the packed message.  If resp
+// is not nil, conn and raddr must not be nil, and laddr must be valid.
 func (p *Proxy) respondUDP(
 	resp *dns.Msg,
 	conn *net.UDPConn,

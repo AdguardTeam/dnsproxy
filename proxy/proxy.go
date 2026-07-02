@@ -638,8 +638,9 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 }
 
 // handleExchangeResult handles the result after the upstream exchange.  It sets
-// resp and the upstream that has resolved the request in d.  If resp is nil, it
-// generates a server failure response.  req must not be nil.
+// resp and the upstream that has resolved the request in d.  Also, it clears
+// the AA bit in the upstream response.  If resp is nil, it generates a server
+// failure response.  req must not be nil.
 func (p *Proxy) handleExchangeResult(
 	ctx context.Context,
 	d *DNSContext,
@@ -656,6 +657,7 @@ func (p *Proxy) handleExchangeResult(
 
 	d.Upstream = u
 	d.Res = resp
+	d.Res.Authoritative = false
 
 	p.setMinMaxTTL(ctx, resp)
 }

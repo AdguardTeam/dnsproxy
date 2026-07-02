@@ -22,27 +22,8 @@ log() {
 
 log 'starting to build dnsproxy release'
 
-version="${APP_VERSION:-0}"
+. ./scripts/make/version.sh
 
-if [ "$version" = '0' ]; then
-	version="${GITHUB_REF:-}"
-	version="${version##*/}"
-fi
-
-case "$version" in
-v*)
-	if ! printf '%s\n' "$version" | grep -E -e '^v[0-9]+\.[0-9]+\.[0-9]+$' -q; then
-		printf "version is invalid '%s'\n" "$version" 1>&2
-
-		exit 1
-	fi
-	;;
-*)
-	version='dev'
-	;;
-esac
-
-readonly version
 log "version '$version'"
 
 dist="${DIST_DIR:-build}"

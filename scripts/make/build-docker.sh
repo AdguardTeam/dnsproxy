@@ -12,11 +12,14 @@ fi
 
 set -e -f -u
 
+. ./scripts/make/version.sh
+
+printf 'version "%s"\n' "$version" 1>&2
+
 # Require these to be set.
 commit="${REVISION:?please set REVISION}"
 dist_dir="${DIST_DIR:?please set DIST_DIR}"
-version="${APP_VERSION:?please set APP_VERSION}"
-readonly commit dist_dir version
+readonly commit dist_dir
 
 # Allow users to use sudo.
 sudo_cmd="${SUDO:-}"

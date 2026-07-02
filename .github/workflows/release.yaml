@@ -3,6 +3,8 @@
     ${{ vars.BASE_IMAGE || 'adguard/go-builder:1.26.4--1' }}
   'CACHE_BUSTER': |-
     ${{ vars.CACHE_BUSTER || '0' }}
+  'DIST_DIR': |-
+    ${{ vars.DIST_DIR || 'build' }}
 'jobs':
   'BuildAndPublishDocker':
     'if': |
@@ -27,9 +29,11 @@
           'target': 'builder-exporter'
           'output': '.'
           'build-args': |
+            APP_VERSION=${{ github.ref_name }} \
             BASE_IMAGE=${{ env.BASE_IMAGE }}
             BRANCH=${{ github.ref_name }}
             CACHE_BUSTER=${ env.CACHE_BUSTER }}
+            DIST_DIR=${{ env.DIST_DIR }} \
             REVISION=${{ github.sha }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
       - 'uses': 'actions/upload-artifact@v7'
@@ -43,11 +47,11 @@
 
           # TODO(d.kolyshev):  Use AdGuardSoftwareLimited/actions/actions/docker-build.
           env \
+              APP_VERSION=${{ github.ref_name }} \
               DOCKER_IMAGE_NAME='adguard/dnsproxy' \
               DOCKER_PUSH='1' \
+              DIST_DIR=${{ env.DIST_DIR }} \
               REVISION=${{ github.sha }} \
-              DIST_DIR='build' \
-              APP_VERSION=${{ github.ref_name }} \
               VERBOSE='1' \
               sh ./scripts/make/build-docker.sh \
               ;

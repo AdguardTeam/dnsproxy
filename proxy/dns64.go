@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -112,29 +113,30 @@ func (p *Proxy) checkDNS64(req, resp *dns.Msg) (dns64Req *dns.Msg) {
 
 // filterNAT64Answers filters out AAAA records that are within one of NAT64
 // exclusion prefixes.  hasAnswers is true if the filtered slice contains at
-// least a single AAAA answer not within the prefixes or a CNAME.
-//
-// TODO(e.burkov):  Remove prefs from args when old API is removed.
+// least a single AAAA answer not within the prefixes.
 func (p *Proxy) filterNAT64Answers(rrs []dns.RR) (filtered []dns.RR, hasAnswers bool) {
-	filtered = make([]dns.RR, 0, len(rrs))
-	for _, ans := range rrs {
-		switch ans := ans.(type) {
-		case *dns.AAAA:
-			addr, err := netutil.IPToAddrNoMapped(ans.AAAA)
-			if err != nil {
-				p.logger.Error("bad aaaa record", slogutil.KeyError, err)
-			} else if p.dns64Prefs.Contains(addr) {
-				// Filter the record.
-				continue
-			} else {
-				filtered, hasAnswers = append(filtered, ans), true
-			}
-		default:
-			filtered = append(filtered, ans)
+	return slices.DeleteFunc(rrs, func(rr dns.RR) (ok bool) {
+		ans, ok := rr.(*dns.AAAA)
+		if !ok {
+			return false
 		}
-	}
 
-	return filtered, hasAnswers
+		addr, err := netutil.IPToAddrNoMapped(ans.AAAA)
+		if err != nil {
+			p.logger.Error("bad aaaa record", slogutil.KeyError, err)
+
+			return true
+		}
+
+		if p.dns64Prefs.Contains(addr) {
+			// Filter the record.
+			return true
+		}
+
+		hasAnswers = true
+
+		return false
+	}), hasAnswers
 }
 
 // synthDNS64 synthesizes a DNS64 response using the original response as a

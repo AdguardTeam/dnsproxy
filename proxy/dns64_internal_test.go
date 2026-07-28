@@ -137,17 +137,8 @@ func newRR(tb testing.TB, name string, qtype uint16, ttl uint32, val any) (rr dn
 	return rr
 }
 
+// TODO(e.burkov):  Refactor the test.
 func TestProxy_Resolve_dns64(t *testing.T) {
-	const (
-		ipv6Domain    = "ipv6.only."
-		soaDomain     = "ipv4.soa."
-		mappedDomain  = "filterable.ipv6."
-		anotherDomain = "another.domain."
-
-		pointedDomain = "local1234.ipv4."
-		globDomain    = "real1234.ipv4."
-	)
-
 	someIPv4 := net.IP{1, 2, 3, 4}
 	someIPv6 := net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	mappedIPv6 := net.ParseIP("64:ff9b::102:304")
@@ -161,6 +152,19 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	ptrGlobDomain = dns.Fqdn(ptrGlobDomain)
 
 	localCliAddr := netip.MustParseAddrPort("192.168.1.1:1234")
+
+	const (
+		domainIPv6    = "ipv6.only."
+		domainSOA     = "ipv4.soa."
+		domainMapped  = "filterable.ipv6."
+		domainAnother = "another.domain."
+
+		domainPointed = "local1234.ipv4."
+		domainGlob    = "real1234.ipv4."
+
+		fqdnCNAMEOnly = "cname.chain."
+		fqdnTerminal  = "terminal.node."
+	)
 
 	const (
 		sectionAnswer = iota
@@ -195,7 +199,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		}
 	}
 
-	localRR := newRR(t, ptr64Domain, dns.TypePTR, 3600, pointedDomain)
+	localRR := newRR(t, ptr64Domain, dns.TypePTR, 3600, domainPointed)
 	localUps := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			require.Equal(pt, req.Question[0].Name, ptr64Domain)
@@ -235,16 +239,16 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qtype: dns.TypeA,
 	}, {
 		name:  "simple_aaaa",
-		qname: ipv6Domain,
+		qname: domainIPv6,
 		upsAns: answerMap{
 			dns.TypeA: {},
 			dns.TypeAAAA: {
-				sectionAnswer: {newRR(t, ipv6Domain, dns.TypeAAAA, 3600, someIPv6)},
+				sectionAnswer: {newRR(t, domainIPv6, dns.TypeAAAA, 3600, someIPv6)},
 			},
 		},
 		wantAns: []dns.RR{&dns.AAAA{
 			Hdr: dns.RR_Header{
-				Name:   ipv6Domain,
+				Name:   domainIPv6,
 				Rrtype: dns.TypeAAAA,
 				Class:  dns.ClassINET,
 				Ttl:    3600,
@@ -273,18 +277,18 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qtype: dns.TypeAAAA,
 	}, {
 		name:  "actual_dns64_soattl",
-		qname: soaDomain,
+		qname: domainSOA,
 		upsAns: answerMap{
 			dns.TypeA: {
-				sectionAnswer: {newRR(t, soaDomain, dns.TypeA, 3600, someIPv4)},
+				sectionAnswer: {newRR(t, domainSOA, dns.TypeA, 3600, someIPv4)},
 			},
 			dns.TypeAAAA: {
-				sectionAuthority: {newRR(t, soaDomain, dns.TypeSOA, maxDNS64SynTTL+50, nil)},
+				sectionAuthority: {newRR(t, domainSOA, dns.TypeSOA, maxDNS64SynTTL+50, nil)},
 			},
 		},
 		wantAns: []dns.RR{&dns.AAAA{
 			Hdr: dns.RR_Header{
-				Name:   soaDomain,
+				Name:   domainSOA,
 				Rrtype: dns.TypeAAAA,
 				Class:  dns.ClassINET,
 				Ttl:    maxDNS64SynTTL + 50,
@@ -294,24 +298,24 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qtype: dns.TypeAAAA,
 	}, {
 		name:  "filtered",
-		qname: mappedDomain,
+		qname: domainMapped,
 		upsAns: answerMap{
 			dns.TypeA: {},
 			dns.TypeAAAA: {
 				sectionAnswer: {
-					newRR(t, mappedDomain, dns.TypeAAAA, 3600, net.ParseIP("64:ff9b::506:708")),
-					newRR(t, mappedDomain, dns.TypeCNAME, 3600, anotherDomain),
+					newRR(t, domainMapped, dns.TypeAAAA, 3600, net.ParseIP("64:ff9b::506:708")),
+					newRR(t, domainMapped, dns.TypeCNAME, 3600, domainAnother),
 				},
 			},
 		},
 		wantAns: []dns.RR{&dns.CNAME{
 			Hdr: dns.RR_Header{
-				Name:   mappedDomain,
+				Name:   domainMapped,
 				Rrtype: dns.TypeCNAME,
 				Class:  dns.ClassINET,
 				Ttl:    3600,
 			},
-			Target: anotherDomain,
+			Target: domainAnother,
 		}},
 		qtype: dns.TypeAAAA,
 	}, {
@@ -325,7 +329,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				Class:  dns.ClassINET,
 				Ttl:    3600,
 			},
-			Ptr: pointedDomain,
+			Ptr: domainPointed,
 		}},
 		qtype: dns.TypePTR,
 	}, {
@@ -333,7 +337,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qname: ptrGlobDomain,
 		upsAns: answerMap{
 			dns.TypePTR: {
-				sectionAnswer: {newRR(t, ptrGlobDomain, dns.TypePTR, 3600, globDomain)},
+				sectionAnswer: {newRR(t, ptrGlobDomain, dns.TypePTR, 3600, domainGlob)},
 			},
 		},
 		wantAns: []dns.RR{&dns.PTR{
@@ -343,9 +347,49 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				Class:  dns.ClassINET,
 				Ttl:    3600,
 			},
-			Ptr: globDomain,
+			Ptr: domainGlob,
 		}},
 		qtype: dns.TypePTR,
+	}, {
+		name:  "dns64_cname_chain_no_aaaa",
+		qname: fqdnCNAMEOnly, // e.g., "cname.chain."
+		upsAns: answerMap{
+			dns.TypeA: {
+				sectionAnswer: {
+					newRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
+					newRR(t, fqdnTerminal, dns.TypeA, 3600, someIPv4),
+				},
+			},
+			dns.TypeAAAA: {
+				sectionAnswer: {
+					newRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
+				},
+				sectionAuthority: {
+					newRR(t, fqdnTerminal, dns.TypeSOA, 300, nil),
+				},
+			},
+		},
+		wantAns: []dns.RR{
+			&dns.CNAME{
+				Hdr: dns.RR_Header{
+					Name:   fqdnCNAMEOnly,
+					Rrtype: dns.TypeCNAME,
+					Class:  dns.ClassINET,
+					Ttl:    3600,
+				},
+				Target: fqdnTerminal,
+			},
+			&dns.AAAA{
+				Hdr: dns.RR_Header{
+					Name:   fqdnTerminal,
+					Rrtype: dns.TypeAAAA,
+					Class:  dns.ClassINET,
+					Ttl:    maxDNS64SynTTL,
+				},
+				AAAA: mappedIPv6,
+			},
+		},
+		qtype: dns.TypeAAAA,
 	}}
 
 	for _, tc := range testCases {

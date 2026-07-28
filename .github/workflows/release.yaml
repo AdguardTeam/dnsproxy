@@ -1,8 +1,6 @@
 'env':
   'BASE_IMAGE': |-
     ${{ vars.BASE_IMAGE || 'adguard/go-builder:1.26.5--1' }}
-  'CACHE_BUSTER': |-
-    ${{ vars.CACHE_BUSTER || '0' }}
   'DIST_DIR': |-
     build
 'jobs':
@@ -32,7 +30,7 @@
             APP_VERSION=${{ github.ref_name }}
             BASE_IMAGE=${{ env.BASE_IMAGE }}
             BRANCH=${{ github.ref_name }}
-            CACHE_BUSTER=${{ env.CACHE_BUSTER }}
+            CACHE_BUSTER=${{ inputs.cache_buster || '0' }}
             DIST_DIR=${{ env.DIST_DIR }}
             REVISION=${{ github.sha }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
@@ -83,7 +81,13 @@
       - 'v*'
     'branches':
       - 'master'
-  'workflow_dispatch': null
+  'workflow_dispatch':
+    'inputs':
+      'cache_buster':
+        'default': ''
+        'description': |
+          Override to force re-run of cached stages (pass any unique value).
+        'type': 'string'
 # Permissions are disabled for all the jobs by default, and then overridden for
 # specific jobs if needed.  This is a recommended practice for security reasons,
 # and also allows to avoid mistakes with permissions when creating new jobs.

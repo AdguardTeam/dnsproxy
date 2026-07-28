@@ -3,7 +3,10 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 14
+# AdGuard-Project-Version: 19
+
+# TODO(a.garipov): Use set -o 'pipefail' when the image supports it
+set -e -f -u
 
 verbose="${VERBOSE:-0}"
 readonly verbose
@@ -11,15 +14,6 @@ readonly verbose
 if [ "$verbose" -gt '0' ]; then
 	set -x
 fi
-
-# Set $EXIT_ON_ERROR to zero to see all errors.
-if [ "${EXIT_ON_ERROR:-1}" -eq '0' ]; then
-	set +e
-else
-	set -e
-fi
-
-set -f -u
 
 # Source the common helpers, including not_found and run_linter.
 . ./scripts/make/helper.sh
@@ -65,7 +59,7 @@ blocklist_imports() {
 	import_or_tab="$(printf '^\\(import \\|\t\\)')"
 	readonly import_or_tab
 
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		'(' -name '*.go' '!' -name '*.pb.go' ')' \
 		-exec \
@@ -93,7 +87,7 @@ blocklist_imports() {
 # NOTE:  Flag -H for grep is non-POSIX but all of Busybox, GNU, macOS, and
 # OpenBSD support it.
 method_const() {
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		-name '*.go' \
 		-exec \
@@ -114,10 +108,11 @@ method_const() {
 # use of filenames like client_manager.go.
 underscores() {
 	underscore_files="$(
-		find . \
+		find_with_ignore \
 			-type 'f' \
 			-name '*_*.go' \
-			'!' '(' -name '*_darwin.go' \
+			'!' '(' \
+			-name '*_darwin.go' \
 			-o -name '*_linux.go' \
 			-o -name '*_others.go' \
 			-o -name '*_plan9.go' \
@@ -136,6 +131,9 @@ underscores() {
 	fi
 }
 
+go="${GO:-go}"
+readonly go
+
 # TODO(a.garipov): Add an analyzer to look for `fallthrough`, `goto`, and `new`?
 
 # Checks
@@ -146,21 +144,31 @@ run_linter -e method_const
 
 run_linter -e underscores
 
-run_linter -e gofumpt --extra -e -l .
+run_linter -e "$go" tool gofumpt --extra -e -l .
 
-run_linter "${GO:-go}" vet ./...
+run_linter "$go" vet work
 
-run_linter govulncheck ./...
+# govulncheck is not strictly reproducible, because it queries the VulnDB, which
+# is updated constantly.  If a strictly reproducible lint is desired, for
+# example for Docker lint stages, set IGNORE_NON_REPRODUCIBLE to 1 to ignore the
+# exit code from govulncheck.
+if [ "${IGNORE_NON_REPRODUCIBLE:-0}" -gt '0' ]; then
+	# run_linter calls set +e, so don't mind the canceling effect of ||.
+	# shellcheck disable=SC2310
+	run_linter "$go" tool govulncheck work || :
+else
+	run_linter "$go" tool govulncheck work
+fi
 
-run_linter gocyclo --over 10 .
+run_linter "$go" tool gocyclo --over 10 .
 
-run_linter gocognit --over 10 .
+run_linter "$go" tool gocognit --over 10 .
 
-run_linter ineffassign ./...
+run_linter "$go" tool ineffassign work
 
-run_linter unparam ./...
+run_linter "$go" tool unparam work
 
-find . \
+find_with_ignore \
 	-type 'f' \
 	'(' \
 	-name 'Makefile' \
@@ -171,26 +179,22 @@ find . \
 	-o -name '*.yaml' \
 	-o -name '*.yml' \
 	')' \
-	-exec 'misspell' '--error' '{}' '+'
+	-exec "$go" 'tool' 'misspell' '--error' '{}' '+'
 
-run_linter nilness ./...
+run_linter "$go" tool nilness work
 
-run_linter fieldalignment ./...
+run_linter "$go" tool fieldalignment work
 
-run_linter -e shadow --strict ./...
+run_linter -e "$go" tool shadow --strict work
 
-# TODO(a.garipov):  Re-enable G115.
-run_linter gosec --exclude G115 --quiet ./...
+run_linter "$go" tool gosec --exclude-generated --fmt=golint --quiet work
 
-run_linter errcheck ./...
+run_linter "$go" tool errcheck work
 
-staticcheck_matrix='
-darwin:  GOOS=darwin
-freebsd: GOOS=freebsd
-linux:   GOOS=linux
-openbsd: GOOS=openbsd
-windows: GOOS=windows
-'
-readonly staticcheck_matrix
-
-printf '%s' "$staticcheck_matrix" | run_linter staticcheck --matrix ./...
+run_linter "$go" tool staticcheck --matrix work <<-'EOF'
+	darwin:  GOOS=darwin
+	freebsd: GOOS=freebsd
+	linux:   GOOS=linux
+	openbsd: GOOS=openbsd
+	windows: GOOS=windows
+EOF

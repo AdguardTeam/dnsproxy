@@ -39,19 +39,20 @@ type cache struct {
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
 	optimistic bool
+
+	// optimisticTTL is the default TTL for expired cached responses.
+	optimisticTTL time.Duration
+
+	// optimisticMaxAge is the maximum time entries remain in the cache when
+	// cache is optimistic.
+	optimisticMaxAge time.Duration
 }
 
 // cacheItem is a single cache entry.  It's a helper type to aggregate the
 // item-specific logic.
 type cacheItem struct {
-	// m contains the cached response.
-	m *dns.Msg
-
-	// u contains an address of the upstream which resolved m.
-	u string
-
-	// ttl is the time-to-live value for the item.  Should be set before calling
-	// [cacheItem.pack].
+	m   *dns.Msg
+	u   string
 	ttl uint32
 }
 
@@ -108,29 +109,28 @@ func (ci *cacheItem) pack() (packed []byte) {
 	return packed
 }
 
-// optimisticTTL is the default TTL for expired cached responses in seconds.
-const optimisticTTL = 10
-
 // unpackItem converts the data into cacheItem using req as a request message.
 // expired is true if the item exists but expired.  The expired cached items are
-// only returned if c is optimistic.  req must not be nil.
+// only returned if c is optimistic and optimistic max age is not exceeded.  req
+// must not be nil.
 func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bool) {
 	if len(data) < minPackedLen {
 		return nil, false
 	}
 
 	b := bytes.NewBuffer(data)
-	expire := int64(binary.BigEndian.Uint32(b.Next(expTimeSz)))
-	now := time.Now().Unix()
+	expire := time.Unix(int64(binary.BigEndian.Uint32(b.Next(expTimeSz))), 0)
+	now := time.Now()
 	var ttl uint32
-	if expired = expire <= now; expired {
-		if !c.optimistic {
+	if expired = now.After(expire); expired {
+		optimisticExpire := expire.Add(c.optimisticMaxAge)
+		if !c.optimistic || now.After(optimisticExpire) {
 			return nil, expired
 		}
 
-		ttl = optimisticTTL
+		ttl = uint32(c.optimisticTTL.Seconds())
 	} else {
-		ttl = uint32(expire - now)
+		ttl = uint32(expire.Unix() - now.Unix())
 	}
 
 	l := int(binary.BigEndian.Uint16(b.Next(packedMsgLenSz)))
@@ -173,22 +173,50 @@ func (p *Proxy) initCache() {
 
 	size := p.CacheSizeBytes
 	p.logger.Info("cache enabled", "size", size)
-
-	p.cache = newCache(size, p.EnableEDNSClientSubnet, p.CacheOptimistic)
+	p.cache = newCache(&cacheConfig{
+		size:             size,
+		optimisticTTL:    p.CacheOptimisticAnswerTTL,
+		optimisticMaxAge: p.CacheOptimisticMaxAge,
+		withECS:          p.EnableEDNSClientSubnet,
+		optimistic:       p.CacheOptimistic,
+	})
 	p.shortFlighter = newOptimisticResolver(p)
 }
 
+// cacheConfig is the configuration structure for [cache].
+type cacheConfig struct {
+	// size is the cache size in bytes.
+	size int
+
+	// optimisticTTL is the default TTL for expired cached responses when
+	// optimistic is enabled.
+	optimisticTTL time.Duration
+
+	// optimisticMaxAge is the maximum time entries remain in the cache when
+	// cache is optimistic.
+	optimisticMaxAge time.Duration
+
+	// withECS enables EDNS Client Subnet support for cache.
+	withECS bool
+
+	// optimistic defines if the cache should return expired items and resolve
+	// those again.
+	optimistic bool
+}
+
 // newCache returns a properly initialized cache.  logger must not be nil.
-func newCache(size int, withECS, optimistic bool) (c *cache) {
+func newCache(conf *cacheConfig) (c *cache) {
 	c = &cache{
 		itemsLock:           &sync.RWMutex{},
 		itemsWithSubnetLock: &sync.RWMutex{},
-		items:               createCache(size),
-		optimistic:          optimistic,
+		items:               createCache(conf.size),
+		optimistic:          conf.optimistic,
+		optimisticTTL:       conf.optimisticTTL,
+		optimisticMaxAge:    conf.optimisticMaxAge,
 	}
 
-	if withECS {
-		c.itemsWithSubnet = createCache(size)
+	if conf.withECS {
+		c.itemsWithSubnet = createCache(conf.size)
 	}
 
 	return c
@@ -298,14 +326,15 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 	return glcache.New(conf)
 }
 
-// set stores response and upstream in the cache.  l must not be nil.
-func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
+// set stores response and upstream for req in the cache.  u and l must not be
+// nil.
+func (c *cache) set(req, m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
 	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
 	}
 
-	key := msgToKey(m)
+	key := msgToKey(req)
 	packed := item.pack()
 
 	c.itemsLock.Lock()
@@ -315,16 +344,16 @@ func (c *cache) set(m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
 }
 
 // setWithSubnet stores response and upstream with subnet in the cache.  The
-// given subnet mask and IP address are used to calculate the cache key.  l must
-// not be nil.
-func (c *cache) setWithSubnet(m *dns.Msg, u upstream.Upstream, subnet *net.IPNet, l *slog.Logger) {
+// given subnet mask and IP address are used to calculate the cache key.  u, n,
+// and l must not be nil.
+func (c *cache) setWithSubnet(req, m *dns.Msg, u upstream.Upstream, n *net.IPNet, l *slog.Logger) {
 	item := c.respToItem(m, u, l)
 	if item == nil {
 		return
 	}
 
-	pref, _ := subnet.Mask.Size()
-	key := msgToKeyWithSubnet(m, subnet.IP.Mask(subnet.Mask), pref)
+	pref, _ := n.Mask.Size()
+	key := msgToKeyWithSubnet(req, n.IP.Mask(n.Mask), pref)
 	packed := item.pack()
 
 	c.itemsWithSubnetLock.Lock()
@@ -508,12 +537,16 @@ func respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL uint32) uint32 {
 func msgToKey(m *dns.Msg) (b []byte) {
 	q := m.Question[0]
 	name := q.Name
-	b = make([]byte, packedMsgLenSz+packedMsgLenSz+len(name))
+	b = make([]byte, 1+packedMsgLenSz+packedMsgLenSz+len(name))
+
+	// Put the DO flag.
+	opt := m.IsEdns0()
+	b[0] = mathutil.BoolToNumber[byte](opt != nil && opt.Do())
 
 	// Put QTYPE, QCLASS, and QNAME.
-	binary.BigEndian.PutUint16(b, q.Qtype)
-	binary.BigEndian.PutUint16(b[packedMsgLenSz:], q.Qclass)
-	copy(b[2*packedMsgLenSz:], strings.ToLower(name))
+	binary.BigEndian.PutUint16(b[1:], q.Qtype)
+	binary.BigEndian.PutUint16(b[1+packedMsgLenSz:], q.Qclass)
+	copy(b[1+2*packedMsgLenSz:], strings.ToLower(name))
 
 	return b
 }
@@ -545,9 +578,7 @@ func msgToKeyWithSubnet(m *dns.Msg, ecsIP net.IP, mask int) (key []byte) {
 	key[0] = mathutil.BoolToNumber[byte](opt != nil && opt.Do())
 
 	// Put Qtype.
-	//
-	// TODO(d.kolyshev): We should put Qtype in key[1:].
-	binary.BigEndian.PutUint16(key[:], q.Qtype)
+	binary.BigEndian.PutUint16(key[1:], q.Qtype)
 
 	// Put Qclass.
 	binary.BigEndian.PutUint16(key[1+packedMsgLenSz:], q.Qclass)

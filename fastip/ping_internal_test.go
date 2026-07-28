@@ -3,12 +3,11 @@ package fastip
 import (
 	"net"
 	"net/netip"
-	"runtime"
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -207,7 +206,7 @@ func TestFastestAddr_PingAll(t *testing.T) {
 	})
 
 	t.Run("fail", func(t *testing.T) {
-		port := getFreePort(t)
+		port := dnsproxytest.NewFreePort(t)
 
 		f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 		f.pingPorts = []uint{port}
@@ -217,26 +216,4 @@ func TestFastestAddr_PingAll(t *testing.T) {
 
 		assertCaching(t, f, ip, 1)
 	})
-}
-
-// getFreePort returns the port number no one listens on.
-//
-// TODO(e.burkov):  The logic is underwhelming.  Find a more accurate way.
-func getFreePort(t *testing.T) (port uint) {
-	t.Helper()
-
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	port = uint(l.Addr().(*net.TCPAddr).Port)
-
-	// Stop listening immediately.
-	require.NoError(t, l.Close())
-
-	// Sleeping for some time may be necessary on Windows.
-	if runtime.GOOS == "windows" {
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	return port
 }

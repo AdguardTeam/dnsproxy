@@ -72,6 +72,12 @@ func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 			InsecureSkipVerify:    opts.InsecureSkipVerify,
 			VerifyPeerCertificate: opts.VerifyServerCertificate,
 			VerifyConnection:      opts.VerifyConnection,
+			// Despite it is not strictly required by both RFC 8932 and
+			// RFC 9461, some DoT providers (e.g., NextDNS on non-standard port
+			// 443) rely on ALPN to differentiate DoT from DoH traffic.  This
+			// was figured out in this issue:
+			// https://github.com/AdguardTeam/dnsproxy/issues/510
+			NextProtos: []string{"dot"},
 		},
 		connsMu: &sync.Mutex{},
 		logger:  opts.Logger,

@@ -14,6 +14,8 @@ import (
 )
 
 // testResolver is the [Resolver] interface implementation for testing purposes.
+//
+// TODO(e.burkov):  Move to [dnsproxytest].
 type testResolver struct {
 	onLookupNetIP func(ctx context.Context, network, host string) (addrs []netip.Addr, err error)
 }

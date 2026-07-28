@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +30,7 @@ func TestUpstream_dnsOverTLS(t *testing.T) {
 	// Create a DoT upstream that we'll be testing.
 	addr := fmt.Sprintf("tls://127.0.0.1:%d", srv.port)
 	u, err := AddressToUpstream(addr, &Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: true,
 	})
 	require.NoError(t, err)
@@ -58,7 +57,7 @@ func TestUpstream_dnsOverTLS_race(t *testing.T) {
 	// Creating a DoT upstream that we will be testing.
 	addr := fmt.Sprintf("tls://127.0.0.1:%d", srv.port)
 	u, err := AddressToUpstream(addr, &Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: true,
 	})
 	require.NoError(t, err)
@@ -67,17 +66,14 @@ func TestUpstream_dnsOverTLS_race(t *testing.T) {
 	// Use this upstream from multiple goroutines in parallel.
 	wg := sync.WaitGroup{}
 	for range count {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			pt := testutil.PanicT{}
 
 			req := createTestMessage()
 			resp, uErr := u.Exchange(req)
 			require.NoError(pt, uErr)
 			requireResponse(pt, req, resp)
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -101,7 +97,7 @@ func TestUpstream_dnsOverTLS_poolReconnect(t *testing.T) {
 		Host:   srv.srv.Listener.Addr().String(),
 	}).String()
 	u, err := AddressToUpstream(addr, &Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: true,
 		VerifyConnection: func(state tls.ConnectionState) error {
 			lastState = state
@@ -150,7 +146,7 @@ func TestUpstream_dnsOverTLS_poolDeadline(t *testing.T) {
 		Host:   srv.srv.Listener.Addr().String(),
 	}).String()
 	u, err := AddressToUpstream(addr, &Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: true,
 	})
 	require.NoError(t, err)
@@ -253,7 +249,7 @@ func startDoTServer(tb testing.TB, handler dns.HandlerFunc) (s *testDoTServer) {
 		srv:       srv,
 		tlsConfig: tlsConfig,
 		rootCAs:   rootCAs,
-		port:      tcpListener.Addr().(*net.TCPAddr).Port,
+		port:      testutil.RequireTypeAssert[*net.TCPAddr](tb, tcpListener.Addr()).Port,
 	}
 	testutil.CleanupAndRequireSuccess(tb, s.Close)
 
@@ -277,7 +273,7 @@ func BenchmarkDoTUpstream(b *testing.B) {
 	}).String()
 
 	u, err := AddressToUpstream(addr, &Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: true,
 	})
 	require.NoError(b, err)

@@ -6,8 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
-	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,22 +17,14 @@ func TestFilteringHandler(t *testing.T) {
 	m := &sync.RWMutex{}
 	blockResponse := false
 
-	// Prepare the proxy server
-	dnsProxy := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		RequestHandler: func(p *Proxy, d *DNSContext) error {
+	reqHandler := &TestHandler{
+		OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (err error) {
 			m.Lock()
 			defer m.Unlock()
 
 			if !blockResponse {
-				// Use the default Resolve method if response is not blocked
-				return p.Resolve(d)
+				// Use the default Resolve method if response is not blocked.
+				return p.Resolve(ctx, d)
 			}
 
 			resp := dns.Msg{}
@@ -42,15 +33,22 @@ func TestFilteringHandler(t *testing.T) {
 
 			// Set the response right away
 			d.Res = &resp
+
 			return nil
 		},
+	}
+
+	// Prepare the proxy server.
+	dnsProxy := mustNew(t, &Config{
+		Logger:         testLogger,
+		TrustedProxies: defaultTrustedProxies,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		RequestHandler: reqHandler,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 	})
 
-	// Start listening
-	ctx := context.Background()
-	err := dnsProxy.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return dnsProxy.Shutdown(ctx) })
+	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Create a DNS-over-UDP client connection
 	addr := dnsProxy.Addr(ProtoUDP)

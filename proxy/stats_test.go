@@ -9,8 +9,8 @@ import (
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,7 +32,7 @@ func TestCollectQueryStats(t *testing.T) {
 		}
 	)
 
-	ups := &dnsproxytest.FakeUpstream{
+	ups := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			return (&dns.Msg{}).SetReply(req), nil
 		},
@@ -40,7 +40,7 @@ func TestCollectQueryStats(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	failUps := &dnsproxytest.FakeUpstream{
+	failUps := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			return nil, errors.Error("exchange error")
 		},
@@ -49,12 +49,10 @@ func TestCollectQueryStats(t *testing.T) {
 	}
 
 	conf := &proxy.Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
+		Logger:         testLogger,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		TrustedProxies: defaultTrustedProxies,
 	}
 
 	testCases := []struct {
@@ -220,7 +218,7 @@ func TestCollectQueryStats(t *testing.T) {
 
 			d := &proxy.DNSContext{Req: testReq}
 
-			err = p.Resolve(d)
+			err = p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 			tc.wantErr(t, err)
 
 			stats := d.QueryStatistics()
@@ -238,23 +236,23 @@ func TestCollectQueryStats(t *testing.T) {
 
 // assertQueryStats asserts the statistics using the provided parameters.
 func assertQueryStats(
-	t *testing.T,
+	tb testing.TB,
 	stats *proxy.QueryStatistics,
 	wantMainCount int,
 	wantMainErr assert.BoolAssertionFunc,
 	wantFallbackCount int,
 	wantFallbackErr assert.BoolAssertionFunc,
 ) {
-	t.Helper()
+	tb.Helper()
 
 	main := stats.Main()
-	assert.Lenf(t, main, wantMainCount, "main stats count")
+	assert.Lenf(tb, main, wantMainCount, "main stats count")
 
 	fallback := stats.Fallback()
-	assert.Lenf(t, fallback, wantFallbackCount, "fallback stats count")
+	assert.Lenf(tb, fallback, wantFallbackCount, "fallback stats count")
 
-	wantMainErr(t, isErrorInStats(main), "main err")
-	wantFallbackErr(t, isErrorInStats(fallback), "fallback err")
+	wantMainErr(tb, isErrorInStats(main), "main err")
+	wantFallbackErr(tb, isErrorInStats(fallback), "fallback err")
 }
 
 // isErrorInStats is a helper function for tests that returns true if the

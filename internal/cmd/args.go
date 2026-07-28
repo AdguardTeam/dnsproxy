@@ -8,10 +8,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/AdguardTeam/dnsproxy/internal/version"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/osutil"
 	"github.com/AdguardTeam/golibs/timeutil"
+	"github.com/AdguardTeam/golibs/version"
 )
 
 // Indexes to help with the [commandLineOptions] initialization.
@@ -42,6 +42,8 @@ const (
 	timeoutIdx
 	cacheMinTTLIdx
 	cacheMaxTTLIdx
+	cacheOptimisticAnswerTTLIdx
+	cacheOptimisticMaxAgeIdx
 	cacheSizeBytesIdx
 	ratelimitIdx
 	ratelimitSubnetLenIPv4Idx
@@ -65,6 +67,9 @@ const (
 	pendingRequestsEnabledIdx
 	dns64Idx
 	usePrivateRDNSIdx
+	dohRoutesIdx
+	dohInsecureEnabledIdx
+	dnssecEnabledIdx
 )
 
 // commandLineOption contains information about a command-line option: its long
@@ -119,7 +124,7 @@ var commandLineOptions = []*commandLineOption{
 	},
 	dnsCryptConfigPathIdx: {
 		description: "Path to a file with DNSCrypt configuration. You can generate one using " +
-			"https://github.com/ameshkov/dnscrypt.",
+			"https://github.com/AdguardTeam/dnscrypt.",
 		long:      "dnscrypt-config",
 		short:     "g",
 		valueType: "path",
@@ -246,6 +251,18 @@ var commandLineOptions = []*commandLineOption{
 		long:        "cache-max-ttl",
 		short:       "",
 		valueType:   "uint32",
+	},
+	cacheOptimisticAnswerTTLIdx: {
+		description: "Default TTL value for expired answers from optimistic cache",
+		long:        "optimistic-answer-ttl",
+		short:       "",
+		valueType:   "duration",
+	},
+	cacheOptimisticMaxAgeIdx: {
+		description: "Period of time after which entries are removed from the optimistic cache",
+		long:        "optimistic-max-age",
+		short:       "",
+		valueType:   "duration",
 	},
 	cacheSizeBytesIdx: {
 		description: "Cache size (in bytes). Default: 64k.",
@@ -391,6 +408,24 @@ var commandLineOptions = []*commandLineOption{
 		short:     "",
 		valueType: "",
 	},
+	dohRoutesIdx: {
+		description: "List of routes for DNS-over-HTTPS, can be specified multiple times.",
+		long:        "doh-routes",
+		short:       "",
+		valueType:   "route",
+	},
+	dohInsecureEnabledIdx: {
+		description: "If specified, the DoH server will skip TLS certificate verification.",
+		long:        "doh-insecure-enabled",
+		short:       "",
+		valueType:   "",
+	},
+	dnssecEnabledIdx: {
+		description: "Defines whether the proxy should set the DO bits in the upstream requests.",
+		long:        "dnssec",
+		short:       "",
+		valueType:   "",
+	},
 }
 
 // parseCmdLineOptions parses the command-line options.  conf must not be nil.
@@ -399,55 +434,60 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 
 	flags := flag.NewFlagSet(cmdName, flag.ContinueOnError)
 	for i, fieldPtr := range []any{
-		configPathIdx:             &conf.ConfigPath,
-		logOutputIdx:              &conf.LogOutput,
-		tlsCertPathIdx:            &conf.TLSCertPath,
-		tlsKeyPathIdx:             &conf.TLSKeyPath,
-		httpsServerNameIdx:        &conf.HTTPSServerName,
-		httpsUserinfoIdx:          &conf.HTTPSUserinfo,
-		dnsCryptConfigPathIdx:     &conf.DNSCryptConfigPath,
-		ednsAddrIdx:               &conf.EDNSAddr,
-		upstreamModeIdx:           &conf.UpstreamMode,
-		listenAddrsIdx:            &conf.ListenAddrs,
-		listenPortsIdx:            &conf.ListenPorts,
-		httpsListenPortsIdx:       &conf.HTTPSListenPorts,
-		tlsListenPortsIdx:         &conf.TLSListenPorts,
-		quicListenPortsIdx:        &conf.QUICListenPorts,
-		dnsCryptListenPortsIdx:    &conf.DNSCryptListenPorts,
-		upstreamsIdx:              &conf.Upstreams,
-		bootstrapDNSIdx:           &conf.BootstrapDNS,
-		fallbacksIdx:              &conf.Fallbacks,
-		privateRDNSUpstreamsIdx:   &conf.PrivateRDNSUpstreams,
-		dns64PrefixIdx:            &conf.DNS64Prefix,
-		privateSubnetsIdx:         &conf.PrivateSubnets,
-		bogusNXDomainIdx:          &conf.BogusNXDomain,
-		hostsFilesIdx:             &conf.HostsFiles,
-		timeoutIdx:                &conf.Timeout,
-		cacheMinTTLIdx:            &conf.CacheMinTTL,
-		cacheMaxTTLIdx:            &conf.CacheMaxTTL,
-		cacheSizeBytesIdx:         &conf.CacheSizeBytes,
-		ratelimitIdx:              &conf.Ratelimit,
-		ratelimitSubnetLenIPv4Idx: &conf.RatelimitSubnetLenIPv4,
-		ratelimitSubnetLenIPv6Idx: &conf.RatelimitSubnetLenIPv6,
-		udpBufferSizeIdx:          &conf.UDPBufferSize,
-		maxGoRoutinesIdx:          &conf.MaxGoRoutines,
-		tlsMinVersionIdx:          &conf.TLSMinVersion,
-		tlsMaxVersionIdx:          &conf.TLSMaxVersion,
-		helpIdx:                   &conf.help,
-		hostsFileEnabledIdx:       &conf.HostsFileEnabled,
-		pprofIdx:                  &conf.Pprof,
-		versionIdx:                &conf.Version,
-		verboseIdx:                &conf.Verbose,
-		insecureIdx:               &conf.Insecure,
-		ipv6DisabledIdx:           &conf.IPv6Disabled,
-		http3Idx:                  &conf.HTTP3,
-		cacheOptimisticIdx:        &conf.CacheOptimistic,
-		cacheIdx:                  &conf.Cache,
-		refuseAnyIdx:              &conf.RefuseAny,
-		enableEDNSSubnetIdx:       &conf.EnableEDNSSubnet,
-		pendingRequestsEnabledIdx: &conf.PendingRequestsEnabled,
-		dns64Idx:                  &conf.DNS64,
-		usePrivateRDNSIdx:         &conf.UsePrivateRDNS,
+		configPathIdx:               &conf.ConfigPath,
+		logOutputIdx:                &conf.LogOutput,
+		tlsCertPathIdx:              &conf.TLSCertPath,
+		tlsKeyPathIdx:               &conf.TLSKeyPath,
+		httpsServerNameIdx:          &conf.HTTPSServerName,
+		httpsUserinfoIdx:            &conf.HTTPSUserinfo,
+		dnsCryptConfigPathIdx:       &conf.DNSCryptConfigPath,
+		ednsAddrIdx:                 &conf.EDNSAddr,
+		upstreamModeIdx:             &conf.UpstreamMode,
+		listenAddrsIdx:              &conf.ListenAddrs,
+		listenPortsIdx:              &conf.ListenPorts,
+		httpsListenPortsIdx:         &conf.HTTPSListenPorts,
+		tlsListenPortsIdx:           &conf.TLSListenPorts,
+		quicListenPortsIdx:          &conf.QUICListenPorts,
+		dnsCryptListenPortsIdx:      &conf.DNSCryptListenPorts,
+		upstreamsIdx:                &conf.Upstreams,
+		bootstrapDNSIdx:             &conf.BootstrapDNS,
+		fallbacksIdx:                &conf.Fallbacks,
+		privateRDNSUpstreamsIdx:     &conf.PrivateRDNSUpstreams,
+		dns64PrefixIdx:              &conf.DNS64Prefix,
+		privateSubnetsIdx:           &conf.PrivateSubnets,
+		bogusNXDomainIdx:            &conf.BogusNXDomain,
+		hostsFilesIdx:               &conf.HostsFiles,
+		timeoutIdx:                  &conf.Timeout,
+		cacheMinTTLIdx:              &conf.CacheMinTTL,
+		cacheMaxTTLIdx:              &conf.CacheMaxTTL,
+		cacheOptimisticAnswerTTLIdx: &conf.OptimisticAnswerTTL,
+		cacheOptimisticMaxAgeIdx:    &conf.OptimisticMaxAge,
+		cacheSizeBytesIdx:           &conf.CacheSizeBytes,
+		ratelimitIdx:                &conf.Ratelimit,
+		ratelimitSubnetLenIPv4Idx:   &conf.RatelimitSubnetLenIPv4,
+		ratelimitSubnetLenIPv6Idx:   &conf.RatelimitSubnetLenIPv6,
+		udpBufferSizeIdx:            &conf.UDPBufferSize,
+		maxGoRoutinesIdx:            &conf.MaxGoRoutines,
+		tlsMinVersionIdx:            &conf.TLSMinVersion,
+		tlsMaxVersionIdx:            &conf.TLSMaxVersion,
+		helpIdx:                     &conf.help,
+		hostsFileEnabledIdx:         &conf.HostsFileEnabled,
+		pprofIdx:                    &conf.Pprof,
+		versionIdx:                  &conf.Version,
+		verboseIdx:                  &conf.Verbose,
+		insecureIdx:                 &conf.Insecure,
+		ipv6DisabledIdx:             &conf.IPv6Disabled,
+		http3Idx:                    &conf.HTTP3,
+		cacheOptimisticIdx:          &conf.CacheOptimistic,
+		cacheIdx:                    &conf.Cache,
+		refuseAnyIdx:                &conf.RefuseAny,
+		enableEDNSSubnetIdx:         &conf.EnableEDNSSubnet,
+		pendingRequestsEnabledIdx:   &conf.PendingRequestsEnabled,
+		dns64Idx:                    &conf.DNS64,
+		usePrivateRDNSIdx:           &conf.UsePrivateRDNS,
+		dohRoutesIdx:                &conf.DoHRoutes,
+		dohInsecureEnabledIdx:       &conf.DoHInsecureEnabled,
+		dnssecEnabledIdx:            &conf.DNSSECEnabled,
 	} {
 		addOption(flags, fieldPtr, commandLineOptions[i])
 	}
@@ -520,8 +560,8 @@ func addOption(flags *flag.FlagSet, fieldPtr any, o *commandLineOption) {
 		defineFlagVar(flags, (*uint32Value)(fieldPtr), o)
 	case *float32:
 		defineFlagVar(flags, (*float32Value)(fieldPtr), o)
-	case *[]int:
-		defineFlagVar(flags, newIntSliceValue(fieldPtr), o)
+	case *[]uint16:
+		defineFlagVar(flags, newUInt16SliceValue(fieldPtr), o)
 	case *[]string:
 		defineFlagVar(flags, newStringSliceValue(fieldPtr), o)
 	case *timeutil.Duration:

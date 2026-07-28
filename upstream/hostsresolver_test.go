@@ -8,7 +8,6 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/hostsfile"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,7 +34,8 @@ func TestHostsResolver_LookupNetIP(t *testing.T) {
 		},
 	}
 
-	hr, err := upstream.NewDefaultHostsResolver(fsys, slogutil.NewDiscardLogger())
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	hr, err := upstream.NewDefaultHostsResolver(ctx, fsys, testLogger)
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -93,7 +93,8 @@ func TestHostsResolver_LookupNetIP(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var addrs []netip.Addr
-			addrs, err = hr.LookupNetIP(context.Background(), tc.net, tc.host)
+			ctx = testutil.ContextWithTimeout(t, testTimeout)
+			addrs, err = hr.LookupNetIP(ctx, tc.net, tc.host)
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.wantAddrs, addrs)

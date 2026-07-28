@@ -10,19 +10,19 @@ elif [ "$verbose" -gt '1' ]; then
 	set -x
 fi
 
-set -e -f -u
+# Don't use -f, because we use globs in this script.
+set -e -u
 
 log() {
 	if [ "$verbose" -gt '0' ]; then
 		# Don't use quotes to get word splitting.
-		echo "$1" 1>&2
+		printf '%s\n' "$1" 1>&2
 	fi
 }
 
 log 'starting to build dnsproxy release'
 
-version="${VERSION:-}"
-readonly version
+. ./scripts/make/version.sh
 
 log "version '$version'"
 
@@ -73,6 +73,8 @@ windows  arm64     0   0"
 readonly platforms
 
 build() {
+	log "building: $1"
+
 	# Get the arguments.  Here and below, use the "build_" prefix for all
 	# variables local to function build.
 	build_dir="${dist}/${1}" \
@@ -99,16 +101,17 @@ build() {
 	#
 	# Don't use quotes with $build_par because we want an empty space if
 	# parallelism wasn't set.
-	env GOARCH="$build_arch" \
+	env \
+		APP_VERSION="$version" \
+		GOARCH="$build_arch" \
 		GOARM="${build_arm#0}" \
 		GOMIPS="${build_mips#0}" \
 		GOOS="$os" \
-		VERBOSE="$((verbose - 1))" \
-		VERSION="$version" \
 		OUT="$build_output" \
+		VERBOSE="$((verbose - 1))" \
 		sh ./scripts/make/go-build.sh
 
-	log "$build_output"
+	log "build output: $build_output"
 
 	# Prepare the build directory for archiving.
 	cp ./LICENSE ./README.md "$build_dir"
@@ -127,7 +130,7 @@ build() {
 		;;
 	esac
 
-	log "$build_archive"
+	log "build success: $build_archive"
 }
 
 log "starting builds"

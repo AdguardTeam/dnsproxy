@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,12 +12,14 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/httphdr"
+	"github.com/AdguardTeam/golibs/ioutil"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -98,14 +101,19 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
 		httpVersions = DefaultHTTPVersions
 	}
 
+	quicConf := &quic.Config{
+		KeepAlivePeriod: QUICKeepAlivePeriod,
+		TokenStore:      newQUICTokenStore(),
+	}
+
+	if opts.QUICTracer != nil {
+		quicConf.Tracer = opts.QUICTracer.TraceForConnection
+	}
+
 	ups := &dnsOverHTTPS{
-		getDialer: newDialerInitializer(addr, opts),
-		addr:      addr,
-		quicConf: &quic.Config{
-			KeepAlivePeriod: QUICKeepAlivePeriod,
-			TokenStore:      newQUICTokenStore(),
-			Tracer:          opts.QUICTracer,
-		},
+		getDialer:  newDialerInitializer(addr, opts),
+		addr:       addr,
+		quicConf:   quicConf,
 		quicConfMu: &sync.Mutex{},
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
@@ -146,21 +154,6 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
 
 // Exchange implements the [Upstream] interface for *dnsOverHTTPS.
 func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	// In order to maximize HTTP cache friendliness, DoH clients using media
-	// formats that include the ID field from the DNS message header, such as
-	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
-	//
-	// See https://www.rfc-editor.org/rfc/rfc8484.html.
-	id := req.Id
-	req.Id = 0
-	defer func() {
-		// Restore the original ID to not break compatibility with proxies.
-		req.Id = id
-		if resp != nil {
-			resp.Id = id
-		}
-	}()
-
 	// Check if there was already an active client before sending the request.
 	// We'll only attempt to re-connect if there was one.
 	client, isCached, err := p.getClient()
@@ -223,6 +216,7 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
 }
 
 // exchangeHTTPS logs the request and its result and calls exchangeHTTPSClient.
+// client and req must not be nil.
 func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *dns.Msg, err error) {
 	n := networkTCP
 	if isHTTP3(client) {
@@ -232,20 +226,47 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
 	logBegin(p.logger, p.addrRedacted, n, req)
 	defer func() { logFinish(p.logger, p.addrRedacted, n, err) }()
 
-	return p.exchangeHTTPSClient(client, req)
-}
-
-// exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
-// http.Client instance.
-func (p *dnsOverHTTPS) exchangeHTTPSClient(
-	client *http.Client,
-	req *dns.Msg,
-) (resp *dns.Msg, err error) {
 	buf, err := req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("packing message: %w", err)
 	}
 
+	// In order to maximize HTTP cache friendliness, DoH clients using media
+	// formats that include the ID field from the DNS message header, such as
+	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+	binary.BigEndian.PutUint16(buf, 0)
+
+	resp, err = p.exchangeHTTPSClient(client, buf)
+	if err != nil {
+		return nil, fmt.Errorf("exchanging: %w", err)
+	}
+
+	if resp.Id != 0 {
+		return nil, fmt.Errorf("unexpected non-zero id in response: %d", resp.Id)
+	}
+
+	// Restore the original request ID, since it was set to 0.
+	//
+	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+	resp.Id = req.Id
+
+	err = validateResponse(req, resp)
+	if err != nil {
+		return nil, fmt.Errorf("validating response: %w", err)
+	}
+
+	return resp, nil
+}
+
+// exchangeHTTPSClient sends the DNS query to a DoH resolver using the specified
+// http.Client instance.  buf is the packed DNS message that will be sent to the
+// resolver.  client must not be nil.
+func (p *dnsOverHTTPS) exchangeHTTPSClient(
+	client *http.Client,
+	buf []byte,
+) (resp *dns.Msg, err error) {
 	// It appears, that GET requests are more memory-efficient with Golang
 	// implementation of HTTP/2.
 	method := http.MethodGet
@@ -282,7 +303,8 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 	}
 	defer slogutil.CloseAndLog(httpReq.Context(), p.logger, httpResp.Body, slog.LevelDebug)
 
-	body, err := io.ReadAll(httpResp.Body)
+	limitBody := ioutil.LimitReader(httpResp.Body, dns.MaxMsgSize)
+	body, err := io.ReadAll(limitBody)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", p.addrRedacted, err)
 	}
@@ -307,11 +329,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
 		)
 	}
 
-	if resp.Id != req.Id {
-		err = dns.ErrId
-	}
-
-	return resp, err
+	return resp, nil
 }
 
 // shouldRetry checks what error we have received and returns true if we should
@@ -690,13 +708,7 @@ func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tl
 
 // supportsH3 returns true if HTTP/3 is supported by this upstream.
 func (p *dnsOverHTTPS) supportsH3() (ok bool) {
-	for _, v := range p.tlsConf.NextProtos {
-		if v == string(HTTPVersion3) {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(p.tlsConf.NextProtos, string(HTTPVersion3))
 }
 
 // supportsHTTP returns true if HTTP/1.1 or HTTP2 is supported by this upstream.

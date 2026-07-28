@@ -47,47 +47,48 @@ func (i *float32Value) String() (out string) {
 	return strconv.FormatFloat(float64(*i), 'f', 3, 32)
 }
 
-// intSliceValue represent a struct with a slice of integers that can be defined
-// as a flag for [flag.FlagSet].
-type intSliceValue struct {
-	// values is the pointer to a slice of integers to store parsed values.
-	values *[]int
+// uint16SliceValue represent a struct with a slice of uint16 values that can be
+// defined as a flag for [flag.FlagSet].
+type uint16SliceValue struct {
+	// values is the pointer to a slice of uint16 to store parsed values.
+	values *[]uint16
 
 	// isSet is false until the corresponding flag is met for the first time.
 	// When the flag is found, the default value is overwritten with zero value.
 	isSet bool
 }
 
-// newIntSliceValue returns a pointer to intSliceValue with the given value.
-func newIntSliceValue(p *[]int) (out *intSliceValue) {
-	return &intSliceValue{
+// newUInt16SliceValue returns a pointer to uint16SliceValue with the given
+// value.
+func newUInt16SliceValue(p *[]uint16) (out *uint16SliceValue) {
+	return &uint16SliceValue{
 		values: p,
 		isSet:  false,
 	}
 }
 
 // type check
-var _ flag.Value = (*intSliceValue)(nil)
+var _ flag.Value = (*uint16SliceValue)(nil)
 
-// Set implements the [flag.Value] interface for *intSliceValue.
-func (i *intSliceValue) Set(s string) (err error) {
-	v, err := strconv.Atoi(s)
+// Set implements the [flag.Value] interface for *uint16SliceValue.
+func (i *uint16SliceValue) Set(s string) (err error) {
+	v, err := strconv.ParseUint(s, 10, 16)
 	if err != nil {
-		return fmt.Errorf("parsing integer slice arg %q: %w", s, err)
+		return fmt.Errorf("parsing uint16 slice arg %q: %w", s, err)
 	}
 
 	if !i.isSet {
 		i.isSet = true
-		*i.values = []int{}
+		*i.values = []uint16{}
 	}
 
-	*i.values = append(*i.values, v)
+	*i.values = append(*i.values, uint16(v))
 
 	return nil
 }
 
-// String implements the [flag.Value] interface for *intSliceValue.
-func (i *intSliceValue) String() (out string) {
+// String implements the [flag.Value] interface for *uint16SliceValue.
+func (i *uint16SliceValue) String() (out string) {
 	if i == nil || i.values == nil {
 		return ""
 	}
@@ -98,7 +99,7 @@ func (i *intSliceValue) String() (out string) {
 			stringutil.WriteToBuilder(sb, ",")
 		}
 
-		stringutil.WriteToBuilder(sb, strconv.Itoa(v))
+		stringutil.WriteToBuilder(sb, strconv.FormatUint(uint64(v), 10))
 	}
 
 	return sb.String()

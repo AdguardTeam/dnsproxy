@@ -1,9 +1,12 @@
 #!/bin/sh
 
 # This comment is used to simplify checking local copies of the script.  Bump
-# this number every time a remarkable change is made to this script.
+# this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 8
+# AdGuard-Project-Version: 14
+
+# Don't use -f, because we use globs in this script.
+set -e -o 'pipefail' -u
 
 verbose="${VERBOSE:-0}"
 readonly verbose
@@ -11,16 +14,6 @@ readonly verbose
 if [ "$verbose" -gt '0' ]; then
 	set -x
 fi
-
-# Set $EXIT_ON_ERROR to zero to see all errors.
-if [ "${EXIT_ON_ERROR:-1}" -eq '0' ]; then
-	set +e
-else
-	set -e
-fi
-
-# We don't need glob expansions and we want to see errors about unset variables.
-set -f -u
 
 # Source the common helpers, including not_found.
 . ./scripts/make/helper.sh
@@ -33,15 +26,16 @@ trailing_newlines() (
 	nl="$(printf '\n')"
 	readonly nl
 
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		'!' '(' \
-		-name '*.out' \
+		-name '*.bin' \
+		-o -name '*.exe' \
+		-o -name '*.out' \
 		-o -name '*.test' \
 		-o -name 'dnsproxy' \
-		-o -path './.git/*' \
-		-o -path './bin/*' \
 		')' \
+		-print \
 		| while read -r f; do
 			final_byte="$(tail -c -1 "$f")"
 			if [ "$final_byte" != "$nl" ]; then
@@ -53,18 +47,42 @@ trailing_newlines() (
 # trailing_whitespace is a simple check that makes sure that there are no
 # trailing whitespace in plain-text files.
 trailing_whitespace() {
-	find . \
+	find_with_ignore \
 		-type 'f' \
 		'!' '(' \
-		-name '*.out' \
+		-name '*.bin' \
+		-o -name '*.exe' \
+		-o -name '*.out' \
 		-o -name '*.test' \
 		-o -name 'dnsproxy' \
-		-o -path './.git/*' \
-		-o -path './bin/*' \
 		')' \
+		-print \
 		| while read -r f; do
-			grep -e '[[:space:]]$' -n -- "$f" \
+			{ grep -e '[[:space:]]$' -n -- "$f" || :; } \
 				| sed -e "s:^:${f}\::" -e 's/ \+$/>>>&<<</'
+		done
+}
+
+# valid_json check ensures that all the .json files in the project are valid and
+# well-formatted according to the jq.
+valid_json() {
+	find_with_ignore \
+		-type 'f' \
+		-name '*.json' \
+		-print \
+		| while read -r f; do
+			validation_msg="$(jq empty "$f" 2>&1)"
+			exitcode="$?"
+
+			if [ "$exitcode" -ne '0' ]; then
+				printf 'file %s: %s\n' "$f" "$validation_msg"
+
+				continue
+			fi
+
+			if ! jq . "$f" | diff -u "$f" - >/dev/null 2>&1; then
+				printf 'file %s has formatting issues\n' "$f"
+			fi
 		done
 }
 
@@ -72,7 +90,17 @@ run_linter -e trailing_newlines
 
 run_linter -e trailing_whitespace
 
-find . \
+run_linter -e valid_json
+
+go="${GO:-go}"
+readonly go
+
+"$go" tool yamlfmt \
+	--lint \
+	./.github/workflows/*.yaml \
+	;
+
+find_with_ignore \
 	-type 'f' \
 	'(' \
 	-name 'Makefile' \
@@ -82,4 +110,5 @@ find . \
 	-o -name '*.yaml' \
 	-o -name '*.yml' \
 	')' \
-	-exec 'misspell' '--error' '{}' '+'
+	-exec "$go" 'tool' 'misspell' '--error' '{}' '+' \
+	;

@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
@@ -14,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -24,27 +26,40 @@ import (
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/qlog"
+	"github.com/quic-go/quic-go/qlogwriter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// testTimeout is common timeout for tests.
+const testTimeout = 2 * time.Second
+
+// testLogger is common logger for tests.
+var testLogger = slogutil.NewDiscardLogger()
+
 // TODO(ameshkov): Make tests here not depend on external servers.
 
-// TODO(d.kolyshev): Remove this after quic-go has migrated to slog.
 func TestMain(m *testing.M) {
 	// See https://github.com/quic-go/quic-go/issues/4228.
 	errors.Check(os.Setenv("QUIC_GO_DISABLE_GSO", "1"))
 
-	testutil.DiscardLogOutput(m)
+	os.Exit(m.Run())
 }
 
+// TODO(a.garipov):  Refactor.
 func TestUpstream_bootstrapTimeout(t *testing.T) {
 	t.Parallel()
 
-	const (
+	const count = 10
+
+	var timeout time.Duration
+	if runtime.GOOS == "windows" {
+		timeout = 300 * time.Millisecond
+	} else {
 		timeout = 100 * time.Millisecond
-		count   = 10
-	)
+	}
 
 	// Test listener that never accepts connections to emulate faulty bootstrap.
 	udpListener, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -52,14 +67,14 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, udpListener.Close)
 
 	rslv, err := NewUpstreamResolver(udpListener.LocalAddr().String(), &Options{
-		Logger:  slogutil.NewDiscardLogger(),
+		Logger:  testLogger,
 		Timeout: timeout,
 	})
 	require.NoError(t, err)
 
 	// Create an upstream that uses this faulty bootstrap.
 	u, err := AddressToUpstream("tls://random-domain-name", &Options{
-		Logger:    slogutil.NewDiscardLogger(),
+		Logger:    testLogger,
 		Bootstrap: NewCachingResolver(rslv),
 		Timeout:   timeout,
 	})
@@ -67,9 +82,10 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	ch := make(chan int, count)
-	abort := make(chan string, 1)
-	for i := range count {
-		go func(idx int) {
+	for idx := range count {
+		go func() {
+			pt := testutil.NewPanicT(t)
+
 			t.Logf("Start %d", idx)
 			req := createTestMessage()
 
@@ -77,32 +93,24 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 			_, rErr := u.Exchange(req)
 			elapsed := time.Since(start)
 
-			if rErr == nil {
-				// Must not happen since bootstrap server cannot work.
-				abort <- fmt.Sprintf("the upstream must have timed out: %v", rErr)
-			}
+			// Require an error, since the bootstrap server cannot work.
+			require.Error(pt, rErr)
 
 			// Check that the test didn't take too much time compared to the
 			// configured timeout.  The actual elapsed time may be higher than
-			// the timeout due to the execution environment, 3 is an arbitrarily
+			// the timeout due to the execution environment; 3 is an arbitrarily
 			// chosen multiplier to account for that.
-			if elapsed > 3*timeout {
-				abort <- fmt.Sprintf(
-					"exchange took more time than the configured timeout: %s",
-					elapsed,
-				)
-			}
+			require.Less(pt, elapsed, 3*timeout)
+
 			t.Logf("Finished %d", idx)
 			ch <- idx
-		}(i)
+		}()
 	}
 
 	for range count {
 		select {
 		case res := <-ch:
 			t.Logf("Got result from %d", res)
-		case msg := <-abort:
-			t.Fatalf("Aborted from the goroutine: %s", msg)
 		case <-time.After(timeout * 10):
 			t.Fatalf("No response in time")
 		}
@@ -114,7 +122,7 @@ func TestUpstreams(t *testing.T) {
 
 	const upsTimeout = 10 * time.Second
 
-	l := slogutil.NewDiscardLogger()
+	l := testLogger
 
 	googleRslv, err := NewUpstreamResolver("8.8.8.8:53", &Options{
 		Logger:  l,
@@ -172,9 +180,6 @@ func TestUpstreams(t *testing.T) {
 	}, {
 		bootstrap: nil,
 		address:   "https://dns.google/dns-query",
-	}, {
-		bootstrap: nil,
-		address:   "https://doh.opendns.com/dns-query",
 	}, {
 		// AdGuard DNS (DNSCrypt)
 		bootstrap: nil,
@@ -234,7 +239,7 @@ func TestAddressToUpstream(t *testing.T) {
 	require.NoError(t, err)
 
 	opt := &Options{
-		Logger:    slogutil.NewDiscardLogger(),
+		Logger:    testLogger,
 		Bootstrap: NewCachingResolver(cloudflareRslv),
 	}
 
@@ -376,24 +381,20 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 	}, {
 		address:   "tls://one.one.one.one/",
 		bootstrap: "https://1.1.1.1/dns-query",
-	}, {
-		address: "tls://one.one.one.one/",
-		// Cisco OpenDNS
-		bootstrap: "sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ",
 	}}
 
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
 			rslv, err := NewUpstreamResolver(tc.bootstrap, &Options{
-				Logger:  slogutil.NewDiscardLogger(),
-				Timeout: timeout,
+				Logger:  testLogger,
+				Timeout: testTimeout,
 			})
 			require.NoError(t, err)
 
 			u, err := AddressToUpstream(tc.address, &Options{
-				Logger:    slogutil.NewDiscardLogger(),
+				Logger:    testLogger,
 				Bootstrap: NewCachingResolver(rslv),
-				Timeout:   timeout,
+				Timeout:   testTimeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -420,9 +421,6 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		address:   "https://1dot1dot1dot1.cloudflare-dns.com/dns-query",
 		bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 	}, {
-		address:   "https://doh.opendns.com:443/dns-query",
-		bootstrap: []string{"1.2.3.4:79", "8.8.8.8:53"},
-	}, {
 		// Cloudflare DNS (DoH)
 		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
 		bootstrap: []string{"8.8.8.8:53", "8.8.8.1:53"},
@@ -432,7 +430,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		bootstrap: []string{"1.2.3.4:55", "8.8.8.8"},
 	}}
 
-	l := slogutil.NewDiscardLogger()
+	l := testLogger
 
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
@@ -442,7 +440,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			for _, b := range tc.bootstrap {
 				r, err := NewUpstreamResolver(b, &Options{
 					Logger:  l,
-					Timeout: timeout,
+					Timeout: testTimeout,
 				})
 				require.NoError(t, err)
 
@@ -452,7 +450,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			u, err := AddressToUpstream(tc.address, &Options{
 				Logger:    l,
 				Bootstrap: rslv,
-				Timeout:   timeout,
+				Timeout:   testTimeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -519,9 +517,9 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 			t.Parallel()
 
 			opts := &Options{
-				Logger:             slogutil.NewDiscardLogger(),
+				Logger:             testLogger,
 				Bootstrap:          tc.rslv,
-				Timeout:            timeout,
+				Timeout:            testTimeout,
 				InsecureSkipVerify: true,
 			}
 			u, uErr := AddressToUpstream(tc.address, opts)
@@ -596,14 +594,14 @@ func TestAddPort(t *testing.T) {
 }
 
 // checkUpstream sends a test message to the upstream and checks the result.
-func checkUpstream(t *testing.T, u Upstream, addr string) {
-	t.Helper()
+func checkUpstream(tb testing.TB, u Upstream, addr string) {
+	tb.Helper()
 
 	req := createTestMessage()
 	reply, err := u.Exchange(req)
-	require.NoErrorf(t, err, "couldn't talk to upstream %s", addr)
+	require.NoErrorf(tb, err, "couldn't talk to upstream %s", addr)
 
-	requireResponse(t, req, reply)
+	requireResponse(tb, req, reply)
 }
 
 // checkRaceCondition runs several goroutines in parallel and each of them calls
@@ -768,4 +766,111 @@ func publicKey(priv any) (pub any) {
 	default:
 		return nil
 	}
+}
+
+// testTracer collects QUIC connection traces for testing.
+type testTracer struct {
+	tracers []*quicTracer
+}
+
+// TraceForConnection creates a tracer for a QUIC connection.
+func (t *testTracer) TraceForConnection(
+	_ context.Context,
+	_ bool,
+	_ quic.ConnectionID,
+) (tracer qlogwriter.Trace) {
+	newTracer := &quicTracer{recorder: &headerRecorder{}}
+	t.tracers = append(t.tracers, newTracer)
+
+	return newTracer
+}
+
+// connectionsInfo returns info for all traced connections.
+func (t *testTracer) connectionsInfo() (res []*connInfo) {
+	res = make([]*connInfo, 0, len(t.tracers))
+	for _, tracer := range t.tracers {
+		hdrs := tracer.recorder.headersWithLock()
+
+		res = append(res, &connInfo{
+			headers: hdrs,
+		})
+	}
+
+	return res
+}
+
+// connInfo contains all trace event headers recorded for single connection.
+type connInfo struct {
+	headers []qlog.PacketHeader
+}
+
+// is0RTT returns true if the connection used 0-RTT packets.
+func (c *connInfo) is0RTT() (ok bool) {
+	for _, hdr := range c.headers {
+		if hdr.PacketType == qlog.PacketType0RTT {
+			return true
+		}
+	}
+
+	return false
+}
+
+// quicTracer is an implementation of [qlogwriter.Trace] for testing.
+type quicTracer struct {
+	// recorder is used for recording trace events.  It must not be nil.
+	recorder *headerRecorder
+}
+
+// type check
+var _ qlogwriter.Trace = (*quicTracer)(nil)
+
+// AddProducer implements the [qlogwriter.Trace] interface for *quicTracer.
+func (q *quicTracer) AddProducer() (recorder qlogwriter.Recorder) {
+	return q.recorder
+}
+
+// SupportsSchemas implements the [qlogwriter.Trace] interface for *quicTracer.
+func (q *quicTracer) SupportsSchemas(string) (ok bool) {
+	return false
+}
+
+// Recorder is an implementation of [qlogwriter.Recorder] that records
+// [qlog.PacketSent] events headers.
+type headerRecorder struct {
+	headers []qlog.PacketHeader
+	mx      sync.Mutex
+}
+
+// type check
+var _ qlogwriter.Recorder = (*headerRecorder)(nil)
+
+// RecordEvent implements the [qlogwriter.Recorder] interface for
+// *headerRecorder.
+func (r *headerRecorder) RecordEvent(ev qlogwriter.Event) {
+	event, ok := ev.(qlog.PacketSent)
+	if !ok {
+		return
+	}
+
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	r.headers = append(r.headers, event.Header)
+}
+
+// headersWithLock returns copy of recorded headers.  It is safe for concurrent
+// use.
+func (r *headerRecorder) headersWithLock() (res []qlog.PacketHeader) {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	res = r.headers
+
+	return res
+}
+
+// Close implements the [qlogwriter.Recorder] interface for
+// *headerRecorder.
+func (*headerRecorder) Close() (err error) {
+	return nil
 }

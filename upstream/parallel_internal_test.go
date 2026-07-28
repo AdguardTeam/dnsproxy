@@ -6,14 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
-
-const (
-	timeout = 2 * time.Second
 )
 
 // TestExchangeParallel launches several parallel exchanges
@@ -23,8 +19,8 @@ func TestExchangeParallel(t *testing.T) {
 
 	for _, s := range upstreamList {
 		u, err := AddressToUpstream(s, &Options{
-			Logger:  slogutil.NewDiscardLogger(),
-			Timeout: timeout,
+			Logger:  testLogger,
+			Timeout: testTimeout,
 		})
 		if err != nil {
 			t.Fatalf("cannot create upstream: %s", err)
@@ -45,7 +41,7 @@ func TestExchangeParallel(t *testing.T) {
 
 	requireResponse(t, req, resp)
 	elapsed := time.Since(start)
-	if elapsed > timeout {
+	if elapsed > testTimeout {
 		t.Fatalf("exchange took more time than the configured timeout: %v", elapsed)
 	}
 }
@@ -141,16 +137,14 @@ func TestExchangeAll(t *testing.T) {
 	resp := res[0].Resp
 	require.NotNil(t, resp)
 	require.NotEmpty(t, resp.Answer)
-	require.IsType(t, new(dns.A), resp.Answer[0])
 
-	ip := resp.Answer[0].(*dns.A).A
+	ip := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 	assert.Equal(t, ansAddr.AsSlice(), []byte(ip))
 
 	resp = res[1].Resp
 	require.NotNil(t, resp)
 	require.NotEmpty(t, resp.Answer)
-	require.IsType(t, new(dns.A), resp.Answer[0])
 
-	ip = resp.Answer[0].(*dns.A).A
+	ip = testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 	assert.Equal(t, delayedAnsAddr.AsSlice(), []byte(ip))
 }

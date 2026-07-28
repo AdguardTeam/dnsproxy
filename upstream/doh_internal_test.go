@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -77,7 +76,7 @@ func TestUpstreamDoH(t *testing.T) {
 
 			var lastState tls.ConnectionState
 			opts := &Options{
-				Logger:             slogutil.NewDiscardLogger(),
+				Logger:             testLogger,
 				InsecureSkipVerify: true,
 				HTTPVersions:       tc.httpVersions,
 				VerifyConnection: func(state tls.ConnectionState) (err error) {
@@ -101,7 +100,7 @@ func TestUpstreamDoH(t *testing.T) {
 				checkUpstream(t, u, address)
 			}
 
-			doh := u.(*dnsOverHTTPS)
+			doh := testutil.RequireTypeAssert[*dnsOverHTTPS](t, u)
 
 			// Trigger re-connection.
 			doh.client = nil
@@ -186,7 +185,7 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 			// race test.
 			address := fmt.Sprintf("https://%s/dns-query", srv.addr)
 			opts := &Options{
-				Logger:             slogutil.NewDiscardLogger(),
+				Logger:             testLogger,
 				InsecureSkipVerify: true,
 				HTTPVersions:       tc.httpVersions,
 				Timeout:            timeout,
@@ -232,7 +231,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 
 				var err error
 				u, err = AddressToUpstream(upsAddr, &Options{
-					Logger:             slogutil.NewDiscardLogger(),
+					Logger:             testLogger,
 					InsecureSkipVerify: true,
 					HTTPVersions:       tc.httpVersions,
 					Timeout:            100 * time.Millisecond,
@@ -278,17 +277,17 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	})
 
 	// Create a DNS-over-HTTPS upstream.
-	tracer := &quicTracer{}
+	tracer := &testTracer{}
 	address := fmt.Sprintf("h3://%s/dns-query", srv.addr)
 	u, err := AddressToUpstream(address, &Options{
-		Logger:             slogutil.NewDiscardLogger(),
+		Logger:             testLogger,
 		InsecureSkipVerify: true,
-		QUICTracer:         tracer.TracerForConnection,
+		QUICTracer:         tracer,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
-	uh := u.(*dnsOverHTTPS)
+	uh := testutil.RequireTypeAssert[*dnsOverHTTPS](t, u)
 	req := createTestMessage()
 
 	// Trigger connection to a DoH3 server.
@@ -313,7 +312,7 @@ func TestUpstreamDoH_0RTT(t *testing.T) {
 	requireResponse(t, req, resp)
 
 	// Check traced connections info.
-	conns := tracer.getConnectionsInfo()
+	conns := tracer.connectionsInfo()
 	require.Len(t, conns, 2)
 
 	// Examine the first connection (no 0-RTT there).
@@ -421,7 +420,7 @@ func startDoHServer(
 	}()
 
 	// Get the real address that the listener now listens to.
-	tcpAddr = tcpListen.Addr().(*net.TCPAddr)
+	tcpAddr = testutil.RequireTypeAssert[*net.TCPAddr](t, tcpListen.Addr())
 
 	var serverH3 *http3.Server
 	var listenerH3 *quic.EarlyListener

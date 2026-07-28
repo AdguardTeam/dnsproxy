@@ -1,8 +1,7 @@
 # DNS Proxy <!-- omit in toc -->
 
-[![Code Coverage](https://img.shields.io/codecov/c/github/AdguardTeam/dnsproxy/master.svg)](https://codecov.io/github/AdguardTeam/dnsproxy?branch=master)
+[![Go Reference](https://pkg.go.dev/badge/github.com/AdguardTeam/dnsproxy.svg)](https://pkg.go.dev/github.com/AdguardTeam/dnsproxy)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AdguardTeam/dnsproxy)](https://goreportcard.com/report/AdguardTeam/dnsproxy)
-[![Go Doc](https://godoc.org/github.com/AdguardTeam/dnsproxy?status.svg)](https://godoc.org/github.com/AdguardTeam/dnsproxy)
 
 A simple DNS proxy server that supports all existing DNS protocols including
 `DNS-over-TLS`, `DNS-over-HTTPS`, `DNSCrypt`, and `DNS-over-QUIC`. Moreover,
@@ -37,7 +36,7 @@ There are several options how to install `dnsproxy`.
 
 ## How to build
 
-You will need Go 1.24 or later.
+You will need Go 1.26 or later.
 
 ```shell
 make build
@@ -63,12 +62,22 @@ Usage of ./dnsproxy:
         Cache size (in bytes). Default: 64k.
   --config-path=path
         YAML configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
+  --dnssec
+        Defines whether the proxy should set the DO bits in the upstream requests.  Default: true.
+  --doh-insecure-enabled
+        If specified, the DoH server will skip TLS certificate verification.
+  --doh-routes
+        Routes for DNS-over-HTTPS.  If not specified, the default routes are registered:
+        - "GET /", deprecated and will soon be removed,
+        - "POST /", deprecated and will soon be removed.
+        - "GET /dns-query",
+        - "POST /dns-query".
   --dns64
         If specified, dnsproxy will act as a DNS64 server.
   --dns64-prefix=subnet
         Prefix used to handle DNS64. If not specified, dnsproxy uses the 'Well-Known Prefix' 64:ff9b::.  Can be specified multiple times.
   --dnscrypt-config=path/-g path
-        Path to a file with DNSCrypt configuration. You can generate one using https://github.com/ameshkov/dnscrypt.
+        Path to a file with DNSCrypt configuration. You can generate one using https://github.com/AdguardTeam/dnscrypt.
   --dnscrypt-port=port/-y port
         Listening ports for DNSCrypt.
   --edns
@@ -99,6 +108,10 @@ Usage of ./dnsproxy:
         Listening addresses.
   --max-go-routines=uint
         Set the maximum number of go routines. A zero value will not not set a maximum.
+  --optimistic-answer-ttl
+        Default TTL value for expired DNS entries in optimistic cache.  Default: 30s
+  --optimistic-max-age
+        Period of time after which entries are removed from optimistic cache in human-readable form. Default: 12h.
   --output=path/-o path
         Path to the log file.
   --pending-requests-enabled
@@ -278,7 +291,9 @@ Runs a DNSCrypt proxy on `127.0.0.1:443`.
 ```
 
 > [!TIP]
-> In order to run a DNSCrypt proxy, you need to obtain DNSCrypt configuration first. You can use https://github.com/ameshkov/dnscrypt command-line tool to do that with a command like this `./dnscrypt generate --provider-name=2.dnscrypt-cert.example.org --out=dnscrypt-config.yaml`.
+> In order to run a DNSCrypt proxy, you need to obtain DNSCrypt configuration first. You can use [dnscrypt][dnscrypt] command-line tool to do that with a command like this `./dnscrypt generate --provider-name=2.dnscrypt-cert.example.org --out=dnscrypt-config.yaml`.
+
+[dnscrypt]: https://github.com/AdguardTeam/dnscrypt
 
 ### Additional features
 

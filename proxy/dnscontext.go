@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 )
@@ -165,6 +165,9 @@ func (dctx *DNSContext) scrub() {
 	}
 
 	// We should guarantee that all the values we need are calculated.
+	//
+	// TODO(e.burkov):  It's theoretically guaranteed already, investigate the
+	// need to this call.
 	dctx.calcFlagsAndSize()
 
 	// RFC-6891 (https://tools.ietf.org/html/rfc6891) states that response
@@ -231,7 +234,11 @@ func NewCustomUpstreamConfig(
 	var customCache *cache
 	if cacheEnabled {
 		// TODO(d.kolyshev): Support optimistic with newOptimisticResolver.
-		customCache = newCache(cacheSize, enableEDNSClientSubnet, false)
+		customCache = newCache(&cacheConfig{
+			size:       cacheSize,
+			withECS:    enableEDNSClientSubnet,
+			optimistic: false,
+		})
 	}
 
 	return &CustomUpstreamConfig{

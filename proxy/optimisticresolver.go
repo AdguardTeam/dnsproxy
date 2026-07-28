@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"log/slog"
-	"sync"
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/syncutil"
 )
 
 // cachingResolver is the DNS resolver that is also able to cache responses.
@@ -24,9 +24,12 @@ type cachingResolver interface {
 // type check
 var _ cachingResolver = (*Proxy)(nil)
 
+// unit is a convenient alias for struct{}.
+type unit = struct{}
+
 // optimisticResolver is used to eventually resolve expired cached requests.
 type optimisticResolver struct {
-	reqs *sync.Map
+	reqs *syncutil.Map[string, unit]
 	cr   cachingResolver
 }
 
@@ -34,18 +37,17 @@ type optimisticResolver struct {
 // cr must not be nil.
 func newOptimisticResolver(cr cachingResolver) (s *optimisticResolver) {
 	return &optimisticResolver{
-		reqs: &sync.Map{},
+		reqs: syncutil.NewMap[string, unit](),
 		cr:   cr,
 	}
 }
-
-// unit is a convenient alias for struct{}.
-type unit = struct{}
 
 // resolveOnce tries to resolve the request from dctx but only a single request
 // with the same key at the same period of time.  It runs in a separate
 // goroutine.  Do not pass the *DNSContext which is used elsewhere since it
 // isn't intended to be used concurrently.
+//
+// TODO(e.burkov):  Pass the context.
 func (s *optimisticResolver) resolveOnce(dctx *DNSContext, key []byte, l *slog.Logger) {
 	defer slogutil.RecoverAndLog(context.TODO(), l)
 

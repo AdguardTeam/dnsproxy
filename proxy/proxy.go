@@ -12,15 +12,16 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/fastip"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/contextutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -28,9 +29,7 @@ import (
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/AdguardTeam/golibs/validate"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
-	gocache "github.com/patrickmn/go-cache"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
@@ -58,6 +57,9 @@ const (
 	// ProtoDNSCrypt is the DNSCrypt protocol.
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
+
+// logKeyProto is the key for the DNS protocol in logs.
+const logKeyProto = "proto"
 
 // Proxy combines the proxy server state and configuration.
 //
@@ -89,17 +91,14 @@ type Proxy struct {
 	// messages constructs DNS messages.
 	messages MessageConstructor
 
-	// beforeRequestHandler handles the request's context before it is resolved.
-	beforeRequestHandler BeforeRequestHandler
+	// requestHandler handles the DNS request.  It is never nil.
+	requestHandler Handler
 
-	// dnsCryptServer serves DNSCrypt queries.
-	dnsCryptServer *dnscrypt.Server
+	// dnsCryptServers serve DNSCrypt queries.
+	dnsCryptServers []*dnscrypt.Server
 
 	// logger is used for logging in the proxy service.  It is never nil.
 	logger *slog.Logger
-
-	// ratelimitBuckets is a storage for ratelimiters for individual IPs.
-	ratelimitBuckets *gocache.Cache
 
 	// fastestAddr finds the fastest IP address for the resolved domain.
 	fastestAddr *fastip.FastestAddr
@@ -117,14 +116,15 @@ type Proxy struct {
 	// requests for private addresses.
 	recDetector *recursionDetector
 
+	// reqCtx is a constructor for the request contexts.  It is never nil.
+	reqCtx contextutil.Constructor
+
 	// pendingRequests is a storage for duplicated requests.  It is used to
 	// prevent sending the same request to upstreams multiple times.
 	pendingRequests pendingRequests
 
 	// bytesPool is a pool of byte slices used to read DNS packets.
-	//
-	// TODO(e.burkov):  Use [syncutil.Pool].
-	bytesPool *sync.Pool
+	bytesPool *syncutil.Pool[[]byte]
 
 	// udpListen are the listened UDP connections.
 	udpListen []*net.UDPConn
@@ -159,12 +159,6 @@ type Proxy struct {
 
 	// h3Server serves queries received over HTTP/3.
 	h3Server *http3.Server
-
-	// dnsCryptUDPListen are the listened UDP connections for DNSCrypt.
-	dnsCryptUDPListen []*net.UDPConn
-
-	// dnsCryptTCPListen are the listened TCP connections for DNSCrypt.
-	dnsCryptTCPListen []net.Listener
 
 	// upstreamRTTStats maps the upstream address to its round-trip time
 	// statistics.  It's holds the statistics for all upstreams to perform a
@@ -201,9 +195,6 @@ type Proxy struct {
 	// Also make it a pointer.
 	sync.RWMutex
 
-	// ratelimitLock protects ratelimitBuckets.
-	ratelimitLock sync.Mutex
-
 	// rttLock protects upstreamRTTStats.
 	//
 	// TODO(e.burkov):  Make it a pointer.
@@ -225,22 +216,16 @@ func New(c *Config) (p *Proxy, err error) {
 			c.PrivateSubnets,
 			netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		),
-		beforeRequestHandler: cmp.Or[BeforeRequestHandler](
-			c.BeforeRequestHandler,
-			noopRequestHandler{},
+		reqCtx: cmp.Or[contextutil.Constructor](
+			c.RequestContext,
+			contextutil.EmptyConstructor{},
 		),
+		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
 		upstreamRTTStats: map[string]upstreamRTTStats{},
 		rttLock:          sync.Mutex{},
-		ratelimitLock:    sync.Mutex{},
 		RWMutex:          sync.RWMutex{},
-		bytesPool: &sync.Pool{
-			New: func() any {
-				// 2 bytes may be used to store packet length (see TCP/TLS).
-				b := make([]byte, 2+dns.MaxMsgSize)
-
-				return &b
-			},
-		},
+		// 2 bytes may be used to store packet length (see TCP/TLS).
+		bytesPool:  syncutil.NewSlicePool[byte](2 + dns.MaxMsgSize),
 		udpOOBSize: proxynetutil.UDPGetOOBSize(),
 		time:       timeutil.SystemClock{},
 		messages: cmp.Or[MessageConstructor](
@@ -258,6 +243,9 @@ func New(c *Config) (p *Proxy, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	p.CacheOptimisticAnswerTTL = cmp.Or(p.CacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
+	p.CacheOptimisticMaxAge = cmp.Or(p.CacheOptimisticMaxAge, DefaultOptimisticMaxAge)
 
 	p.initCache()
 
@@ -287,10 +275,6 @@ func New(c *Config) (p *Proxy, err error) {
 		return nil, fmt.Errorf("setting up DNS64: %w", err)
 	}
 
-	// TODO(e.burkov):  Clone all mutable fields of Config.
-	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
-	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
-
 	return p, nil
 }
 
@@ -314,15 +298,14 @@ func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
 	return slog.Default().With(slogutil.KeyPrefix, LogPrefix)
 }
 
-// validateBasicAuth validates the basic-auth mode settings if p.Config.Userinfo
-// is set.
+// validateBasicAuth validates the HTTP settings if HTTPConfig.Userinfo is set.
 func (p *Proxy) validateBasicAuth() (err error) {
-	conf := p.Config
-	if conf.Userinfo == nil {
+	conf := p.Config.HTTPConfig
+	if conf == nil || conf.Userinfo == nil {
 		return nil
 	}
 
-	return validate.NotEmptySlice("HTTPSListenAddr", conf.HTTPSListenAddr)
+	return validate.NotEmptySlice("HTTPConfig.ListenAddresses", conf.ListenAddresses)
 }
 
 // Returns true if proxy is started.  It is safe for concurrent use.
@@ -360,7 +343,23 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 		return fmt.Errorf("configuring listeners: %w", errors.WithDeferred(err, closeErr))
 	}
 
-	p.serveListeners()
+	err = p.initDNSCryptServers(ctx)
+	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
+		return err
+	}
+
+	// Use context without cancel to prevent listeners' context from being
+	// canceled.
+	p.serveListeners(context.WithoutCancel(ctx))
+
+	err = p.startDNSCryptServers(context.WithoutCancel(ctx))
+	if err != nil {
+		p.dnsCryptServers = nil
+
+		// Don't wrap the error since it's informative enough as is.
+		return err
+	}
 
 	p.started = true
 
@@ -414,6 +413,10 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 		}
 	}
 
+	err = shutdownDNSCryptServers(ctx, p.dnsCryptServers)
+	errs = append(errs, err)
+	p.dnsCryptServers = nil
+
 	p.started = false
 
 	p.logger.InfoContext(ctx, "stopped dns proxy server")
@@ -466,22 +469,16 @@ func (p *Proxy) closeListeners(errs []error) (res []error) {
 	res = closeAll(res, p.quicConns...)
 	p.quicConns = nil
 
-	res = closeAll(res, p.dnsCryptUDPListen...)
-	p.dnsCryptUDPListen = nil
-
-	res = closeAll(res, p.dnsCryptTCPListen...)
-	p.dnsCryptTCPListen = nil
-
 	return res
 }
 
 // addrFunc provides the address from the given A.
 type addrFunc[A any] func(l A) (addr net.Addr)
 
-// collectAddrs returns the slice of network addresses of the given listeners
+// collectAddrs returns the slice of network addresses of the given addressers
 // using the given addrFunc.
-func collectAddrs[A any](listeners []A, af addrFunc[A]) (addrs []net.Addr) {
-	for _, l := range listeners {
+func collectAddrs[A any](addressers []A, af addrFunc[A]) (addrs []net.Addr) {
+	for _, l := range addressers {
 		addrs = append(addrs, af(l))
 	}
 
@@ -507,26 +504,21 @@ func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 	case ProtoQUIC:
 		return collectAddrs(p.quicListen, (*quic.EarlyListener).Addr)
 	case ProtoDNSCrypt:
-		// Using only UDP addrs here
-		//
-		// TODO(ameshkov): To do it better we should either do
-		// ProtoDNSCryptTCP/ProtoDNSCryptUDP or we should change the
-		// configuration so that it was not possible to set different ports for
-		// TCP/UDP listeners.
-		return collectAddrs(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
+		return collectAddrs(p.dnsCryptServers, (*dnscrypt.Server).LocalAddr)
 	default:
+		// TODO(e.burkov):  Use [errors.ErrBadEnumValue].
 		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
 	}
 }
 
-// firstAddr returns the network address of the first listener in the given
-// listeners or nil using the given addrFunc.
-func firstAddr[A any](listeners []A, af addrFunc[A]) (addr net.Addr) {
-	if len(listeners) == 0 {
+// firstAddr returns the network address of the first entry in the given
+// addressers or nil using the given addrFunc.
+func firstAddr[A any](addressers []A, af addrFunc[A]) (addr net.Addr) {
+	if len(addressers) == 0 {
 		return nil
 	}
 
-	return af(listeners[0])
+	return af(addressers[0])
 }
 
 // Addr returns the first listen address for the specified proto or nil if the
@@ -548,7 +540,7 @@ func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
 	case ProtoQUIC:
 		return firstAddr(p.quicListen, (*quic.EarlyListener).Addr)
 	case ProtoDNSCrypt:
-		return firstAddr(p.dnsCryptUDPListen, (*net.UDPConn).LocalAddr)
+		return firstAddr(p.dnsCryptServers, (*dnscrypt.Server).LocalAddr)
 	default:
 		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
 	}
@@ -649,8 +641,9 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 }
 
 // handleExchangeResult handles the result after the upstream exchange.  It sets
-// resp and the upstream that has resolved the request in d.  If resp is nil, it
-// generates a server failure response.  req must not be nil.
+// resp and the upstream that has resolved the request in d.  Also, it clears
+// the AA bit in the upstream response.  If resp is nil, it generates a server
+// failure response.  req must not be nil.
 func (p *Proxy) handleExchangeResult(
 	ctx context.Context,
 	d *DNSContext,
@@ -658,7 +651,7 @@ func (p *Proxy) handleExchangeResult(
 	resp *dns.Msg,
 	u upstream.Upstream,
 ) {
-	if resp == nil {
+	if resp == nil || len(resp.Question) != 1 {
 		d.Res = p.messages.NewMsgSERVFAIL(req)
 		d.hasEDNS0 = false
 
@@ -667,20 +660,19 @@ func (p *Proxy) handleExchangeResult(
 
 	d.Upstream = u
 	d.Res = resp
+	d.Res.Authoritative = false
 
 	p.setMinMaxTTL(ctx, resp)
-	if len(req.Question) > 0 && len(resp.Question) == 0 {
-		// Explicitly construct the question section since some upstreams may
-		// respond with invalidly constructed messages which cause out-of-range
-		// panics afterwards.
-		//
-		// See https://github.com/AdguardTeam/AdGuardHome/issues/3551.
-		resp.Question = []dns.Question{req.Question[0]}
-	}
 }
 
-// addDO adds EDNS0 RR if needed and sets DO bit of msg to true.
-func addDO(msg *dns.Msg) {
+// addDO adds EDNS0 RR if needed and sets DO bit of msg to true.  msg must not
+// be nil.
+func (p *Proxy) addDO(msg *dns.Msg) {
+	if !p.DNSSECEnabled {
+		// Do nothing if DNSSEC is disabled in the proxy.
+		return
+	}
+
 	if o := msg.IsEdns0(); o != nil {
 		if !o.Do() {
 			o.SetDo()
@@ -696,12 +688,8 @@ func addDO(msg *dns.Msg) {
 const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
-// upstream servers.  It expects dctx is filled with the request, the client's
-//
-// TODO(e.burkov):  Add [context.Context].
-func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
-	ctx := context.Background()
-
+// upstream servers.  It expects dctx is filled with the client's request.
+func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 	if p.EnableEDNSClientSubnet {
 		dctx.processECS(p.EDNSAddr, p.logger)
 	}
@@ -710,6 +698,15 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 
 	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
+		// Request for DNSSEC from the upstream to cache the
+		// DNSSEC resource records as well.  In case of disabled DNSSEC,
+		// requesting and therefore caching of DNSSEC resource records depends
+		// on the DO bit of the initiating query.
+		//
+		// See https://datatracker.ietf.org/doc/html/rfc4035#section-4.5 and
+		// https://datatracker.ietf.org/doc/html/rfc3225#section-3.
+		p.addDO(dctx.Req)
+
 		// Only add pending requests if the cache is enabled, since this is a
 		// mitigation against cache poisoning.
 		//
@@ -723,14 +720,11 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 
 		if p.replyFromCache(dctx) {
 			// Complete the response from cache.
+			filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
 			dctx.scrub()
 
 			return nil
 		}
-
-		// On cache miss request for DNSSEC from the upstream to cache it
-		// afterwards.
-		addDO(dctx.Req)
 	}
 
 	var ok bool
@@ -755,11 +749,37 @@ func (p *Proxy) Resolve(dctx *DNSContext) (err error) {
 	// Complete the response.
 	dctx.scrub()
 
-	if p.ResponseHandler != nil {
-		p.ResponseHandler(dctx, err)
-	}
-
 	return err
+}
+
+// validateRequest returns a response for invalid request or nil if the request
+// is ok.
+func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
+	switch {
+	case len(d.Req.Question) != 1:
+		p.logger.Debug("invalid number of questions", "req_questions_len", len(d.Req.Question))
+
+		return p.messages.NewMsgFORMERR(d.Req)
+	case p.RefuseAny && d.Req.Question[0].Qtype == dns.TypeANY:
+		// Refuse requests of type ANY (anti-DDOS measure).
+		p.logger.Debug("refusing dns type any request")
+
+		return p.messages.NewMsgNOTIMPLEMENTED(d.Req)
+	case p.recDetector.check(d.Req):
+		p.logger.Debug("recursion detected", "req_question", d.Req.Question[0].Name)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
+	case d.isForbiddenARPA(p.privateNets, p.logger):
+		p.logger.Debug(
+			"private arpa domain is requested",
+			"addr", d.Addr,
+			"arpa", d.Req.Question[0].Name,
+		)
+
+		return p.messages.NewMsgNXDOMAIN(d.Req)
+	default:
+		return nil
+	}
 }
 
 // cacheWorks returns true if the cache works for the given context.  If not, it

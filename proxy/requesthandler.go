@@ -1,0 +1,42 @@
+package proxy
+
+import (
+	"context"
+
+	"github.com/AdguardTeam/golibs/errors"
+)
+
+// ErrDrop is returned by a [Handler] to signal that the proxy should not send
+// any response to the client.
+const ErrDrop errors.Error = "drop response"
+
+// Handler is an interface for handling DNS requests.
+type Handler interface {
+	// ServeDNS resolves the DNS request within *DNSContext.
+	ServeDNS(ctx context.Context, p *Proxy, dctx *DNSContext) (err error)
+}
+
+// DefaultHandler implements [Handler] by calling [Proxy.Resolve].  It is used
+// as a default handler if no other handler is specified.
+type DefaultHandler struct{}
+
+// type check
+var _ Handler = DefaultHandler{}
+
+// ServeDNS implements the [Handler] interface for DefaultHandler.
+func (DefaultHandler) ServeDNS(ctx context.Context, p *Proxy, proxyCtx *DNSContext) (err error) {
+	return p.Resolve(ctx, proxyCtx)
+}
+
+// The HandlerFunc type is an adapter to allow the use of ordinary functions as
+// [Handler].  If f is a function with the appropriate signature, HandlerFunc(f)
+// is a [Handler] that calls f.
+type HandlerFunc func(ctx context.Context, p *Proxy, dctx *DNSContext) (err error)
+
+// type check
+var _ Handler = HandlerFunc(nil)
+
+// ServeDNS implements the [Handler] interface for HandlerFunc.
+func (f HandlerFunc) ServeDNS(ctx context.Context, p *Proxy, dctx *DNSContext) (err error) {
+	return f(ctx, p, dctx)
+}

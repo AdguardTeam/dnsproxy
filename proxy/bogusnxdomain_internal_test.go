@@ -1,14 +1,13 @@
 package proxy
 
 import (
-	"context"
 	"net"
 	"net/netip"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,14 +15,12 @@ import (
 
 func TestProxy_IsBogusNXDomain(t *testing.T) {
 	prx := mustNew(t, &Config{
-		Logger:                 slogutil.NewDiscardLogger(),
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		UpstreamConfig:         newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies:         defaultTrustedProxies,
-		RatelimitSubnetLenIPv4: 24,
-		RatelimitSubnetLenIPv6: 64,
-		CacheEnabled:           true,
+		Logger:         testLogger,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
+		CacheEnabled:   true,
 		BogusNXDomain: []netip.Prefix{
 			netip.MustParsePrefix("4.3.2.1/24"),
 			netip.MustParsePrefix("1.2.3.4/8"),
@@ -83,10 +80,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	u := testUpstream{}
 	prx.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
 
-	ctx := context.Background()
-	err := prx.Start(ctx)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) { return prx.Shutdown(ctx) })
+	servicetest.RequireRun(t, prx, testTimeout)
 
 	d := &DNSContext{
 		Req: newHostTestMessage("host"),
@@ -96,7 +90,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 		u.ans = tc.ans
 
 		t.Run(tc.name, func(t *testing.T) {
-			err = prx.Resolve(d)
+			err := prx.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 			require.NoError(t, err)
 			require.NotNil(t, d.Res)
 

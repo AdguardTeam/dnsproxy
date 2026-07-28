@@ -20,16 +20,16 @@ import (
 // testTimeout is a common timeout used in tests of this package.
 const testTimeout = 1 * time.Second
 
-// newListener creates a new listener of zero address of the specified network
-// type and returns it, adding it's closing to the test cleanup.  sig is used to
+// newListener creates a new listener of localhost with the specified network
+// type and returns its address, closing it on test cleanup.  sig is used to
 // send the address of each accepted connection and must be read properly.
-func newListener(t testing.TB, network string, sig chan net.Addr) (ipp netip.AddrPort) {
-	t.Helper()
+func newListener(tb testing.TB, network string, sig chan net.Addr) (ipp netip.AddrPort) {
+	tb.Helper()
 
 	// TODO(e.burkov):  Listen IPv6 as well, when the CI adds IPv6 interfaces.
 	l, err := net.Listen(network, "127.0.0.1:0")
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, l.Close)
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, l.Close)
 
 	go func() {
 		pt := testutil.PanicT{}
@@ -43,7 +43,7 @@ func newListener(t testing.TB, network string, sig chan net.Addr) (ipp netip.Add
 	}()
 
 	ipp, err = netip.ParseAddrPort(l.Addr().String())
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	return ipp
 }

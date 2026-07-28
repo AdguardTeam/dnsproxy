@@ -17,15 +17,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
-	"github.com/ameshkov/dnscrypt/v2"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlogwriter"
 )
 
 // Upstream is an interface for a DNS resolver.  All the methods must be safe
@@ -34,7 +34,8 @@ type Upstream interface {
 	// Exchange sends req to this upstream and returns the response that has
 	// been received or an error if something went wrong.  The implementations
 	// must not modify req as well as the caller must not modify it until the
-	// method returns.  It shouldn't be called after closing.
+	// method returns.  It shouldn't be called after closing.  req must not be
+	// nil.
 	Exchange(req *dns.Msg) (resp *dns.Msg, err error)
 
 	// Address returns the human-readable address of the upstream DNS resolver.
@@ -45,13 +46,16 @@ type Upstream interface {
 	io.Closer
 }
 
-// QUICTraceFunc is a function that returns a [logging.ConnectionTracer]
-// specific for a given role and connection ID.
-type QUICTraceFunc func(
-	ctx context.Context,
-	role logging.Perspective,
-	connID quic.ConnectionID,
-) (tracer *logging.ConnectionTracer)
+// QUICTracer creates [qlogwriter.Trace] instances for QUIC connection tracing.
+type QUICTracer interface {
+	// TraceForConnection creates a [qlogwriter.Trace] specific for a given
+	// role and connection ID.
+	TraceForConnection(
+		ctx context.Context,
+		isClient bool,
+		connID quic.ConnectionID,
+	) (trace qlogwriter.Trace)
+}
 
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
@@ -71,11 +75,11 @@ type Options struct {
 	// VerifyDNSCryptCertificate is the callback the DNSCrypt server certificate
 	// will be passed to.  It's called in dnsCrypt.exchangeDNSCrypt.
 	// Upstream.Exchange method returns any error caused by it.
-	VerifyDNSCryptCertificate func(cert *dnscrypt.Cert) error
+	VerifyDNSCryptCertificate func(cert *dnscrypt.Certificate) error
 
-	// QUICTracer is an optional callback that allows tracing every QUIC
-	// connection and logging every packet that goes through.
-	QUICTracer QUICTraceFunc
+	// QUICTracer allows tracing every QUIC connection and logging every packet
+	// that goes through.
+	QUICTracer QUICTracer
 
 	// RootCAs is the CertPool that must be used by all upstreams.  Redefining
 	// RootCAs makes sense on iOS to overcome the 15MB memory limit of the
@@ -334,7 +338,15 @@ func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
 		qname = req.Question[0].Name
 	}
 
-	l.Debug("sending request", "addr", addr, "proto", n, "qtype", qtype, "qname", qname)
+	l.DebugContext(
+		context.TODO(),
+		"sending request",
+		"addr", addr,
+		"proto", n,
+		"qtype", qtype,
+		"qname", qname,
+		"id", req.Id,
+	)
 }
 
 // logFinish logs the end of DNS request resolution.  It should be called right
@@ -404,4 +416,29 @@ func newDialerInitializer(u *url.URL, opts *Options) (di DialerInitializer) {
 	return func() (h bootstrap.DialHandler, err error) {
 		return bootstrap.ResolveDialContext(u, opts.Timeout, boot, opts.PreferIPv6, l)
 	}
+}
+
+// errQuestion is returned when a message has malformed question section.
+const errQuestion errors.Error = "bad question section"
+
+// validateResponse validates resp from an upstream DNS server for compliance
+// with req.  Any error returned wraps [errQuestion], since it essentially
+// validates the question section of resp.  req and resp must not be nil.
+func validateResponse(req, resp *dns.Msg) (err error) {
+	if qlen := len(resp.Question); qlen != 1 {
+		return fmt.Errorf("%w: only 1 question allowed; got %d", errQuestion, qlen)
+	}
+
+	reqQ, respQ := req.Question[0], resp.Question[0]
+
+	if reqQ.Qtype != respQ.Qtype {
+		return fmt.Errorf("%w: mismatched type %s", errQuestion, dns.Type(respQ.Qtype))
+	}
+
+	// Compare the names case-insensitively, just like CoreDNS does.
+	if !strings.EqualFold(reqQ.Name, respQ.Name) {
+		return fmt.Errorf("%w: mismatched name %q", errQuestion, respQ.Name)
+	}
+
+	return nil
 }

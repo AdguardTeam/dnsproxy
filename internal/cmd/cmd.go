@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/version"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/osutil"
+	"github.com/AdguardTeam/golibs/version"
 )
 
 // Main is the entrypoint of dnsproxy CLI.  Main may accept arguments, such as
@@ -61,7 +61,7 @@ func Main() {
 	ctx := context.Background()
 
 	if conf.Pprof {
-		runPprof(l)
+		runPprof(ctx, l)
 	}
 
 	err = runProxy(ctx, l, conf)
@@ -132,8 +132,8 @@ func runProxy(ctx context.Context, l *slog.Logger, conf *configuration) (err err
 
 // runPprof runs pprof server on localhost:6060.
 //
-// TODO(e.burkov):  Use [httputil.RoutePprof].
-func runPprof(l *slog.Logger) {
+// TODO(e.burkov):  Add debugsvc.
+func runPprof(ctx context.Context, l *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -149,8 +149,8 @@ func runPprof(l *slog.Logger) {
 
 	go func() {
 		// TODO(d.kolyshev): Consider making configurable.
-		pprofAddr := "localhost:6060"
-		l.Info("starting pprof", "addr", pprofAddr)
+		const pprofAddr = "localhost:6060"
+		l.InfoContext(ctx, "starting pprof", "addr", pprofAddr)
 
 		srv := &http.Server{
 			Addr:        pprofAddr,
@@ -160,7 +160,7 @@ func runPprof(l *slog.Logger) {
 
 		err := srv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			l.Error("pprof failed to listen %v", "addr", pprofAddr, slogutil.KeyError, err)
+			l.ErrorContext(ctx, "pprof failed to listen", "addr", pprofAddr, slogutil.KeyError, err)
 		}
 	}()
 }

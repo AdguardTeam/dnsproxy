@@ -2,7 +2,7 @@
   'BASE_IMAGE': |-
     ${{ vars.BASE_IMAGE || 'adguard/go-builder:1.26.5--1' }}
   'CACHE_BUSTER': |-
-    ${{ vars.CACHE_BUSTER || '0' }}
+    ${{ inputs.cache_buster || '0' }}
 'jobs':
   'LintAndTestJobDocker':
     'if': |
@@ -113,7 +113,13 @@
   'push':
     'branches':
       - '*'
-  'workflow_dispatch': null
+  'workflow_dispatch':
+    'inputs':
+      'cache_buster':
+        'default': ''
+        'description': |
+          Override to force re-run of cached stages (pass any unique value).
+        'type': 'string'
 # Permissions are disabled for all the jobs by default, and then overridden for
 # specific jobs if needed.  This is a recommended practice for security reasons,
 # and also allows to avoid mistakes with permissions when creating new jobs.

@@ -352,7 +352,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qtype: dns.TypePTR,
 	}, {
 		name:  "dns64_cname_chain_no_aaaa",
-		qname: fqdnCNAMEOnly, // e.g., "cname.chain."
+		qname: fqdnCNAMEOnly,
 		upsAns: answerMap{
 			dns.TypeA: {
 				sectionAnswer: {

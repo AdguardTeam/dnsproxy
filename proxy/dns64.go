@@ -123,13 +123,14 @@ func (p *Proxy) filterNAT64Answers(rrs []dns.RR) (filtered []dns.RR, hasAnswers 
 
 		addr, err := netutil.IPToAddrNoMapped(ans.AAAA)
 		if err != nil {
+			// TODO(e.burkov):  Use [slog.Logger.ErrorContext] when this
+			// function accepts a context.
 			p.logger.Error("bad aaaa record", slogutil.KeyError, err)
 
 			return true
 		}
 
 		if p.dns64Prefs.Contains(addr) {
-			// Filter the record.
 			return true
 		}
 

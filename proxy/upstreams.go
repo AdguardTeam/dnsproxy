@@ -23,6 +23,14 @@ const UnqualifiedNames = "unqualified_names"
 // labelSep is a separator between labels of a domain name.
 const labelSep = "."
 
+// domainSpecIDNA converts domains to their canonical lookup form while
+// preserving the permissive domain-name validation used by this parser.
+var domainSpecIDNA = idna.New(
+	idna.MapForLookup(),
+	idna.StrictDomainName(false),
+	idna.ValidateLabels(false),
+)
+
 // UpstreamConfig maps domain names to upstreams.
 type UpstreamConfig struct {
 	// DomainReservedUpstreams maps the domains to the upstreams.
@@ -231,7 +239,7 @@ func normalizeDomainSpec(domain string) (normalized string, err error) {
 		return "", err
 	}
 
-	domain, err = idna.ToASCII(domain)
+	domain, err = domainSpecIDNA.ToASCII(domain)
 	if err != nil {
 		return "", fmt.Errorf("converting to ASCII: %w", err)
 	}

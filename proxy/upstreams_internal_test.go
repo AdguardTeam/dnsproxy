@@ -125,11 +125,15 @@ func TestUpstreamConfig_GetUpstreamsForDomain_IDNA(t *testing.T) {
 	config, err := ParseUpstreamsConfig([]string{
 		generalUpstream,
 		"[/恒天.com/]" + idnaUpstream,
+		"[/GÖPHER.com/]" + idnaUpstream,
 	}, nil)
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, config.Close)
 
 	ups := config.getUpstreamsForDomain("xn--rss99n.com.")
+	assertUpstreamsAddrs(t, ups, []string{idnaUpstream})
+
+	ups = config.getUpstreamsForDomain("xn--gpher-jua.com.")
 	assertUpstreamsAddrs(t, ups, []string{idnaUpstream})
 }
 

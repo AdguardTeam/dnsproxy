@@ -15,6 +15,7 @@ import (
 type testCachingResolver struct {
 	onReplyFromUpstream func(dctx *DNSContext) (ok bool, err error)
 	onCacheResp         func(dctx *DNSContext)
+	onReportRefresh     func(dctx *DNSContext)
 }
 
 // replyFromUpstream implements the cachingResolver interface for
@@ -26,6 +27,14 @@ func (tcr *testCachingResolver) replyFromUpstream(dctx *DNSContext) (ok bool, er
 // cacheResp implements the cachingResolver interface for *testCachingResolver.
 func (tcr *testCachingResolver) cacheResp(dctx *DNSContext) {
 	tcr.onCacheResp(dctx)
+}
+
+// reportRefresh implements the cachingResolver interface for
+// *testCachingResolver.
+func (tcr *testCachingResolver) reportRefresh(dctx *DNSContext) {
+	if tcr.onReportRefresh != nil {
+		tcr.onReportRefresh(dctx)
+	}
 }
 
 func TestOptimisticResolver_ResolveOnce(t *testing.T) {
@@ -112,4 +121,58 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 
 		assert.False(t, cached)
 	})
+}
+
+func TestOptimisticResolver_ResolveOnce_reportRefresh(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		replyErr error
+		name     string
+		replyOK  bool
+		wantSet  bool
+	}{{
+		replyErr: nil,
+		name:     "success",
+		replyOK:  true,
+		wantSet:  true,
+	}, {
+		replyErr: assert.AnError,
+		name:     "failure",
+		replyOK:  false,
+		wantSet:  false,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var reported, set int
+			dctx := &DNSContext{}
+
+			s := newOptimisticResolver(&testCachingResolver{
+				onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) {
+					return tc.replyOK, tc.replyErr
+				},
+				onCacheResp: func(_ *DNSContext) { set++ },
+				onReportRefresh: func(got *DNSContext) {
+					assert.Same(t, dctx, got)
+
+					reported++
+				},
+			})
+
+			s.resolveOnce(dctx, []byte("key"), slog.New(slog.DiscardHandler))
+
+			// The refresh is reported whether or not it succeeded, since its
+			// statistics describe the attempt either way.
+			assert.Equal(t, 1, reported)
+
+			if tc.wantSet {
+				assert.Equal(t, 1, set)
+			} else {
+				assert.Equal(t, 0, set)
+			}
+		})
+	}
 }

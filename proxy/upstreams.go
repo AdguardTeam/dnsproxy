@@ -12,6 +12,7 @@ import (
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
+	"golang.org/x/net/idna"
 )
 
 // UnqualifiedNames is a key for [UpstreamConfig.DomainReservedUpstreams] map to
@@ -221,6 +222,26 @@ func (p *configParser) parseLine(idx int, confLine string) (err error) {
 	return nil
 }
 
+// normalizeDomainSpec validates domain and returns its canonical ASCII form.
+func normalizeDomainSpec(domain string) (normalized string, err error) {
+	wildcard := strings.HasPrefix(domain, "*.")
+	domain = strings.TrimPrefix(domain, "*.")
+	err = netutil.ValidateDomainName(domain)
+	if err != nil {
+		return "", err
+	}
+
+	domain, err = idna.ToASCII(domain)
+	if err != nil {
+		return "", fmt.Errorf("converting to ASCII: %w", err)
+	}
+	if wildcard {
+		domain = "*." + domain
+	}
+
+	return strings.ToLower(domain + labelSep), nil
+}
+
 // splitConfigLine parses upstream configuration line and returns list upstream
 // addresses (one or many), list of domains for which this upstream is reserved
 // (may be nil).  It returns an error if the upstream format is incorrect.
@@ -243,12 +264,12 @@ func splitConfigLine(confLine string) (upstreams, domains []string, err error) {
 			continue
 		}
 
-		err = netutil.ValidateDomainName(strings.TrimPrefix(confHost, "*."))
+		confHost, err = normalizeDomainSpec(confHost)
 		if err != nil {
 			return nil, nil, fmt.Errorf("domain at index %d: %w", i, err)
 		}
 
-		domains = append(domains, strings.ToLower(confHost+labelSep))
+		domains = append(domains, confHost)
 	}
 
 	return strings.Fields(upstreamsLine), domains, nil

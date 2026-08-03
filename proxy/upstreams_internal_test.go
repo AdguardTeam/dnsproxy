@@ -117,6 +117,22 @@ func TestUpstreamConfig_GetUpstreamsForDomain(t *testing.T) {
 	}
 }
 
+func TestUpstreamConfig_GetUpstreamsForDomain_IDNA(t *testing.T) {
+	t.Parallel()
+
+	const idnaUpstream = "tcp://idna.upstream:53"
+
+	config, err := ParseUpstreamsConfig([]string{
+		generalUpstream,
+		"[/恒天.com/]" + idnaUpstream,
+	}, nil)
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, config.Close)
+
+	ups := config.getUpstreamsForDomain("xn--rss99n.com.")
+	assertUpstreamsAddrs(t, ups, []string{idnaUpstream})
+}
+
 func TestUpstreamConfig_GetUpstreamsForDS(t *testing.T) {
 	t.Parallel()
 

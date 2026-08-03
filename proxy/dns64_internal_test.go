@@ -79,6 +79,21 @@ func TestDNS64Race(t *testing.T) {
 	g.Wait()
 }
 
+func TestSetupDNS64_ZeroAddressPrefix(t *testing.T) {
+	t.Parallel()
+
+	p := &Proxy{
+		Config: Config{
+			UseDNS64:   true,
+			DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("::/96")},
+		},
+	}
+
+	err := p.setupDNS64()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "zero address")
+}
+
 func sendTestAAAAMessageAsync(conn *dns.Conn, g *sync.WaitGroup, fqdn string, syncCh chan struct{}) {
 	pt := testutil.PanicT{}
 

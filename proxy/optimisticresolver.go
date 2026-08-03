@@ -62,7 +62,11 @@ func (s *optimisticResolver) resolveOnce(dctx *DNSContext, key []byte, l *slog.L
 		l.Debug("resolving request for optimistic cache", slogutil.KeyError, err)
 	}
 
-	if ok {
+	if ok && !resolvedByFallback(dctx) {
 		s.cr.cacheResp(dctx)
 	}
+}
+
+func resolvedByFallback(dctx *DNSContext) (ok bool) {
+	return dctx.queryStatistics != nil && len(dctx.queryStatistics.Fallback()) > 0
 }

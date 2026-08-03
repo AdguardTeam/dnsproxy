@@ -51,9 +51,10 @@ type cache struct {
 // cacheItem is a single cache entry.  It's a helper type to aggregate the
 // item-specific logic.
 type cacheItem struct {
-	m   *dns.Msg
-	u   string
-	ttl uint32
+	m          *dns.Msg
+	u          string
+	ttl        uint32
+	responseAD bool
 }
 
 // respToItem converts the pair of the response and upstream resolved the one
@@ -70,9 +71,10 @@ func (c *cache) respToItem(m *dns.Msg, u upstream.Upstream, l *slog.Logger) (ite
 	}
 
 	return &cacheItem{
-		m:   m,
-		u:   upsAddr,
-		ttl: ttl,
+		m:          m,
+		u:          upsAddr,
+		ttl:        ttl,
+		responseAD: m.AuthenticatedData,
 	}
 }
 
@@ -158,8 +160,9 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 	filterMsg(res, m, req.AuthenticatedData, doBit, ttl)
 
 	return &cacheItem{
-		m: res,
-		u: string(b.Next(b.Len())),
+		m:          res,
+		u:          string(b.Next(b.Len())),
+		responseAD: m.AuthenticatedData,
 	}, expired
 }
 

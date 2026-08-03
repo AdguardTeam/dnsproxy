@@ -80,6 +80,10 @@ type DNSContext struct {
 	// instance.
 	RequestID uint64
 
+	// responseAD is the authenticated-data flag from the response before
+	// client-specific filtering.
+	responseAD bool
+
 	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
 	// or default otherwise.
 	udpSize uint16
@@ -140,6 +144,12 @@ func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg, addr netip.AddrPort) (d
 // Both s and any data returned from its methods must not be modified.
 func (dctx *DNSContext) QueryStatistics() (s *QueryStatistics) {
 	return dctx.queryStatistics
+}
+
+// ResponseAD reports whether the response from an upstream or the cache had
+// the authenticated-data flag set before client-specific filtering.
+func (dctx *DNSContext) ResponseAD() (ok bool) {
+	return dctx.responseAD
 }
 
 // calcFlagsAndSize lazily calculates some values required for Resolve method.

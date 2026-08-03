@@ -38,6 +38,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	}
 
 	d.Res = ci.m
+	d.responseAD = ci.responseAD
 	d.queryStatistics = cachedQueryStatistics(ci.u)
 
 	p.logger.Debug(

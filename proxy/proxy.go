@@ -659,6 +659,7 @@ func (p *Proxy) handleExchangeResult(
 	}
 
 	d.Upstream = u
+	d.responseAD = resp.AuthenticatedData
 	d.Res = resp
 	d.Res.Authoritative = false
 
@@ -690,6 +691,8 @@ const defaultUDPBufSize = 2048
 // Resolve is the default resolving method used by the DNS proxy to query
 // upstream servers.  It expects dctx is filled with the client's request.
 func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
+	dctx.responseAD = false
+
 	if p.EnableEDNSClientSubnet {
 		dctx.processECS(p.EDNSAddr, p.logger)
 	}

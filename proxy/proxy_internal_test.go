@@ -587,6 +587,71 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 	}
 }
 
+func TestDNSContext_ResponseAD(t *testing.T) {
+	const host = "example.com"
+
+	var exchangeCount int
+	u := &dnsproxytest.Upstream{
+		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+			exchangeCount++
+
+			resp = (&dns.Msg{
+				MsgHdr: dns.MsgHdr{
+					AuthenticatedData: true,
+				},
+				Answer: []dns.RR{&dns.A{
+					Hdr: dns.RR_Header{
+						Name:   dns.Fqdn(host),
+						Rrtype: dns.TypeA,
+						Class:  dns.ClassINET,
+						Ttl:    defaultTestTTL,
+					},
+					A: net.IP{1, 2, 3, 4},
+				}},
+			}).SetReply(req)
+
+			return resp, nil
+		},
+		OnAddress: func() (addr string) { return "stub" },
+		OnClose:   func() (err error) { return nil },
+	}
+
+	p := mustNew(t, &Config{
+		Logger:         testLogger,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+		TrustedProxies: defaultTrustedProxies,
+		CacheEnabled:   true,
+		DNSSECEnabled:  true,
+		CacheSizeBytes: defaultCacheSize,
+	})
+	dctx := &DNSContext{}
+
+	for _, name := range []string{"upstream", "cache"} {
+		t.Run(name, func(t *testing.T) {
+			dctx.Req = newHostTestMessage(host)
+			err := p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), dctx)
+			require.NoError(t, err)
+
+			assert.False(t, dctx.Res.AuthenticatedData)
+			assert.True(t, dctx.ResponseAD())
+		})
+	}
+
+	assert.Equal(t, 1, exchangeCount)
+
+	u.OnExchange = func(_ *dns.Msg) (resp *dns.Msg, err error) {
+		return nil, assert.AnError
+	}
+	dctx.Req = newHostTestMessage("failure.example")
+	err := p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), dctx)
+	require.ErrorIs(t, err, assert.AnError)
+
+	assert.Equal(t, dns.RcodeServerFailure, dctx.Res.Rcode)
+	assert.False(t, dctx.ResponseAD())
+}
+
 func TestExchangeWithReservedDomains(t *testing.T) {
 	t.Parallel()
 

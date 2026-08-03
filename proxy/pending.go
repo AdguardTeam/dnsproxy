@@ -89,6 +89,7 @@ func (pr *defaultPendingRequests) queue(
 	// each request.
 	dctx.queryStatistics = origDNSCtx.queryStatistics
 	dctx.Upstream = origDNSCtx.Upstream
+	dctx.responseAD = origDNSCtx.responseAD
 	if origDNSCtx.Res != nil {
 		// TODO(e.burkov):  Add cloner for DNS messages.
 		dctx.Res = origDNSCtx.Res.Copy().SetReply(dctx.Req)
@@ -117,6 +118,7 @@ func (pr *defaultPendingRequests) done(ctx context.Context, dctx *DNSContext, er
 	cloneCtx := &DNSContext{
 		Upstream:        dctx.Upstream,
 		queryStatistics: dctx.queryStatistics,
+		responseAD:      dctx.responseAD,
 	}
 
 	if dctx.Res != nil {

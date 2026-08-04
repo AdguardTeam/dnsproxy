@@ -428,6 +428,32 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		require.NotNil(t, ci)
 		assert.Equal(t, dnsProxy.CacheMaxTTL, ci.m.Answer[0].Header().Ttl)
 	})
+
+	t.Run("preserve_zero", func(t *testing.T) {
+		d.Req = newHostTestMessage("host3")
+		d.Addr = netip.AddrPort{}
+
+		u.ans = []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{
+				Rrtype: dns.TypeA,
+				Name:   "host3.",
+				Ttl:    0,
+			},
+			A: net.IP{4, 3, 2, 1},
+		}}
+
+		err := dnsProxy.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
+		require.NoError(t, err)
+
+		require.NotNil(t, d.Res)
+		require.Len(t, d.Res.Answer, 1)
+		assert.Zero(t, d.Res.Answer[0].Header().Ttl)
+
+		ci, expired, key := dnsProxy.cache.get(d.Req)
+		assert.False(t, expired)
+		assert.Equal(t, msgToKey(d.Req), key)
+		assert.Nil(t, ci)
+	})
 }
 
 type testEntry struct {

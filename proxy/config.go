@@ -291,7 +291,7 @@ func (p *Proxy) validateConfig() (err error) {
 	}
 
 	err = p.fallbacks.validate()
-	// Allow [Proxy.Fallbacks] to be nil, but not empty.  nil means not to use
+	// Allow [Proxy.fallbacks] to be nil, but not empty.  nil means not to use
 	// fallbacks at all.
 	if errors.Is(err, upstream.ErrNoUpstreams) {
 		return fmt.Errorf("fallbacks: %w", err)

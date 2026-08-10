@@ -62,7 +62,7 @@ const (
 
 // initQUICListeners creates QUIC listeners for the DoQ server.
 func (p *Proxy) initQUICListeners(ctx context.Context) (err error) {
-	for _, a := range p.quicListenAddr {
+	for _, a := range p.QUICListenAddr {
 		var conn *net.UDPConn
 		var ln *quic.EarlyListener
 		var tr *quic.Transport

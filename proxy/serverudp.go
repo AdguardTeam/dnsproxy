@@ -19,7 +19,7 @@ import (
 
 // initUDPListeners initializes UDP listeners with configured addresses.
 func (p *Proxy) initUDPListeners(ctx context.Context) (err error) {
-	for _, a := range p.udpListenAddr {
+	for _, a := range p.UDPListenAddr {
 		var pc *net.UDPConn
 		pc, sErr := p.listenUDP(ctx, a)
 		if sErr != nil {

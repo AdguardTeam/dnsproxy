@@ -126,8 +126,8 @@ type Proxy struct {
 	// fastestAddr finds the fastest IP address for the resolved domain.
 	fastestAddr *fastip.FastestAddr
 
-	// upstreamConf is a general set of DNS servers to forward requests to.
-	upstreamConf *UpstreamConfig
+	// UpstreamConf is a general set of DNS servers to forward requests to.
+	UpstreamConf *UpstreamConfig
 
 	// bytesPool is a pool of byte slices used to read DNS packets.
 	bytesPool *syncutil.Pool[[]byte]
@@ -198,12 +198,12 @@ type Proxy struct {
 	// protected by this mutex.
 	mu *sync.RWMutex
 
-	// fallbacks is a list of fallback resolvers.  Those will be used if the
+	// Fallbacks is a list of fallback resolvers.  Those will be used if the
 	// general set fails responding.  It isn't allowed to be empty, but can be
-	// nil, which means not to use fallbacks.
+	// nil, which means not to use Fallbacks.
 	//
-	// TODO(e.burkov):  Add explicit boolean for disabling fallbacks.
-	fallbacks *UpstreamConfig
+	// TODO(e.burkov):  Add explicit boolean for disabling Fallbacks.
+	Fallbacks *UpstreamConfig
 
 	// tlsConf is the TLS configuration.  Required for DNS-over-TLS,
 	// DNS-over-HTTP, and DNS-over-QUIC servers.
@@ -228,21 +228,21 @@ type Proxy struct {
 	// DNSCrypt server.
 	dnsCryptProviderName string
 
-	// udpListenAddr is the set of UDP addresses to listen for plain
+	// UDPListenAddr is the set of UDP addresses to listen for plain
 	// DNS-over-UDP requests.
-	udpListenAddr []*net.UDPAddr
+	UDPListenAddr []*net.UDPAddr
 
 	// tcpListenAddr is the set of TCP addresses to listen for plain
 	// DNS-over-TCP requests.
 	tcpListenAddr []*net.TCPAddr
 
-	// tlsListenAddr is the set of TCP addresses to listen for DNS-over-TLS
+	// TLSListenAddr is the set of TCP addresses to listen for DNS-over-TLS
 	// requests.
-	tlsListenAddr []*net.TCPAddr
+	TLSListenAddr []*net.TCPAddr
 
-	// quicListenAddr is the set of UDP addresses to listen for DNS-over-QUIC
+	// QUICListenAddr is the set of UDP addresses to listen for DNS-over-QUIC
 	// requests.
-	quicListenAddr []*net.UDPAddr
+	QUICListenAddr []*net.UDPAddr
 
 	// dnsCryptUDPListenAddr is the set of UDP addresses to listen for DNSCrypt
 	// requests.
@@ -387,19 +387,19 @@ func New(c *Config) (p *Proxy, err error) {
 		bogusNXDomain:             c.BogusNXDomain,
 		dnsCryptTCPListenAddr:     c.DNSCryptTCPListenAddr,
 		dnsCryptUDPListenAddr:     c.DNSCryptUDPListenAddr,
-		quicListenAddr:            c.QUICListenAddr,
-		tlsListenAddr:             c.TLSListenAddr,
+		QUICListenAddr:            c.QUICListenAddr,
+		TLSListenAddr:             c.TLSListenAddr,
 		tcpListenAddr:             c.TCPListenAddr,
-		udpListenAddr:             c.UDPListenAddr,
+		UDPListenAddr:             c.UDPListenAddr,
 		upstreamMode:              c.UpstreamMode,
 		dnsCryptProviderName:      c.DNSCryptProviderName,
 		dnsCryptResolverCert:      c.DNSCryptResolverCert,
 		tlsConf:                   c.TLSConfig,
 		bindRetryConf:             c.BindRetryConfig,
 		httpConf:                  c.HTTPConfig,
-		upstreamConf:              c.UpstreamConfig,
+		UpstreamConf:              c.UpstreamConfig,
 		privateRDNSUpstreamConfig: c.PrivateRDNSUpstreamConfig,
-		fallbacks:                 c.Fallbacks,
+		Fallbacks:                 c.Fallbacks,
 		trustedProxies:            c.TrustedProxies,
 		privateNets: cmp.Or[netutil.SubnetSet](
 			c.PrivateSubnets,
@@ -593,9 +593,9 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 	errs := p.closeListeners(nil)
 
 	for _, u := range []*UpstreamConfig{
-		p.upstreamConf,
+		p.UpstreamConf,
 		p.privateRDNSUpstreamConfig,
-		p.fallbacks,
+		p.Fallbacks,
 	} {
 		if u != nil {
 			errs = closeAll(errs, u)
@@ -767,7 +767,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 	}
 
 	// Use configured.
-	return getUpstreams(p.upstreamConf, host), false
+	return getUpstreams(p.UpstreamConf, host), false
 }
 
 // replyFromUpstream tries to resolve the request via configured upstream
@@ -799,14 +799,14 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	}
 
 	var wrappedFallbacks []upstream.Upstream
-	if err != nil && !isPrivate && p.fallbacks != nil {
+	if err != nil && !isPrivate && p.Fallbacks != nil {
 		p.logger.Debug("using fallback", slogutil.KeyError, err)
 
 		src = "fallback"
 
 		// upstreams mustn't appear empty since they have been validated when
 		// creating proxy.
-		upstreams = p.fallbacks.getUpstreamsForDomain(req.Question[0].Name)
+		upstreams = p.Fallbacks.getUpstreamsForDomain(req.Question[0].Name)
 
 		wrappedFallbacks = upstreamsWithStats(upstreams)
 		resp, u, err = upstream.ExchangeParallel(wrappedFallbacks, req)

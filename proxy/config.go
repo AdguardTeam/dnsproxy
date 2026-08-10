@@ -278,7 +278,7 @@ type HTTPConfig struct {
 //
 // TODO(s.chzhen):  Use [validate.Interface] from golibs.
 func (p *Proxy) validateConfig() (err error) {
-	err = p.upstreamConf.validate()
+	err = p.UpstreamConf.validate()
 	if err != nil {
 		return fmt.Errorf("general upstreams: %w", err)
 	}
@@ -290,7 +290,7 @@ func (p *Proxy) validateConfig() (err error) {
 		}
 	}
 
-	err = p.fallbacks.validate()
+	err = p.Fallbacks.validate()
 	// Allow [Proxy.fallbacks] to be nil, but not empty.  nil means not to use
 	// fallbacks at all.
 	if errors.Is(err, upstream.ErrNoUpstreams) {
@@ -371,7 +371,7 @@ func (p *Proxy) validateTLSConfig() (err error) {
 		return nil
 	}
 
-	if p.tlsListenAddr != nil {
+	if p.TLSListenAddr != nil {
 		return errors.Error("tls listener configuration not found")
 	}
 
@@ -379,7 +379,7 @@ func (p *Proxy) validateTLSConfig() (err error) {
 		return errors.Error("https listener configuration not found")
 	}
 
-	if p.quicListenAddr != nil {
+	if p.QUICListenAddr != nil {
 		return errors.Error("quic listener configuration not found")
 	}
 
@@ -388,11 +388,11 @@ func (p *Proxy) validateTLSConfig() (err error) {
 
 // hasListenAddrs - is there any addresses to listen to?
 func (p *Proxy) hasListenAddrs() (ok bool) {
-	return p.udpListenAddr != nil ||
+	return p.UDPListenAddr != nil ||
 		p.tcpListenAddr != nil ||
-		p.tlsListenAddr != nil ||
+		p.TLSListenAddr != nil ||
 		(p.httpConf != nil && p.httpConf.ListenAddresses != nil) ||
-		p.quicListenAddr != nil ||
+		p.QUICListenAddr != nil ||
 		p.dnsCryptUDPListenAddr != nil ||
 		p.dnsCryptTCPListenAddr != nil
 }

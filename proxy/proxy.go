@@ -110,9 +110,9 @@ type Proxy struct {
 	// logger is used for logging in the proxy service.  It is never nil.
 	logger *slog.Logger
 
-	// bindRetryConfig configures the listeners binding retrying.  If nil,
+	// bindRetryConf configures the listeners binding retrying.  If nil,
 	// retries are disabled.
-	bindRetryConfig *BindRetryConfig
+	bindRetryConf *BindRetryConfig
 
 	// recDetector detects recursive requests that may appear when resolving
 	// requests for private addresses.
@@ -126,8 +126,8 @@ type Proxy struct {
 	// fastestAddr finds the fastest IP address for the resolved domain.
 	fastestAddr *fastip.FastestAddr
 
-	// upstreamConfig is a general set of DNS servers to forward requests to.
-	upstreamConfig *UpstreamConfig
+	// upstreamConf is a general set of DNS servers to forward requests to.
+	upstreamConf *UpstreamConfig
 
 	// bytesPool is a pool of byte slices used to read DNS packets.
 	bytesPool *syncutil.Pool[[]byte]
@@ -193,6 +193,9 @@ type Proxy struct {
 	upstreamRTTStats map[string]upstreamRTTStats
 
 	// mu protects the whole Proxy struct.
+	//
+	// TODO(m.kazantsev):  Add a more thorough documentation on what exactly is
+	// protected by this mutex.
 	mu *sync.RWMutex
 
 	// fallbacks is a list of fallback resolvers.  Those will be used if the
@@ -392,9 +395,9 @@ func New(c *Config) (p *Proxy, err error) {
 		dnsCryptProviderName:      c.DNSCryptProviderName,
 		dnsCryptResolverCert:      c.DNSCryptResolverCert,
 		tlsConfig:                 c.TLSConfig,
-		bindRetryConfig:           c.BindRetryConfig,
+		bindRetryConf:             c.BindRetryConfig,
 		httpConfig:                c.HTTPConfig,
-		upstreamConfig:            c.UpstreamConfig,
+		upstreamConf:              c.UpstreamConfig,
 		privateRDNSUpstreamConfig: c.PrivateRDNSUpstreamConfig,
 		fallbacks:                 c.Fallbacks,
 		trustedProxies:            c.TrustedProxies,
@@ -590,7 +593,7 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 	errs := p.closeListeners(nil)
 
 	for _, u := range []*UpstreamConfig{
-		p.upstreamConfig,
+		p.upstreamConf,
 		p.privateRDNSUpstreamConfig,
 		p.fallbacks,
 	} {
@@ -764,7 +767,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 	}
 
 	// Use configured.
-	return getUpstreams(p.upstreamConfig, host), false
+	return getUpstreams(p.upstreamConf, host), false
 }
 
 // replyFromUpstream tries to resolve the request via configured upstream

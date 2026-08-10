@@ -278,7 +278,7 @@ type HTTPConfig struct {
 //
 // TODO(s.chzhen):  Use [validate.Interface] from golibs.
 func (p *Proxy) validateConfig() (err error) {
-	err = p.upstreamConfig.validate()
+	err = p.upstreamConf.validate()
 	if err != nil {
 		return fmt.Errorf("general upstreams: %w", err)
 	}

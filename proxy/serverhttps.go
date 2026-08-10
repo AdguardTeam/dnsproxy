@@ -48,7 +48,7 @@ func (p *Proxy) listenHTTP(
 
 	p.logger.InfoContext(ctx, "listening to https", "addr", tcpAddr)
 
-	tlsConfig := p.tlsConfig.Clone()
+	tlsConfig := p.tlsConf.Clone()
 	tlsConfig.NextProtos = []string{http2.NextProtoTLS, "http/1.1"}
 
 	tlsListen := tls.NewListener(tcpListen, tlsConfig)
@@ -62,7 +62,7 @@ func (p *Proxy) listenH3(
 	ctx context.Context,
 	addr *net.UDPAddr,
 ) (ln *quic.EarlyListener, err error) {
-	tlsConfig := p.tlsConfig.Clone()
+	tlsConfig := p.tlsConf.Clone()
 	tlsConfig.NextProtos = []string{"h3"}
 	quicListen, err := quic.ListenAddrEarly(addr.String(), tlsConfig, newServerDoH3Config())
 	if err != nil {
@@ -86,7 +86,7 @@ func newServerDoH3Config() (conf *quic.Config) {
 
 // initHTTPSListeners creates TCP/UDP listeners and HTTP/H3 servers.
 func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
-	httpConf := p.httpConfig
+	httpConf := p.httpConf
 	if httpConf == nil {
 		p.logger.DebugContext(ctx, "no https configuration provided")
 
@@ -212,7 +212,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	p.logger.DebugContext(ctx, "incoming https request", "url", r.URL)
 
-	if !p.httpConfig.InsecureEnabled && r.TLS == nil {
+	if !p.httpConf.InsecureEnabled && r.TLS == nil {
 		statusCode := http.StatusNotFound
 		http.Error(w, http.StatusText(statusCode), statusCode)
 
@@ -269,7 +269,7 @@ func (p *Proxy) checkBasicAuth(
 	r *http.Request,
 	raddr netip.AddrPort,
 ) (shouldHandle bool) {
-	ui := p.httpConfig.Userinfo
+	ui := p.httpConf.Userinfo
 	if ui == nil {
 		return true
 	}
@@ -315,7 +315,7 @@ func (p *Proxy) respondHTTPS(d *DNSContext) (err error) {
 		return fmt.Errorf("packing message: %w", err)
 	}
 
-	if srvHeader := p.httpConfig.ServerHeader; srvHeader != "" {
+	if srvHeader := p.httpConf.ServerHeader; srvHeader != "" {
 		w.Header().Set(httphdr.Server, srvHeader)
 	}
 

@@ -102,7 +102,7 @@ func (p *Proxy) listenQUIC(
 		VerifySourceAddress: v.requiresValidation,
 	}
 
-	tlsConfig := p.tlsConfig.Clone()
+	tlsConfig := p.tlsConf.Clone()
 	tlsConfig.NextProtos = compatProtoDQ
 	l, err = tr.ListenEarly(
 		tlsConfig,

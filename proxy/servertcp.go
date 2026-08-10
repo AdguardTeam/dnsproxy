@@ -77,7 +77,7 @@ func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
 			return fmt.Errorf("listening on tls addr %s: %w", addr, err)
 		}
 
-		l := tls.NewListener(tcpListen, p.tlsConfig)
+		l := tls.NewListener(tcpListen, p.tlsConf)
 		p.tlsListen = append(p.tlsListen, l)
 
 		p.logger.InfoContext(ctx, "listening to tls", "addr", l.Addr())

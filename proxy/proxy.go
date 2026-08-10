@@ -205,17 +205,17 @@ type Proxy struct {
 	// TODO(e.burkov):  Add explicit boolean for disabling fallbacks.
 	fallbacks *UpstreamConfig
 
-	// tlsConfig is the TLS configuration.  Required for DNS-over-TLS,
+	// tlsConf is the TLS configuration.  Required for DNS-over-TLS,
 	// DNS-over-HTTP, and DNS-over-QUIC servers.
-	tlsConfig *tls.Config
+	tlsConf *tls.Config
 
 	// dnsCryptResolverCert is the DNSCrypt resolver certificate.  Required for
 	// DNSCrypt server.
 	dnsCryptResolverCert *dnscrypt.Certificate
 
-	// httpConfig is the configuration for HTTP requests proxying.  Required for
+	// httpConf is the configuration for HTTP requests proxying.  Required for
 	// DoH server.  If nil, the DoH server is disabled.
-	httpConfig *HTTPConfig
+	httpConf *HTTPConfig
 
 	// dnsCryptServers serve DNSCrypt queries.
 	dnsCryptServers []*dnscrypt.Server
@@ -394,9 +394,9 @@ func New(c *Config) (p *Proxy, err error) {
 		upstreamMode:              c.UpstreamMode,
 		dnsCryptProviderName:      c.DNSCryptProviderName,
 		dnsCryptResolverCert:      c.DNSCryptResolverCert,
-		tlsConfig:                 c.TLSConfig,
+		tlsConf:                   c.TLSConfig,
 		bindRetryConf:             c.BindRetryConfig,
-		httpConfig:                c.HTTPConfig,
+		httpConf:                  c.HTTPConfig,
 		upstreamConf:              c.UpstreamConfig,
 		privateRDNSUpstreamConfig: c.PrivateRDNSUpstreamConfig,
 		fallbacks:                 c.Fallbacks,
@@ -489,7 +489,7 @@ func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
 
 // validateBasicAuth validates the HTTP settings if HTTPConfig.Userinfo is set.
 func (p *Proxy) validateBasicAuth() (err error) {
-	conf := p.httpConfig
+	conf := p.httpConf
 	if conf == nil || conf.Userinfo == nil {
 		return nil
 	}

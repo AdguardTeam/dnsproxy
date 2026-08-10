@@ -367,7 +367,7 @@ func (p *Proxy) validateListenAddrs() (err error) {
 // validateTLSConfig returns an error if proxy TLS configuration parameters are
 // needed but aren't provided.
 func (p *Proxy) validateTLSConfig() (err error) {
-	if p.tlsConfig != nil {
+	if p.tlsConf != nil {
 		return nil
 	}
 
@@ -375,7 +375,7 @@ func (p *Proxy) validateTLSConfig() (err error) {
 		return errors.Error("tls listener configuration not found")
 	}
 
-	if p.httpConfig != nil && p.httpConfig.ListenAddresses != nil {
+	if p.httpConf != nil && p.httpConf.ListenAddresses != nil {
 		return errors.Error("https listener configuration not found")
 	}
 
@@ -391,7 +391,7 @@ func (p *Proxy) hasListenAddrs() (ok bool) {
 	return p.udpListenAddr != nil ||
 		p.tcpListenAddr != nil ||
 		p.tlsListenAddr != nil ||
-		(p.httpConfig != nil && p.httpConfig.ListenAddresses != nil) ||
+		(p.httpConf != nil && p.httpConf.ListenAddresses != nil) ||
 		p.quicListenAddr != nil ||
 		p.dnsCryptUDPListenAddr != nil ||
 		p.dnsCryptTCPListenAddr != nil

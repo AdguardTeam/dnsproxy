@@ -21,7 +21,7 @@ const (
 // p.httpConfig.Routes must be valid, if p.httpConfig.Routes is empty, the
 // default routes are registered.
 func (p *Proxy) routeDoH(mux *http.ServeMux) {
-	routes := p.httpConfig.Routes
+	routes := p.httpConf.Routes
 	if len(routes) == 0 {
 		mux.Handle(routePatternRootGet, p)
 		mux.Handle(routePatternRootPost, p)

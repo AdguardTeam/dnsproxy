@@ -1011,7 +1011,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 		&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 		true,
 		defaultCacheSize,
-		prx.EnableEDNSClientSubnet,
+		prx.enableEDNSClientSubnet,
 	)
 
 	d := &DNSContext{
@@ -1242,7 +1242,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	assert.False(t, expired)
 
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMinTTL)
+	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.cacheMinTTL)
 
 	// 2nd request
 	clientIP = net.IP{1, 2, 4, 0}
@@ -1268,7 +1268,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	})
 	assert.False(t, expired)
 	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.CacheMaxTTL)
+	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.cacheMaxTTL)
 }
 
 func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
@@ -1305,16 +1305,15 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	}
 
 	p := &Proxy{
-		Config: Config{
-			CacheEnabled:             true,
-			CacheOptimistic:          true,
-			CacheOptimisticAnswerTTL: testOptimisticTTL,
-			CacheOptimisticMaxAge:    testOptimisticMaxAge,
-			DNSSECEnabled:            true,
-			// TODO(e.burkov):  Set panicking upstream configuration.
-		},
+		cacheEnabled:             true,
+		cacheOptimistic:          true,
+		cacheOptimisticAnswerTTL: testOptimisticTTL,
+		cacheOptimisticMaxAge:    testOptimisticMaxAge,
+		dnsSecEnabled:            true,
+		// TODO(e.burkov):  Set panicking upstream configuration.
 		logger:          testLogger,
 		pendingRequests: newDefaultPendingRequests(),
+		mu:              &sync.RWMutex{},
 	}
 
 	p.initCache()

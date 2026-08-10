@@ -184,7 +184,7 @@ func (p *Proxy) setMinMaxTTL(ctx context.Context, r *dns.Msg) {
 	for _, rrSet := range rrSets {
 		for _, rr := range rrSet.Value {
 			original := rr.Header().Ttl
-			overridden := respectTTLOverrides(original, p.CacheMinTTL, p.CacheMaxTTL)
+			overridden := respectTTLOverrides(original, p.cacheMinTTL, p.cacheMaxTTL)
 
 			if original == overridden {
 				continue

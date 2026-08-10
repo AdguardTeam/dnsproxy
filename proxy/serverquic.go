@@ -62,7 +62,7 @@ const (
 
 // initQUICListeners creates QUIC listeners for the DoQ server.
 func (p *Proxy) initQUICListeners(ctx context.Context) (err error) {
-	for _, a := range p.QUICListenAddr {
+	for _, a := range p.quicListenAddr {
 		var conn *net.UDPConn
 		var ln *quic.EarlyListener
 		var tr *quic.Transport
@@ -102,7 +102,7 @@ func (p *Proxy) listenQUIC(
 		VerifySourceAddress: v.requiresValidation,
 	}
 
-	tlsConfig := p.TLSConfig.Clone()
+	tlsConfig := p.tlsConfig.Clone()
 	tlsConfig.NextProtos = compatProtoDQ
 	l, err = tr.ListenEarly(
 		tlsConfig,

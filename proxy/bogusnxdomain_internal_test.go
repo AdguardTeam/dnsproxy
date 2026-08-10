@@ -78,7 +78,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	}}
 
 	u := testUpstream{}
-	prx.UpstreamConfig.Upstreams = []upstream.Upstream{&u}
+	prx.upstreamConfig.Upstreams = []upstream.Upstream{&u}
 
 	servicetest.RequireRun(t, prx, testTimeout)
 

@@ -19,7 +19,7 @@ import (
 
 // initTCPListeners initializes TCP listeners with configured addresses.
 func (p *Proxy) initTCPListeners(ctx context.Context) (err error) {
-	for _, addr := range p.tcpListenAddr {
+	for _, addr := range p.TCPListenAddr {
 		var ln *net.TCPListener
 		ln, err = p.listenTCP(ctx, addr)
 		if err != nil {

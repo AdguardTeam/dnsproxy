@@ -66,25 +66,21 @@ const logKeyProto = "proto"
 //
 // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
 type Proxy struct {
-	// reqCtx is a constructor for the request contexts.  It is never nil.
-	reqCtx contextutil.Constructor
+	// messages constructs DNS messages.
+	messages MessageConstructor
+
+	// pendingRequests is a storage for duplicated requests.  It is used to
+	// prevent sending the same request to upstreams multiple times.
+	pendingRequests pendingRequests
 
 	// privateNets determines if the requested address and the client address
 	// are private.
 	privateNets netutil.SubnetSet
 
-	// time provides the current time.
-	//
-	// TODO(e.burkov):  Consider configuring it.
-	time timeutil.Clock
-
 	// randSrc provides the source of randomness.
 	//
 	// TODO(e.burkov):  Consider configuring it.
 	randSrc rand.Source
-
-	// messages constructs DNS messages.
-	messages MessageConstructor
 
 	// requestHandler handles the DNS request.  It is never nil.
 	requestHandler Handler
@@ -98,105 +94,54 @@ type Proxy struct {
 	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
 	requestsSema syncutil.Semaphore
 
-	// pendingRequests is a storage for duplicated requests.  It is used to
-	// prevent sending the same request to upstreams multiple times.
-	pendingRequests pendingRequests
+	// reqCtx is a constructor for the request contexts.  It is never nil.
+	reqCtx contextutil.Constructor
+
+	// time provides the current time.
+	//
+	// TODO(e.burkov):  Consider configuring it.
+	time timeutil.Clock
 
 	// trustedProxies is the trusted list of CIDR networks to detect proxy
 	// servers addresses from where the DoH requests should be handled.  The
 	// value of nil makes Proxy not trust any address.
 	trustedProxies netutil.SubnetSet
 
-	// logger is used for logging in the proxy service.  It is never nil.
-	logger *slog.Logger
+	// bogusNXDomain is the set of networks used to transform responses into
+	// NXDOMAIN ones if they contain at least a single IP address within these
+	// networks.  It's similar to dnsmasq's "bogus-nxdomain".
+	bogusNXDomain []netip.Prefix
 
 	// bindRetryConf configures the listeners binding retrying.  If nil,
 	// retries are disabled.
 	bindRetryConf *BindRetryConfig
 
-	// recDetector detects recursive requests that may appear when resolving
-	// requests for private addresses.
-	recDetector *recursionDetector
+	// bytesPool is a pool of byte slices used to read DNS packets.
+	bytesPool *syncutil.Pool[[]byte]
 
 	// cache is used to cache requests.  It is disabled if nil.
 	//
 	// TODO(d.kolyshev): Move this cache to [Proxy.UpstreamConfig] field.
 	cache *cache
 
-	// fastestAddr finds the fastest IP address for the resolved domain.
-	fastestAddr *fastip.FastestAddr
+	// dnsCryptProviderName is the DNSCrypt provider name.  Required for
+	// DNSCrypt server.
+	dnsCryptProviderName string
 
-	// UpstreamConf is a general set of DNS servers to forward requests to.
-	UpstreamConf *UpstreamConfig
-
-	// bytesPool is a pool of byte slices used to read DNS packets.
-	bytesPool *syncutil.Pool[[]byte]
-
-	// shortFlighter is used to resolve the expired cached requests without
-	// repetitions.
-	shortFlighter *optimisticResolver
-
-	// udpListen are the listened UDP connections.
-	udpListen []*net.UDPConn
-
-	// tcpListen are the listened TCP connections.
-	tcpListen []net.Listener
-
-	// tlsListen are the listened TCP connections with TLS.
-	tlsListen []net.Listener
-
-	// quicListen are the listened QUIC connections.
-	quicListen []*quic.EarlyListener
-
-	// quicConns are UDP connections for all listened QUIC connections.  These
-	// should be closed on shutdown, since *quic.EarlyListener doesn't close
-	// them.
-	quicConns []*net.UDPConn
-
-	// httpsListen are the listened HTTPS connections.
-	httpsListen []net.Listener
-
-	// quicTransports are transports for all listened QUIC connections.  These
-	// should be closed on shutdown, since *quic.EarlyListener doesn't close
-	// them.
-	quicTransports []*quic.Transport
-
-	// h3Listen are the listened HTTP/3 connections.
-	h3Listen []*quic.EarlyListener
-
-	// httpsServer serves queries received over HTTPS.
-	httpsServer *http.Server
-
-	// h3Server serves queries received over HTTP/3.
-	h3Server *http3.Server
-
-	// ednsAddr is the ECS IP used in request.
-	ednsAddr net.IP
+	// dnsCryptResolverCert is the DNSCrypt resolver certificate.  Required for
+	// DNSCrypt server.
+	dnsCryptResolverCert *dnscrypt.Certificate
 
 	// dns64Prefs is a set of NAT64 prefixes that are used to detect and
 	// construct DNS64 responses.  The DNS64 function is disabled if it is
 	// empty.
 	dns64Prefs netutil.SliceSubnetSet
 
-	// privateRDNSUpstreamConfig is the set of upstream DNS servers for
-	// resolving private IP addresses.  All the requests considered private will
-	// be resolved via these upstream servers.  Such queries will finish with
-	// [upstream.ErrNoUpstream] if it's empty.
-	privateRDNSUpstreamConfig *UpstreamConfig
+	// ednsAddr is the ECS IP used in request.
+	ednsAddr net.IP
 
-	// rttLock protects upstreamRTTStats.
-	rttLock *sync.Mutex
-
-	// upstreamRTTStats maps the upstream address to its round-trip time
-	// statistics.  It's holds the statistics for all upstreams to perform a
-	// weighted random selection when using the load balancing mode.
-	upstreamRTTStats map[string]upstreamRTTStats
-
-	// mu protects the whole Proxy struct.
-	//
-	// TODO(m.kazantsev):  Add a more thorough documentation on what exactly is
-	// protected by this mutex.
-	mu *sync.RWMutex
+	// fastestAddr finds the fastest IP address for the resolved domain.
+	fastestAddr *fastip.FastestAddr
 
 	// Fallbacks is a list of fallback resolvers.  Those will be used if the
 	// general set fails responding.  It isn't allowed to be empty, but can be
@@ -205,57 +150,112 @@ type Proxy struct {
 	// TODO(e.burkov):  Add explicit boolean for disabling Fallbacks.
 	Fallbacks *UpstreamConfig
 
-	// tlsConf is the TLS configuration.  Required for DNS-over-TLS,
-	// DNS-over-HTTP, and DNS-over-QUIC servers.
-	tlsConf *tls.Config
+	// h3Listen are the listened HTTP/3 connections.
+	h3Listen []*quic.EarlyListener
 
-	// dnsCryptResolverCert is the DNSCrypt resolver certificate.  Required for
-	// DNSCrypt server.
-	dnsCryptResolverCert *dnscrypt.Certificate
+	// h3Server serves queries received over HTTP/3.
+	h3Server *http3.Server
 
 	// httpConf is the configuration for HTTP requests proxying.  Required for
 	// DoH server.  If nil, the DoH server is disabled.
 	httpConf *HTTPConfig
 
-	// dnsCryptServers serve DNSCrypt queries.
-	dnsCryptServers []*dnscrypt.Server
+	// httpsListen are the listened HTTPS connections.
+	httpsListen []net.Listener
+
+	// httpsServer serves queries received over HTTPS.
+	httpsServer *http.Server
+
+	// logger is used for logging in the proxy service.  It is never nil.
+	logger *slog.Logger
+
+	// mu protects the whole Proxy struct.
+	//
+	// TODO(m.kazantsev):  Add a more thorough documentation on what exactly is
+	// protected by this mutex.
+	mu *sync.RWMutex
+
+	// privateRDNSUpstreamConfig is the set of upstream DNS servers for
+	// resolving private IP addresses.  All the requests considered private will
+	// be resolved via these upstream servers.  Such queries will finish with
+	// [upstream.ErrNoUpstream] if it's empty.
+	privateRDNSUpstreamConfig *UpstreamConfig
+
+	// quicConns are UDP connections for all listened QUIC connections.  These
+	// should be closed on shutdown, since *quic.EarlyListener doesn't close
+	// them.
+	quicConns []*net.UDPConn
+
+	// quicListen are the listened QUIC connections.
+	quicListen []*quic.EarlyListener
+
+	// quicTransports are transports for all listened QUIC connections.  These
+	// should be closed on shutdown, since *quic.EarlyListener doesn't close
+	// them.
+	quicTransports []*quic.Transport
+
+	// recDetector detects recursive requests that may appear when resolving
+	// requests for private addresses.
+	recDetector *recursionDetector
+
+	// rttLock protects upstreamRTTStats.
+	rttLock *sync.Mutex
+
+	// shortFlighter is used to resolve the expired cached requests without
+	// repetitions.
+	shortFlighter *optimisticResolver
+
+	// tcpListen are the listened TCP connections.
+	tcpListen []net.Listener
+
+	// tlsConf is the TLS configuration.  Required for DNS-over-TLS,
+	// DNS-over-HTTP, and DNS-over-QUIC servers.
+	tlsConf *tls.Config
+
+	// tlsListen are the listened TCP connections with TLS.
+	tlsListen []net.Listener
+
+	// udpListen are the listened UDP connections.
+	udpListen []*net.UDPConn
+
+	// upstreamConf is a general set of DNS servers to forward requests to.
+	upstreamConf *UpstreamConfig
 
 	// upstreamMode determines the logic through which upstreams will be used.
 	// If not specified the [proxy.UpstreamModeLoadBalance] is used.
 	upstreamMode UpstreamMode
 
-	// dnsCryptProviderName is the DNSCrypt provider name.  Required for
-	// DNSCrypt server.
-	dnsCryptProviderName string
-
-	// UDPListenAddr is the set of UDP addresses to listen for plain
-	// DNS-over-UDP requests.
-	UDPListenAddr []*net.UDPAddr
-
-	// tcpListenAddr is the set of TCP addresses to listen for plain
-	// DNS-over-TCP requests.
-	tcpListenAddr []*net.TCPAddr
-
-	// TLSListenAddr is the set of TCP addresses to listen for DNS-over-TLS
-	// requests.
-	TLSListenAddr []*net.TCPAddr
+	// upstreamRTTStats maps the upstream address to its round-trip time
+	// statistics.  It's holds the statistics for all upstreams to perform a
+	// weighted random selection when using the load balancing mode.
+	upstreamRTTStats map[string]upstreamRTTStats
 
 	// QUICListenAddr is the set of UDP addresses to listen for DNS-over-QUIC
 	// requests.
 	QUICListenAddr []*net.UDPAddr
 
-	// dnsCryptUDPListenAddr is the set of UDP addresses to listen for DNSCrypt
+	// TCPListenAddr is the set of TCP addresses to listen for plain
+	// DNS-over-TCP requests.
+	TCPListenAddr []*net.TCPAddr
+
+	// TLSListenAddr is the set of TCP addresses to listen for DNS-over-TLS
 	// requests.
-	dnsCryptUDPListenAddr []*net.UDPAddr
+	TLSListenAddr []*net.TCPAddr
+
+	// UDPListenAddr is the set of UDP addresses to listen for plain
+	// DNS-over-UDP requests.
+	UDPListenAddr []*net.UDPAddr
+
+	// dnsCryptServers serve DNSCrypt queries.
+	dnsCryptServers []*dnscrypt.Server
 
 	// dnsCryptTCPListenAddr is the set of TCP addresses to listen for DNSCrypt
 	// requests.
 	dnsCryptTCPListenAddr []*net.TCPAddr
 
-	// bogusNXDomain is the set of networks used to transform responses into
-	// NXDOMAIN ones if they contain at least a single IP address within these
-	// networks.  It's similar to dnsmasq's "bogus-nxdomain".
-	bogusNXDomain []netip.Prefix
+	// dnsCryptUDPListenAddr is the set of UDP addresses to listen for DNSCrypt
+	// requests.
+	dnsCryptUDPListenAddr []*net.UDPAddr
 
 	// bindRetryIvl is the interval between attempts to bind to an address for
 	// listening.
@@ -277,6 +277,9 @@ type Proxy struct {
 	// Non-positive value will be replaced with the default one.
 	fastestPingTimeout time.Duration
 
+	// cacheSizeBytes is the maximum cache size in bytes.
+	cacheSizeBytes int
+
 	// The size of the read buffer on the underlying socket.  Larger read
 	// buffers can handle larger bursts of requests before packets get dropped.
 	udpBufferSize int
@@ -284,8 +287,9 @@ type Proxy struct {
 	// udpOOBSize is the size of the out-of-band data for UDP connections.
 	udpOOBSize int
 
-	// cacheSizeBytes is the maximum cache size in bytes.
-	cacheSizeBytes int
+	// bindRetryCount is the number of retries for binding to an address for
+	// listening.  Zero means one attempt and no retries.
+	bindRetryCount uint
 
 	// maxGoroutines is the maximum number of goroutines processing DNS
 	// requests.  Important for mobile users.
@@ -294,21 +298,17 @@ type Proxy struct {
 	// in a later major version, as it doesn't actually limit all goroutines.
 	maxGoroutines uint
 
-	// bindRetryCount is the number of retries for binding to an address for
-	// listening.  Zero means one attempt and no retries.
-	bindRetryCount uint
+	// cacheMaxTTL is the maximum TTL for cached DNS responses in seconds.
+	cacheMaxTTL uint32
 
 	// cacheMinTTL is the minimum TTL for cached DNS responses in seconds.
 	cacheMinTTL uint32
 
-	// cacheMaxTTL is the maximum TTL for cached DNS responses in seconds.
-	cacheMaxTTL uint32
+	// cacheEnabled defines if the response cache should be used.
+	cacheEnabled bool
 
-	// started indicates if the proxy has been started.
-	started bool
-
-	// refuseAny makes proxy refuse the requests of type ANY.
-	refuseAny bool
+	// cacheOptimistic defines if the optimistic cache mechanism should be used.
+	cacheOptimistic bool
 
 	// dnsSecEnabled specifies if the proxy should set the DO bits in the
 	// upstream requests.
@@ -336,11 +336,15 @@ type Proxy struct {
 	// never be used for clients with public IP addresses.
 	enableEDNSClientSubnet bool
 
-	// cacheEnabled defines if the response cache should be used.
-	cacheEnabled bool
+	// preferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
+	// upstreams that use hostnames.
+	preferIPv6 bool
 
-	// cacheOptimistic defines if the optimistic cache mechanism should be used.
-	cacheOptimistic bool
+	// refuseAny makes proxy refuse the requests of type ANY.
+	refuseAny bool
+
+	// started indicates if the proxy has been started.
+	started bool
 
 	// useDNS64 enables DNS64 handling.  If true, proxy will translate IPv4
 	// answers into IPv6 answers using first of DNS64Prefs.  Note also that PTR
@@ -354,10 +358,6 @@ type Proxy struct {
 	// a valid PrivateRDNSUpstreamConfig with at least a single general upstream
 	// server.
 	usePrivateRDNS bool
-
-	// preferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
-	// upstreams that use hostnames.
-	preferIPv6 bool
 }
 
 // New creates a new Proxy with the specified configuration.  c must not be nil.
@@ -367,6 +367,11 @@ type Proxy struct {
 // TODO(e.burkov):  Add context.
 func New(c *Config) (p *Proxy, err error) {
 	p = &Proxy{
+		QUICListenAddr:            c.QUICListenAddr,
+		TLSListenAddr:             c.TLSListenAddr,
+		TCPListenAddr:             c.TCPListenAddr,
+		UDPListenAddr:             c.UDPListenAddr,
+		Fallbacks:                 c.Fallbacks,
 		preferIPv6:                c.PreferIPv6,
 		usePrivateRDNS:            c.UsePrivateRDNS,
 		useDNS64:                  c.UseDNS64,
@@ -387,19 +392,14 @@ func New(c *Config) (p *Proxy, err error) {
 		bogusNXDomain:             c.BogusNXDomain,
 		dnsCryptTCPListenAddr:     c.DNSCryptTCPListenAddr,
 		dnsCryptUDPListenAddr:     c.DNSCryptUDPListenAddr,
-		QUICListenAddr:            c.QUICListenAddr,
-		TLSListenAddr:             c.TLSListenAddr,
-		tcpListenAddr:             c.TCPListenAddr,
-		UDPListenAddr:             c.UDPListenAddr,
 		upstreamMode:              c.UpstreamMode,
 		dnsCryptProviderName:      c.DNSCryptProviderName,
 		dnsCryptResolverCert:      c.DNSCryptResolverCert,
 		tlsConf:                   c.TLSConfig,
 		bindRetryConf:             c.BindRetryConfig,
 		httpConf:                  c.HTTPConfig,
-		UpstreamConf:              c.UpstreamConfig,
+		upstreamConf:              c.UpstreamConfig,
 		privateRDNSUpstreamConfig: c.PrivateRDNSUpstreamConfig,
-		Fallbacks:                 c.Fallbacks,
 		trustedProxies:            c.TrustedProxies,
 		privateNets: cmp.Or[netutil.SubnetSet](
 			c.PrivateSubnets,
@@ -593,7 +593,7 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 	errs := p.closeListeners(nil)
 
 	for _, u := range []*UpstreamConfig{
-		p.UpstreamConf,
+		p.upstreamConf,
 		p.privateRDNSUpstreamConfig,
 		p.Fallbacks,
 	} {
@@ -767,7 +767,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 	}
 
 	// Use configured.
-	return getUpstreams(p.UpstreamConf, host), false
+	return getUpstreams(p.upstreamConf, host), false
 }
 
 // replyFromUpstream tries to resolve the request via configured upstream

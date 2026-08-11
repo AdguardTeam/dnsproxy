@@ -53,7 +53,7 @@ func (p *Proxy) setupDNS64(dns64Prefs netutil.SliceSubnetSet) (err error) {
 
 	for i, pref := range dns64Prefs {
 		if !pref.Addr().Is6() {
-			return fmt.Errorf("prefix at index %d: %q is not an IPv6 prefix", i, pref)
+			return fmt.Errorf("prefix at index %d: %q is not an ipv6 prefix", i, pref)
 		}
 
 		if pref.Bits() > maxNAT64PrefixBitLen {

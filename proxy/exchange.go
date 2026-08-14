@@ -18,7 +18,7 @@ func (p *Proxy) exchangeUpstreams(
 	req *dns.Msg,
 	ups []upstream.Upstream,
 ) (resp *dns.Msg, u upstream.Upstream, err error) {
-	switch p.UpstreamMode {
+	switch p.upstreamMode {
 	case UpstreamModeParallel:
 		return upstream.ExchangeParallel(ups, req)
 	case UpstreamModeFastestAddr:

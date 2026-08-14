@@ -402,7 +402,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		assert.Equal(t, msgToKey(d.Req), key)
 
 		require.NotNil(t, ci)
-		assert.Equal(t, dnsProxy.CacheMinTTL, ci.m.Answer[0].Header().Ttl)
+		assert.Equal(t, dnsProxy.cacheMinTTL, ci.m.Answer[0].Header().Ttl)
 	})
 
 	t.Run("replace_max", func(t *testing.T) {
@@ -426,7 +426,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		assert.Equal(t, msgToKey(d.Req), key)
 
 		require.NotNil(t, ci)
-		assert.Equal(t, dnsProxy.CacheMaxTTL, ci.m.Answer[0].Header().Ttl)
+		assert.Equal(t, dnsProxy.cacheMaxTTL, ci.m.Answer[0].Header().Ttl)
 	})
 }
 

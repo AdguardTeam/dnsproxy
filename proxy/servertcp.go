@@ -19,7 +19,7 @@ import (
 
 // initTCPListeners initializes TCP listeners with configured addresses.
 func (p *Proxy) initTCPListeners(ctx context.Context) (err error) {
-	for _, addr := range p.TCPListenAddr {
+	for _, addr := range p.tcpListenAddr {
 		var ln *net.TCPListener
 		ln, err = p.listenTCP(ctx, addr)
 		if err != nil {
@@ -64,7 +64,7 @@ func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln *net.TCPLi
 
 // initTLSListeners initializes TLS listeners with configured addresses.
 func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
-	for _, addr := range p.TLSListenAddr {
+	for _, addr := range p.tlsListenAddr {
 		p.logger.InfoContext(ctx, "creating tls server socket", "addr", addr)
 
 		var tcpListen *net.TCPListener
@@ -77,7 +77,7 @@ func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
 			return fmt.Errorf("listening on tls addr %s: %w", addr, err)
 		}
 
-		l := tls.NewListener(tcpListen, p.TLSConfig)
+		l := tls.NewListener(tcpListen, p.tlsConf)
 		p.tlsListen = append(p.tlsListen, l)
 
 		p.logger.InfoContext(ctx, "listening to tls", "addr", l.Addr())

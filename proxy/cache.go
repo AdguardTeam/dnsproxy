@@ -165,20 +165,20 @@ func (c *cache) unpackItem(data []byte, req *dns.Msg) (ci *cacheItem, expired bo
 
 // initCache initializes cache if it's enabled.
 func (p *Proxy) initCache() {
-	if !p.CacheEnabled {
+	if !p.cacheEnabled {
 		p.logger.Info("cache disabled")
 
 		return
 	}
 
-	size := p.CacheSizeBytes
+	size := p.cacheSizeBytes
 	p.logger.Info("cache enabled", "size", size)
 	p.cache = newCache(&cacheConfig{
 		size:             size,
-		optimisticTTL:    p.CacheOptimisticAnswerTTL,
-		optimisticMaxAge: p.CacheOptimisticMaxAge,
-		withECS:          p.EnableEDNSClientSubnet,
-		optimistic:       p.CacheOptimistic,
+		optimisticTTL:    p.cacheOptimisticAnswerTTL,
+		optimisticMaxAge: p.cacheOptimisticMaxAge,
+		withECS:          p.enableEDNSClientSubnet,
+		optimistic:       p.cacheOptimistic,
 	})
 	p.shortFlighter = newOptimisticResolver(p)
 }

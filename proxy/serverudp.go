@@ -19,7 +19,7 @@ import (
 
 // initUDPListeners initializes UDP listeners with configured addresses.
 func (p *Proxy) initUDPListeners(ctx context.Context) (err error) {
-	for _, a := range p.UDPListenAddr {
+	for _, a := range p.udpListenAddr {
 		var pc *net.UDPConn
 		pc, sErr := p.listenUDP(ctx, a)
 		if sErr != nil {
@@ -59,8 +59,8 @@ func (p *Proxy) listenUDP(ctx context.Context, addr *net.UDPAddr) (conn *net.UDP
 		return nil, fmt.Errorf("bad conn type: %T(%[1]v)", packetConn)
 	}
 
-	if p.Config.UDPBufferSize > 0 {
-		err = conn.SetReadBuffer(p.Config.UDPBufferSize)
+	if p.udpBufferSize > 0 {
+		err = conn.SetReadBuffer(p.udpBufferSize)
 		if err != nil {
 			p.logClose(ctx, slog.LevelDebug, conn, "closing after failed read buffer size setting")
 

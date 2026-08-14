@@ -274,30 +274,30 @@ type HTTPConfig struct {
 }
 
 // validateConfig verifies that the supplied configuration is valid and returns
-// an error if it's not.
+// an error if it's not.  c must be non-nil and valid.
 //
 // TODO(s.chzhen):  Use [validate.Interface] from golibs.
-func (p *Proxy) validateConfig() (err error) {
-	err = p.UpstreamConfig.validate()
+func (p *Proxy) validateConfig(c *Config) (err error) {
+	err = c.UpstreamConfig.validate()
 	if err != nil {
 		return fmt.Errorf("general upstreams: %w", err)
 	}
 
-	err = ValidatePrivateConfig(p.PrivateRDNSUpstreamConfig, p.privateNets)
+	err = ValidatePrivateConfig(c.PrivateRDNSUpstreamConfig, c.PrivateSubnets)
 	if err != nil {
-		if p.UsePrivateRDNS || errors.Is(err, upstream.ErrNoUpstreams) {
+		if c.UsePrivateRDNS || errors.Is(err, upstream.ErrNoUpstreams) {
 			return fmt.Errorf("private rdns upstreams: %w", err)
 		}
 	}
 
-	err = p.Fallbacks.validate()
-	// Allow [Proxy.Fallbacks] to be nil, but not empty.  nil means not to use
+	err = c.Fallbacks.validate()
+	// Allow [Config.Fallbacks] to be nil, but not empty.  nil means not to use
 	// fallbacks at all.
 	if errors.Is(err, upstream.ErrNoUpstreams) {
 		return fmt.Errorf("fallbacks: %w", err)
 	}
 
-	switch p.UpstreamMode {
+	switch c.UpstreamMode {
 	case
 		"",
 		UpstreamModeFastestAddr,
@@ -305,7 +305,7 @@ func (p *Proxy) validateConfig() (err error) {
 		UpstreamModeParallel:
 		// Go on.
 	default:
-		return fmt.Errorf("upstream mode: %w: %q", errors.ErrBadEnumValue, p.UpstreamMode)
+		return fmt.Errorf("upstream mode: %w: %q", errors.ErrBadEnumValue, c.UpstreamMode)
 	}
 
 	err = p.validateBasicAuth()
@@ -320,20 +320,20 @@ func (p *Proxy) validateConfig() (err error) {
 
 // logConfigInfo logs proxy configuration information.
 func (p *Proxy) logConfigInfo() {
-	if p.CacheMinTTL > 0 || p.CacheMaxTTL > 0 {
-		p.logger.Info("cache ttl override is enabled", "min", p.CacheMinTTL, "max", p.CacheMaxTTL)
+	if p.cacheMinTTL > 0 || p.cacheMaxTTL > 0 {
+		p.logger.Info("cache ttl override is enabled", "min", p.cacheMinTTL, "max", p.cacheMaxTTL)
 	}
 
-	if p.RefuseAny {
+	if p.refuseAny {
 		p.logger.Info("server will refuse requests of type any")
 	}
 
-	if len(p.BogusNXDomain) > 0 {
-		p.logger.Info("bogus-nxdomain ip specified", "prefix_len", len(p.BogusNXDomain))
+	if len(p.bogusNXDomain) > 0 {
+		p.logger.Info("bogus-nxdomain ip specified", "prefix_len", len(p.bogusNXDomain))
 	}
 
-	if p.UpstreamMode != "" {
-		p.logger.Info("upstream mode is set", "mode", p.UpstreamMode)
+	if p.upstreamMode != "" {
+		p.logger.Info("upstream mode is set", "mode", p.upstreamMode)
 	}
 }
 
@@ -351,12 +351,12 @@ func (p *Proxy) validateListenAddrs() (err error) {
 		return fmt.Errorf("invalid tls configuration: %w", err)
 	}
 
-	if p.DNSCryptResolverCert == nil || p.DNSCryptProviderName == "" {
-		if p.DNSCryptTCPListenAddr != nil {
+	if p.dnsCryptResolverCert == nil || p.dnsCryptProviderName == "" {
+		if p.dnsCryptTCPListenAddr != nil {
 			return errors.Error("cannot create dnscrypt tcp listener without dnscrypt config")
 		}
 
-		if p.DNSCryptUDPListenAddr != nil {
+		if p.dnsCryptUDPListenAddr != nil {
 			return errors.Error("cannot create dnscrypt udp listener without dnscrypt config")
 		}
 	}
@@ -367,19 +367,19 @@ func (p *Proxy) validateListenAddrs() (err error) {
 // validateTLSConfig returns an error if proxy TLS configuration parameters are
 // needed but aren't provided.
 func (p *Proxy) validateTLSConfig() (err error) {
-	if p.TLSConfig != nil {
+	if p.tlsConf != nil {
 		return nil
 	}
 
-	if p.TLSListenAddr != nil {
+	if p.tlsListenAddr != nil {
 		return errors.Error("tls listener configuration not found")
 	}
 
-	if p.HTTPConfig != nil && p.HTTPConfig.ListenAddresses != nil {
+	if p.httpConf != nil && p.httpConf.ListenAddresses != nil {
 		return errors.Error("https listener configuration not found")
 	}
 
-	if p.QUICListenAddr != nil {
+	if p.quicListenAddr != nil {
 		return errors.Error("quic listener configuration not found")
 	}
 
@@ -388,11 +388,11 @@ func (p *Proxy) validateTLSConfig() (err error) {
 
 // hasListenAddrs - is there any addresses to listen to?
 func (p *Proxy) hasListenAddrs() (ok bool) {
-	return p.UDPListenAddr != nil ||
-		p.TCPListenAddr != nil ||
-		p.TLSListenAddr != nil ||
-		(p.HTTPConfig != nil && p.HTTPConfig.ListenAddresses != nil) ||
-		p.QUICListenAddr != nil ||
-		p.DNSCryptUDPListenAddr != nil ||
-		p.DNSCryptTCPListenAddr != nil
+	return p.udpListenAddr != nil ||
+		p.tcpListenAddr != nil ||
+		p.tlsListenAddr != nil ||
+		(p.httpConf != nil && p.httpConf.ListenAddresses != nil) ||
+		p.quicListenAddr != nil ||
+		p.dnsCryptUDPListenAddr != nil ||
+		p.dnsCryptTCPListenAddr != nil
 }

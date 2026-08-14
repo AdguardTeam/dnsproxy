@@ -25,7 +25,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	var key []byte
 
 	// TODO(d.kolyshev): Use EnableEDNSClientSubnet from dctxCache.
-	if p.Config.EnableEDNSClientSubnet && d.ReqECS != nil {
+	if p.enableEDNSClientSubnet && d.ReqECS != nil {
 		ci, expired, key = dctxCache.getWithSubnet(d.Req, d.ReqECS)
 		cacheSource = "subnet cache"
 	} else {
@@ -43,7 +43,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	p.logger.Debug(
 		"replying from cache",
 		"source", cacheSource,
-		"ecs_enabled", p.Config.EnableEDNSClientSubnet,
+		"ecs_enabled", p.enableEDNSClientSubnet,
 	)
 
 	if dctxCache.optimistic && expired {
@@ -81,7 +81,7 @@ func cloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 func (p *Proxy) cacheResp(d *DNSContext) {
 	dctxCache := p.cacheForContext(d)
 
-	if !p.EnableEDNSClientSubnet {
+	if !p.enableEDNSClientSubnet {
 		dctxCache.set(d.Req, d.Res, d.Upstream, p.logger)
 
 		return

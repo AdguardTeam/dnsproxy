@@ -105,7 +105,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 		msg := newTestMessage()
 
-		dnsProxy.TrustedProxies = netip.PrefixFrom(addr, addr.BitLen())
+		dnsProxy.trustedProxies = netip.PrefixFrom(addr, addr.BitLen())
 
 		servicetest.RequireRun(t, dnsProxy, testTimeout)
 

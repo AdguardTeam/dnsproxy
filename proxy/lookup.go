@@ -81,7 +81,7 @@ func (p *Proxy) LookupNetIP(
 		return addrs, errors.Join(errs...)
 	}
 
-	if p.Config.PreferIPv6 {
+	if p.preferIPv6 {
 		slices.SortStableFunc(addrs, netutil.PreferIPv6)
 	} else {
 		slices.SortStableFunc(addrs, netutil.PreferIPv4)

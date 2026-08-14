@@ -25,7 +25,7 @@ GOAMD64 = v1
 GOPROXY = https://proxy.golang.org|direct
 GOTELEMETRY = off
 OUT = dnsproxy
-GOTOOLCHAIN = go1.26.5
+GOTOOLCHAIN = go1.26.6
 RACE = 0
 REVISION = $${REVISION:-$$(git rev-parse --short HEAD)}
 

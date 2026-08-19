@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -28,7 +27,7 @@ const testUpsAddr = "https://upstream.address"
 
 // upstreamWithAddr is a [dnsproxytest.Upstream] that is only expected to be
 // used to get its address.
-var upstreamWithAddr = &dnsproxytest.Upstream{
+var upstreamWithAddr = &testUpstream{
 	OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
 	OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 	OnAddress:  func() (addr string) { return testUpsAddr },
@@ -361,14 +360,17 @@ func TestCacheExpiration(t *testing.T) {
 }
 
 func TestCacheExpirationWithTTLOverride(t *testing.T) {
-	u := testUpstream{}
+	var ans []dns.RR
+
+	onExchange := newECSReplyHandler(&ans, nil, nil)
+	u := newTestECSUpstream(onExchange)
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
-			Upstreams: []upstream.Upstream{&u},
+			Upstreams: []upstream.Upstream{u},
 		},
 		TrustedProxies: defaultTrustedProxies,
 		CacheEnabled:   true,
@@ -385,7 +387,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		d.Req = newHostTestMessage("host")
 		d.Addr = netip.AddrPort{}
 
-		u.ans = []dns.RR{&dns.A{
+		ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
 				Rrtype: dns.TypeA,
 				Name:   "host.",
@@ -409,7 +411,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		d.Req = newHostTestMessage("host2")
 		d.Addr = netip.AddrPort{}
 
-		u.ans = []dns.RR{&dns.A{
+		ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
 				Rrtype: dns.TypeA,
 				Name:   "host2.",

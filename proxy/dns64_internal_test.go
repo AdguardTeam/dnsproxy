@@ -6,7 +6,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -20,7 +19,7 @@ const ipv4OnlyFqdn = "ipv4.only."
 
 func TestDNS64Race(t *testing.T) {
 	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, net.ParseIP("1.2.3.4"))
-	ups := &dnsproxytest.Upstream{
+	ups := &testUpstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(req)
 			if req.Question[0].Qtype == dns.TypeA {
@@ -32,7 +31,7 @@ func TestDNS64Race(t *testing.T) {
 		OnAddress: func() (addr string) { return "fake.address" },
 		OnClose:   func() (err error) { return nil },
 	}
-	localUps := &dnsproxytest.Upstream{
+	localUps := &testUpstream{
 		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
 		OnAddress:  func() (addr string) { return "fake.address" },
 		OnClose:    func() (err error) { return nil },
@@ -180,7 +179,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	pt := testutil.PanicT{}
 	newUps := func(answers answerMap) (u upstream.Upstream) {
-		return &dnsproxytest.Upstream{
+		return &testUpstream{
 			OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 				q := req.Question[0]
 				require.Contains(pt, answers, q.Qtype)
@@ -200,7 +199,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	}
 
 	localRR := newRR(t, ptr64Domain, dns.TypePTR, 3600, domainPointed)
-	localUps := &dnsproxytest.Upstream{
+	localUps := &testUpstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			require.Equal(pt, req.Question[0].Name, ptr64Domain)
 			resp = (&dns.Msg{}).SetReply(req)

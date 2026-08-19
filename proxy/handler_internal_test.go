@@ -17,7 +17,7 @@ func TestFilteringHandler(t *testing.T) {
 	m := &sync.RWMutex{}
 	blockResponse := false
 
-	reqHandler := &TestHandler{
+	reqHandler := &testHandler{
 		OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (err error) {
 			m.Lock()
 			defer m.Unlock()

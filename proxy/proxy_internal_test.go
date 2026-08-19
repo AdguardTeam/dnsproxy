@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -15,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	glcache "github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/contextutil"
@@ -186,48 +186,6 @@ func firstIP(resp *dns.Msg) (ip net.IP) {
 		return a.A
 	}
 
-	return nil
-}
-
-type testUpstream struct {
-	ans []dns.RR
-
-	ecsIP      net.IP
-	ecsReqIP   net.IP
-	ecsReqMask int
-}
-
-// type check
-var _ upstream.Upstream = (*testUpstream)(nil)
-
-// Exchange implements the upstream.Upstream interface for *testUpstream.
-func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
-	resp = &dns.Msg{}
-	resp.SetReply(m)
-
-	if u.ans != nil {
-		resp.Answer = append(resp.Answer, u.ans...)
-	}
-
-	ecs, _ := ecsFromMsg(m)
-	if ecs != nil {
-		u.ecsReqIP = ecs.IP
-		u.ecsReqMask, _ = ecs.Mask.Size()
-	}
-	if u.ecsIP != nil {
-		setECS(resp, u.ecsIP, 24)
-	}
-
-	return resp, nil
-}
-
-// Address implements the upstream.Upstream interface for *testUpstream.
-func (u *testUpstream) Address() (addr string) {
-	return ""
-}
-
-// Close implements the upstream.Upstream interface for *testUpstream.
-func (u *testUpstream) Close() (err error) {
 	return nil
 }
 
@@ -462,7 +420,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		Signature:   "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm",
 	}
 
-	u := &dnsproxytest.Upstream{
+	u := &testUpstream{
 		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 
@@ -897,7 +855,7 @@ func TestResponseInRequest(t *testing.T) {
 func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
-	u := &dnsproxytest.Upstream{
+	u := &testUpstream{
 		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 			resp.Answer = append(resp.Answer, &dns.A{
@@ -941,16 +899,17 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 	prx := mustStartDefaultProxy(t)
 
 	ansIP := net.IP{4, 3, 2, 1}
-	u := &testUpstream{
-		ans: []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{
-				Rrtype: dns.TypeA,
-				Name:   "host.",
-				Ttl:    60,
-			},
-			A: ansIP,
-		}},
-	}
+	ans := []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Rrtype: dns.TypeA,
+			Name:   "host.",
+			Ttl:    60,
+		},
+		A: ansIP,
+	}}
+
+	onExchange := newECSReplyHandler(&ans, nil, nil)
+	u := newTestECSUpstream(onExchange)
 
 	d := &DNSContext{
 		CustomUpstreamConfig: NewCustomUpstreamConfig(
@@ -1002,7 +961,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 
 		return resp, nil
 	}
-	u := &dnsproxytest.Upstream{
+	u := &testUpstream{
 		OnExchange: exchangeFunc,
 		OnAddress:  func() (addr string) { return "stub" },
 		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
@@ -1091,13 +1050,20 @@ func TestECSProxy(t *testing.T) {
 		ip4323 = net.IP{4, 3, 2, 3}
 	)
 
-	u := &testUpstream{
-		ans: []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
-			A:   ip4321,
-		}},
-		ecsIP: ip1230,
-	}
+	var (
+		ans      []dns.RR
+		ecsIP    net.IP
+		ecsReqIP net.IP
+	)
+
+	onExchange := newECSReplyHandler(&ans, &ecsIP, &ecsReqIP)
+	u := newTestECSUpstream(onExchange)
+
+	ans = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
+		A:   ip4321,
+	}}
+	ecsIP = ip1230
 
 	prx := mustNew(t, &Config{
 		Logger:        testLogger,
@@ -1125,7 +1091,7 @@ func TestECSProxy(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, net.IP{4, 3, 2, 1}, firstIP(d.Res))
-		assert.Equal(t, ip1230, u.ecsReqIP)
+		assert.Equal(t, ip1230, ecsReqIP)
 	})
 
 	t.Run("serve_subnet_cache", func(t *testing.T) {
@@ -1133,14 +1099,15 @@ func TestECSProxy(t *testing.T) {
 			Req:  newHostTestMessage("host"),
 			Addr: netip.MustParseAddrPort("1.2.3.1:1234"),
 		}
-		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
+		ans, ecsIP = nil, nil
+		ecsReqIP = nil
 
 		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
 		err := prx.Resolve(ctx, d)
 		require.NoError(t, err)
 
 		assert.Equal(t, ip4321, firstIP(d.Res))
-		assert.Nil(t, u.ecsReqIP)
+		assert.Nil(t, ecsReqIP)
 	})
 
 	t.Run("another_subnet", func(t *testing.T) {
@@ -1148,18 +1115,18 @@ func TestECSProxy(t *testing.T) {
 			Req:  newHostTestMessage("host"),
 			Addr: netip.MustParseAddrPort("2.2.3.0:1234"),
 		}
-		u.ans = []dns.RR{&dns.A{
+		ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
 			A:   ip4322,
 		}}
-		u.ecsIP = ip2230
+		ecsIP = ip2230
 
 		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
 		err := prx.Resolve(ctx, d)
 		require.NoError(t, err)
 
 		assert.Equal(t, ip4322, firstIP(d.Res))
-		assert.Equal(t, ip2230, u.ecsReqIP)
+		assert.Equal(t, ip2230, ecsReqIP)
 	})
 
 	t.Run("cache_general", func(t *testing.T) {
@@ -1167,18 +1134,19 @@ func TestECSProxy(t *testing.T) {
 			Req:  newHostTestMessage("host"),
 			Addr: netip.MustParseAddrPort("127.0.0.1:1234"),
 		}
-		u.ans = []dns.RR{&dns.A{
+		ans = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
 			A:   ip4323,
 		}}
-		u.ecsIP, u.ecsReqIP = nil, nil
+		ecsIP = nil
+		ecsReqIP = nil
 
 		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
 		err := prx.Resolve(ctx, d)
 		require.NoError(t, err)
 
 		assert.Equal(t, ip4323, firstIP(d.Res))
-		assert.Nil(t, u.ecsReqIP)
+		assert.Nil(t, ecsReqIP)
 	})
 
 	t.Run("serve_general_cache", func(t *testing.T) {
@@ -1186,30 +1154,38 @@ func TestECSProxy(t *testing.T) {
 			Req:  newHostTestMessage("host"),
 			Addr: netip.MustParseAddrPort("127.0.0.2:1234"),
 		}
-		u.ans, u.ecsIP, u.ecsReqIP = nil, nil, nil
+		ans, ecsIP = nil, nil
+		ecsReqIP = nil
 
 		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
 		err := prx.Resolve(ctx, d)
 		require.NoError(t, err)
 
 		assert.Equal(t, ip4323, firstIP(d.Res))
-		assert.Nil(t, u.ecsReqIP)
+		assert.Nil(t, ecsReqIP)
 	})
 }
 
 func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	clientIP := net.IP{1, 2, 3, 0}
-	u := &testUpstream{
-		ans: []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{
-				Rrtype: dns.TypeA,
-				Name:   "host.",
-				Ttl:    10,
-			},
-			A: net.IP{4, 3, 2, 1},
-		}},
-		ecsIP: clientIP,
-	}
+
+	var (
+		ans   []dns.RR
+		ecsIP net.IP
+	)
+
+	onExchange := newECSReplyHandler(&ans, &ecsIP, nil)
+	u := newTestECSUpstream(onExchange)
+
+	ans = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Rrtype: dns.TypeA,
+			Name:   "host.",
+			Ttl:    10,
+		},
+		A: net.IP{4, 3, 2, 1},
+	}}
+	ecsIP = clientIP
 
 	prx := mustNew(t, &Config{
 		Logger:                 testLogger,
@@ -1249,7 +1225,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 	clientIP = net.IP{1, 2, 4, 0}
 	d.Req = newHostTestMessage("host")
 	d.Addr = netip.MustParseAddrPort("1.2.4.0:1234")
-	u.ans = []dns.RR{&dns.A{
+	ans = []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{
 			Rrtype: dns.TypeA,
 			Name:   "host.",
@@ -1257,7 +1233,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 		},
 		A: net.IP{4, 3, 2, 1},
 	}}
-	u.ecsIP = clientIP
+	ecsIP = clientIP
 
 	err = prx.Resolve(ctx, d)
 	require.NoError(t, err)
@@ -1406,7 +1382,7 @@ func TestProxy_validateRequest(t *testing.T) {
 		netip.MustParsePrefix("203.0.113.0/8"),
 	}
 
-	ups := &dnsproxytest.Upstream{
+	ups := &testUpstream{
 		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = &dns.Msg{}
 			resp.SetReply(m)
@@ -1513,4 +1489,88 @@ func TestProxy_validateRequest(t *testing.T) {
 			assert.Equal(t, tc.wantRcode, resp.Rcode)
 		})
 	}
+}
+
+// testHandler is a mock request handler implementation to simplify
+// testing.
+//
+// TODO(m.kazantsev):  Use [dnsproxytest.Handler].
+type testHandler struct {
+	OnHandle func(ctx context.Context, p *Proxy, dctx *DNSContext) (err error)
+}
+
+// type check
+var _ Handler = (*testHandler)(nil)
+
+// ServeDNS implements the [Handler] interface for *testHandler.
+func (h *testHandler) ServeDNS(ctx context.Context, p *Proxy, dctx *DNSContext) (err error) {
+	return h.OnHandle(ctx, p, dctx)
+}
+
+// testUpstream is a mock upstream implementation to simplify testing.
+//
+// TODO(m.kazantsev):  Use [dnsproxytest.Upstream].
+type testUpstream struct {
+	OnAddress  func() (addr string)
+	OnExchange func(req *dns.Msg) (resp *dns.Msg, err error)
+	OnClose    func() (err error)
+}
+
+// newTestECSUpstream creates a new test upstream with the given OnExchange
+// handler.
+func newTestECSUpstream(onExchange func(req *dns.Msg) (resp *dns.Msg, err error)) (u *testUpstream) {
+	return &testUpstream{
+		OnAddress:  func() string { return "" },
+		OnClose:    func() error { return nil },
+		OnExchange: onExchange,
+	}
+}
+
+// newECSReplyHandler creates an OnExchange handler that builds a DNS reply
+// with optional answer records and ECS support.
+//
+// The handler dereferences ans, ecsIP, and ecsReqIP at call time, so tests
+// can reassign those variables between sub-tests and the handler will see
+// the current values.
+func newECSReplyHandler(ans *[]dns.RR, ecsIP, ecsReqIP *net.IP) func(*dns.Msg) (*dns.Msg, error) {
+	return func(m *dns.Msg) (resp *dns.Msg, err error) {
+		resp = (&dns.Msg{}).SetReply(m)
+
+		if ans != nil && *ans != nil {
+			resp.Answer = append(resp.Answer, *ans...)
+		}
+
+		if ecsIP != nil && *ecsIP != nil {
+			setECS(resp, *ecsIP, 24)
+		}
+
+		if ecsReqIP == nil {
+			return resp, nil
+		}
+
+		ecs, _ := ecsFromMsg(m)
+		if ecs != nil {
+			*ecsReqIP = ecs.IP
+		}
+
+		return resp, nil
+	}
+}
+
+// type check
+var _ upstream.Upstream = (*testUpstream)(nil)
+
+// Exchange implements the upstream.Upstream interface for *testUpstream.
+func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+	return u.OnExchange(m)
+}
+
+// Address implements the upstream.Upstream interface for *testUpstream.
+func (u *testUpstream) Address() (addr string) {
+	return u.OnAddress()
+}
+
+// Close implements the upstream.Upstream interface for *testUpstream.
+func (u *testUpstream) Close() (err error) {
+	return u.OnClose()
 }

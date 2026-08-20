@@ -65,6 +65,19 @@ type Config struct {
 	// from this handler, the proxy will not send any response to the client.
 	RequestHandler Handler
 
+	// OnOptimisticRefresh is called, if not nil, once the optimistic cache has
+	// refreshed an expired entry in the background.  dctx is the context of
+	// that refresh; its [DNSContext.QueryStatistics] describe the exchanges it
+	// performed.  Implementations must not modify or retain dctx, and must not
+	// block.
+	//
+	// An optimistic cache hit is answered from the cache right away and the
+	// entry is refreshed in a separate goroutine, so the exchanges of that
+	// refresh never reach [Config.RequestHandler].  Without this callback there
+	// is no way to account for them, which biases any statistics collected from
+	// [DNSContext.QueryStatistics] towards cache misses.
+	OnOptimisticRefresh func(dctx *DNSContext)
+
 	// UpstreamConfig is a general set of DNS servers to forward requests to.
 	UpstreamConfig *UpstreamConfig
 

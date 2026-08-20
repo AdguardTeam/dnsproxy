@@ -76,6 +76,14 @@ func cloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 	}
 }
 
+// reportRefresh implements the [cachingResolver] interface for *Proxy.  It
+// notifies [Config.OnOptimisticRefresh], if it is set.
+func (p *Proxy) reportRefresh(d *DNSContext) {
+	if p.OnOptimisticRefresh != nil {
+		p.OnOptimisticRefresh(d)
+	}
+}
+
 // cacheResp stores the response from d in general or subnet cache.  In case the
 // cache is present in d, it's used first.
 func (p *Proxy) cacheResp(d *DNSContext) {

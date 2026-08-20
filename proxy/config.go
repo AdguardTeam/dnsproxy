@@ -302,6 +302,7 @@ func (p *Proxy) validateConfig(c *Config) (err error) {
 		"",
 		UpstreamModeFastestAddr,
 		UpstreamModeLoadBalance,
+		UpstreamModeRandom,
 		UpstreamModeParallel:
 		// Go on.
 	default:

@@ -157,13 +157,13 @@ type ipResult struct {
 //
 // TODO(e.burkov):  Use context.
 func (r *UpstreamResolver) lookupNetIP(
-	_ context.Context,
+	ctx context.Context,
 	network bootstrap.Network,
 	host string,
 ) (result *ipResult, err error) {
 	switch network {
 	case bootstrap.NetworkIP4, bootstrap.NetworkIP6:
-		return r.request(host, network)
+		return r.request(ctx, host, network)
 	case bootstrap.NetworkIP:
 		// Go on.
 	default:
@@ -171,8 +171,8 @@ func (r *UpstreamResolver) lookupNetIP(
 	}
 
 	resCh := make(chan any, 2)
-	go r.resolveAsync(resCh, host, bootstrap.NetworkIP4)
-	go r.resolveAsync(resCh, host, bootstrap.NetworkIP6)
+	go r.resolveAsync(ctx, resCh, host, bootstrap.NetworkIP4)
+	go r.resolveAsync(ctx, resCh, host, bootstrap.NetworkIP6)
 
 	var errs []error
 	result = &ipResult{}
@@ -199,7 +199,11 @@ func (r *UpstreamResolver) lookupNetIP(
 //
 // TODO(e.burkov):  Consider NS and Extra sections when setting TTL.  Check out
 // what RFCs say about it.
-func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipResult, err error) {
+func (r *UpstreamResolver) request(
+	ctx context.Context,
+	host string,
+	n bootstrap.Network,
+) (res *ipResult, err error) {
 	var qtype uint16
 	switch n {
 	case bootstrap.NetworkIP4:
@@ -224,7 +228,7 @@ func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipRes
 
 	// As per [Upstream.Exchange] documentation, the response is always returned
 	// if no error occurred.
-	resp, err := r.Exchange(req)
+	resp, err := r.Exchange(ctx, req)
 	if err != nil {
 		return res, err
 	}
@@ -251,8 +255,12 @@ func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipRes
 
 // resolveAsync performs a single DNS lookup and sends the result to ch.  It's
 // intended to be used as a goroutine.
-func (r *UpstreamResolver) resolveAsync(resCh chan<- any, host, network string) {
-	res, err := r.request(host, network)
+func (r *UpstreamResolver) resolveAsync(
+	ctx context.Context,
+	resCh chan<- any,
+	host, network string,
+) {
+	res, err := r.request(ctx, host, network)
 	if err != nil {
 		resCh <- err
 	} else {

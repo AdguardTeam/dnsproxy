@@ -89,7 +89,7 @@ func TestPendingRequests(t *testing.T) {
 
 	once := &sync.Once{}
 	u := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			once.Do(func() {
 				resp = (&dns.Msg{}).SetReply(req)
 			})

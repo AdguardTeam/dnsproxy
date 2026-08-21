@@ -2,25 +2,30 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"sync"
 	"testing"
 
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 // testCachingResolver is a stub implementation of the cachingResolver interface
 // to simplify testing.
 type testCachingResolver struct {
-	onReplyFromUpstream func(dctx *DNSContext) (ok bool, err error)
+	onReplyFromUpstream func(ctx context.Context, dctx *DNSContext) (ok bool, err error)
 	onCacheResp         func(dctx *DNSContext)
 }
 
 // replyFromUpstream implements the cachingResolver interface for
 // *testCachingResolver.
-func (tcr *testCachingResolver) replyFromUpstream(dctx *DNSContext) (ok bool, err error) {
-	return tcr.onReplyFromUpstream(dctx)
+func (tcr *testCachingResolver) replyFromUpstream(
+	ctx context.Context,
+	dctx *DNSContext,
+) (ok bool, err error) {
+	return tcr.onReplyFromUpstream(ctx, dctx)
 }
 
 // cacheResp implements the cachingResolver interface for *testCachingResolver.
@@ -33,7 +38,7 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 	var timesResolved, timesSet int
 
 	tcr := &testCachingResolver{
-		onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) {
+		onReplyFromUpstream: func(_ context.Context, _ *DNSContext) (ok bool, err error) {
 			timesResolved++
 
 			return true, nil
@@ -52,7 +57,8 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 	sameKey := []byte{1, 2, 3}
 
 	// Start the primary goroutine.
-	go s.resolveOnce(nil, sameKey, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	go s.resolveOnce(ctx, nil, sameKey, testLogger)
 	// Block until the primary goroutine reaches the resolve function.
 	<-out
 
@@ -64,7 +70,8 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			s.resolveOnce(nil, sameKey, testLogger)
+			resolveCtx := testutil.ContextWithTimeout(t, testTimeout)
+			s.resolveOnce(resolveCtx, nil, sameKey, testLogger)
 		}()
 	}
 
@@ -93,10 +100,14 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 
 		cached := false
 		s := newOptimisticResolver(&testCachingResolver{
-			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return true, rErr },
-			onCacheResp:         func(_ *DNSContext) { cached = true },
+			onReplyFromUpstream: func(_ context.Context, _ *DNSContext) (ok bool, err error) {
+				return true, rErr
+			},
+			onCacheResp: func(_ *DNSContext) { cached = true },
 		})
-		s.resolveOnce(nil, key, l)
+
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		s.resolveOnce(ctx, nil, key, l)
 
 		assert.True(t, cached)
 		assert.Contains(t, logOutput.String(), rErr.Error())
@@ -105,10 +116,14 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 	t.Run("not_ok", func(t *testing.T) {
 		cached := false
 		s := newOptimisticResolver(&testCachingResolver{
-			onReplyFromUpstream: func(_ *DNSContext) (ok bool, err error) { return false, nil },
-			onCacheResp:         func(_ *DNSContext) { cached = true },
+			onReplyFromUpstream: func(_ context.Context, _ *DNSContext) (ok bool, err error) {
+				return false, nil
+			},
+			onCacheResp: func(_ *DNSContext) { cached = true },
 		})
-		s.resolveOnce(nil, key, testLogger)
+
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		s.resolveOnce(ctx, nil, key, testLogger)
 
 		assert.False(t, cached)
 	})

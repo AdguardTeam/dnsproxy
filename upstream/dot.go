@@ -95,28 +95,33 @@ var _ Upstream = (*dnsOverTLS)(nil)
 func (p *dnsOverTLS) Address() string { return p.addr.String() }
 
 // Exchange implements the [Upstream] interface for *dnsOverTLS.
-func (p *dnsOverTLS) Exchange(req *dns.Msg) (reply *dns.Msg, err error) {
+func (p *dnsOverTLS) Exchange(ctx context.Context, req *dns.Msg) (reply *dns.Msg, err error) {
 	h, err := p.getDialer()
 	if err != nil {
 		return nil, fmt.Errorf("getting conn to %s: %w", p.addr, err)
 	}
 
-	conn, err := p.conn(h)
+	conn, err := p.conn(ctx, h)
 	if err != nil {
 		return nil, fmt.Errorf("getting conn to %s: %w", p.addr, err)
 	}
 
-	reply, err = p.exchangeWithConn(conn, req)
+	reply, err = p.exchangeWithConn(ctx, conn, req)
 	if err != nil {
 		// The pooled connection might have been closed already, see
 		// https://github.com/AdguardTeam/dnsproxy/issues/3.  The following
 		// connection from pool may also be malformed, so dial a new one.
 
 		err = errors.WithDeferred(err, conn.Close())
-		p.logger.Debug("dot got bad conn from pool", "addr", p.addr, slogutil.KeyError, err)
+		p.logger.DebugContext(
+			ctx,
+			"dot got bad conn from pool",
+			"addr", p.addr,
+			slogutil.KeyError, err,
+		)
 
 		// Retry.
-		conn, err = tlsDial(h, p.tlsConf.Clone())
+		conn, err = tlsDial(ctx, h, p.tlsConf.Clone())
 		if err != nil {
 			return nil, fmt.Errorf(
 				"dialing %s: connecting to %s: %w",
@@ -126,7 +131,7 @@ func (p *dnsOverTLS) Exchange(req *dns.Msg) (reply *dns.Msg, err error) {
 			)
 		}
 
-		reply, err = p.exchangeWithConn(conn, req)
+		reply, err = p.exchangeWithConn(ctx, conn, req)
 		if err != nil {
 			return reply, errors.WithDeferred(err, conn.Close())
 		}
@@ -157,11 +162,11 @@ func (p *dnsOverTLS) Close() (err error) {
 
 // conn returns the first available connection from the pool if there is any, or
 // dials a new one otherwise.
-func (p *dnsOverTLS) conn(h bootstrap.DialHandler) (conn net.Conn, err error) {
+func (p *dnsOverTLS) conn(ctx context.Context, h bootstrap.DialHandler) (conn net.Conn, err error) {
 	// Dial a new connection outside the lock, if needed.
 	defer func() {
 		if conn == nil {
-			conn, err = tlsDial(h, p.tlsConf.Clone())
+			conn, err = tlsDial(ctx, h, p.tlsConf.Clone())
 			err = errors.Annotate(err, "connecting to %s: %w", p.tlsConf.ServerName)
 		}
 	}()
@@ -178,14 +183,18 @@ func (p *dnsOverTLS) conn(h bootstrap.DialHandler) (conn net.Conn, err error) {
 
 	err = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err != nil {
-		p.logger.Debug("dot upstream setting deadline to conn from pool", slogutil.KeyError, err)
+		p.logger.DebugContext(
+			ctx,
+			"dot upstream setting deadline to conn from pool",
+			slogutil.KeyError, err,
+		)
 
 		// If deadLine can't be updated it means that connection was already
 		// closed.
 		return nil, nil
 	}
 
-	p.logger.Debug("dot upstream using existing conn", "raddr", conn.RemoteAddr())
+	p.logger.DebugContext(ctx, "dot upstream using existing conn", "raddr", conn.RemoteAddr())
 
 	return conn, nil
 }
@@ -198,11 +207,15 @@ func (p *dnsOverTLS) putBack(conn net.Conn) {
 }
 
 // exchangeWithConn tries to exchange the query using conn.
-func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, req *dns.Msg) (reply *dns.Msg, err error) {
+func (p *dnsOverTLS) exchangeWithConn(
+	ctx context.Context,
+	conn net.Conn,
+	req *dns.Msg,
+) (reply *dns.Msg, err error) {
 	addr := p.Address()
 
-	logBegin(p.logger, addr, networkTCP, req)
-	defer func() { logFinish(p.logger, addr, networkTCP, err) }()
+	logBegin(ctx, p.logger, addr, networkTCP, req)
+	defer func() { logFinish(ctx, p.logger, addr, networkTCP, err) }()
 
 	dnsConn := dns.Conn{Conn: conn}
 
@@ -223,10 +236,14 @@ func (p *dnsOverTLS) exchangeWithConn(conn net.Conn, req *dns.Msg) (reply *dns.M
 
 // tlsDial is basically the same as tls.DialWithDialer, but we will call our own
 // dialContext function to get connection.
-func tlsDial(dialContext bootstrap.DialHandler, conf *tls.Config) (c *tls.Conn, err error) {
+func tlsDial(
+	ctx context.Context,
+	dialContext bootstrap.DialHandler,
+	conf *tls.Config,
+) (c *tls.Conn, err error) {
 	// We're using bootstrapped address instead of what's passed to the
 	// function.
-	rawConn, err := dialContext(context.Background(), networkTCP, "")
+	rawConn, err := dialContext(ctx, networkTCP, "")
 	if err != nil {
 		return nil, err
 	}

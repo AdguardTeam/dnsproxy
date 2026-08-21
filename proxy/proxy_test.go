@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -81,7 +82,7 @@ func TestProxy_Resolve_cache(t *testing.T) {
 		OnAddress: func() (addr string) { return "stub" },
 		OnClose:   func() (err error) { return nil },
 	}
-	ups.OnExchange = func(req *dns.Msg) (resp *dns.Msg, err error) {
+	ups.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Answer = append(resp.Answer, &dns.A{
 			Hdr: dns.RR_Header{
@@ -172,7 +173,7 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 	tcpAddr := testutil.RequireTypeAssert[*net.TCPAddr](t, l.Addr())
 
 	ups := &dnsproxytest.Upstream{
-		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
+		OnExchange: func(_ context.Context, m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
 		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
 		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
@@ -212,7 +213,7 @@ func TestProxy_ServeDNS_formatError(t *testing.T) {
 		OnAddress: func() (addr string) { return testIPv4.String() },
 		OnClose:   func() (err error) { return nil },
 	}
-	ups.OnExchange = func(req *dns.Msg) (resp *dns.Msg, err error) {
+	ups.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 		panic(testutil.UnexpectedCall(req))
 	}
 

@@ -49,7 +49,7 @@ func TestDNSOverQUIC(t *testing.T) {
 
 	// Test that it responds properly
 	for range 10 {
-		checkUpstream(t, u, address)
+		checkUpstream(t, u, address, testTimeout)
 
 		if conn == nil {
 			conn = uq.conn
@@ -63,7 +63,7 @@ func TestDNSOverQUIC(t *testing.T) {
 	_ = conn.CloseWithError(quic.ApplicationErrorCode(0), "")
 
 	// Try to establish it again.
-	checkUpstream(t, u, address)
+	checkUpstream(t, u, address, testTimeout)
 
 	// Make sure that the session has been resumed.
 	require.True(t, lastState.DidResume)
@@ -74,7 +74,7 @@ func TestDNSOverQUIC(t *testing.T) {
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
-	checkRaceCondition(u)
+	checkRaceCondition(t, u)
 }
 
 func TestDNSOverQUIC_Exchange_quicCloseConn(t *testing.T) {
@@ -96,7 +96,7 @@ func TestDNSOverQUIC_Exchange_quicCloseConn(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
 	// Test that the upstream works properly.
-	checkUpstream(t, u, address)
+	checkUpstream(t, u, address, testTimeout)
 
 	// Close all active connections.
 	err = srv.closeConns()
@@ -115,15 +115,15 @@ func TestDNSOverQUIC_Exchange_quicCloseConn(t *testing.T) {
 
 	for range 10 {
 		pt := testutil.PanicT{}
-
-		go func(t assert.TestingT) {
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		go func(ctx context.Context, t assert.TestingT) {
 			defer wg.Done()
 
 			req := createTestMessage()
-			_, errExch := u.Exchange(req)
+			_, errExch := u.Exchange(ctx, req)
 
 			assert.NoError(t, errExch)
-		}(pt)
+		}(ctx, pt)
 	}
 
 	wg.Wait()
@@ -160,7 +160,7 @@ func TestDNSOverQUIC_serverRestart(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		checkUpstream(t, u, upsStr)
+		checkUpstream(t, u, upsStr, testTimeout)
 	})
 	require.False(t, t.Failed())
 	testutil.CleanupAndRequireSuccess(t, u.Close)
@@ -168,17 +168,18 @@ func TestDNSOverQUIC_serverRestart(t *testing.T) {
 	t.Run("second_try", func(t *testing.T) {
 		_ = startDoQServer(t, tlsConf, int(addr.Port()))
 
-		checkUpstream(t, u, upsStr)
+		checkUpstream(t, u, upsStr, testTimeout)
 	})
 	require.False(t, t.Failed())
 
 	t.Run("retry", func(t *testing.T) {
-		_, err := u.Exchange(createTestMessage())
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		_, err := u.Exchange(ctx, createTestMessage())
 		require.Error(t, err)
 
 		_ = startDoQServer(t, tlsConf, int(addr.Port()))
 
-		checkUpstream(t, u, upsStr)
+		checkUpstream(t, u, upsStr, testTimeout)
 	})
 }
 
@@ -199,9 +200,10 @@ func TestDNSOverQUIC_0RTT(t *testing.T) {
 
 	uq := testutil.RequireTypeAssert[*dnsOverQUIC](t, u)
 	req := createTestMessage()
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
 
 	// Trigger connection to a QUIC server.
-	resp, err := uq.Exchange(req)
+	resp, err := uq.Exchange(ctx, req)
 	require.NoError(t, err)
 	requireResponse(t, req, resp)
 
@@ -216,8 +218,9 @@ func TestDNSOverQUIC_0RTT(t *testing.T) {
 		uq.conn = nil
 	}()
 
+	ctx = testutil.ContextWithTimeout(t, testTimeout)
 	// Trigger second connection.
-	resp, err = uq.Exchange(req)
+	resp, err = uq.Exchange(ctx, req)
 	require.NoError(t, err)
 	requireResponse(t, req, resp)
 

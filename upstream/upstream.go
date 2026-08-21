@@ -36,7 +36,7 @@ type Upstream interface {
 	// must not modify req as well as the caller must not modify it until the
 	// method returns.  It shouldn't be called after closing.  req must not be
 	// nil.
-	Exchange(req *dns.Msg) (resp *dns.Msg, err error)
+	Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error)
 
 	// Address returns the human-readable address of the upstream DNS resolver.
 	// It may differ from what was passed to [AddressToUpstream].
@@ -330,7 +330,7 @@ func addPort(u *url.URL, port uint16) {
 // logBegin logs the start of DNS request resolution.  It should be called right
 // before dialing the connection to the upstream.  n is the [network] that will
 // be used to send the request.
-func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
+func logBegin(ctx context.Context, l *slog.Logger, addr string, n network, req *dns.Msg) {
 	var qtype dns.Type
 	var qname string
 	if len(req.Question) != 0 {
@@ -339,7 +339,7 @@ func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
 	}
 
 	l.DebugContext(
-		context.TODO(),
+		ctx,
 		"sending request",
 		"addr", addr,
 		"proto", n,
@@ -352,7 +352,7 @@ func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
 // logFinish logs the end of DNS request resolution.  It should be called right
 // after receiving the response from the upstream or the failing action.  n is
 // the [network] that was used to send the request.
-func logFinish(l *slog.Logger, addr string, n network, err error) {
+func logFinish(ctx context.Context, l *slog.Logger, addr string, n network, err error) {
 	lvl := slog.LevelDebug
 	status := "ok"
 
@@ -364,7 +364,7 @@ func logFinish(l *slog.Logger, addr string, n network, err error) {
 		}
 	}
 
-	l.Log(context.TODO(), lvl, "response received", "addr", addr, "proto", n, "status", status)
+	l.Log(ctx, lvl, "response received", "addr", addr, "proto", n, "status", status)
 }
 
 // isTimeout returns true if err is a timeout error.

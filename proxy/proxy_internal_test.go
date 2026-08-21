@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -201,7 +202,7 @@ type testUpstream struct {
 var _ upstream.Upstream = (*testUpstream)(nil)
 
 // Exchange implements the upstream.Upstream interface for *testUpstream.
-func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+func (u *testUpstream) Exchange(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 	resp = &dns.Msg{}
 	resp.SetReply(m)
 
@@ -463,7 +464,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 	}
 
 	u := &dnsproxytest.Upstream{
-		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 
 			q := m.Question[0]
@@ -898,7 +899,7 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	u := &dnsproxytest.Upstream{
-		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 			resp.Answer = append(resp.Answer, &dns.A{
 				Hdr: dns.RR_Header{
@@ -985,7 +986,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 	var count int
 
 	ansIP := net.IP{4, 3, 2, 1}
-	exchangeFunc := func(m *dns.Msg) (resp *dns.Msg, err error) {
+	exchangeFunc := func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 		resp = &dns.Msg{}
 		resp.SetReply(m)
 		resp.Answer = append(resp.Answer, &dns.A{
@@ -1322,7 +1323,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	p.initCache()
 	out, in := make(chan unit), make(chan unit)
 	p.shortFlighter.cr = &testCachingResolver{
-		onReplyFromUpstream: func(dctx *DNSContext) (ok bool, err error) {
+		onReplyFromUpstream: func(_ context.Context, dctx *DNSContext) (ok bool, err error) {
 			dctx.Res = buildResp(dctx.Req, nonOptimisticTTL)
 
 			return true, nil
@@ -1407,7 +1408,7 @@ func TestProxy_validateRequest(t *testing.T) {
 	}
 
 	ups := &dnsproxytest.Upstream{
-		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = &dns.Msg{}
 			resp.SetReply(m)
 

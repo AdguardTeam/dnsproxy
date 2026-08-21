@@ -1,6 +1,8 @@
 package dnsproxytest
 
 import (
+	"context"
+
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -12,7 +14,7 @@ import (
 // TODO(e.burkov):  Move to golibs.
 type Upstream struct {
 	OnAddress  func() (addr string)
-	OnExchange func(req *dns.Msg) (resp *dns.Msg, err error)
+	OnExchange func(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error)
 	OnClose    func() (err error)
 }
 
@@ -25,8 +27,8 @@ func (u *Upstream) Address() (addr string) {
 }
 
 // Exchange implements the [upstream.Upstream] interface for *Upstream.
-func (u *Upstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	return u.OnExchange(req)
+func (u *Upstream) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+	return u.OnExchange(ctx, req)
 }
 
 // Close implements the [upstream.Upstream] interface for *Upstream.

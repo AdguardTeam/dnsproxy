@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 	"testing"
@@ -30,7 +31,8 @@ func TestExchangeParallel(t *testing.T) {
 
 	req := createTestMessage()
 	start := time.Now()
-	resp, u, err := ExchangeParallel(upstreams, req)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	resp, u, err := ExchangeParallel(ctx, upstreams, req)
 	if err != nil {
 		t.Fatalf("no response from test upstreams: %s", err)
 	}
@@ -53,7 +55,8 @@ func TestExchangeParallelEmpty(t *testing.T) {
 	}
 
 	req := createTestMessage()
-	resp, up, err := ExchangeParallel(ups, req)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	resp, up, err := ExchangeParallel(ctx, ups, req)
 	require.Error(t, err)
 
 	assert.Nil(t, resp)
@@ -79,7 +82,7 @@ type testUpstream struct {
 var _ Upstream = (*testUpstream)(nil)
 
 // Exchange implements the [Upstream] interface for *testUpstream.
-func (u *testUpstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+func (u *testUpstream) Exchange(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 	if u.sleep != 0 {
 		time.Sleep(u.sleep)
 	}
@@ -130,7 +133,8 @@ func TestExchangeAll(t *testing.T) {
 	}}
 
 	req := createHostTestMessage("test.org")
-	res, err := ExchangeAll(ups, req)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	res, err := ExchangeAll(ctx, ups, req)
 	require.NoError(t, err)
 	require.Len(t, res, 2)
 

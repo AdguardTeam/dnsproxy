@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"math/rand/v2"
 	"net"
 	"net/netip"
@@ -25,7 +26,7 @@ func newUpstreamWithErrorRate(rate uint, name string) (u upstream.Upstream) {
 	var n uint
 
 	return &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			n++
 			if n%rate == 0 {
 				return nil, assert.AnError
@@ -52,10 +53,10 @@ type measuredUpstream struct {
 var _ upstream.Upstream = measuredUpstream{}
 
 // Exchange implements the [upstream.Upstream] interface for measuredUpstream.
-func (u measuredUpstream) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+func (u measuredUpstream) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 	u.stats[u.Address()]++
 
-	return u.Upstream.Exchange(req)
+	return u.Upstream.Exchange(ctx, req)
 }
 
 func TestProxy_Exchange_loadBalance(t *testing.T) {
@@ -88,7 +89,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 	}
 
 	fastUps := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 100)
 
 			return (&dns.Msg{}).SetReply(req), nil
@@ -97,7 +98,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 	slowerUps := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 10)
 
 			return (&dns.Msg{}).SetReply(req), nil
@@ -106,7 +107,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 	slowestUps := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 2)
 
 			return (&dns.Msg{}).SetReply(req), nil
@@ -116,20 +117,24 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 	}
 
 	err1Ups := &dnsproxytest.Upstream{
-		OnExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
-		OnAddress:  func() (addr string) { return "error1" },
-		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
+		OnExchange: func(_ context.Context, _ *dns.Msg) (r *dns.Msg, err error) {
+			return nil, assert.AnError
+		},
+		OnAddress: func() (addr string) { return "error1" },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 	err2Ups := &dnsproxytest.Upstream{
-		OnExchange: func(_ *dns.Msg) (r *dns.Msg, err error) { return nil, assert.AnError },
-		OnAddress:  func() (addr string) { return "error2" },
-		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
+		OnExchange: func(_ context.Context, _ *dns.Msg) (r *dns.Msg, err error) {
+			return nil, assert.AnError
+		},
+		OnAddress: func() (addr string) { return "error2" },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
 	singleError := &sync.Once{}
 	// fastestUps responds with an error on the first request.
 	fastestUps := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			singleError.Do(func() { err = assert.AnError })
 			currentNow = zeroTime.Add(testRTT / 200)
 

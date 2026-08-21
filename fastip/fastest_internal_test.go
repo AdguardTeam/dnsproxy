@@ -1,8 +1,10 @@
 package fastip
 
 import (
+	"context"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -13,6 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testTimeout is a common timeout value for tests.
+const testTimeout = 1 * time.Second
 
 func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	l := slogutil.NewDiscardLogger()
@@ -28,7 +33,8 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 			PingWaitTimeout: DefaultPingWaitTimeout,
 		})
 
-		resp, up, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{u})
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		resp, up, err := f.ExchangeFastest(ctx, newTestReq(t), []upstream.Upstream{u})
 		require.Error(t, err)
 
 		assert.ErrorIs(t, err, errDesired)
@@ -57,7 +63,8 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 			recs: []*dns.A{newTestRec(t, netip.MustParseAddr("192.0.2.1"))},
 		}
 
-		rep, ups, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{dead, alive})
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		rep, ups, err := f.ExchangeFastest(ctx, newTestReq(t), []upstream.Upstream{dead, alive})
 		require.NoError(t, err)
 
 		assert.Equal(t, ups, alive)
@@ -85,7 +92,8 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 			},
 		}
 
-		resp, _, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{ups})
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		resp, _, err := f.ExchangeFastest(ctx, newTestReq(t), []upstream.Upstream{ups})
 		require.NoError(t, err)
 
 		require.NotNil(t, resp)
@@ -108,7 +116,7 @@ func (u *errUpstream) Address() string {
 }
 
 // Exchange implements the [upstream.Upstream] interface for *errUpstream.
-func (u *errUpstream) Exchange(_ *dns.Msg) (*dns.Msg, error) {
+func (u *errUpstream) Exchange(_ context.Context, _ *dns.Msg) (*dns.Msg, error) {
 	return nil, u.err
 }
 
@@ -126,7 +134,7 @@ type testAUpstream struct {
 var _ upstream.Upstream = (*testAUpstream)(nil)
 
 // Exchange implements the [upstream.Upstream] interface for *testAUpstream.
-func (u *testAUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
+func (u *testAUpstream) Exchange(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 	resp = &dns.Msg{}
 	resp.SetReply(m)
 

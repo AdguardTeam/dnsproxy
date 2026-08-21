@@ -4,6 +4,7 @@
 package fastip
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -92,10 +93,11 @@ func New(c *Config) (f *FastestAddr) {
 // the fastest IP address.  The fastest IP address is considered to be the first
 // one successfully dialed and other addresses are removed from the answer.
 func (f *FastestAddr) ExchangeFastest(
+	ctx context.Context,
 	req *dns.Msg,
 	ups []upstream.Upstream,
 ) (resp *dns.Msg, u upstream.Upstream, err error) {
-	replies, err := upstream.ExchangeAll(ups, req)
+	replies, err := upstream.ExchangeAll(ctx, ups, req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -116,7 +118,7 @@ func (f *FastestAddr) ExchangeFastest(
 		return f.prepareReply(pingRes, replies)
 	}
 
-	f.logger.Debug("no fastest ip found, using the first response", "host", host)
+	f.logger.DebugContext(ctx, "no fastest ip found, using the first response", "host", host)
 
 	return replies[0].Resp, replies[0].Upstream, nil
 }

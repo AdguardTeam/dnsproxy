@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"cmp"
+	"context"
 	"net"
 	"net/netip"
 	"strings"
@@ -29,9 +30,11 @@ const testUpsAddr = "https://upstream.address"
 // upstreamWithAddr is a [dnsproxytest.Upstream] that is only expected to be
 // used to get its address.
 var upstreamWithAddr = &dnsproxytest.Upstream{
-	OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
-	OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
-	OnAddress:  func() (addr string) { return testUpsAddr },
+	OnExchange: func(_ context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+		panic(testutil.UnexpectedCall(m))
+	},
+	OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
+	OnAddress: func() (addr string) { return testUpsAddr },
 }
 
 // newTestCache is a helper that returns new cache and fills its config with

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -15,16 +16,17 @@ import (
 // response, the upstream that successfully resolved the request, and the error
 // if any.
 func (p *Proxy) exchangeUpstreams(
+	ctx context.Context,
 	req *dns.Msg,
 	ups []upstream.Upstream,
 ) (resp *dns.Msg, u upstream.Upstream, err error) {
 	switch p.upstreamMode {
 	case UpstreamModeParallel:
-		return upstream.ExchangeParallel(ups, req)
+		return upstream.ExchangeParallel(ctx, ups, req)
 	case UpstreamModeFastestAddr:
 		switch req.Question[0].Qtype {
 		case dns.TypeA, dns.TypeAAAA:
-			return p.fastestAddr.ExchangeFastest(req, ups)
+			return p.fastestAddr.ExchangeFastest(ctx, req, ups)
 		default:
 			// Go on to the load-balancing mode.
 		}
@@ -34,7 +36,7 @@ func (p *Proxy) exchangeUpstreams(
 
 	if len(ups) == 1 {
 		u = ups[0]
-		resp, _, err = p.exchange(u, req)
+		resp, _, err = p.exchange(ctx, u, req)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -50,7 +52,7 @@ func (p *Proxy) exchangeUpstreams(
 		u = ups[i]
 
 		var elapsed time.Duration
-		resp, elapsed, err = p.exchange(u, req)
+		resp, elapsed, err = p.exchange(ctx, u, req)
 		if err == nil {
 			p.updateRTT(u.Address(), elapsed)
 
@@ -73,11 +75,12 @@ func (p *Proxy) exchangeUpstreams(
 // upstream and the elapsed time in milliseconds.  It uses the given clock to
 // measure the request duration.
 func (p *Proxy) exchange(
+	ctx context.Context,
 	u upstream.Upstream,
 	req *dns.Msg,
 ) (resp *dns.Msg, dur time.Duration, err error) {
 	startTime := p.time.Now()
-	resp, err = u.Exchange(req)
+	resp, err = u.Exchange(ctx, req)
 
 	// Don't use [time.Since] because it uses [time.Now].
 	dur = p.time.Now().Sub(startTime)
@@ -85,7 +88,8 @@ func (p *Proxy) exchange(
 	addr := u.Address()
 	q := &req.Question[0]
 	if err != nil {
-		p.logger.Error(
+		p.logger.ErrorContext(
+			ctx,
 			"exchange failed",
 			"upstream", addr,
 			"question", q,
@@ -93,7 +97,8 @@ func (p *Proxy) exchange(
 			slogutil.KeyError, err,
 		)
 	} else {
-		p.logger.Debug(
+		p.logger.DebugContext(
+			ctx,
 			"exchange successfully finished",
 			"upstream", addr,
 			"question", q,

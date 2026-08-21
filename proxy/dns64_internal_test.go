@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"sync"
@@ -21,7 +22,7 @@ const ipv4OnlyFqdn = "ipv4.only."
 func TestDNS64Race(t *testing.T) {
 	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, net.ParseIP("1.2.3.4"))
 	ups := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(req)
 			if req.Question[0].Qtype == dns.TypeA {
 				resp.Answer = []dns.RR{dns.Copy(ans)}
@@ -33,9 +34,11 @@ func TestDNS64Race(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 	localUps := &dnsproxytest.Upstream{
-		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
-		OnAddress:  func() (addr string) { return "fake.address" },
-		OnClose:    func() (err error) { return nil },
+		OnExchange: func(_ context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+			panic(testutil.UnexpectedCall(m))
+		},
+		OnAddress: func() (addr string) { return "fake.address" },
+		OnClose:   func() (err error) { return nil },
 	}
 
 	dnsProxy := mustNew(t, &Config{
@@ -181,7 +184,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	pt := testutil.PanicT{}
 	newUps := func(answers answerMap) (u upstream.Upstream) {
 		return &dnsproxytest.Upstream{
-			OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+			OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 				q := req.Question[0]
 				require.Contains(pt, answers, q.Qtype)
 
@@ -201,7 +204,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	localRR := newRR(t, ptr64Domain, dns.TypePTR, 3600, domainPointed)
 	localUps := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			require.Equal(pt, req.Question[0].Name, ptr64Domain)
 			resp = (&dns.Msg{}).SetReply(req)
 			resp.Answer = []dns.RR{localRR}

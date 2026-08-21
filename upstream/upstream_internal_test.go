@@ -90,7 +90,9 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 			req := createTestMessage()
 
 			start := time.Now()
-			_, rErr := u.Exchange(req)
+
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			_, rErr := u.Exchange(ctx, req)
 			elapsed := time.Since(start)
 
 			// Require an error, since the bootstrap server cannot work.
@@ -229,7 +231,7 @@ func TestUpstreams(t *testing.T) {
 			require.NoErrorf(t, upsErr, "failed to generate upstream from address %s", test.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
-			checkUpstream(t, u, test.address)
+			checkUpstream(t, u, test.address, testTimeout)
 		})
 	}
 }
@@ -399,7 +401,7 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
-			checkUpstream(t, u, tc.address)
+			checkUpstream(t, u, tc.address, testTimeout)
 		})
 	}
 }
@@ -431,6 +433,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	}}
 
 	l := testLogger
+	upstreamTimeout := 5 * time.Second
 
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
@@ -440,7 +443,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			for _, b := range tc.bootstrap {
 				r, err := NewUpstreamResolver(b, &Options{
 					Logger:  l,
-					Timeout: testTimeout,
+					Timeout: upstreamTimeout,
 				})
 				require.NoError(t, err)
 
@@ -450,12 +453,12 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			u, err := AddressToUpstream(tc.address, &Options{
 				Logger:    l,
 				Bootstrap: rslv,
-				Timeout:   testTimeout,
+				Timeout:   upstreamTimeout,
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
-			checkUpstream(t, u, tc.address)
+			checkUpstream(t, u, tc.address, upstreamTimeout)
 		})
 	}
 
@@ -527,7 +530,7 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			assert.NotPanics(t, func() {
-				checkUpstream(t, u, tc.address)
+				checkUpstream(t, u, tc.address, testTimeout)
 			})
 		})
 	}
@@ -594,11 +597,13 @@ func TestAddPort(t *testing.T) {
 }
 
 // checkUpstream sends a test message to the upstream and checks the result.
-func checkUpstream(tb testing.TB, u Upstream, addr string) {
+func checkUpstream(tb testing.TB, u Upstream, addr string, timeout time.Duration) {
 	tb.Helper()
 
 	req := createTestMessage()
-	reply, err := u.Exchange(req)
+
+	ctx := testutil.ContextWithTimeout(tb, timeout)
+	reply, err := u.Exchange(ctx, req)
 	require.NoErrorf(tb, err, "couldn't talk to upstream %s", addr)
 
 	requireResponse(tb, req, reply)
@@ -606,7 +611,9 @@ func checkUpstream(tb testing.TB, u Upstream, addr string) {
 
 // checkRaceCondition runs several goroutines in parallel and each of them calls
 // checkUpstream several times.
-func checkRaceCondition(u Upstream) {
+func checkRaceCondition(tb testing.TB, u Upstream) {
+	tb.Helper()
+
 	wg := sync.WaitGroup{}
 
 	// The number of requests to run in every goroutine.
@@ -619,7 +626,8 @@ func checkRaceCondition(u Upstream) {
 		for range reqCount {
 			req := createTestMessage()
 			// Ignore exchange errors here, the point is to check for races.
-			_, _ = u.Exchange(req)
+			ctx := testutil.ContextWithTimeout(tb, testTimeout)
+			_, _ = u.Exchange(ctx, req)
 		}
 	}
 

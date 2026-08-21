@@ -86,12 +86,13 @@ func (p *plainDNS) Address() string {
 // dialExchange performs a DNS exchange with the specified dial handler.
 // network must be either [networkUDP] or [networkTCP].
 func (p *plainDNS) dialExchange(
+	ctx context.Context,
 	network network,
 	dial bootstrap.DialHandler,
 	req *dns.Msg,
 ) (resp *dns.Msg, err error) {
 	addr := p.Address()
-	client := &dns.Client{Timeout: p.timeout}
+	client := &dns.Client{}
 
 	conn := &dns.Conn{}
 	upstreamReq := setRequestForNetwork(req, conn, network)
@@ -101,17 +102,16 @@ func (p *plainDNS) dialExchange(
 		}
 	}()
 
-	logBegin(p.logger, addr, network, upstreamReq)
-	defer func() { logFinish(p.logger, addr, network, err) }()
+	logBegin(ctx, p.logger, addr, network, upstreamReq)
+	defer func() { logFinish(ctx, p.logger, addr, network, err) }()
 
-	ctx := context.Background()
 	conn.Conn, err = dial(ctx, network, "")
 	if err != nil {
 		return nil, fmt.Errorf("dialing %s over %s: %w", p.addr.Host, network, err)
 	}
 	defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
 
-	resp, _, err = client.ExchangeWithConn(upstreamReq, conn)
+	resp, _, err = client.ExchangeWithConnContext(ctx, upstreamReq, conn)
 	if isExpectedConnErr(err) {
 		conn.Conn, err = dial(ctx, network, "")
 		if err != nil {
@@ -119,7 +119,7 @@ func (p *plainDNS) dialExchange(
 		}
 		defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
 
-		resp, _, err = client.ExchangeWithConn(upstreamReq, conn)
+		resp, _, err = client.ExchangeWithConnContext(ctx, upstreamReq, conn)
 	}
 
 	if err != nil {
@@ -159,7 +159,13 @@ func isExpectedConnErr(err error) (is bool) {
 }
 
 // Exchange implements the [Upstream] interface for *plainDNS.
-func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+func (p *plainDNS) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+	if p.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.timeout)
+		defer cancel()
+	}
+
 	dial, err := p.getDialer()
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.
@@ -168,7 +174,7 @@ func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 	addr := p.Address()
 
-	resp, err = p.dialExchange(p.net, dial, req)
+	resp, err = p.dialExchange(ctx, p.net, dial, req)
 	if p.net != networkUDP {
 		// The network is already TCP.
 		return resp, err
@@ -181,22 +187,24 @@ func (p *plainDNS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 	if errors.Is(err, errQuestion) {
 		// The upstream responds with malformed messages, so try TCP.
-		p.logger.Debug(
+		p.logger.DebugContext(
+			ctx,
 			"plain response is malformed, using tcp",
 			"addr", addr,
 			slogutil.KeyError, err,
 		)
 
-		return p.dialExchange(networkTCP, dial, req)
+		return p.dialExchange(ctx, networkTCP, dial, req)
 	} else if resp.Truncated {
 		// Fallback to TCP on truncated responses.
-		p.logger.Debug(
+		p.logger.DebugContext(
+			ctx,
 			"plain response is truncated, using tcp",
 			"question", &req.Question[0],
 			"addr", addr,
 		)
 
-		return p.dialExchange(networkTCP, dial, req)
+		return p.dialExchange(ctx, networkTCP, dial, req)
 	}
 
 	// There is either no error or the error isn't related to the received

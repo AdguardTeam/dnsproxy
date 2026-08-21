@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"testing"
@@ -33,7 +34,7 @@ func TestCollectQueryStats(t *testing.T) {
 	)
 
 	ups := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			return (&dns.Msg{}).SetReply(req), nil
 		},
 		OnAddress: func() (addr string) { return "upstream" },
@@ -41,7 +42,7 @@ func TestCollectQueryStats(t *testing.T) {
 	}
 
 	failUps := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			return nil, errors.Error("exchange error")
 		},
 		OnAddress: func() (addr string) { return "fail.upstream" },

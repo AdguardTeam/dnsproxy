@@ -167,7 +167,7 @@ var _ Upstream = (*dnsOverQUIC)(nil)
 func (p *dnsOverQUIC) Address() string { return p.addr.String() }
 
 // Exchange implements the [Upstream] interface for *dnsOverQUIC.
-func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+func (p *dnsOverQUIC) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 	// When sending queries over a QUIC connection, the DNS Message ID MUST be
 	// set to 0.  The stream mapping for DoQ allows for unambiguous correlation
 	// of queries and responses, so the Message ID field is not required.
@@ -184,19 +184,23 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	}()
 
 	// Gets or opens a QUIC connection to use for this query.
-	conn, cached, err := p.getConnection()
+	conn, cached, err := p.getConnection(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting conn: %w", err)
 	}
 
 	// Make the first attempt to send the DNS query.
-	resp, err = p.exchangeQUIC(req, conn)
+	resp, err = p.exchangeQUIC(ctx, req, conn)
 
 	// Failure to use a cached connection should be handled gracefully as this
 	// connection could have been closed by the server or simply be broken due
 	// to how UDP NAT works.  In this case the connection should be re-created.
 	if cached && err != nil {
-		p.logger.Debug("recreating the quic connection and retrying", slogutil.KeyError, err)
+		p.logger.DebugContext(
+			ctx,
+			"recreating the quic connection and retrying",
+			slogutil.KeyError, err,
+		)
 
 		// Close the active connection to make sure the cached connection is
 		// cleaned up.
@@ -204,13 +208,13 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 
 		// Get or re-create the QUIC connection in order to make the second
 		// attempt.
-		conn, _, err = p.getConnection()
+		conn, _, err = p.getConnection(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("getting new conn: %w", err)
 		}
 
 		// Retry sending the request through the new connection.
-		resp, err = p.exchangeQUIC(req, conn)
+		resp, err = p.exchangeQUIC(ctx, req, conn)
 	}
 
 	if err != nil {
@@ -238,18 +242,22 @@ func (p *dnsOverQUIC) Close() (err error) {
 
 // exchangeQUIC attempts to open a new QUIC stream, send the DNS message
 // through it and return the response it got from the server.
-func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg, conn *quic.Conn) (resp *dns.Msg, err error) {
+func (p *dnsOverQUIC) exchangeQUIC(
+	ctx context.Context,
+	req *dns.Msg,
+	conn *quic.Conn,
+) (resp *dns.Msg, err error) {
 	addr := p.Address()
 
-	logBegin(p.logger, addr, networkUDP, req)
-	defer func() { logFinish(p.logger, addr, networkUDP, err) }()
+	logBegin(ctx, p.logger, addr, networkUDP, req)
+	defer func() { logFinish(ctx, p.logger, addr, networkUDP, err) }()
 
 	buf, err := req.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack DNS message for DoQ: %w", err)
 	}
 
-	stream, err := p.openStream(conn)
+	stream, err := p.openStream(ctx, conn)
 	if err != nil {
 		return nil, fmt.Errorf("opening stream: %w", err)
 	}
@@ -272,7 +280,7 @@ func (p *dnsOverQUIC) exchangeQUIC(req *dns.Msg, conn *quic.Conn) (resp *dns.Msg
 	// of the stream, but does not prevent reading from it.
 	err = stream.Close()
 	if err != nil {
-		p.logger.Debug("closing quic stream", slogutil.KeyError, err)
+		p.logger.DebugContext(ctx, "closing quic stream", slogutil.KeyError, err)
 	}
 
 	return p.readMsg(stream)
@@ -298,7 +306,7 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
 
 // getConnection opens or returns an existing *quic.Conn and indicates whether
 // it opened a new connection or used an existing cached one.
-func (p *dnsOverQUIC) getConnection() (conn *quic.Conn, cached bool, err error) {
+func (p *dnsOverQUIC) getConnection(ctx context.Context) (conn *quic.Conn, cached bool, err error) {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
 
@@ -307,7 +315,7 @@ func (p *dnsOverQUIC) getConnection() (conn *quic.Conn, cached bool, err error) 
 		return conn, true, nil
 	}
 
-	conn, err = p.openConnection()
+	conn, err = p.openConnection(ctx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -337,8 +345,8 @@ func (p *dnsOverQUIC) resetQUICConfig() {
 }
 
 // openStream opens a new QUIC stream for the specified connection.
-func (p *dnsOverQUIC) openStream(conn *quic.Conn) (*quic.Stream, error) {
-	ctx, cancel := p.withDeadline(context.Background())
+func (p *dnsOverQUIC) openStream(ctx context.Context, conn *quic.Conn) (*quic.Stream, error) {
+	ctx, cancel := p.withDeadline(ctx)
 	defer cancel()
 
 	stream, err := conn.OpenStreamSync(ctx)
@@ -350,16 +358,16 @@ func (p *dnsOverQUIC) openStream(conn *quic.Conn) (*quic.Stream, error) {
 }
 
 // openConnection dials a new QUIC connection.
-func (p *dnsOverQUIC) openConnection() (conn *quic.Conn, err error) {
+func (p *dnsOverQUIC) openConnection(ctx context.Context) (conn *quic.Conn, err error) {
 	dialContext, err := p.getDialer()
 	if err != nil {
 		return nil, fmt.Errorf("bootstrapping %s: %w", p.addr, err)
 	}
 
-	// we're using bootstrapped address instead of what's passed to the function
+	// We're using bootstrapped address instead of what's passed to the function
 	// it does not create an actual connection, but it helps us determine
 	// what IP is actually reachable (when there're v4/v6 addresses).
-	rawConn, err := dialContext(context.Background(), "udp", "")
+	rawConn, err := dialContext(ctx, "udp", "")
 	if err != nil {
 		return nil, fmt.Errorf("dialing raw connection to %s: %w", p.addr, err)
 	}
@@ -367,7 +375,7 @@ func (p *dnsOverQUIC) openConnection() (conn *quic.Conn, err error) {
 	// It's never actually used.
 	err = rawConn.Close()
 	if err != nil {
-		p.logger.Debug("closing raw connection", "addr", p.addr, slogutil.KeyError, err)
+		p.logger.DebugContext(ctx, "closing raw connection", "addr", p.addr, slogutil.KeyError, err)
 	}
 
 	udpConn, ok := rawConn.(*net.UDPConn)
@@ -377,7 +385,7 @@ func (p *dnsOverQUIC) openConnection() (conn *quic.Conn, err error) {
 
 	addr := udpConn.RemoteAddr().String()
 
-	ctx, cancel := p.withDeadline(context.Background())
+	ctx, cancel := p.withDeadline(ctx)
 	defer cancel()
 
 	conn, err = quic.DialAddrEarly(ctx, addr, p.tlsConf.Clone(), p.getQUICConfig())

@@ -15,7 +15,7 @@ type cachingResolver interface {
 	// resolved and the response may be cached.
 	//
 	// TODO(e.burkov):  Find out when ok can be false with nil err.
-	replyFromUpstream(dctx *DNSContext) (ok bool, err error)
+	replyFromUpstream(ctx context.Context, dctx *DNSContext) (ok bool, err error)
 
 	// cacheResp caches the response from dctx.
 	cacheResp(dctx *DNSContext)
@@ -46,10 +46,12 @@ func newOptimisticResolver(cr cachingResolver) (s *optimisticResolver) {
 // with the same key at the same period of time.  It runs in a separate
 // goroutine.  Do not pass the *DNSContext which is used elsewhere since it
 // isn't intended to be used concurrently.
-//
-// TODO(e.burkov):  Pass the context.
-func (s *optimisticResolver) resolveOnce(dctx *DNSContext, key []byte, l *slog.Logger) {
-	defer slogutil.RecoverAndLog(context.TODO(), l)
+func (s *optimisticResolver) resolveOnce(
+	ctx context.Context,
+	dctx *DNSContext,
+	key []byte, l *slog.Logger,
+) {
+	defer slogutil.RecoverAndLog(ctx, l)
 
 	keyHexed := hex.EncodeToString(key)
 	if _, ok := s.reqs.LoadOrStore(keyHexed, unit{}); ok {
@@ -57,9 +59,9 @@ func (s *optimisticResolver) resolveOnce(dctx *DNSContext, key []byte, l *slog.L
 	}
 	defer s.reqs.Delete(keyHexed)
 
-	ok, err := s.cr.replyFromUpstream(dctx)
+	ok, err := s.cr.replyFromUpstream(ctx, dctx)
 	if err != nil {
-		l.Debug("resolving request for optimistic cache", slogutil.KeyError, err)
+		l.DebugContext(ctx, "resolving request for optimistic cache", slogutil.KeyError, err)
 	}
 
 	if ok {

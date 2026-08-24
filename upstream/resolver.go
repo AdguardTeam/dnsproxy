@@ -154,8 +154,6 @@ type ipResult struct {
 // lookupNetIP performs a DNS lookup of host and returns the result.  network
 // must be either [bootstrap.NetworkIP4], [bootstrap.NetworkIP6], or
 // [bootstrap.NetworkIP].  host must be in a lower-case FQDN form.
-//
-// TODO(e.burkov):  Use context.
 func (r *UpstreamResolver) lookupNetIP(
 	ctx context.Context,
 	network bootstrap.Network,

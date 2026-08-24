@@ -49,7 +49,8 @@ func newOptimisticResolver(cr cachingResolver) (s *optimisticResolver) {
 func (s *optimisticResolver) resolveOnce(
 	ctx context.Context,
 	dctx *DNSContext,
-	key []byte, l *slog.Logger,
+	key []byte,
+	l *slog.Logger,
 ) {
 	defer slogutil.RecoverAndLog(ctx, l)
 

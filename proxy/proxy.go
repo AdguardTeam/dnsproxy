@@ -810,9 +810,7 @@ func (p *Proxy) replyFromUpstream(ctx context.Context, d *DNSContext) (ok bool, 
 
 		wrappedFallbacks = upstreamsWithStats(upstreams)
 
-		// NOTE: use an empty context to have a separate deadline for the
-		// fallback exchange.
-		resp, u, err = upstream.ExchangeParallel(context.Background(), wrappedFallbacks, req)
+		resp, u, err = upstream.ExchangeParallel(context.WithoutCancel(ctx), wrappedFallbacks, req)
 	}
 
 	if err != nil {

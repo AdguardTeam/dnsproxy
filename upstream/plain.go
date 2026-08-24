@@ -91,6 +91,12 @@ func (p *plainDNS) dialExchange(
 	dial bootstrap.DialHandler,
 	req *dns.Msg,
 ) (resp *dns.Msg, err error) {
+	if p.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.timeout)
+		defer cancel()
+	}
+
 	addr := p.Address()
 	client := &dns.Client{}
 
@@ -160,12 +166,6 @@ func isExpectedConnErr(err error) (is bool) {
 
 // Exchange implements the [Upstream] interface for *plainDNS.
 func (p *plainDNS) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
-	if p.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, p.timeout)
-		defer cancel()
-	}
-
 	dial, err := p.getDialer()
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.

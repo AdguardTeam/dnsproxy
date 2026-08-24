@@ -173,9 +173,11 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 	tcpAddr := testutil.RequireTypeAssert[*net.TCPAddr](t, l.Addr())
 
 	ups := &dnsproxytest.Upstream{
-		OnExchange: func(_ context.Context, m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
-		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
-		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
+		OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+			panic(testutil.UnexpectedCall(ctx, m))
+		},
+		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
 	p, err := proxy.New(&proxy.Config{

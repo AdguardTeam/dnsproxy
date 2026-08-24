@@ -204,7 +204,7 @@ func (p *dnsOverQUIC) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg
 
 		// Close the active connection to make sure the cached connection is
 		// cleaned up.
-		p.closeConnWithError(conn, err)
+		p.closeConnWithError(ctx, conn, err)
 
 		// Get or re-create the QUIC connection in order to make the second
 		// attempt.
@@ -220,7 +220,7 @@ func (p *dnsOverQUIC) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg
 	if err != nil {
 		// If we're unable to exchange messages, make sure the connection is
 		// closed and signal about an internal error.
-		p.closeConnWithError(conn, err)
+		p.closeConnWithError(ctx, conn, err)
 	}
 
 	return resp, err
@@ -399,7 +399,7 @@ func (p *dnsOverQUIC) openConnection(ctx context.Context) (conn *quic.Conn, err 
 // closeConnWithError closes the active connection with error to make sure that
 // new queries were processed in another connection.  We can do that in the case
 // of a fatal error.
-func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
+func (p *dnsOverQUIC) closeConnWithError(ctx context.Context, conn *quic.Conn, err error) {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
 
@@ -415,7 +415,7 @@ func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
 
 	err = conn.CloseWithError(code, "")
 	if err != nil {
-		p.logger.Error("failed to close the conn", slogutil.KeyError, err)
+		p.logger.ErrorContext(ctx, "failed to close the conn", slogutil.KeyError, err)
 	}
 
 	// If the connection that's being closed is cached, reset the cache.

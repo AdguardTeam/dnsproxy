@@ -433,7 +433,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	}}
 
 	l := testLogger
-	upstreamTimeout := 5 * time.Second
+	const upstreamTimeout = 5 * time.Second
 
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {

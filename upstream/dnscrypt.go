@@ -114,8 +114,9 @@ func (p *dnsCrypt) exchangeDNSCrypt(ctx context.Context, req *dns.Msg) (resp *dn
 			Proto:  dnscrypt.ProtoTCP,
 		})
 
-		ctx = context.WithoutCancel(ctx)
 		if p.timeout > 0 {
+			ctx = context.WithoutCancel(ctx)
+
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, p.timeout)
 			defer cancel()

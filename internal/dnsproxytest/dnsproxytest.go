@@ -1,5 +1,5 @@
-// Package dnsproxytest provides a set of test utilities for the dnsproxy
-// module.
+// Package dnsproxytest provides test utilities and mock implementations
+// for the dnsproxy module interfaces.
 package dnsproxytest
 
 import (
@@ -15,6 +15,8 @@ import (
 // that can be used for testing.  Note that there is theoretically a TOCTTOU
 // race here: the port may be reoccupied between the time it is released and the
 // time the caller binds to it.
+//
+// TODO(m.kazantsev):  Move to the top-level dnsproxytest package.
 func NewFreePort(tb testing.TB) (p uint) {
 	tb.Helper()
 

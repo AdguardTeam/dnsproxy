@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -79,7 +79,7 @@ func TestPendingRequests(t *testing.T) {
 	workloadWG := &sync.WaitGroup{}
 	workloadWG.Add(reqsNum)
 
-	reqHandler := &proxy.TestHandler{
+	reqHandler := &dnsproxytest.Handler{
 		OnHandle: func(ctx context.Context, p *proxy.Proxy, d *proxy.DNSContext) (err error) {
 			workloadWG.Done()
 

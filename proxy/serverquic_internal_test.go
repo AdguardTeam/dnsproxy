@@ -83,7 +83,7 @@ func TestProxy_quic(t *testing.T) {
 }
 
 func TestProxy_quicLargePackets(t *testing.T) {
-	reqHandler := &TestHandler{
+	reqHandler := &testHandler{
 		OnHandle: func(_ context.Context, _ *Proxy, d *DNSContext) (err error) {
 			d.Res = newTestResponse(d)
 
@@ -146,7 +146,7 @@ func TestProxy_quicTruncatedRequest(t *testing.T) {
 		TLSConfig:      serverConfig,
 		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
 		TrustedProxies: defaultTrustedProxies,
-		RequestHandler: &TestHandler{
+		RequestHandler: &testHandler{
 			OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (_ error) {
 				panic(testutil.UnexpectedCall(ctx, p, d))
 			},

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -25,7 +24,7 @@ import (
 func newUpstreamWithErrorRate(rate uint, name string) (u upstream.Upstream) {
 	var n uint
 
-	return &dnsproxytest.Upstream{
+	return &testUpstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			n++
 			if n%rate == 0 {
@@ -88,7 +87,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		},
 	}
 
-	fastUps := &dnsproxytest.Upstream{
+	fastUps := &testUpstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 100)
 
@@ -97,7 +96,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		OnAddress: func() (addr string) { return "fast" },
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
-	slowerUps := &dnsproxytest.Upstream{
+	slowerUps := &testUpstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 10)
 
@@ -106,7 +105,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		OnAddress: func() (addr string) { return "slower" },
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
-	slowestUps := &dnsproxytest.Upstream{
+	slowestUps := &testUpstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			currentNow = zeroTime.Add(testRTT / 2)
 
@@ -116,14 +115,14 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
-	err1Ups := &dnsproxytest.Upstream{
+	err1Ups := &testUpstream{
 		OnExchange: func(_ context.Context, _ *dns.Msg) (r *dns.Msg, err error) {
 			return nil, assert.AnError
 		},
 		OnAddress: func() (addr string) { return "error1" },
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
-	err2Ups := &dnsproxytest.Upstream{
+	err2Ups := &testUpstream{
 		OnExchange: func(_ context.Context, _ *dns.Msg) (r *dns.Msg, err error) {
 			return nil, assert.AnError
 		},
@@ -133,7 +132,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 
 	singleError := &sync.Once{}
 	// fastestUps responds with an error on the first request.
-	fastestUps := &dnsproxytest.Upstream{
+	fastestUps := &testUpstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			singleError.Do(func() { err = assert.AnError })
 			currentNow = zeroTime.Add(testRTT / 200)

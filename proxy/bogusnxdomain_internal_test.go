@@ -14,11 +14,19 @@ import (
 )
 
 func TestProxy_IsBogusNXDomain(t *testing.T) {
+	var ans []dns.RR
+
+	onExchange := newECSReplyHandler(&ans, nil, nil)
+	u := newTestECSUpstream(onExchange)
+
+	upsConf := newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
+	upsConf.Upstreams = []upstream.Upstream{u}
+
 	prx := mustNew(t, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: upsConf,
 		TrustedProxies: defaultTrustedProxies,
 		CacheEnabled:   true,
 		BogusNXDomain: []netip.Prefix{
@@ -77,9 +85,6 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 		wantRcode: dns.RcodeSuccess,
 	}}
 
-	u := testUpstream{}
-	prx.upstreamConf.Upstreams = []upstream.Upstream{&u}
-
 	servicetest.RequireRun(t, prx, testTimeout)
 
 	d := &DNSContext{
@@ -87,9 +92,9 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		u.ans = tc.ans
-
 		t.Run(tc.name, func(t *testing.T) {
+			ans = tc.ans
+
 			err := prx.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 			require.NoError(t, err)
 			require.NotNil(t, d.Res)

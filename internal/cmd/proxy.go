@@ -419,6 +419,9 @@ func (conf *configuration) initListenAddrs(config *proxy.Config) (err error) {
 	}
 
 	for _, port := range conf.ListenPorts {
+		if port == 0 {
+			continue
+		}
 		for _, ip := range addrs {
 			addrPort := netip.AddrPortFrom(ip, port)
 

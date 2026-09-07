@@ -91,8 +91,8 @@ func (p *plainDNS) dialExchange(
 	dial bootstrap.DialHandler,
 	req *dns.Msg,
 ) (resp *dns.Msg, err error) {
+	var cancel context.CancelFunc
 	if p.timeout > 0 {
-		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, p.timeout)
 		defer cancel()
 	}
@@ -119,6 +119,12 @@ func (p *plainDNS) dialExchange(
 
 	resp, _, err = client.ExchangeWithConnContext(ctx, upstreamReq, conn)
 	if isExpectedConnErr(err) {
+		if p.timeout > 0 {
+			ctx = context.WithoutCancel(ctx)
+			ctx, cancel = context.WithTimeout(ctx, p.timeout)
+			defer cancel()
+		}
+
 		conn.Conn, err = dial(ctx, network, "")
 		if err != nil {
 			return nil, fmt.Errorf("dialing %s over %s again: %w", p.addr.Host, network, err)

@@ -443,7 +443,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 			for _, b := range tc.bootstrap {
 				r, err := NewUpstreamResolver(b, &Options{
 					Logger:  l,
-					Timeout: upstreamTimeout,
+					Timeout: testTimeout,
 				})
 				require.NoError(t, err)
 

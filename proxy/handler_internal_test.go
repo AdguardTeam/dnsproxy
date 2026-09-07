@@ -39,10 +39,10 @@ func TestFilteringHandler(t *testing.T) {
 	}
 
 	// Prepare the proxy server.
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := MustNew(t, &Config{
 		Logger:         testLogger,
-		TrustedProxies: defaultTrustedProxies,
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: DefaultTrustedProxies,
+		UpstreamConfig: NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
 		RequestHandler: reqHandler,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
@@ -58,11 +58,11 @@ func TestFilteringHandler(t *testing.T) {
 	}
 
 	// Send the first message (not blocked)
-	req := newTestMessage()
+	req := NewTestMessage()
 
 	r, _, err := client.Exchange(req, addr.String())
 	require.NoError(t, err)
-	requireResponse(t, req, r)
+	RequireResponse(t, req, r)
 
 	// Now send the second and make sure it is blocked
 	m.Lock()

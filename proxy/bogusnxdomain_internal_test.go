@@ -19,15 +19,15 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	onExchange := newECSReplyHandler(&ans, nil, nil)
 	u := newTestECSUpstream(onExchange)
 
-	upsConf := newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
+	upsConf := NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
 	upsConf.Upstreams = []upstream.Upstream{u}
 
-	prx := mustNew(t, &Config{
+	prx := MustNew(t, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		UpstreamConfig: upsConf,
-		TrustedProxies: defaultTrustedProxies,
+		TrustedProxies: DefaultTrustedProxies,
 		CacheEnabled:   true,
 		BogusNXDomain: []netip.Prefix{
 			netip.MustParsePrefix("4.3.2.1/24"),

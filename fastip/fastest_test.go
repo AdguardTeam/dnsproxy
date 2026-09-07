@@ -1,10 +1,12 @@
-package fastip
+package fastip_test
 
 import (
+	"net"
 	"net/netip"
 	"testing"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/fastip"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -20,12 +22,14 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		const errDesired errors.Error = "this is expected"
 
-		u := &errUpstream{
-			err: errDesired,
+		u := &dnsproxytest.Upstream{
+			OnAddress:  func() (addr string) { return "bad_upstream" },
+			OnExchange: func(_ *dns.Msg) (*dns.Msg, error) { return nil, errDesired },
+			OnClose:    func() error { return nil },
 		}
-		f := New(&Config{
+		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: DefaultPingWaitTimeout,
+			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
 		})
 
 		resp, up, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{u})
@@ -39,23 +43,19 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	t.Run("one_dead", func(t *testing.T) {
 		port := listen(t, netip.IPv4Unspecified())
 
-		f := New(&Config{
+		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: DefaultPingWaitTimeout,
+			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingPorts:       []uint{port},
 		})
-		f.pingPorts = []uint{port}
 
 		// The alive IP is the just created local listener's address.  The dead
 		// one is known as TEST-NET-1 which shouldn't be routed at all.  See
 		// RFC-5737 (https://datatracker.ietf.org/doc/html/rfc5737).
 		aliveAddr := netip.MustParseAddr("127.0.0.1")
 
-		alive := &testAUpstream{
-			recs: []*dns.A{newTestRec(t, aliveAddr)},
-		}
-		dead := &testAUpstream{
-			recs: []*dns.A{newTestRec(t, netip.MustParseAddr("192.0.2.1"))},
-		}
+		alive := newTestAUpstream(t, []*dns.A{newTestRec(t, aliveAddr)})
+		dead := newTestAUpstream(t, []*dns.A{newTestRec(t, netip.MustParseAddr("192.0.2.1"))})
 
 		rep, ups, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{dead, alive})
 		require.NoError(t, err)
@@ -70,20 +70,18 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	})
 
 	t.Run("all_dead", func(t *testing.T) {
-		f := New(&Config{
+		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: DefaultPingWaitTimeout,
+			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingPorts:       []uint{dnsproxytest.NewFreePort(t)},
 		})
-		f.pingPorts = []uint{dnsproxytest.NewFreePort(t)}
 
 		firstIP := netip.MustParseAddr("127.0.0.1")
-		ups := &testAUpstream{
-			recs: []*dns.A{
-				newTestRec(t, firstIP),
-				newTestRec(t, netip.MustParseAddr("127.0.0.2")),
-				newTestRec(t, netip.MustParseAddr("127.0.0.3")),
-			},
-		}
+		ups := newTestAUpstream(t, []*dns.A{
+			newTestRec(t, firstIP),
+			newTestRec(t, netip.MustParseAddr("127.0.0.2")),
+			newTestRec(t, netip.MustParseAddr("127.0.0.3")),
+		})
 
 		resp, _, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{ups})
 		require.NoError(t, err)
@@ -96,55 +94,25 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	})
 }
 
-// testAUpstream is a mock err upstream structure for tests.
-type errUpstream struct {
-	err      error
-	closeErr error
-}
+// newTestAUpstream returns a new test upstream, which responds with the
+// provided A records.
+func newTestAUpstream(tb testing.TB, recs []*dns.A) (ups *dnsproxytest.Upstream) {
+	tb.Helper()
 
-// Address implements the [upstream.Upstream] interface for *errUpstream.
-func (u *errUpstream) Address() string {
-	return "bad_upstream"
-}
+	return &dnsproxytest.Upstream{
+		OnAddress: func() (addr string) { return "" },
+		OnClose:   func() error { return nil },
+		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+			resp = &dns.Msg{}
+			resp.SetReply(m)
 
-// Exchange implements the [upstream.Upstream] interface for *errUpstream.
-func (u *errUpstream) Exchange(_ *dns.Msg) (*dns.Msg, error) {
-	return nil, u.err
-}
+			for _, a := range recs {
+				resp.Answer = append(resp.Answer, a)
+			}
 
-// Close implements the [upstream.Upstream] interface for *errUpstream.
-func (u *errUpstream) Close() error {
-	return u.closeErr
-}
-
-// testAUpstream is a mock A upstream structure for tests.
-type testAUpstream struct {
-	recs []*dns.A
-}
-
-// type check
-var _ upstream.Upstream = (*testAUpstream)(nil)
-
-// Exchange implements the [upstream.Upstream] interface for *testAUpstream.
-func (u *testAUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
-	resp = &dns.Msg{}
-	resp.SetReply(m)
-
-	for _, a := range u.recs {
-		resp.Answer = append(resp.Answer, a)
+			return resp, nil
+		},
 	}
-
-	return resp, nil
-}
-
-// Address implements the [upstream.Upstream] interface for *testAUpstream.
-func (u *testAUpstream) Address() (addr string) {
-	return ""
-}
-
-// Close implements the [upstream.Upstream] interface for *testAUpstream.
-func (u *testAUpstream) Close() (err error) {
-	return nil
 }
 
 // newTestRec returns a new test A record.
@@ -172,4 +140,15 @@ func newTestReq(t *testing.T) (req *dns.Msg) {
 			Qclass: dns.ClassINET,
 		}},
 	}
+}
+
+// listen is a helper function that creates a new listener on ip for t.
+func listen(tb testing.TB, ip netip.Addr) (port uint) {
+	tb.Helper()
+
+	l, err := net.Listen("tcp", netip.AddrPortFrom(ip, 0).String())
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, l.Close)
+
+	return uint(l.Addr().(*net.TCPAddr).Port)
 }

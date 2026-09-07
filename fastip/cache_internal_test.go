@@ -1,7 +1,6 @@
 package fastip
 
 import (
-	"net"
 	"net/netip"
 	"testing"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TODO(m.kazantsev):  Find a way to move to fastip_test.go.
 func TestCacheAdd(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
@@ -84,22 +84,4 @@ func TestCacheAddFailureNoOverwrite(t *testing.T) {
 	assert.NotNil(t, ent)
 	assert.Equal(t, 0, ent.status)
 	assert.Equal(t, uint(11), ent.latencyMsec)
-}
-
-// TODO(ameshkov): Actually test something.
-func TestCache(_ *testing.T) {
-	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
-	ent := cacheEntry{
-		status:      0,
-		latencyMsec: 111,
-	}
-
-	val := packCacheEntry(&ent, 1)
-	f.ipCache.Set(net.ParseIP("1.1.1.1").To4(), val)
-	ent = cacheEntry{
-		status:      0,
-		latencyMsec: 222,
-	}
-
-	f.cacheAdd(&ent, netip.MustParseAddr("2.2.2.2"), fastestAddrCacheTTLSec)
 }

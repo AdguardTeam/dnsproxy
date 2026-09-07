@@ -24,13 +24,13 @@ func TestProxy_tcp(t *testing.T) {
 
 func TestProxy_tls(t *testing.T) {
 	serverConfig, caPem := newTLSConfig(t)
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := MustNew(t, &Config{
 		Logger:         testLogger,
 		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies: defaultTrustedProxies,
+		UpstreamConfig: NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: DefaultTrustedProxies,
 	})
 
 	servicetest.RequireRun(t, dnsProxy, testTimeout)

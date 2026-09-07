@@ -55,6 +55,10 @@ type Config struct {
 	// [slog.Default] with [LogPrefix] is used.
 	Logger *slog.Logger
 
+	// PingPorts specifies the ports to ping on.  If empty, the default ports
+	// 80 and 443 are used.
+	PingPorts []uint
+
 	// PingWaitTimeout is the timeout for waiting all the resolved addresses to
 	// be pinged.  Any ping results received after that moment are cached, but
 	// won't be used.  If zero, [DefaultPingWaitTimeout] is used.
@@ -71,6 +75,10 @@ func New(c *Config) (f *FastestAddr) {
 		}),
 		pingPorts: []uint{80, 443},
 		pinger:    &net.Dialer{Timeout: pingTCPTimeout},
+	}
+
+	if len(c.PingPorts) > 0 {
+		f.pingPorts = c.PingPorts
 	}
 
 	if c.PingWaitTimeout > 0 {

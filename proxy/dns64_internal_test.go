@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -39,8 +40,8 @@ func TestDNS64Race(t *testing.T) {
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{ups},
@@ -48,7 +49,7 @@ func TestDNS64Race(t *testing.T) {
 		PrivateRDNSUpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{localUps},
 		},
-		TrustedProxies: defaultTrustedProxies,
+		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 
 		UseDNS64:       true,
 		UsePrivateRDNS: true,
@@ -56,16 +57,16 @@ func TestDNS64Race(t *testing.T) {
 		DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")},
 	})
 
-	servicetest.RequireRun(t, dnsProxy, testTimeout)
+	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 	syncCh := make(chan struct{})
 
 	// Send requests.
 	g := &sync.WaitGroup{}
-	g.Add(testMessagesCount)
+	g.Add(dnsproxytest.MessageCount)
 
 	addr := dnsProxy.Addr(ProtoTCP).String()
-	for range testMessagesCount {
+	for range dnsproxytest.MessageCount {
 		// The [dns.Conn] isn't safe for concurrent use despite the requirements
 		// from the [net.Conn] documentation.
 		conn, err := dns.Dial("tcp", addr)
@@ -78,7 +79,12 @@ func TestDNS64Race(t *testing.T) {
 	g.Wait()
 }
 
-func sendTestAAAAMessageAsync(conn *dns.Conn, g *sync.WaitGroup, fqdn string, syncCh chan struct{}) {
+func sendTestAAAAMessageAsync(
+	conn *dns.Conn,
+	g *sync.WaitGroup,
+	fqdn string,
+	syncCh chan struct{},
+) {
 	pt := testutil.PanicT{}
 
 	defer g.Done()
@@ -393,17 +399,20 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			udpAddr := net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
+			tcpAddr := net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
+
 			p := mustNew(t, &Config{
 				Logger:        testLogger,
-				UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-				TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+				UDPListenAddr: []*net.UDPAddr{udpAddr},
+				TCPListenAddr: []*net.TCPAddr{tcpAddr},
 				UpstreamConfig: &UpstreamConfig{
 					Upstreams: []upstream.Upstream{newUps(tc.upsAns)},
 				},
 				PrivateRDNSUpstreamConfig: &UpstreamConfig{
 					Upstreams: []upstream.Upstream{localUps},
 				},
-				TrustedProxies: defaultTrustedProxies,
+				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 				CacheEnabled:   true,
 
 				UseDNS64:       true,
@@ -411,7 +420,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 				PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 			})
 
-			servicetest.RequireRun(t, p, testTimeout)
+			servicetest.RequireRun(t, p, dnsproxytest.Timeout)
 
 			dctx := &DNSContext{
 				Req:  (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype),

@@ -20,7 +20,7 @@ func TestDNSCryptProxy(t *testing.T) {
 	// Prepare the proxy server.
 	dnsProxy, rc := newTestDNSCryptProxy(t)
 
-	servicetest.RequireRun(t, dnsProxy, testTimeout)
+	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 	// Generate a DNS stamp.
 	port := testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoDNSCrypt)).Port
@@ -55,7 +55,7 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 			Port: int(port), IP: net.ParseIP(listenIP),
 		}},
 		UpstreamConfig:         upstreamConf,
-		TrustedProxies:         defaultTrustedProxies,
+		TrustedProxies:         dnsproxytest.DefaultTrustedProxies,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,
 		CacheMinTTL:            20,
@@ -72,21 +72,18 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 func checkDNSCryptProxy(tb testing.TB, proto dnscrypt.Proto, stamp dnsstamps.ServerStamp) {
 	tb.Helper()
 
-	// Create a DNSCrypt client.
 	c := dnscrypt.NewClient(&dnscrypt.ClientConfig{
 		Logger: slogutil.NewDiscardLogger(),
 		Proto:  proto,
 	})
 
-	ctx := testutil.ContextWithTimeout(tb, testTimeout)
+	ctx := testutil.ContextWithTimeout(tb, dnsproxytest.Timeout)
 
-	// Fetch the server certificate.
 	ri, err := c.DialStampContext(ctx, stamp)
 	require.NoError(tb, err)
 
-	// Send the test message.
-	msg := newTestMessage()
+	msg := dnsproxytest.NewTestMessage()
 	reply, err := c.ExchangeContext(ctx, msg, ri)
 	require.NoError(tb, err)
-	requireResponse(tb, msg, reply)
+	dnsproxytest.RequireResponse(tb, msg, reply)
 }

@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
@@ -24,10 +25,10 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 
 	prx := mustNew(t, &Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		UpstreamConfig: upsConf,
-		TrustedProxies: defaultTrustedProxies,
+		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		CacheEnabled:   true,
 		BogusNXDomain: []netip.Prefix{
 			netip.MustParsePrefix("4.3.2.1/24"),
@@ -85,10 +86,10 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 		wantRcode: dns.RcodeSuccess,
 	}}
 
-	servicetest.RequireRun(t, prx, testTimeout)
+	servicetest.RequireRun(t, prx, dnsproxytest.Timeout)
 
 	d := &DNSContext{
-		Req: newHostTestMessage("host"),
+		Req: dnsproxytest.NewHostTestMessage("host"),
 	}
 
 	for _, tc := range testCases {

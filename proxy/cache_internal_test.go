@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -18,9 +19,6 @@ import (
 
 	"github.com/miekg/dns"
 )
-
-// testCacheSize is the maximum size of cache for tests.
-const testCacheSize = 4096
 
 // testUpsAddr is the mock upstream address for tests.
 const testUpsAddr = "https://upstream.address"
@@ -41,7 +39,7 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 	conf = cmp.Or(conf, &cacheConfig{})
 
 	return newCache(&cacheConfig{
-		size:             cmp.Or(conf.size, testCacheSize),
+		size:             cmp.Or(conf.size, dnsproxytest.CacheSize),
 		optimisticTTL:    cmp.Or(conf.optimisticTTL, testOptimisticTTL),
 		optimisticMaxAge: cmp.Or(conf.optimisticMaxAge, testOptimisticMaxAge),
 		withECS:          conf.withECS,
@@ -52,16 +50,16 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 func TestServeCached(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies: defaultTrustedProxies,
+		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		DNSSECEnabled:  false,
 		CacheEnabled:   true,
 	})
 
 	// Start listening.
-	servicetest.RequireRun(t, dnsProxy, testTimeout)
+	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 	// Create a DNS request.
 	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
@@ -79,7 +77,7 @@ func TestServeCached(t *testing.T) {
 	addr := dnsProxy.Addr(ProtoUDP)
 	client := &dns.Client{
 		Net:     string(ProtoUDP),
-		Timeout: testTimeout,
+		Timeout: dnsproxytest.Timeout,
 	}
 
 	r, _, err := client.Exchange(request, addr.String())
@@ -306,14 +304,14 @@ func TestCacheExpiration(t *testing.T) {
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies: defaultTrustedProxies,
+		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		CacheEnabled:   true,
 	})
 
-	servicetest.RequireRun(t, dnsProxy, testTimeout)
+	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 	// Create dns messages with TTL of 1 second.
 	rrs := []dns.RR{
@@ -367,24 +365,24 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{u},
 		},
-		TrustedProxies: defaultTrustedProxies,
+		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		CacheEnabled:   true,
 		DNSSECEnabled:  true,
 		CacheMinTTL:    20,
 		CacheMaxTTL:    40,
 	})
 
-	servicetest.RequireRun(t, dnsProxy, testTimeout)
+	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 	d := &DNSContext{}
 
 	t.Run("replace_min", func(t *testing.T) {
-		d.Req = newHostTestMessage("host")
+		d.Req = dnsproxytest.NewHostTestMessage("host")
 		d.Addr = netip.AddrPort{}
 
 		ans = []dns.RR{&dns.A{
@@ -408,7 +406,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	})
 
 	t.Run("replace_max", func(t *testing.T) {
-		d.Req = newHostTestMessage("host2")
+		d.Req = dnsproxytest.NewHostTestMessage("host2")
 		d.Addr = netip.AddrPort{}
 
 		ans = []dns.RR{&dns.A{

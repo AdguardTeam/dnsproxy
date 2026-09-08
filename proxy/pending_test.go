@@ -3,43 +3,18 @@ package proxy_test
 import (
 	"context"
 	"net"
-	"net/netip"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
-
-// TODO(e.burkov):  Merge those with the ones in internal tests and move to
-// dnsproxytest.
-
-const (
-	// testTimeout is the common timeout for tests and contexts.
-	testTimeout = 1 * time.Second
-
-	// testCacheSize is the default size of the cache in bytes.
-	testCacheSize = 64 * 1024
-)
-
-var (
-	// localhostAnyPort is a localhost address with an arbitrary port.
-	localhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
-
-	// testTrustedProxies is a set of trusted proxies that includes all
-	// addresses used in tests.
-	testTrustedProxies = netutil.SliceSubnetSet{
-		netip.MustParsePrefix("0.0.0.0/0"),
-		netip.MustParsePrefix("::0/0"),
-	}
 )
 
 // assertEqualResponses is a helper function that checks if two DNS messages are
@@ -108,26 +83,26 @@ func TestPendingRequests(t *testing.T) {
 	p, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,
 		UpstreamConfig: &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-		TrustedProxies: testTrustedProxies,
+		TrustedProxies: proxytest.DefaultTrustedProxies,
 		PendingRequests: &proxy.PendingRequestsConfig{
 			Enabled: true,
 		},
 		RequestHandler:         reqHandler,
-		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		CacheSizeBytes:         testCacheSize,
+		UDPListenAddr:          []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr:          []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		CacheSizeBytes:         proxytest.CacheSize,
 		CacheEnabled:           true,
 		DNSSECEnabled:          true,
 		EnableEDNSClientSubnet: true,
 	})
 	require.NoError(t, err)
 
-	servicetest.RequireRun(t, p, testTimeout)
+	servicetest.RequireRun(t, p, proxytest.Timeout)
 
 	addr := p.Addr(proxy.ProtoTCP).String()
 	client := &dns.Client{
 		Net:     string(proxy.ProtoTCP),
-		Timeout: testTimeout,
+		Timeout: proxytest.Timeout,
 	}
 
 	resolveWG := &sync.WaitGroup{}
@@ -142,7 +117,7 @@ func TestPendingRequests(t *testing.T) {
 		go func() {
 			defer resolveWG.Done()
 
-			reqCtx := testutil.ContextWithTimeout(t, testTimeout)
+			reqCtx := testutil.ContextWithTimeout(t, proxytest.Timeout)
 			responses[i], _, errs[i] = client.ExchangeContext(reqCtx, req, addr)
 		}()
 	}

@@ -98,7 +98,10 @@ func (p *plainDNS) dialExchange(
 	}
 
 	addr := p.Address()
-	client := &dns.Client{}
+
+	// NOTE: It is important to set a client timeout to prevent the use of the
+	// default timeout settings.
+	client := &dns.Client{Timeout: p.timeout}
 
 	conn := &dns.Conn{}
 	upstreamReq := setRequestForNetwork(req, conn, network)

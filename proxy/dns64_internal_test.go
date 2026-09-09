@@ -33,8 +33,8 @@ func TestDNS64Race(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 	localUps := &testUpstream{
-		OnExchange: func(_ context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
-			panic(testutil.UnexpectedCall(m))
+		OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+			panic(testutil.UnexpectedCall(ctx, m))
 		},
 		OnAddress: func() (addr string) { return "fake.address" },
 		OnClose:   func() (err error) { return nil },

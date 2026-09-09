@@ -29,8 +29,8 @@ const testUpsAddr = "https://upstream.address"
 // upstreamWithAddr is a [dnsproxytest.Upstream] that is only expected to be
 // used to get its address.
 var upstreamWithAddr = &testUpstream{
-	OnExchange: func(_ context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
-		panic(testutil.UnexpectedCall(m))
+	OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+		panic(testutil.UnexpectedCall(ctx, m))
 	},
 	OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 	OnAddress: func() (addr string) { return testUpsAddr },

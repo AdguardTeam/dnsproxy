@@ -113,9 +113,9 @@ func TestDNSOverQUIC_Exchange_quicCloseConn(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(parallelQueries)
 
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
 	for range 10 {
 		pt := testutil.PanicT{}
-		ctx := testutil.ContextWithTimeout(t, testTimeout)
 		go func(ctx context.Context, t assert.TestingT) {
 			defer wg.Done()
 

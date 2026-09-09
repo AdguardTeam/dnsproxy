@@ -82,7 +82,7 @@ func checkDNSCryptProxy(tb testing.TB, proto dnscrypt.Proto, stamp dnsstamps.Ser
 	ri, err := c.DialStampContext(ctx, stamp)
 	require.NoError(tb, err)
 
-	msg := dnsproxytest.NewTestMessage()
+	msg := dnsproxytest.NewTestRequest()
 	reply, err := c.ExchangeContext(ctx, msg, ri)
 	require.NoError(tb, err)
 	dnsproxytest.RequireResponse(tb, msg, reply)

@@ -51,15 +51,14 @@ func TestFilteringHandler(t *testing.T) {
 
 	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
-	// Create a DNS-over-UDP client connection
-	addr := dnsProxy.Addr(ProtoUDP)
+	addr := dnsProxy.Addr(ProtoTCP)
 	client := &dns.Client{
-		Net:     string(ProtoUDP),
+		Net:     string(ProtoTCP),
 		Timeout: dnsproxytest.Timeout,
 	}
 
 	// Send the first message (not blocked)
-	req := dnsproxytest.NewTestMessage()
+	req := dnsproxytest.NewTestRequest()
 
 	r, _, err := client.Exchange(req, addr.String())
 	require.NoError(t, err)

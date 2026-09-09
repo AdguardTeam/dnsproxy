@@ -110,16 +110,11 @@ func TestPendingRequests(t *testing.T) {
 	errs := make([]error, reqsNum)
 
 	for i := range reqsNum {
-		resolveWG.Add(1)
-
 		req := (&dns.Msg{}).SetQuestion("domain.example.", dns.TypeA)
-
-		go func() {
-			defer resolveWG.Done()
-
+		resolveWG.Go(func() {
 			reqCtx := testutil.ContextWithTimeout(t, proxytest.Timeout)
 			responses[i], _, errs[i] = client.ExchangeContext(reqCtx, req, addr)
-		}()
+		})
 	}
 
 	resolveWG.Wait()

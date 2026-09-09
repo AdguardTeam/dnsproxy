@@ -18,7 +18,7 @@ import (
 
 const ipv4OnlyFqdn = "ipv4.only."
 
-func TestDNS64Race(t *testing.T) {
+func TestProxy_Start_DNS64Race(t *testing.T) {
 	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, net.ParseIP("1.2.3.4"))
 	ups := &testUpstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -71,21 +71,26 @@ func TestDNS64Race(t *testing.T) {
 		// from the [net.Conn] documentation.
 		conn, err := dns.Dial("tcp", addr)
 		require.NoError(t, err)
+		testutil.CleanupAndRequireSuccess(t, conn.Close)
 
-		go sendTestAAAAMessageAsync(conn, g, ipv4OnlyFqdn, syncCh)
+		go exchangeTestAAAARequestAsync(t, conn, g, ipv4OnlyFqdn, syncCh)
 	}
 
 	close(syncCh)
 	g.Wait()
 }
 
-func sendTestAAAAMessageAsync(
+// exchangeTestAAAARequestAsync is a test helper that sends an AAAA DNS request
+// for the given FQDN and verifies the response contains a single AAAA record.
+// It is intended to be used as a goroutine.
+func exchangeTestAAAARequestAsync(
+	tb testing.TB,
 	conn *dns.Conn,
 	g *sync.WaitGroup,
 	fqdn string,
 	syncCh chan struct{},
 ) {
-	pt := testutil.PanicT{}
+	pt := testutil.NewPanicT(tb)
 
 	defer g.Done()
 
@@ -97,7 +102,7 @@ func sendTestAAAAMessageAsync(
 
 	res, err := conn.ReadMsg()
 	require.NoError(pt, err)
-	require.Equal(pt, res.Rcode, dns.RcodeSuccess)
+	require.Equal(pt, dns.RcodeSuccess, res.Rcode)
 	require.NotEmpty(pt, res.Answer)
 
 	require.IsType(pt, &dns.AAAA{}, res.Answer[0])

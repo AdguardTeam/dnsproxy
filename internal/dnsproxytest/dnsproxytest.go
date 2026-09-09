@@ -37,23 +37,28 @@ const (
 	TLSServerName = "testdns.adguard.com"
 )
 
-// LocalhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
-var LocalhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
+var (
+	// LocalhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
+	LocalhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
+
+	// IPv4 is a common IPv4 address for test response A records.
+	IPv4 = net.IPv4(8, 8, 8, 8)
+)
 
 // DefaultTrustedProxies is a set of trusted proxies that includes all possible
 // IP addresses.
 var DefaultTrustedProxies = netutil.SliceSubnetSet{
 	netip.MustParsePrefix("0.0.0.0/0"),
-	netip.MustParsePrefix("::0/0"),
+	netip.MustParsePrefix("::/0"),
 }
 
-// NewTestMessage returns common DNS message for tests.
-func NewTestMessage() (msg *dns.Msg) {
-	return NewHostTestMessage("google-public-dns-a.google.com")
+// NewTestRequest returns common DNS request for tests.
+func NewTestRequest() (msg *dns.Msg) {
+	return NewHostTestRequest("google-public-dns-a.google.com")
 }
 
-// NewHostTestMessage returns DNS message with common values and given host.
-func NewHostTestMessage(host string) (req *dns.Msg) {
+// NewHostTestRequest returns DNS request with common values and given host.
+func NewHostTestRequest(host string) (req *dns.Msg) {
 	return &dns.Msg{
 		MsgHdr: dns.MsgHdr{
 			Id:               dns.Id(),
@@ -67,8 +72,9 @@ func NewHostTestMessage(host string) (req *dns.Msg) {
 	}
 }
 
-// RequireResponse is a test helper that makes sure that given DNS reply matches
-// common expectations as well as the given request.
+// RequireResponse is a test helper that ensures that the DNS reply matches the
+// request and contains an A record with [IPv4].  It is intended to be used
+// alongside [NewTestRequest] or [NewHostTestRequest].
 func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 	tb.Helper()
 
@@ -78,7 +84,7 @@ func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 
 	a := testutil.RequireTypeAssert[*dns.A](tb, reply.Answer[0])
 
-	require.Equal(tb, net.IPv4(8, 8, 8, 8), a.A.To16())
+	require.Equal(tb, IPv4, a.A.To16())
 }
 
 // NewTLSConfig is a test helper that generates new TLS config.

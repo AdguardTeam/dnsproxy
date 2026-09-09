@@ -59,13 +59,10 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 	wg := &sync.WaitGroup{}
 
 	const secondaryNum = 10
-	wg.Add(secondaryNum)
 	for range secondaryNum {
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			s.resolveOnce(nil, sameKey, testLogger)
-		}()
+		})
 	}
 
 	// Wait until all the secondary goroutines are finished.

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_tcp(t *testing.T) {
+func TestProxy_Start_tcp(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	// Create a DNS-over-TCP client connection
@@ -24,7 +24,7 @@ func TestProxy_tcp(t *testing.T) {
 	sendTestMessages(t, conn)
 }
 
-func TestProxy_tls(t *testing.T) {
+func TestProxy_Start_tls(t *testing.T) {
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 	dnsProxy, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,

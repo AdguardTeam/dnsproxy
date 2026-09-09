@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_quic(t *testing.T) {
+func TestProxy_Start_quic(t *testing.T) {
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 
 	roots := x509.NewCertPool()
@@ -83,7 +83,7 @@ func TestProxy_quic(t *testing.T) {
 	})
 }
 
-func TestProxy_quicLargePackets(t *testing.T) {
+func TestProxy_Start_quicLargePackets(t *testing.T) {
 	reqHandler := &testHandler{
 		OnHandle: func(_ context.Context, _ *Proxy, d *DNSContext) (err error) {
 			d.Res = newTestResponse(d)
@@ -124,7 +124,7 @@ func TestProxy_quicLargePackets(t *testing.T) {
 	})
 
 	// Create a test message large enough to take multiple QUIC frames.
-	msg := dnsproxytest.NewTestMessage()
+	msg := dnsproxytest.NewTestRequest()
 	msg.Extra = []dns.RR{
 		&dns.OPT{
 			Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT, Class: 4096},
@@ -138,7 +138,7 @@ func TestProxy_quicLargePackets(t *testing.T) {
 	dnsproxytest.RequireResponse(t, msg, resp)
 }
 
-func TestProxy_quicTruncatedRequest(t *testing.T) {
+func TestProxy_Start_quicTruncatedRequest(t *testing.T) {
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 
 	conf := &Config{
@@ -308,7 +308,7 @@ func writeQUICStream(buf []byte, stream *quic.Stream) (err error) {
 
 // sendTestQUICMessage send a test message to the specified QUIC connection.
 func sendTestQUICMessage(t *testing.T, conn *quic.Conn, doqVersion DoQVersion) {
-	msg := dnsproxytest.NewTestMessage()
+	msg := dnsproxytest.NewTestRequest()
 	resp := sendQUICMessage(t, msg, conn, doqVersion)
 	dnsproxytest.RequireResponse(t, msg, resp)
 }

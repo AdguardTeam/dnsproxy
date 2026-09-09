@@ -86,7 +86,7 @@ func sendTestMessages(tb testing.TB, conn *dns.Conn) {
 	tb.Helper()
 
 	for i := range proxytest.MessageCount {
-		req := proxytest.NewTestMessage()
+		req := proxytest.NewTestRequest()
 		err := conn.WriteMsg(req)
 		require.NoErrorf(tb, err, "req number %d", i)
 
@@ -97,7 +97,7 @@ func sendTestMessages(tb testing.TB, conn *dns.Conn) {
 	}
 }
 
-func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
+func TestProxy_Resolve_badResponse(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	onExchange := func(m *dns.Msg) (resp *dns.Msg, err error) {
@@ -129,7 +129,7 @@ func TestProxy_ReplyFromUpstream_badResponse(t *testing.T) {
 			0,
 			false,
 		),
-		Req:  proxytest.NewHostTestMessage("host"),
+		Req:  proxytest.NewHostTestRequest("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 
@@ -182,7 +182,7 @@ func isCachedWithCustomConfig(
 }
 
 // TODO(f.setrakov): Make it work without a real network.
-func TestProxyRace(t *testing.T) {
+func TestProxy_Start_race(t *testing.T) {
 	upsConf := newTestUpstreamConfig(
 		t,
 		defaultTimeout,
@@ -205,15 +205,12 @@ func TestProxyRace(t *testing.T) {
 	conn, err := dns.Dial("udp", addr.String())
 	require.NoError(t, err)
 
-	g := &sync.WaitGroup{}
-	g.Add(proxytest.MessageCount)
+	wg := &sync.WaitGroup{}
 
 	pt := testutil.PanicT{}
 	for range proxytest.MessageCount {
-		go func() {
-			defer g.Done()
-
-			req := proxytest.NewTestMessage()
+		wg.Go(func() {
+			req := proxytest.NewTestRequest()
 			writeErr := conn.WriteMsg(req)
 			require.NoError(pt, writeErr)
 
@@ -229,22 +226,22 @@ func TestProxyRace(t *testing.T) {
 
 			a := res.Answer[0].(*dns.A)
 			require.Equal(pt, net.IPv4(8, 8, 8, 8), a.A.To16())
-		}()
+		})
 	}
 
-	g.Wait()
+	wg.Wait()
 }
 
-func TestResponseInRequest(t *testing.T) {
+func TestProxy_Start_responseInRequest(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
-	addr := dnsProxy.Addr(proxy.ProtoUDP)
+	addr := dnsProxy.Addr(proxy.ProtoTCP)
 	client := &dns.Client{
-		Net:     string(proxy.ProtoUDP),
+		Net:     string(proxy.ProtoTCP),
 		Timeout: proxytest.Timeout,
 	}
 
-	req := proxytest.NewTestMessage()
+	req := proxytest.NewTestRequest()
 	req.Response = true
 
 	r, _, err := client.Exchange(req, addr.String())
@@ -255,7 +252,7 @@ func TestResponseInRequest(t *testing.T) {
 	assert.Nil(t, r)
 }
 
-func TestProxy_Resolve_cache(t *testing.T) {
+func TestProxy_Start_cache(t *testing.T) {
 	const host = "example.test."
 
 	ups := &dnsproxytest.Upstream{
@@ -387,7 +384,7 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 	}))
 }
 
-func TestProxy_ServeDNS_formatError(t *testing.T) {
+func TestProxy_Start_formatError(t *testing.T) {
 	t.Parallel()
 
 	ups := &dnsproxytest.Upstream{

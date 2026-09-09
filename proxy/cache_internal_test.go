@@ -73,15 +73,14 @@ func TestServeCached(t *testing.T) {
 
 	dnsProxy.cache.set(request, reply, upstreamWithAddr, testLogger)
 
-	// Create a DNS-over-UDP client connection.
-	addr := dnsProxy.Addr(ProtoUDP)
+	addr := dnsProxy.Addr(ProtoTCP)
 	client := &dns.Client{
-		Net:     string(ProtoUDP),
+		Net:     string(ProtoTCP),
 		Timeout: dnsproxytest.Timeout,
 	}
 
 	r, _, err := client.Exchange(request, addr.String())
-	require.NoErrorf(t, err, "error in the first request: %s", err)
+	require.NoError(t, err)
 
 	requireEqualMsgs(t, r, reply)
 }
@@ -382,7 +381,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	d := &DNSContext{}
 
 	t.Run("replace_min", func(t *testing.T) {
-		d.Req = dnsproxytest.NewHostTestMessage("host")
+		d.Req = dnsproxytest.NewHostTestRequest("host")
 		d.Addr = netip.AddrPort{}
 
 		ans = []dns.RR{&dns.A{
@@ -406,7 +405,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	})
 
 	t.Run("replace_max", func(t *testing.T) {
-		d.Req = dnsproxytest.NewHostTestMessage("host2")
+		d.Req = dnsproxytest.NewHostTestRequest("host2")
 		d.Addr = netip.AddrPort{}
 
 		ans = []dns.RR{&dns.A{

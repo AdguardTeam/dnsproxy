@@ -352,7 +352,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 	}
 }
 
-func TestExchangeWithReservedDomains(t *testing.T) {
+func TestProxy_Start_exchangeWithReservedDomains(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
@@ -378,7 +378,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create google-a test message.
-	req := dnsproxytest.NewTestMessage()
+	req := dnsproxytest.NewTestRequest()
 	err = conn.WriteMsg(req)
 	require.NoError(t, err)
 
@@ -388,7 +388,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	dnsproxytest.RequireResponse(t, req, res)
 
 	// Create adguard.com test message.
-	req = dnsproxytest.NewHostTestMessage("adguard.com")
+	req = dnsproxytest.NewHostTestRequest("adguard.com")
 	err = conn.WriteMsg(req)
 	require.NoError(t, err)
 
@@ -397,7 +397,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	require.Nil(t, res.Answer)
 
 	// Create www.google.ru test message.
-	req = dnsproxytest.NewHostTestMessage("www.google.ru")
+	req = dnsproxytest.NewHostTestRequest("www.google.ru")
 	err = conn.WriteMsg(req)
 	require.NoError(t, err)
 
@@ -406,7 +406,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	require.Empty(t, res.Answer)
 
 	// Create maps.google.ru test message.
-	req = dnsproxytest.NewHostTestMessage("maps.google.ru")
+	req = dnsproxytest.NewHostTestRequest("maps.google.ru")
 	err = conn.WriteMsg(req)
 	require.NoError(t, err)
 
@@ -415,9 +415,7 @@ func TestExchangeWithReservedDomains(t *testing.T) {
 	require.NotNil(t, res.Answer)
 }
 
-// TestOneByOneUpstreamsExchange tries to resolve DNS request
-// with one valid and two invalid upstreams
-func TestOneByOneUpstreamsExchange(t *testing.T) {
+func TestProxy_Start_oneByOneUpstreamsExchange(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
@@ -443,7 +441,7 @@ func TestOneByOneUpstreamsExchange(t *testing.T) {
 	require.NoError(t, err)
 
 	// make sure that the response is okay and resolved by valid upstream
-	req := dnsproxytest.NewTestMessage()
+	req := dnsproxytest.NewTestRequest()
 	err = conn.WriteMsg(req)
 	require.NoError(t, err)
 
@@ -479,7 +477,7 @@ func newLocalUpstreamListener(tb testing.TB, port uint16, h dns.Handler) (real n
 	return testutil.RequireTypeAssert[*net.TCPAddr](tb, upsSrv.Listener.Addr()).AddrPort()
 }
 
-func TestFallback(t *testing.T) {
+func TestProxy_Start_fallback(t *testing.T) {
 	t.Parallel()
 
 	responseCh := make(chan uint16)
@@ -569,7 +567,7 @@ func TestFallback(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := dnsproxytest.NewHostTestMessage(tc.name)
+			req := dnsproxytest.NewHostTestRequest(tc.name)
 			err = conn.WriteMsg(req)
 			require.NoError(t, err)
 
@@ -586,7 +584,7 @@ func TestFallback(t *testing.T) {
 	}
 }
 
-func TestFallbackFromInvalidBootstrap(t *testing.T) {
+func TestProxy_Start_fallbackFromInvalidBootstrap(t *testing.T) {
 	t.Parallel()
 
 	invalidRslv, err := upstream.NewUpstreamResolver("8.8.8.8:555", &upstream.Options{
@@ -625,7 +623,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	require.NoError(t, err)
 
 	// Make sure that the response is okay and resolved by the fallback
-	req := dnsproxytest.NewTestMessage()
+	req := dnsproxytest.NewTestRequest()
 	err = conn.WriteMsg(req)
 	require.NoError(t, err)
 
@@ -638,7 +636,7 @@ func TestFallbackFromInvalidBootstrap(t *testing.T) {
 	assert.Greater(t, 3*dnsproxytest.Timeout, elapsed)
 }
 
-func TestExchangeCustomUpstreamConfig(t *testing.T) {
+func TestProxy_Resolve_exchangeCustomUpstreamConfig(t *testing.T) {
 	p := mustNew(t, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
@@ -669,7 +667,7 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 			0,
 			false,
 		),
-		Req:  dnsproxytest.NewHostTestMessage("host"),
+		Req:  dnsproxytest.NewHostTestRequest("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 
@@ -679,7 +677,7 @@ func TestExchangeCustomUpstreamConfig(t *testing.T) {
 	assert.Equal(t, ansIP, firstIP(d.Res))
 }
 
-func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
+func TestProxy_Resolve_customUpstreamConfigCache(t *testing.T) {
 	prx := mustNew(t, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
@@ -727,7 +725,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 
 	d := &DNSContext{
 		CustomUpstreamConfig: customUpstreamConfig,
-		Req:                  dnsproxytest.NewHostTestMessage("host"),
+		Req:                  dnsproxytest.NewHostTestRequest("host"),
 		Addr:                 netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 
@@ -753,7 +751,7 @@ func TestExchangeCustomUpstreamConfigCache(t *testing.T) {
 	assert.Equal(t, ansIP, firstIP(d.Res))
 }
 
-func TestECS(t *testing.T) {
+func TestSetECS(t *testing.T) {
 	t.Run("ipv4", func(t *testing.T) {
 		ip := net.IP{1, 2, 3, 4}
 
@@ -791,8 +789,7 @@ func TestECS(t *testing.T) {
 	})
 }
 
-// Resolve the same host with the different client subnet values
-func TestECSProxy(t *testing.T) {
+func TestProxy_Resolve_ecs(t *testing.T) {
 	var (
 		ip1230 = net.IP{1, 2, 3, 0}
 		ip2230 = net.IP{2, 2, 3, 0}
@@ -833,7 +830,7 @@ func TestECSProxy(t *testing.T) {
 
 	t.Run("cache_subnet", func(t *testing.T) {
 		d := &DNSContext{
-			Req:  dnsproxytest.NewHostTestMessage("host"),
+			Req:  dnsproxytest.NewHostTestRequest("host"),
 			Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 		}
 
@@ -847,7 +844,7 @@ func TestECSProxy(t *testing.T) {
 
 	t.Run("serve_subnet_cache", func(t *testing.T) {
 		d := &DNSContext{
-			Req:  dnsproxytest.NewHostTestMessage("host"),
+			Req:  dnsproxytest.NewHostTestRequest("host"),
 			Addr: netip.MustParseAddrPort("1.2.3.1:1234"),
 		}
 		ans, ecsIP = nil, nil
@@ -863,7 +860,7 @@ func TestECSProxy(t *testing.T) {
 
 	t.Run("another_subnet", func(t *testing.T) {
 		d := &DNSContext{
-			Req:  dnsproxytest.NewHostTestMessage("host"),
+			Req:  dnsproxytest.NewHostTestRequest("host"),
 			Addr: netip.MustParseAddrPort("2.2.3.0:1234"),
 		}
 		ans = []dns.RR{&dns.A{
@@ -882,7 +879,7 @@ func TestECSProxy(t *testing.T) {
 
 	t.Run("cache_general", func(t *testing.T) {
 		d := &DNSContext{
-			Req:  dnsproxytest.NewHostTestMessage("host"),
+			Req:  dnsproxytest.NewHostTestRequest("host"),
 			Addr: netip.MustParseAddrPort("127.0.0.1:1234"),
 		}
 		ans = []dns.RR{&dns.A{
@@ -902,7 +899,7 @@ func TestECSProxy(t *testing.T) {
 
 	t.Run("serve_general_cache", func(t *testing.T) {
 		d := &DNSContext{
-			Req:  dnsproxytest.NewHostTestMessage("host"),
+			Req:  dnsproxytest.NewHostTestRequest("host"),
 			Addr: netip.MustParseAddrPort("127.0.0.2:1234"),
 		}
 		ans, ecsIP = nil, nil
@@ -917,7 +914,7 @@ func TestECSProxy(t *testing.T) {
 	})
 }
 
-func TestECSProxyCacheMinMaxTTL(t *testing.T) {
+func TestProxy_Resolve_ecsProxyCacheMinMaxTTL(t *testing.T) {
 	clientIP := net.IP{1, 2, 3, 0}
 
 	var (
@@ -958,7 +955,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 
 	// first request
 	d := &DNSContext{
-		Req:  dnsproxytest.NewHostTestMessage("host"),
+		Req:  dnsproxytest.NewHostTestRequest("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
@@ -977,7 +974,7 @@ func TestECSProxyCacheMinMaxTTL(t *testing.T) {
 
 	// 2nd request
 	clientIP = net.IP{1, 2, 4, 0}
-	d.Req = dnsproxytest.NewHostTestMessage("host")
+	d.Req = dnsproxytest.NewHostTestRequest("host")
 	d.Addr = netip.MustParseAddrPort("1.2.4.0:1234")
 	ans = []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{

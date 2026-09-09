@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHttpsProxy(t *testing.T) {
+func TestProxy_Start_https(t *testing.T) {
 	testCases := []struct {
 		name  string
 		http3 bool
@@ -60,7 +60,7 @@ func TestHttpsProxy(t *testing.T) {
 			client := createTestHTTPClient(dnsProxy, caPem, tc.http3)
 
 			// Prepare a test message to be sent to the server.
-			msg := dnsproxytest.NewTestMessage()
+			msg := dnsproxytest.NewTestRequest()
 
 			// Send the test message and check if the response is what we
 			// expected.
@@ -70,7 +70,7 @@ func TestHttpsProxy(t *testing.T) {
 	}
 }
 
-func TestProxy_trustedProxies(t *testing.T) {
+func TestProxy_Start_trustedProxies(t *testing.T) {
 	var (
 		clientAddr = netip.MustParseAddr("1.2.3.4")
 		proxyAddr  = netip.MustParseAddr("127.0.0.1")
@@ -104,7 +104,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)
 
-		msg := dnsproxytest.NewTestMessage()
+		msg := dnsproxytest.NewTestRequest()
 
 		dnsProxy.trustedProxies = netip.PrefixFrom(addr, addr.BitLen())
 
@@ -129,7 +129,9 @@ func TestProxy_trustedProxies(t *testing.T) {
 	})
 }
 
-func TestAddrsFromRequest(t *testing.T) {
+func TestRealIPFromHdrs(t *testing.T) {
+	t.Parallel()
+
 	var (
 		theIP     = netip.AddrFrom4([4]byte{1, 2, 3, 4})
 		anotherIP = netip.AddrFrom4([4]byte{1, 2, 3, 5})
@@ -228,6 +230,7 @@ func TestAddrsFromRequest(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
+
 		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
 		require.NoError(t, err)
 
@@ -236,6 +239,8 @@ func TestAddrsFromRequest(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var ip netip.Addr
 			ip, err = realIPFromHdrs(r)
 			testutil.AssertErrorMsg(t, tc.wantErr, err)
@@ -246,6 +251,8 @@ func TestAddrsFromRequest(t *testing.T) {
 }
 
 func TestRemoteAddr(t *testing.T) {
+	t.Parallel()
+
 	const thePort = 4321
 
 	var (
@@ -343,6 +350,8 @@ func TestRemoteAddr(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var addr, prx netip.AddrPort
 			addr, prx, err = remoteAddr(r, testLogger)
 			if tc.wantErr != "" {

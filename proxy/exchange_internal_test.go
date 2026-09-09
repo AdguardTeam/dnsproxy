@@ -194,7 +194,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		servers: []upstream.Upstream{each200, each100, each50},
 	}}
 
-	req := dnsproxytest.NewTestMessage()
+	req := dnsproxytest.NewTestRequest()
 	cli := netip.AddrPortFrom(netutil.IPv4Localhost(), 1234)
 
 	for _, tc := range testCases {

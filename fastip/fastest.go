@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -77,8 +78,9 @@ func New(c *Config) (f *FastestAddr) {
 		pinger:    &net.Dialer{Timeout: pingTCPTimeout},
 	}
 
-	if len(c.PingPorts) > 0 {
-		f.pingPorts = c.PingPorts
+	pingPorts := slices.Clone(c.PingPorts)
+	if len(pingPorts) > 0 {
+		f.pingPorts = pingPorts
 	}
 
 	if c.PingWaitTimeout > 0 {

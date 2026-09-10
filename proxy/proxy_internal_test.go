@@ -52,9 +52,7 @@ var testLogger = slogutil.NewDiscardLogger()
 // localhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
 //
 // TODO(e.burkov):  Move into the proxytest package.
-var localhostAnyPort = netip.MustParseAddrPort(
-	netutil.JoinHostPort(netutil.IPv4Localhost().String(), 0),
-)
+var localhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
 
 // TestDefaultUpstreamAddr is the default upstream address used for tests.
 var TestDefaultUpstreamAddr = "8.8.8.8:53"

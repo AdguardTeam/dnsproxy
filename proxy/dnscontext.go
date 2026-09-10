@@ -11,7 +11,8 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-// DNSContext represents a DNS request message context
+// DNSContext represents a DNS request message context.  It must only be created
+// using [Proxy.newDNSContext].
 type DNSContext struct {
 	// Conn is the underlying client connection.  It is nil if Proto is
 	// ProtoDNSCrypt, ProtoHTTPS, or ProtoQUIC.
@@ -184,7 +185,8 @@ func (dctx *DNSContext) scrub() {
 }
 
 // dnsSize returns the buffer size advertised in the requests OPT record.  When
-// the request is over TCP, it returns the maximum allowed size of 64KiB.
+// the request is over TCP, it returns the maximum allowed size of 64KiB.  If
+// isUDP is true, r must not be nil.
 func dnsSize(isUDP bool, r *dns.Msg) (size uint16) {
 	if !isUDP {
 		return dns.MaxMsgSize

@@ -17,7 +17,7 @@ const (
 	routePatternDNSQueryPost = http.MethodPost + " " + pathPatternDNSQuery
 )
 
-// routeDoH registers DoH handlers in mux.  p.httpConf must not be nil.
+// routeDoH registers DoH handlers in mux.  mux and p.httpConf must not be nil.
 // p.httpConf.Routes must be valid, if p.httpConf.Routes is empty, the default
 // routes are registered.
 func (p *Proxy) routeDoH(mux *http.ServeMux) {

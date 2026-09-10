@@ -17,7 +17,7 @@ import (
 // unit is the convenient alias for struct{}.
 type unit = struct{}
 
-// TODO(m.kazantsev):  Find a way to move to fastip_test.go.
+// TODO(m.kazantsev):  Find a way to move to ping_test.go.
 func TestFastestAddr_PingAll_timeout(t *testing.T) {
 	t.Run("isolated", func(t *testing.T) {
 		f := New(&Config{Logger: slogutil.NewDiscardLogger()})

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TODO(m.kazantsev):  Find a way to move to fastip_test.go.
-func TestCacheAdd(t *testing.T) {
+// TODO(m.kazantsev):  Find a way to move to cache_test.go.
+func TestFastestAddr_CacheAdd(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
 		status:      0,
@@ -24,7 +24,7 @@ func TestCacheAdd(t *testing.T) {
 	assert.NotNil(t, f.cacheFind(ip))
 }
 
-func TestCacheTtl(t *testing.T) {
+func TestFastestAddr_CacheAdd_timeout(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
 		status:      0,
@@ -44,7 +44,7 @@ func TestCacheTtl(t *testing.T) {
 	assert.Nil(t, f.cacheFind(ip))
 }
 
-func TestCacheAddSuccessfulOverwrite(t *testing.T) {
+func TestFastestAddr_CacheAdd_successfulOverwrite(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 
 	ip := netip.MustParseAddr("1.1.1.1")
@@ -65,7 +65,7 @@ func TestCacheAddSuccessfulOverwrite(t *testing.T) {
 	assert.Equal(t, uint(11), ent.latencyMsec)
 }
 
-func TestCacheAddFailureNoOverwrite(t *testing.T) {
+func TestFastestAddr_CacheAdd_failureNoOverwrite(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 
 	ip := netip.MustParseAddr("1.1.1.1")

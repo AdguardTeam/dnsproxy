@@ -8,8 +8,8 @@ import (
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/fastip"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -20,11 +20,9 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	l := slogutil.NewDiscardLogger()
 
 	t.Run("error", func(t *testing.T) {
-		const errDesired errors.Error = "this is expected"
-
 		u := &dnsproxytest.Upstream{
 			OnAddress:  func() (addr string) { return "bad_upstream" },
-			OnExchange: func(_ *dns.Msg) (*dns.Msg, error) { return nil, errDesired },
+			OnExchange: func(_ *dns.Msg) (*dns.Msg, error) { return nil, assert.AnError },
 			OnClose:    func() error { return nil },
 		}
 		f := fastip.New(&fastip.Config{
@@ -35,13 +33,13 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		resp, up, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{u})
 		require.Error(t, err)
 
-		assert.ErrorIs(t, err, errDesired)
+		assert.ErrorIs(t, err, assert.AnError)
 		assert.Nil(t, resp)
 		assert.Nil(t, up)
 	})
 
 	t.Run("one_dead", func(t *testing.T) {
-		port := listen(t, netip.IPv4Unspecified())
+		port := listen(t)
 
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
@@ -142,11 +140,13 @@ func newTestReq(t *testing.T) (req *dns.Msg) {
 	}
 }
 
-// listen is a helper function that creates a new listener on ip for t.
-func listen(tb testing.TB, ip netip.Addr) (port uint) {
+// listen is a helper function that creates a new listener on localhost for t
+// with an arbitrary port.
+func listen(tb testing.TB) (port uint) {
 	tb.Helper()
 
-	l, err := net.Listen("tcp", netip.AddrPortFrom(ip, 0).String())
+	host := netutil.IPv4Localhost()
+	l, err := net.Listen("tcp", netip.AddrPortFrom(host, 0).String())
 	require.NoError(tb, err)
 	testutil.CleanupAndRequireSuccess(tb, l.Close)
 

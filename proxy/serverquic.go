@@ -358,7 +358,7 @@ func (p *Proxy) handleQUICStream(ctx context.Context, stream *quic.Stream, conn 
 		return
 	}
 
-	if !validQUICMsg(req, p.logger) {
+	if !validQUICMsg(ctx, conn, req, p.logger) {
 		// If a peer encounters such an error condition, it is considered a
 		// fatal error. It SHOULD forcibly abort the connection using QUIC's
 		// CONNECTION_CLOSE mechanism and SHOULD use the DoQ error code
@@ -424,8 +424,8 @@ func (p *Proxy) respondQUIC(d *DNSContext) error {
 }
 
 // validQUICMsg validates the incoming DNS message and returns false if
-// something is wrong with the message.
-func validQUICMsg(req *dns.Msg, l *slog.Logger) (ok bool) {
+// something is wrong with the message.  conn, req, and l must not be nil.
+func validQUICMsg(ctx context.Context, conn *quic.Conn, req *dns.Msg, l *slog.Logger) (ok bool) {
 	// See https://www.rfc-editor.org/rfc/rfc9250.html#name-protocol-errors
 
 	// 1. a client or server receives a message with a non-zero Message ID.
@@ -453,7 +453,7 @@ func validQUICMsg(req *dns.Msg, l *slog.Logger) (ok bool) {
 		for _, option := range opt.Option {
 			// Check for EDNS TCP keepalive option
 			if option.Option() == dns.EDNS0TCPKEEPALIVE {
-				l.Debug("client sent edns0 tcp keepalive option")
+				l.DebugContext(ctx, "client sent edns0 tcp keepalive option")
 
 				return false
 			}
@@ -466,9 +466,54 @@ func validQUICMsg(req *dns.Msg, l *slog.Logger) (ok bool) {
 
 	// 7. a server receives a "replayable" transaction in 0-RTT data
 	//
-	// The information necessary to validate this is not exposed by quic-go.
+	// Per RFC 9250 Section 4.5, only QUERY and NOTIFY transactions may be
+	// processed from 0-RTT early data.  Any other transaction received as early
+	// data is treated as a protocol error and aborts the connection.
+	if isNonReplayableEarlyData(conn, req) {
+		l.DebugContext(
+			ctx,
+			"client sent non-replayable transaction as 0-rtt data",
+			"opcode", req.Opcode,
+		)
+
+		return false
+	}
 
 	return true
+}
+
+// isNonReplayableEarlyData returns true if req was received as QUIC 0-RTT early
+// data and its opcode is not safe to process before the handshake completes.
+// Per RFC 9250 Section 4.5, only QUERY and NOTIFY transactions may be processed
+// from 0-RTT data.  conn and req must not be nil.
+//
+// See https://www.rfc-editor.org/rfc/rfc9250#section-4.5.
+func isNonReplayableEarlyData(conn *quic.Conn, req *dns.Msg) (ok bool) {
+	if isReplayableOpcode(req.Opcode) {
+		return false
+	}
+
+	if !conn.ConnectionState().Used0RTT {
+		return false
+	}
+
+	// The data is early data only if it arrived before the handshake completed
+	// on a resumed 0-RTT connection.
+	select {
+	case <-conn.HandshakeComplete():
+		return false
+	default:
+		return true
+	}
+}
+
+// isReplayableOpcode returns true if a transaction with the given DNS opcode is
+// safe to process from QUIC 0-RTT early data.  Per RFC 9250 Section 4.5, only
+// QUERY and NOTIFY transactions are considered replayable.
+//
+// See https://www.rfc-editor.org/rfc/rfc9250#section-4.5.
+func isReplayableOpcode(opcode int) (ok bool) {
+	return opcode == dns.OpcodeQuery || opcode == dns.OpcodeNotify
 }
 
 // logShortQUICRead is a logging helper for short reads from a QUIC stream.

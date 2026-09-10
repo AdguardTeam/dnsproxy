@@ -27,7 +27,7 @@
 # 6. Add a CACHE_BUSTER argument to stages to be able to rerun the stages if
 #    needed.  Keep it in sync with the files in .github/workflows/.
 
-ARG BASE_IMAGE=adguard/go-builder:1.26.6--1
+ARG BASE_IMAGE=adguard/go-builder:1.26.8--1
 
 # The builder stage is used to build release artifacts.  Real BRANCH, REVISION,
 # and SOURCE_DATE_EPOCH must be used here.

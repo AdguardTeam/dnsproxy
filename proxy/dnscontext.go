@@ -76,9 +76,8 @@ type DNSContext struct {
 	// encoded as a signal.
 	DoQVersion DoQVersion
 
-	// RequestID is an opaque numerical identifier of this request that is
-	// guaranteed to be unique across requests processed by a single Proxy
-	// instance.
+	// RequestID is an opaque numerical identifier of this request.  Every
+	// context created by [Proxy] itself has a unique RequestID.
 	RequestID uint64
 
 	// udpSize is the UDP buffer size from request's EDNS0 RR if presented,
@@ -100,9 +99,6 @@ type DNSContext struct {
 }
 
 // newDNSContext returns a new properly initialized *DNSContext.
-//
-// TODO(e.burkov):  Consider creating DNSContext with this everywhere, to
-// actually respect the contract of DNSContext.RequestID field.
 func (p *Proxy) newDNSContext(proto Proto, req *dns.Msg, addr netip.AddrPort) (d *DNSContext) {
 	return &DNSContext{
 		Proto: proto,

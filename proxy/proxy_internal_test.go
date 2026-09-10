@@ -352,7 +352,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 	}
 }
 
-func TestProxy_Start_exchangeWithReservedDomains(t *testing.T) {
+func TestProxy_handleDNSRequest_exchangeWithReservedDomains(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
@@ -415,7 +415,7 @@ func TestProxy_Start_exchangeWithReservedDomains(t *testing.T) {
 	require.NotNil(t, res.Answer)
 }
 
-func TestProxy_Start_oneByOneUpstreamsExchange(t *testing.T) {
+func TestProxy_handleDNSRequest_oneByOneUpstreamsExchange(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
@@ -477,7 +477,7 @@ func newLocalUpstreamListener(tb testing.TB, port uint16, h dns.Handler) (real n
 	return testutil.RequireTypeAssert[*net.TCPAddr](tb, upsSrv.Listener.Addr()).AddrPort()
 }
 
-func TestProxy_Start_fallback(t *testing.T) {
+func TestProxy_handleDNSRequest_fallback(t *testing.T) {
 	t.Parallel()
 
 	responseCh := make(chan uint16)
@@ -584,7 +584,7 @@ func TestProxy_Start_fallback(t *testing.T) {
 	}
 }
 
-func TestProxy_Start_fallbackFromInvalidBootstrap(t *testing.T) {
+func TestProxy_handleDNSRequest_fallbackFromInvalidBootstrap(t *testing.T) {
 	t.Parallel()
 
 	invalidRslv, err := upstream.NewUpstreamResolver("8.8.8.8:555", &upstream.Options{

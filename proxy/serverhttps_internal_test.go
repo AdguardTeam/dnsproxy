@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_Start_https(t *testing.T) {
+func TestProxy_handleDNSRequest_https(t *testing.T) {
 	testCases := []struct {
 		name  string
 		http3 bool
@@ -70,7 +70,7 @@ func TestProxy_Start_https(t *testing.T) {
 	}
 }
 
-func TestProxy_Start_trustedProxies(t *testing.T) {
+func TestProxy_handleDNSRequest_trustedProxies(t *testing.T) {
 	var (
 		clientAddr = netip.MustParseAddr("1.2.3.4")
 		proxyAddr  = netip.MustParseAddr("127.0.0.1")

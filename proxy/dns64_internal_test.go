@@ -18,8 +18,8 @@ import (
 
 const ipv4OnlyFqdn = "ipv4.only."
 
-func TestProxy_Start_DNS64Race(t *testing.T) {
-	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, net.ParseIP("1.2.3.4"))
+func TestProxy_handleDNSRequest_DNS64Race(t *testing.T) {
+	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, dnsproxytest.IPv4)
 	ups := &testUpstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(req)

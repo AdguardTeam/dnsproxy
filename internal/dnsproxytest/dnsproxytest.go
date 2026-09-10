@@ -41,7 +41,11 @@ var (
 	// LocalhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
 	LocalhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
 
-	// IPv4 is a common IPv4 address for test response A records.
+	// IPv4 is a common IPv4 address for test response A records.  It uses the
+	// [net.IP] form for convenient comparisons with [dns.A.A].
+	//
+	// TODO(f.setrakov): Use an address from one of the IPv4 documentation
+	// ranges.
 	IPv4 = net.IPv4(8, 8, 8, 8)
 )
 

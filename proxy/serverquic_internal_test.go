@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_Start_quic(t *testing.T) {
+func TestProxy_handleDNSRequest_quic(t *testing.T) {
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 
 	roots := x509.NewCertPool()
@@ -83,7 +83,7 @@ func TestProxy_Start_quic(t *testing.T) {
 	})
 }
 
-func TestProxy_Start_quicLargePackets(t *testing.T) {
+func TestProxy_handleDNSRequest_quicLargePackets(t *testing.T) {
 	reqHandler := &testHandler{
 		OnHandle: func(_ context.Context, _ *Proxy, d *DNSContext) (err error) {
 			d.Res = newTestResponse(d)
@@ -138,7 +138,7 @@ func TestProxy_Start_quicLargePackets(t *testing.T) {
 	dnsproxytest.RequireResponse(t, msg, resp)
 }
 
-func TestProxy_Start_quicTruncatedRequest(t *testing.T) {
+func TestProxy_handleDNSRequest_quicTruncatedRequest(t *testing.T) {
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 
 	conf := &Config{

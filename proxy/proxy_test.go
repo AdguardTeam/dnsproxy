@@ -182,7 +182,7 @@ func isCachedWithCustomConfig(
 }
 
 // TODO(f.setrakov): Make it work without a real network.
-func TestProxy_Start_race(t *testing.T) {
+func TestProxy_handleDNSRequest_race(t *testing.T) {
 	upsConf := newTestUpstreamConfig(
 		t,
 		defaultTimeout,
@@ -232,7 +232,7 @@ func TestProxy_Start_race(t *testing.T) {
 	wg.Wait()
 }
 
-func TestProxy_Start_responseInRequest(t *testing.T) {
+func TestProxy_handleDNSRequest_responseInRequest(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	addr := dnsProxy.Addr(proxy.ProtoTCP)
@@ -252,7 +252,7 @@ func TestProxy_Start_responseInRequest(t *testing.T) {
 	assert.Nil(t, r)
 }
 
-func TestProxy_Start_cache(t *testing.T) {
+func TestProxy_handleDNSRequest_cache(t *testing.T) {
 	const host = "example.test."
 
 	ups := &dnsproxytest.Upstream{
@@ -384,7 +384,7 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 	}))
 }
 
-func TestProxy_Start_formatError(t *testing.T) {
+func TestProxy_handleDNSRequest_formatError(t *testing.T) {
 	t.Parallel()
 
 	ups := &dnsproxytest.Upstream{

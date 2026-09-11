@@ -45,7 +45,7 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 	require.NoError(tb, err)
 
 	port := nettest.NewFreePort(tb)
-	upstreamConf := newTestUpstreamConfig(tb, defaultTimeout, TestDefaultUpstreamAddr)
+	upstreamConf := newTestUpstreamConfig(tb, defaultTimeout, testDefaultUpstreamAddr)
 	p = mustNew(tb, &Config{
 		Logger: testLogger,
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{

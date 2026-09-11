@@ -55,9 +55,6 @@ var testLogger = slogutil.NewDiscardLogger()
 // TODO(e.burkov):  Move into the proxytest package.
 var localhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
 
-// TestDefaultUpstreamAddr is the default upstream address used for tests.
-var TestDefaultUpstreamAddr = "8.8.8.8:53"
-
 // defaultTrustedProxies is a set of trusted proxies that includes all possible
 // IP addresses.
 //
@@ -98,10 +95,12 @@ func sendTestMessages(tb testing.TB, conn *dns.Conn) {
 	}
 }
 
+// newTestMessage creates a new DNS test message with a predefined host.
 func newTestMessage() (m *dns.Msg) {
 	return newHostTestMessage("google-public-dns-a.google.com")
 }
 
+// newHostTestMessage creates a new DNS test message for the specified host.
 func newHostTestMessage(host string) (req *dns.Msg) {
 	return &dns.Msg{
 		MsgHdr: dns.MsgHdr{

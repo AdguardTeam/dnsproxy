@@ -36,17 +36,15 @@ var compatProtoDQ = []string{NextProtoDQ, "doq-i02", "doq-i00", "dq"}
 const maxQUICIdleTimeout = 30 * time.Second
 
 // quicAddrValidatorCacheSize is the size of the cache that we use in the QUIC
-// address validator.  The value is chosen arbitrarily and we should consider
-// making it configurable.
+// address validator.
 //
-// TODO(ameshkov): make it configurable.
+// TODO(a.garipov): Consider making it configurable.
 const quicAddrValidatorCacheSize = 1000
 
 // quicAddrValidatorCacheTTL is time-to-live for cache items in the QUIC address
-// validator.  The value is chosen arbitrarily and we should consider making it
-// configurable.
+// validator.
 //
-// TODO(ameshkov): make it configurable.
+// TODO(a.garipov): Consider making it configurable.
 const quicAddrValidatorCacheTTL = 30 * time.Minute
 
 const (
@@ -72,6 +70,7 @@ func (p *Proxy) initQUICListeners(ctx context.Context) (err error) {
 			ln   *quic.EarlyListener
 			tr   *quic.Transport
 		)
+
 		conn, ln, tr, err = p.listenQUIC(ctx, a)
 		if err != nil {
 			return fmt.Errorf("listening on quic addr %s: %w", a, err)
@@ -630,9 +629,9 @@ func newQUICAddrValidator(cacheSize int, ttl time.Duration) (v *quicAddrValidato
 
 // requiresValidation determines if a QUIC Retry packet should be sent by the
 // client. This allows the server to verify the client's address but increases
-// the latency.  addr must be [*net.UDPAddr].
+// the latency.
 func (v *quicAddrValidator) requiresValidation(addr net.Addr) (ok bool) {
-	key := addr.(*net.UDPAddr).IP.String()
+	key := netutil.NetAddrToAddrPort(addr).Addr().String()
 	if v.cache.Has(key) {
 		return false
 	}

@@ -313,6 +313,10 @@ func (c *Config) Validate() (err error) {
 		return fmt.Errorf("upstream mode: %w: %q", errors.ErrBadEnumValue, c.UpstreamMode)
 	}
 
+	if c.HTTPConfig != nil && c.HTTPConfig.Userinfo != nil {
+		return validate.NotEmptySlice("HTTPConfig.ListenAddresses", c.HTTPConfig.ListenAddresses)
+	}
+
 	return nil
 }
 

@@ -12,7 +12,7 @@ import (
 )
 
 // DNSContext represents a DNS request message context.  It must only be created
-// using [Proxy.newDNSContext].
+// by [Proxy] itself.
 type DNSContext struct {
 	// Conn is the underlying client connection.  It is nil if Proto is
 	// ProtoDNSCrypt, ProtoHTTPS, or ProtoQUIC.

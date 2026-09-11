@@ -64,6 +64,24 @@ const (
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
 
+// type check
+var _ validate.Interface = Proto("")
+
+// Validate implements the [validate.Interface] for the Proto.
+func (p Proto) Validate() (err error) {
+	switch p {
+	case ProtoTCP, ProtoTLS, ProtoHTTPS, ProtoUDP, ProtoQUIC, ProtoDNSCrypt:
+		return nil
+	default:
+		return fmt.Errorf(
+			"proto: %w: %q, supported: %q",
+			errors.ErrBadEnumValue,
+			p,
+			[]Proto{ProtoTCP, ProtoTLS, ProtoHTTPS, ProtoUDP, ProtoQUIC, ProtoDNSCrypt},
+		)
+	}
+}
+
 // logKeyProto is the key for the DNS protocol in logs.
 const logKeyProto = "proto"
 
@@ -433,13 +451,7 @@ func New(c *Config) (p *Proxy, err error) {
 
 	err = c.Validate()
 	if err != nil {
-		// Don't wrap the error since it's informative enough as is.
-		return nil, err
-	}
-
-	err = p.validateBasicAuth()
-	if err != nil {
-		return nil, fmt.Errorf("basic auth: %w", err)
+		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
 	p.logConfigInfo()
@@ -496,16 +508,6 @@ func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
 	}
 
 	return slog.Default().With(slogutil.KeyPrefix, LogPrefix)
-}
-
-// validateBasicAuth validates the HTTP settings if HTTPConfig.Userinfo is set.
-func (p *Proxy) validateBasicAuth() (err error) {
-	conf := p.httpConf
-	if conf == nil || conf.Userinfo == nil {
-		return nil
-	}
-
-	return validate.NotEmptySlice("HTTPConfig.ListenAddresses", conf.ListenAddresses)
 }
 
 // Returns true if proxy is started.  It is safe for concurrent use.
@@ -714,12 +716,7 @@ func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 	case ProtoDNSCrypt:
 		return collectAddrs(p.dnsCryptServers, (*dnscrypt.Server).LocalAddr)
 	default:
-		panic(fmt.Errorf(
-			"proto: %w: %q, supported: %q",
-			errors.ErrBadEnumValue,
-			proto,
-			[]Proto{ProtoTCP, ProtoTLS, ProtoHTTPS, ProtoUDP, ProtoQUIC, ProtoDNSCrypt},
-		))
+		panic(proto.Validate())
 	}
 }
 
@@ -761,12 +758,7 @@ func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
 	case ProtoDNSCrypt:
 		return firstAddr(p.dnsCryptServers, (*dnscrypt.Server).LocalAddr)
 	default:
-		panic(fmt.Errorf(
-			"proto: %w: %q, supported: %q",
-			errors.ErrBadEnumValue,
-			proto,
-			[]Proto{ProtoTCP, ProtoTLS, ProtoHTTPS, ProtoUDP, ProtoQUIC, ProtoDNSCrypt},
-		))
+		panic(proto.Validate())
 	}
 }
 

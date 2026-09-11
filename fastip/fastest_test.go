@@ -7,6 +7,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/fastip"
+	"github.com/AdguardTeam/dnsproxy/internal/nettest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -44,8 +45,9 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
 			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
-			PingPorts:       []uint{port},
 		})
+
+		f.SetPingPorts([]uint{port})
 
 		// The alive IP is the just created local listener's address.  The dead
 		// one is known as TEST-NET-1 which shouldn't be routed at all.  See
@@ -71,8 +73,9 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
 			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
-			PingPorts:       []uint{dnsproxytest.NewFreePort(t)},
 		})
+
+		f.SetPingPorts([]uint{nettest.NewFreePort(t)})
 
 		firstIP := netip.MustParseAddr("127.0.0.1")
 		ups := newTestAUpstream(t, []*dns.A{

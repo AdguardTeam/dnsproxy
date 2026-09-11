@@ -1,12 +1,11 @@
-package proxy_test
+package proxy
 
 import (
 	"net"
 	"testing"
 
 	"github.com/AdguardTeam/dnscrypt"
-	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
-	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/internal/nettest"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -14,9 +13,6 @@ import (
 	"github.com/ameshkov/dnsstamps"
 	"github.com/stretchr/testify/require"
 )
-
-// testListenIP is the IP address used for listening in tests.
-var testListenIP = netutil.IPv4Localhost().String()
 
 func TestDNSCryptProxy(t *testing.T) {
 	t.Parallel()
@@ -27,8 +23,8 @@ func TestDNSCryptProxy(t *testing.T) {
 	servicetest.RequireRun(t, dnsProxy, testTimeout)
 
 	// Generate a DNS stamp.
-	port := testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(proxy.ProtoDNSCrypt)).Port
-	addr := netutil.JoinHostPort(testListenIP, uint16(port))
+	port := testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(ProtoDNSCrypt)).Port
+	addr := netutil.JoinHostPort(listenIP, uint16(port))
 	stamp, err := rc.CreateStamp(addr)
 	require.NoError(t, err)
 
@@ -39,7 +35,7 @@ func TestDNSCryptProxy(t *testing.T) {
 
 // newTestDNSCryptProxy is a helper function that creates a DNSCrypt proxy and
 // the corresponding resolver configuration for testing.
-func newTestDNSCryptProxy(tb testing.TB) (p *proxy.Proxy, rc dnscrypt.ResolverConfig) {
+func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) {
 	tb.Helper()
 
 	rc, err := dnscrypt.GenerateResolverConfig("example.org", nil, 0)
@@ -48,18 +44,18 @@ func newTestDNSCryptProxy(tb testing.TB) (p *proxy.Proxy, rc dnscrypt.ResolverCo
 	cert, err := rc.NewCert()
 	require.NoError(tb, err)
 
-	port := dnsproxytest.NewFreePort(tb)
-	upstreamConf := proxy.NewTestUpstreamConfig(tb, defaultTimeout, proxy.TestDefaultUpstreamAddr)
-	p = proxy.MustNew(tb, &proxy.Config{
+	port := nettest.NewFreePort(tb)
+	upstreamConf := newTestUpstreamConfig(tb, defaultTimeout, TestDefaultUpstreamAddr)
+	p = mustNew(tb, &Config{
 		Logger: testLogger,
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{
-			Port: int(port), IP: net.ParseIP(testListenIP),
+			Port: int(port), IP: net.ParseIP(listenIP),
 		}},
 		DNSCryptTCPListenAddr: []*net.TCPAddr{{
-			Port: int(port), IP: net.ParseIP(testListenIP),
+			Port: int(port), IP: net.ParseIP(listenIP),
 		}},
 		UpstreamConfig:         upstreamConf,
-		TrustedProxies:         proxy.DefaultTrustedProxies,
+		TrustedProxies:         defaultTrustedProxies,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,
 		CacheMinTTL:            20,
@@ -89,8 +85,8 @@ func checkDNSCryptProxy(tb testing.TB, proto dnscrypt.Proto, stamp dnsstamps.Ser
 	require.NoError(tb, err)
 
 	// Send the test message.
-	msg := proxy.NewTestMessage()
+	msg := newTestMessage()
 	reply, err := c.ExchangeContext(ctx, msg, ri)
 	require.NoError(tb, err)
-	proxy.RequireResponse(tb, msg, reply)
+	requireResponse(tb, msg, reply)
 }

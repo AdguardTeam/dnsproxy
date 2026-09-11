@@ -43,13 +43,13 @@ func TestHttpsProxy(t *testing.T) {
 				ListenAddresses: []netip.AddrPort{localhostAnyPort},
 				HTTP3Enabled:    tc.http3,
 			}
-			dnsProxy := MustNew(t, &Config{
+			dnsProxy := mustNew(t, &Config{
 				Logger:         testLogger,
 				TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 				QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 				TLSConfig:      tlsConf,
-				UpstreamConfig: NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-				TrustedProxies: DefaultTrustedProxies,
+				UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+				TrustedProxies: defaultTrustedProxies,
 				HTTPConfig:     httpConf,
 			})
 
@@ -59,12 +59,12 @@ func TestHttpsProxy(t *testing.T) {
 			client := createTestHTTPClient(dnsProxy, caPem, tc.http3)
 
 			// Prepare a test message to be sent to the server.
-			msg := NewTestMessage()
+			msg := newTestMessage()
 
 			// Send the test message and check if the response is what we
 			// expected.
 			resp := sendTestDoHMessage(t, client, msg, nil)
-			RequireResponse(t, msg, resp)
+			requireResponse(t, msg, resp)
 		})
 	}
 }
@@ -90,10 +90,10 @@ func TestProxy_trustedProxies(t *testing.T) {
 		httpConf := &HTTPConfig{
 			ListenAddresses: []netip.AddrPort{localhostAnyPort},
 		}
-		dnsProxy := MustNew(t, &Config{
+		dnsProxy := mustNew(t, &Config{
 			Logger:         testLogger,
-			UpstreamConfig: NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-			TrustedProxies: DefaultTrustedProxies,
+			UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+			TrustedProxies: defaultTrustedProxies,
 			RequestHandler: reqHandler,
 			TLSConfig:      tlsConf,
 			TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
@@ -103,7 +103,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)
 
-		msg := NewTestMessage()
+		msg := newTestMessage()
 
 		dnsProxy.trustedProxies = netip.PrefixFrom(addr, addr.BitLen())
 
@@ -114,7 +114,7 @@ func TestProxy_trustedProxies(t *testing.T) {
 		}
 
 		resp := sendTestDoHMessage(t, client, msg, hdrs)
-		RequireResponse(t, msg, resp)
+		requireResponse(t, msg, resp)
 
 		require.Equal(t, expectedClientIP, gotAddr)
 	}

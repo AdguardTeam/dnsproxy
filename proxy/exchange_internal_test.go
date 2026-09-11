@@ -193,7 +193,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		servers: []upstream.Upstream{each200, each100, each50},
 	}}
 
-	req := NewTestMessage()
+	req := newTestMessage()
 	cli := netip.AddrPortFrom(netutil.IPv4Localhost(), 1234)
 
 	for _, tc := range testCases {
@@ -206,14 +206,14 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 			})
 		}
 
-		p := MustNew(t, &Config{
+		p := mustNew(t, &Config{
 			Logger:        testLogger,
 			UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 			TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
 			UpstreamConfig: &UpstreamConfig{
 				Upstreams: ups,
 			},
-			TrustedProxies: DefaultTrustedProxies,
+			TrustedProxies: defaultTrustedProxies,
 		})
 		p.time = tc.clock
 		p.randSrc = randSrc

@@ -34,13 +34,13 @@ func TestProxy_quic(t *testing.T) {
 		Logger:         testLogger,
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies: DefaultTrustedProxies,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
 	}
 
 	var addr *net.UDPAddr
 	t.Run("run", func(t *testing.T) {
-		dnsProxy := MustNew(t, conf)
+		dnsProxy := mustNew(t, conf)
 
 		servicetest.RequireRun(t, dnsProxy, testTimeout)
 
@@ -62,10 +62,10 @@ func TestProxy_quic(t *testing.T) {
 	require.False(t, t.Failed())
 
 	conf.QUICListenAddr = []*net.UDPAddr{addr}
-	conf.UpstreamConfig = NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
+	conf.UpstreamConfig = newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
 
 	t.Run("rerun", func(t *testing.T) {
-		dnsProxy := MustNew(t, conf)
+		dnsProxy := mustNew(t, conf)
 
 		servicetest.RequireRun(t, dnsProxy, testTimeout)
 
@@ -92,10 +92,10 @@ func TestProxy_quicLargePackets(t *testing.T) {
 	}
 
 	serverConfig, caPem := newTLSConfig(t)
-	dnsProxy := MustNew(t, &Config{
+	dnsProxy := mustNew(t, &Config{
 		Logger:         testLogger,
-		UpstreamConfig: NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies: DefaultTrustedProxies,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
 		RequestHandler: reqHandler,
 		TLSConfig:      serverConfig,
 		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
@@ -123,7 +123,7 @@ func TestProxy_quicLargePackets(t *testing.T) {
 	})
 
 	// Create a test message large enough to take multiple QUIC frames.
-	msg := NewTestMessage()
+	msg := newTestMessage()
 	msg.Extra = []dns.RR{
 		&dns.OPT{
 			Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT, Class: 4096},
@@ -134,7 +134,7 @@ func TestProxy_quicLargePackets(t *testing.T) {
 	}
 
 	resp := sendQUICMessage(t, msg, conn, DoQv1)
-	RequireResponse(t, msg, resp)
+	requireResponse(t, msg, resp)
 }
 
 func TestProxy_quicTruncatedRequest(t *testing.T) {
@@ -144,8 +144,8 @@ func TestProxy_quicTruncatedRequest(t *testing.T) {
 		Logger:         testLogger,
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: NewTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies: DefaultTrustedProxies,
+		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		TrustedProxies: defaultTrustedProxies,
 		RequestHandler: &testHandler{
 			OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (_ error) {
 				panic(testutil.UnexpectedCall(ctx, p, d))
@@ -153,7 +153,7 @@ func TestProxy_quicTruncatedRequest(t *testing.T) {
 		},
 	}
 
-	dnsProxy := MustNew(t, conf)
+	dnsProxy := mustNew(t, conf)
 
 	req := (&dns.Msg{
 		MsgHdr: dns.MsgHdr{
@@ -307,7 +307,7 @@ func writeQUICStream(buf []byte, stream *quic.Stream) (err error) {
 
 // sendTestQUICMessage send a test message to the specified QUIC connection.
 func sendTestQUICMessage(t *testing.T, conn *quic.Conn, doqVersion DoQVersion) {
-	msg := NewTestMessage()
+	msg := newTestMessage()
 	resp := sendQUICMessage(t, msg, conn, doqVersion)
-	RequireResponse(t, msg, resp)
+	requireResponse(t, msg, resp)
 }

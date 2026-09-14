@@ -3,13 +3,6 @@
 package dnsproxytest
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"math/big"
 	"net"
 	"net/netip"
 	"runtime"
@@ -69,7 +62,7 @@ func NewHostTestRequest(host string) (req *dns.Msg) {
 			RecursionDesired: true,
 		},
 		Question: []dns.Question{{
-			Name:   host + ".",
+			Name:   dns.Fqdn(host),
 			Qtype:  dns.TypeA,
 			Qclass: dns.ClassINET,
 		}},
@@ -91,57 +84,6 @@ func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 	require.Equal(tb, IPv4, a.A.To16())
 }
 
-// NewTLSConfig is a test helper that generates new TLS config.
-func NewTLSConfig(tb testing.TB) (conf *tls.Config, certPem []byte) {
-	tb.Helper()
-
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(tb, err)
-
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	require.NoError(tb, err)
-
-	notBefore := time.Now()
-	notAfter := notBefore.Add(5 * 365 * time.Hour * 24)
-
-	keyUsage := x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
-	template := x509.Certificate{
-		SerialNumber:          serialNumber,
-		Subject:               pkix.Name{Organization: []string{"AdGuard Tests"}},
-		NotBefore:             notBefore,
-		NotAfter:              notAfter,
-		KeyUsage:              keyUsage,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		DNSNames:              []string{TLSServerName},
-	}
-
-	derBytes, err := x509.CreateCertificate(
-		rand.Reader,
-		&template,
-		&template,
-		&privateKey.PublicKey,
-		privateKey,
-	)
-	require.NoError(tb, err)
-
-	certPem = pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: derBytes,
-	})
-	keyPem := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	})
-
-	cert, err := tls.X509KeyPair(certPem, keyPem)
-	require.NoError(tb, err)
-
-	return &tls.Config{Certificates: []tls.Certificate{cert}, ServerName: TLSServerName}, certPem
-}
-
 // NewFreePort is a best-effort helper function that returns a free TCP port
 // that can be used for testing.  Note that there is theoretically a TOCTTOU
 // race here: the port may be reoccupied between the time it is released and the
@@ -151,7 +93,7 @@ func NewTLSConfig(tb testing.TB) (conf *tls.Config, certPem []byte) {
 func NewFreePort(tb testing.TB) (p uint) {
 	tb.Helper()
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	l, err := net.Listen("tcp", LocalhostAnyPort.String())
 	require.NoError(tb, err)
 
 	p = uint(l.Addr().(*net.TCPAddr).Port)

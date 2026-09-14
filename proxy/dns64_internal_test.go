@@ -90,6 +90,8 @@ func exchangeTestAAAARequestAsync(
 	fqdn string,
 	syncCh chan struct{},
 ) {
+	tb.Helper()
+
 	pt := testutil.NewPanicT(tb)
 
 	defer g.Done()

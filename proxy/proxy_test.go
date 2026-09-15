@@ -384,7 +384,7 @@ func TestProxy_Start_closeOnFail(t *testing.T) {
 	}))
 }
 
-func TestProxy_handleDNSRequest_formatError(t *testing.T) {
+func TestProxy_ServeDNS_formatError(t *testing.T) {
 	t.Parallel()
 
 	ups := &dnsproxytest.Upstream{

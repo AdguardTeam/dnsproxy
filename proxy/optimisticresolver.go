@@ -60,7 +60,9 @@ func (s *optimisticResolver) resolveOnce(
 	}
 	defer s.reqs.Delete(keyHexed)
 
-	ok, err := s.cr.replyFromUpstream(ctx, dctx)
+	// NOTE: Discard the context deadline to prevent cancellation during
+	// refresh.
+	ok, err := s.cr.replyFromUpstream(context.WithoutCancel(ctx), dctx)
 	if err != nil {
 		l.DebugContext(ctx, "resolving request for optimistic cache", slogutil.KeyError, err)
 	}

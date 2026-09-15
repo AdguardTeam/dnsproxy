@@ -49,6 +49,9 @@ type dnsOverTLS struct {
 	// This leads to weak performance for all exchanges coming across such
 	// connections.
 	conns []net.Conn
+
+	// timeout is the timeout for DNS request reads and writes.
+	timeout time.Duration
 }
 
 // newDoT returns the DNS-over-TLS Upstream.
@@ -81,6 +84,7 @@ func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 		},
 		connsMu: &sync.Mutex{},
 		logger:  opts.Logger,
+		timeout: opts.Timeout,
 	}
 
 	runtime.SetFinalizer(tlsUps, (*dnsOverTLS).Close)
@@ -219,6 +223,20 @@ func (p *dnsOverTLS) exchangeWithConn(
 
 	dnsConn := dns.Conn{Conn: conn}
 
+	if p.timeout > 0 {
+		deadline := time.Now().Add(p.timeout)
+		err = dnsConn.SetWriteDeadline(deadline)
+		if err != nil {
+			return nil, fmt.Errorf("setting write deadline: %w", err)
+		}
+
+		err = dnsConn.SetReadDeadline(deadline)
+		if err != nil {
+			return nil, fmt.Errorf("setting read deadline: %w", err)
+		}
+
+	}
+
 	err = dnsConn.WriteMsg(req)
 	if err != nil {
 		return nil, fmt.Errorf("sending request to %s: %w", addr, err)
@@ -251,6 +269,8 @@ func tlsDial(
 	// We want the timeout to cover the whole process: TCP connection and TLS
 	// handshake dialTimeout will be used as connection deadLine.
 	conn := tls.Client(rawConn, conf)
+
+	// TODO(f.setrakov): Make it configurable.
 	err = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err != nil {
 		// Must not happen in normal circumstances.

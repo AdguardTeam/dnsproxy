@@ -114,7 +114,7 @@ func (f *FastestAddr) ExchangeFastest(
 
 	ips := ipSet.Values()
 	host := strings.ToLower(req.Question[0].Name)
-	if pingRes := f.pingAll(host, ips); pingRes != nil {
+	if pingRes := f.pingAll(ctx, host, ips); pingRes != nil {
 		return f.prepareReply(pingRes, replies)
 	}
 

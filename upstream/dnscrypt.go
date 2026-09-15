@@ -114,6 +114,7 @@ func (p *dnsCrypt) exchangeDNSCrypt(ctx context.Context, req *dns.Msg) (resp *dn
 			Proto:  dnscrypt.ProtoTCP,
 		})
 
+		// NOTE: Give the TCP retry its own timeout.
 		if p.timeout > 0 {
 			ctx = context.WithoutCancel(ctx)
 

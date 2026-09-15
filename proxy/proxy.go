@@ -804,12 +804,14 @@ func (p *Proxy) replyFromUpstream(ctx context.Context, d *DNSContext) (ok bool, 
 
 		src = "fallback"
 
-		// upstreams mustn't appear empty since they have been validated when
+		// Upstreams mustn't appear empty since they have been validated when
 		// creating proxy.
 		upstreams = p.fallbacks.getUpstreamsForDomain(req.Question[0].Name)
 
 		wrappedFallbacks = upstreamsWithStats(upstreams)
 
+		// NOTE: Use [context.WithoutCancel] to have a separate timeout on
+		// retry.
 		resp, u, err = upstream.ExchangeParallel(context.WithoutCancel(ctx), wrappedFallbacks, req)
 	}
 

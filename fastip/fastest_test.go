@@ -3,6 +3,7 @@ package fastip_test
 import (
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
@@ -18,13 +19,17 @@ import (
 )
 
 func TestFastestAddr_ExchangeFastest(t *testing.T) {
+	t.Parallel()
+
 	l := slogutil.NewDiscardLogger()
 
-	t.Run("error", func(t *testing.T) {
+	require.True(t, t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
 		u := &dnsproxytest.Upstream{
 			OnAddress:  func() (addr string) { return "bad_upstream" },
-			OnExchange: func(_ *dns.Msg) (*dns.Msg, error) { return nil, assert.AnError },
-			OnClose:    func() error { return nil },
+			OnExchange: func(_ *dns.Msg) (resp *dns.Msg, err error) { return nil, assert.AnError },
+			OnClose:    func() (err error) { return nil },
 		}
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
@@ -37,9 +42,11 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		assert.ErrorIs(t, err, assert.AnError)
 		assert.Nil(t, resp)
 		assert.Nil(t, up)
-	})
+	}))
 
-	t.Run("one_dead", func(t *testing.T) {
+	require.True(t, t.Run("one_dead", func(t *testing.T) {
+		t.Parallel()
+
 		port := listen(t)
 
 		f := fastip.New(&fastip.Config{
@@ -67,9 +74,11 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		ip := testutil.RequireTypeAssert[*dns.A](t, rep.Answer[0]).A
 		assert.Equal(t, aliveAddr.AsSlice(), []byte(ip))
-	})
+	}))
 
-	t.Run("all_dead", func(t *testing.T) {
+	require.True(t, t.Run("all_dead", func(t *testing.T) {
+		t.Parallel()
+
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
 			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
@@ -92,7 +101,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		ip := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 		assert.Equal(t, firstIP.AsSlice(), []byte(ip))
-	})
+	}))
 }
 
 // newTestAUpstream returns a new test upstream, which responds with the
@@ -100,28 +109,34 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 func newTestAUpstream(tb testing.TB, recs []*dns.A) (ups *dnsproxytest.Upstream) {
 	tb.Helper()
 
+	onExchange := func(m *dns.Msg) (resp *dns.Msg, err error) {
+		resp = &dns.Msg{}
+		resp.SetReply(m)
+
+		for _, a := range recs {
+			resp.Answer = append(resp.Answer, a)
+		}
+
+		return resp, nil
+	}
+
 	return &dnsproxytest.Upstream{
-		OnAddress: func() (addr string) { return "" },
-		OnClose:   func() error { return nil },
-		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
-			resp = &dns.Msg{}
-			resp.SetReply(m)
-
-			for _, a := range recs {
-				resp.Answer = append(resp.Answer, a)
-			}
-
-			return resp, nil
-		},
+		OnAddress:  func() (addr string) { return "" },
+		OnClose:    func() (err error) { return nil },
+		OnExchange: onExchange,
 	}
 }
 
 // newTestRec returns a new test A record.
-func newTestRec(t *testing.T, addr netip.Addr) (rr *dns.A) {
+func newTestRec(tb testing.TB, addr netip.Addr) (rr *dns.A) {
+	tb.Helper()
+
+	domain := domainNameFromTest(tb)
+
 	return &dns.A{
 		Hdr: dns.RR_Header{
 			Rrtype: dns.TypeA,
-			Name:   dns.Fqdn(t.Name()),
+			Name:   dns.Fqdn(domain),
 			Ttl:    60,
 		},
 		A: addr.AsSlice(),
@@ -129,29 +144,46 @@ func newTestRec(t *testing.T, addr netip.Addr) (rr *dns.A) {
 }
 
 // newTestReq returns a new test A request.
-func newTestReq(t *testing.T) (req *dns.Msg) {
+func newTestReq(tb testing.TB) (req *dns.Msg) {
+	tb.Helper()
+
+	domain := domainNameFromTest(tb)
+
 	return &dns.Msg{
 		MsgHdr: dns.MsgHdr{
 			Id:               dns.Id(),
 			RecursionDesired: true,
 		},
 		Question: []dns.Question{{
-			Name:   dns.Fqdn(t.Name()),
+			Name:   dns.Fqdn(domain),
 			Qtype:  dns.TypeA,
 			Qclass: dns.ClassINET,
 		}},
 	}
 }
 
-// listen is a helper function that creates a new listener on localhost for t
-// with an arbitrary port.
+// listen is a helper function that creates a new listener on localhost with an
+// arbitrary port.
 func listen(tb testing.TB) (port uint) {
 	tb.Helper()
 
-	host := netutil.IPv4Localhost()
-	l, err := net.Listen("tcp", netip.AddrPortFrom(host, 0).String())
+	host := netip.AddrPortFrom(netutil.IPv4Localhost(), 0).String()
+	l, err := net.Listen("tcp", host)
 	require.NoError(tb, err)
 	testutil.CleanupAndRequireSuccess(tb, l.Close)
 
 	return uint(l.Addr().(*net.TCPAddr).Port)
+}
+
+// domainNameFromTest returns a valid DNS domain name derived from the test
+// name. It replaces any slashes or underscores with hyphens to ensure the name
+// is valid in DNS.
+func domainNameFromTest(tb testing.TB) (d string) {
+	tb.Helper()
+
+	d = tb.Name()
+	d = strings.ReplaceAll(d, "/", "-")
+	d = strings.ReplaceAll(d, "_", "-")
+
+	return d
 }

@@ -18,6 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testReplacer is used to replace "/" and "_" with "-" in test domain names.
+var testReplacer = strings.NewReplacer("/", "-", "_", "-")
+
 func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	t.Parallel()
 
@@ -131,7 +134,7 @@ func newTestAUpstream(tb testing.TB, recs []*dns.A) (ups *dnsproxytest.Upstream)
 func newTestRec(tb testing.TB, addr netip.Addr) (rr *dns.A) {
 	tb.Helper()
 
-	domain := domainNameFromTest(tb)
+	domain := testReplacer.Replace(tb.Name())
 
 	return &dns.A{
 		Hdr: dns.RR_Header{
@@ -147,7 +150,7 @@ func newTestRec(tb testing.TB, addr netip.Addr) (rr *dns.A) {
 func newTestReq(tb testing.TB) (req *dns.Msg) {
 	tb.Helper()
 
-	domain := domainNameFromTest(tb)
+	domain := testReplacer.Replace(tb.Name())
 
 	return &dns.Msg{
 		MsgHdr: dns.MsgHdr{
@@ -173,18 +176,4 @@ func listen(tb testing.TB) (port uint) {
 	testutil.CleanupAndRequireSuccess(tb, l.Close)
 
 	return uint(l.Addr().(*net.TCPAddr).Port)
-}
-
-// domainNameFromTest returns a valid DNS domain name derived from the test
-// name. It replaces any slashes or underscores with hyphens to ensure the name
-// is valid in DNS.
-func domainNameFromTest(tb testing.TB) (d string) {
-	tb.Helper()
-
-	replacer := strings.NewReplacer("/", "-", "_", "-")
-
-	d = tb.Name()
-	d = replacer.Replace(d)
-
-	return d
 }

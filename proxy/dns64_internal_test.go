@@ -190,7 +190,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	// a given question type.
 	type answerMap = map[uint16][sectionsNum][]dns.RR
 
-	pt := testutil.PanicT{}
+	pt := testutil.NewPanicT(t)
 	newUps := func(answers answerMap) (u upstream.Upstream) {
 		return &testUpstream{
 			OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {

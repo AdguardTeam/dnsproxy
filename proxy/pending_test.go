@@ -70,7 +70,7 @@ func TestPendingRequests(t *testing.T) {
 			})
 
 			// Only allow a single request to be processed.
-			require.NotNil(testutil.PanicT{}, resp)
+			require.NotNil(testutil.NewPanicT(t), resp)
 
 			workloadWG.Wait()
 

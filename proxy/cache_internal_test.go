@@ -381,7 +381,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	d := &DNSContext{}
 
 	t.Run("replace_min", func(t *testing.T) {
-		d.Req = dnsproxytest.NewHostTestRequest("host")
+		d.Req = dnsproxytest.NewTestRequestWithHost("host")
 		d.Addr = netip.AddrPort{}
 
 		ans = []dns.RR{&dns.A{
@@ -405,7 +405,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	})
 
 	t.Run("replace_max", func(t *testing.T) {
-		d.Req = dnsproxytest.NewHostTestRequest("host2")
+		d.Req = dnsproxytest.NewTestRequestWithHost("host2")
 		d.Addr = netip.AddrPort{}
 
 		ans = []dns.RR{&dns.A{

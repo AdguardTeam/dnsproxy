@@ -89,7 +89,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 	servicetest.RequireRun(t, prx, dnsproxytest.Timeout)
 
 	d := &DNSContext{
-		Req: dnsproxytest.NewHostTestRequest("host"),
+		Req: dnsproxytest.NewTestRequestWithHost("host"),
 	}
 
 	for _, tc := range testCases {

@@ -1,5 +1,4 @@
-// Package dnsproxytest provides test utilities and mock implementations
-// for the dnsproxy module interfaces.
+// Package dnsproxytest provides utilities for testing dnsproxy module.
 package dnsproxytest
 
 import (
@@ -51,11 +50,11 @@ var DefaultTrustedProxies = netutil.SliceSubnetSet{
 
 // NewTestRequest returns common DNS request for tests.
 func NewTestRequest() (msg *dns.Msg) {
-	return NewHostTestRequest("google-public-dns-a.google.com")
+	return NewTestRequestWithHost("google-public-dns-a.google.com")
 }
 
-// NewHostTestRequest returns DNS request with common values and given host.
-func NewHostTestRequest(host string) (req *dns.Msg) {
+// NewTestRequestWithHost returns DNS request with common values and given host.
+func NewTestRequestWithHost(host string) (req *dns.Msg) {
 	return &dns.Msg{
 		MsgHdr: dns.MsgHdr{
 			Id:               dns.Id(),
@@ -71,7 +70,7 @@ func NewHostTestRequest(host string) (req *dns.Msg) {
 
 // RequireResponse is a test helper that ensures that the DNS reply matches the
 // request and contains an A record with [IPv4].  It is intended to be used
-// alongside [NewTestRequest] or [NewHostTestRequest].
+// alongside [NewTestRequest] or [NewTestRequestWithHost].
 func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 	tb.Helper()
 

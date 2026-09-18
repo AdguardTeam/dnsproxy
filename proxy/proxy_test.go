@@ -42,7 +42,7 @@ var (
 )
 
 // newTestUpstreamConfig creates a new UpstreamConfig with given upstream
-// addresses and default timeout.
+// addresses and timeout.
 //
 // TODO(f.setrakov): Dry with internal version.
 func newTestUpstreamConfig(
@@ -129,7 +129,7 @@ func TestProxy_Resolve_badResponse(t *testing.T) {
 			0,
 			false,
 		),
-		Req:  proxytest.NewHostTestRequest("host"),
+		Req:  proxytest.NewTestRequestWithHost("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
 	}
 
@@ -182,7 +182,7 @@ func isCachedWithCustomConfig(
 }
 
 // TODO(f.setrakov): Make it work without a real network.
-func TestProxy_handleDNSRequest_race(t *testing.T) {
+func TestProxy_HandleDNSRequest_race(t *testing.T) {
 	upsConf := newTestUpstreamConfig(
 		t,
 		defaultTimeout,
@@ -207,7 +207,7 @@ func TestProxy_handleDNSRequest_race(t *testing.T) {
 
 	wg := &sync.WaitGroup{}
 
-	pt := testutil.PanicT{}
+	pt := testutil.NewPanicT(t)
 	for range proxytest.MessageCount {
 		wg.Go(func() {
 			req := proxytest.NewTestRequest()
@@ -252,7 +252,7 @@ func TestProxy_handleDNSRequest_responseInRequest(t *testing.T) {
 	assert.Nil(t, r)
 }
 
-func TestProxy_handleDNSRequest_cache(t *testing.T) {
+func TestProxy_Resolve_cache(t *testing.T) {
 	const host = "example.test."
 
 	ups := &dnsproxytest.Upstream{
@@ -409,6 +409,7 @@ func TestProxy_ServeDNS_formatError(t *testing.T) {
 	testDataPattern := filepath.Join("testdata", t.Name(), "*")
 	testNames, err := filepath.Glob(testDataPattern)
 	require.NoError(t, err)
+	require.NotEmpty(t, testNames)
 
 	p, err := proxy.New(&proxy.Config{
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},

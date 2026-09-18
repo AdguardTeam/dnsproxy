@@ -181,9 +181,10 @@ func listen(tb testing.TB) (port uint) {
 func domainNameFromTest(tb testing.TB) (d string) {
 	tb.Helper()
 
+	replacer := strings.NewReplacer("/", "-", "_", "-")
+
 	d = tb.Name()
-	d = strings.ReplaceAll(d, "/", "-")
-	d = strings.ReplaceAll(d, "_", "-")
+	d = replacer.Replace(d)
 
 	return d
 }

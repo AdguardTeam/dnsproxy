@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
@@ -23,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHttpsProxy(t *testing.T) {
+func TestProxy_handleDNSRequest_https(t *testing.T) {
 	testCases := []struct {
 		name  string
 		http3 bool
@@ -37,39 +38,39 @@ func TestHttpsProxy(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tlsConf, caPem := newTLSConfig(t)
+			tlsConf, caPem := dnsproxytest.NewTLSConfig(t)
 
 			httpConf := &HTTPConfig{
-				ListenAddresses: []netip.AddrPort{localhostAnyPort},
+				ListenAddresses: []netip.AddrPort{dnsproxytest.LocalhostAnyPort},
 				HTTP3Enabled:    tc.http3,
 			}
 			dnsProxy := mustNew(t, &Config{
 				Logger:         testLogger,
-				TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-				QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+				TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+				QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 				TLSConfig:      tlsConf,
 				UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-				TrustedProxies: defaultTrustedProxies,
+				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 				HTTPConfig:     httpConf,
 			})
 
-			servicetest.RequireRun(t, dnsProxy, testTimeout)
+			servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 			// Create the HTTP client that we'll be using for this test.
 			client := createTestHTTPClient(dnsProxy, caPem, tc.http3)
 
 			// Prepare a test message to be sent to the server.
-			msg := newTestMessage()
+			msg := dnsproxytest.NewTestRequest()
 
 			// Send the test message and check if the response is what we
 			// expected.
 			resp := sendTestDoHMessage(t, client, msg, nil)
-			requireResponse(t, msg, resp)
+			dnsproxytest.RequireResponse(t, msg, resp)
 		})
 	}
 }
 
-func TestProxy_trustedProxies(t *testing.T) {
+func TestProxy_handleDNSRequest_trustedProxies(t *testing.T) {
 	var (
 		clientAddr = netip.MustParseAddr("1.2.3.4")
 		proxyAddr  = netip.MustParseAddr("127.0.0.1")
@@ -86,35 +87,35 @@ func TestProxy_trustedProxies(t *testing.T) {
 		}
 
 		// Prepare the proxy server.
-		tlsConf, caPem := newTLSConfig(t)
+		tlsConf, caPem := dnsproxytest.NewTLSConfig(t)
 		httpConf := &HTTPConfig{
-			ListenAddresses: []netip.AddrPort{localhostAnyPort},
+			ListenAddresses: []netip.AddrPort{dnsproxytest.LocalhostAnyPort},
 		}
 		dnsProxy := mustNew(t, &Config{
 			Logger:         testLogger,
 			UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-			TrustedProxies: defaultTrustedProxies,
+			TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 			RequestHandler: reqHandler,
 			TLSConfig:      tlsConf,
-			TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-			QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
+			TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+			QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 			HTTPConfig:     httpConf,
 		})
 
 		client := createTestHTTPClient(dnsProxy, caPem, false)
 
-		msg := newTestMessage()
+		msg := dnsproxytest.NewTestRequest()
 
 		dnsProxy.trustedProxies = netip.PrefixFrom(addr, addr.BitLen())
 
-		servicetest.RequireRun(t, dnsProxy, testTimeout)
+		servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 		hdrs := map[string]string{
 			"X-Forwarded-For": strings.Join([]string{clientAddr.String(), proxyAddr.String()}, ","),
 		}
 
 		resp := sendTestDoHMessage(t, client, msg, hdrs)
-		requireResponse(t, msg, resp)
+		dnsproxytest.RequireResponse(t, msg, resp)
 
 		require.Equal(t, expectedClientIP, gotAddr)
 	}
@@ -128,7 +129,9 @@ func TestProxy_trustedProxies(t *testing.T) {
 	})
 }
 
-func TestAddrsFromRequest(t *testing.T) {
+func TestRealIPFromHdrs(t *testing.T) {
+	t.Parallel()
+
 	var (
 		theIP     = netip.AddrFrom4([4]byte{1, 2, 3, 4})
 		anotherIP = netip.AddrFrom4([4]byte{1, 2, 3, 5})
@@ -227,6 +230,7 @@ func TestAddrsFromRequest(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
+
 		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
 		require.NoError(t, err)
 
@@ -235,6 +239,8 @@ func TestAddrsFromRequest(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var ip netip.Addr
 			ip, err = realIPFromHdrs(r)
 			testutil.AssertErrorMsg(t, tc.wantErr, err)
@@ -245,6 +251,8 @@ func TestAddrsFromRequest(t *testing.T) {
 }
 
 func TestRemoteAddr(t *testing.T) {
+	t.Parallel()
+
 	const thePort = 4321
 
 	var (
@@ -342,6 +350,8 @@ func TestRemoteAddr(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var addr, prx netip.AddrPort
 			addr, prx, err = remoteAddr(r, testLogger)
 			if tc.wantErr != "" {
@@ -370,7 +380,7 @@ func sendTestDoHMessage(
 
 	u := url.URL{
 		Scheme:   "https",
-		Host:     tlsServerName,
+		Host:     dnsproxytest.TLSServerName,
 		Path:     "/dns-query",
 		RawQuery: fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(packed)),
 	}
@@ -419,7 +429,7 @@ func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (cli
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPem)
 	tlsClientConfig := &tls.Config{
-		ServerName: tlsServerName,
+		ServerName: dnsproxytest.TLSServerName,
 		RootCAs:    roots,
 	}
 

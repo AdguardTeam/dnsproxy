@@ -3,6 +3,7 @@ package proxy
 import (
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -400,7 +401,7 @@ func BenchmarkUpstreamConfig_GetUpstreamsForDomain(b *testing.B) {
 		Logger:             testLogger,
 		InsecureSkipVerify: false,
 		Bootstrap:          nil,
-		Timeout:            testTimeout,
+		Timeout:            dnsproxytest.Timeout,
 	})
 	testutil.CleanupAndRequireSuccess(b, config.Close)
 

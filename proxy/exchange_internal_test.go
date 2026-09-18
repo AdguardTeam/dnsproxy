@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -193,7 +194,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		servers: []upstream.Upstream{each200, each100, each50},
 	}}
 
-	req := newTestMessage()
+	req := dnsproxytest.NewTestRequest()
 	cli := netip.AddrPortFrom(netutil.IPv4Localhost(), 1234)
 
 	for _, tc := range testCases {
@@ -208,12 +209,12 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 
 		p := mustNew(t, &Config{
 			Logger:        testLogger,
-			UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-			TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
+			UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+			TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 			UpstreamConfig: &UpstreamConfig{
 				Upstreams: ups,
 			},
-			TrustedProxies: defaultTrustedProxies,
+			TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		})
 		p.time = tc.clock
 		p.randSrc = randSrc

@@ -2,14 +2,13 @@ package proxy_test
 
 import (
 	"net"
-	"net/netip"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -17,20 +16,13 @@ import (
 )
 
 func TestCollectQueryStats(t *testing.T) {
-	var (
-		testReq = &dns.Msg{
-			Question: []dns.Question{{
-				Name:   "test.",
-				Qtype:  dns.TypeA,
-				Qclass: dns.ClassINET,
-			}},
-		}
-
-		defaultTrustedProxies netutil.SubnetSet = netutil.SliceSubnetSet{
-			netip.MustParsePrefix("0.0.0.0/0"),
-			netip.MustParsePrefix("::0/0"),
-		}
-	)
+	testReq := &dns.Msg{
+		Question: []dns.Question{{
+			Name:   "test.",
+			Qtype:  dns.TypeA,
+			Qclass: dns.ClassINET,
+		}},
+	}
 
 	ups := &dnsproxytest.Upstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -50,9 +42,9 @@ func TestCollectQueryStats(t *testing.T) {
 
 	conf := &proxy.Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(localhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(localhostAnyPort)},
-		TrustedProxies: defaultTrustedProxies,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TrustedProxies: proxytest.DefaultTrustedProxies,
 	}
 
 	testCases := []struct {

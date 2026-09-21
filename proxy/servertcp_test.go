@@ -3,13 +3,20 @@ package proxy_test
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/binary"
+	"io"
 	"net"
 	"testing"
+	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,22 +32,22 @@ func TestProxy_handleDNSRequest_tcp(t *testing.T) {
 }
 
 func TestProxy_handleDNSRequest_tls(t *testing.T) {
-	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
+	serverConfig, caPem := proxytest.NewTLSConfig(t)
 	dnsProxy, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,
-		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TLSConfig:      serverConfig,
 		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
-		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
+		TrustedProxies: proxytest.DefaultTrustedProxies,
 	})
 	require.NoError(t, err)
 
-	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
+	servicetest.RequireRun(t, dnsProxy, proxytest.Timeout)
 
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPem)
-	tlsConfig := &tls.Config{ServerName: dnsproxytest.TLSServerName, RootCAs: roots}
+	tlsConfig := &tls.Config{ServerName: proxytest.TLSServerName, RootCAs: roots}
 
 	// Create a DNS-over-TLS client connection
 	addr := dnsProxy.Addr(proxy.ProtoTLS)
@@ -48,4 +55,102 @@ func TestProxy_handleDNSRequest_tls(t *testing.T) {
 	require.NoError(t, err)
 
 	sendTestMessages(t, conn)
+}
+
+func TestProxy_handleDNSRequest_splitTCPPrefix(t *testing.T) {
+	t.Parallel()
+
+	addr := mustStartDefaultProxy(t).Addr(proxy.ProtoTCP)
+	conn := requireDial(t, addr)
+
+	req := proxytest.NewTestRequest()
+
+	require.True(t, t.Run("send", func(t *testing.T) {
+		b, err := req.Pack()
+		require.NoError(t, err)
+
+		pkt := make([]byte, 0, 2+len(b))
+		pkt = binary.BigEndian.AppendUint16(pkt, uint16(len(b)))
+		pkt = append(pkt, b...)
+
+		n, err := conn.Write(pkt[:1])
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, n)
+
+		time.Sleep(proxytest.Timeout / 10)
+
+		n, err = conn.Write(pkt[1:])
+		require.NoError(t, err)
+
+		assert.Equal(t, len(pkt)-1, n)
+	}))
+
+	require.True(t, t.Run("receive", func(t *testing.T) {
+		dnsConn := &dns.Conn{Conn: conn}
+
+		resp, err := dnsConn.ReadMsg()
+		require.NoError(t, err)
+
+		proxytest.RequireResponse(t, req, resp)
+	}))
+}
+
+func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
+	t.Parallel()
+
+	u := &dnsproxytest.Upstream{
+		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
+		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:    func() (err error) { return nil },
+	}
+	upsConf := &proxy.UpstreamConfig{
+		Upstreams: []upstream.Upstream{u},
+	}
+
+	p, err := proxy.New(&proxy.Config{
+		Logger:         testLogger,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		UpstreamConfig: upsConf,
+		TrustedProxies: proxytest.DefaultTrustedProxies,
+	})
+	require.NoError(t, err)
+	servicetest.RequireRun(t, p, proxytest.Timeout)
+
+	conn := requireDial(t, p.Addr(proxy.ProtoTCP))
+
+	pkt := binary.BigEndian.AppendUint16(nil, 0)
+
+	_, err = conn.Write(pkt)
+	require.NoError(t, err)
+
+	dnsConn := &dns.Conn{Conn: conn}
+	_, err = dnsConn.ReadMsg()
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestProxy_handleDNSRequest_partialTCPPrefix(t *testing.T) {
+	t.Parallel()
+
+	addr := mustStartDefaultProxy(t).Addr(proxy.ProtoTCP).String()
+
+	require.True(t, t.Run("bad_conn", func(t *testing.T) {
+		conn, err := net.Dial(string(proxy.ProtoTCP), addr)
+		require.NoError(t, err)
+
+		n, err := conn.Write([]byte{0x00})
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, n)
+
+		require.NoError(t, conn.Close())
+	}))
+
+	require.True(t, t.Run("success", func(t *testing.T) {
+		conn, err := dns.Dial("tcp", addr)
+		require.NoError(t, err)
+
+		sendTestMessages(t, conn)
+	}))
 }

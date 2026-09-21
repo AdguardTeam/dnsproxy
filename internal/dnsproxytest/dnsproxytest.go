@@ -4,7 +4,6 @@ package dnsproxytest
 import (
 	"net"
 	"net/netip"
-	"runtime"
 	"testing"
 	"time"
 
@@ -81,29 +80,4 @@ func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 	a := testutil.RequireTypeAssert[*dns.A](tb, reply.Answer[0])
 
 	require.Equal(tb, IPv4, a.A.To16())
-}
-
-// NewFreePort is a best-effort helper function that returns a free TCP port
-// that can be used for testing.  Note that there is theoretically a TOCTTOU
-// race here: the port may be reoccupied between the time it is released and the
-// time the caller binds to it.
-//
-// TODO(m.kazantsev):  Move to the top-level dnsproxytest package.
-func NewFreePort(tb testing.TB) (p uint) {
-	tb.Helper()
-
-	l, err := net.Listen("tcp", LocalhostAnyPort.String())
-	require.NoError(tb, err)
-
-	p = uint(l.Addr().(*net.TCPAddr).Port)
-
-	// Stop listening immediately.
-	require.NoError(tb, l.Close())
-
-	// Sleeping for some time may be necessary on Windows.
-	if runtime.GOOS == "windows" {
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	return p
 }

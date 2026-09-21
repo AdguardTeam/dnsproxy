@@ -1,7 +1,6 @@
 package fastip
 
 import (
-	"net"
 	"net/netip"
 	"testing"
 	"time"
@@ -10,7 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCacheAdd(t *testing.T) {
+// TODO(m.kazantsev):  Find a way to move to cache_test.go.
+func TestFastestAddr_CacheAdd(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
 		status:      0,
@@ -24,7 +24,7 @@ func TestCacheAdd(t *testing.T) {
 	assert.NotNil(t, f.cacheFind(ip))
 }
 
-func TestCacheTtl(t *testing.T) {
+func TestFastestAddr_CacheAdd_timeout(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 	ent := cacheEntry{
 		status:      0,
@@ -44,7 +44,7 @@ func TestCacheTtl(t *testing.T) {
 	assert.Nil(t, f.cacheFind(ip))
 }
 
-func TestCacheAddSuccessfulOverwrite(t *testing.T) {
+func TestFastestAddr_CacheAdd_successfulOverwrite(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 
 	ip := netip.MustParseAddr("1.1.1.1")
@@ -65,7 +65,7 @@ func TestCacheAddSuccessfulOverwrite(t *testing.T) {
 	assert.Equal(t, uint(11), ent.latencyMsec)
 }
 
-func TestCacheAddFailureNoOverwrite(t *testing.T) {
+func TestFastestAddr_CacheAdd_failureNoOverwrite(t *testing.T) {
 	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 
 	ip := netip.MustParseAddr("1.1.1.1")
@@ -84,22 +84,4 @@ func TestCacheAddFailureNoOverwrite(t *testing.T) {
 	assert.NotNil(t, ent)
 	assert.Equal(t, 0, ent.status)
 	assert.Equal(t, uint(11), ent.latencyMsec)
-}
-
-// TODO(ameshkov): Actually test something.
-func TestCache(_ *testing.T) {
-	f := New(&Config{Logger: slogutil.NewDiscardLogger()})
-	ent := cacheEntry{
-		status:      0,
-		latencyMsec: 111,
-	}
-
-	val := packCacheEntry(&ent, 1)
-	f.ipCache.Set(net.ParseIP("1.1.1.1").To4(), val)
-	ent = cacheEntry{
-		status:      0,
-		latencyMsec: 222,
-	}
-
-	f.cacheAdd(&ent, netip.MustParseAddr("2.2.2.2"), fastestAddrCacheTTLSec)
 }

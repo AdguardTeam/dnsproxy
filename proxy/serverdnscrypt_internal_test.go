@@ -6,6 +6,7 @@ import (
 
 	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/internal/nettest"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -44,7 +45,7 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 	cert, err := rc.NewCert()
 	require.NoError(tb, err)
 
-	port := dnsproxytest.NewFreePort(tb)
+	port := nettest.NewFreePort(tb)
 	upstreamConf := newTestUpstreamConfig(tb, defaultTimeout, testDefaultUpstreamAddr)
 	p = mustNew(tb, &Config{
 		Logger: testLogger,

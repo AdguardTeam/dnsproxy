@@ -1,0 +1,35 @@
+// Package nettest provides network-related testing utilities.
+package nettest
+
+import (
+	"net"
+	"runtime"
+	"testing"
+	"time"
+
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/stretchr/testify/require"
+)
+
+// NewFreePort is a best-effort helper function that returns a free TCP port
+// that can be used for testing.  Note that there is theoretically a TOCTTOU
+// race here: the port may be reoccupied between the time it is released and the
+// time the caller binds to it.
+func NewFreePort(tb testing.TB) (p uint) {
+	tb.Helper()
+
+	l, err := net.Listen("tcp", dnsproxytest.LocalhostAnyPort.String())
+	require.NoError(tb, err)
+
+	p = uint(l.Addr().(*net.TCPAddr).Port)
+
+	// Stop listening immediately.
+	require.NoError(tb, l.Close())
+
+	// Sleeping for some time may be necessary on Windows.
+	if runtime.GOOS == "windows" {
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return p
+}

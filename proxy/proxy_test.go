@@ -420,7 +420,8 @@ func TestProxy_ServeDNS_formatError(t *testing.T) {
 	require.NotNil(t, p)
 	servicetest.RequireRun(t, p, proxytest.Timeout)
 
-	addr := p.Addr(proxy.ProtoUDP).String()
+	addr := p.Addr(proxy.ProtoUDP)
+
 	for _, testName := range testNames {
 		t.Run(testName, func(t *testing.T) {
 			skipDarwin(t, exception)
@@ -434,11 +435,11 @@ func TestProxy_ServeDNS_formatError(t *testing.T) {
 
 // testJiggleVulnerability makes sure that proxy correctly responds to malformed
 // DNS packets without crashing.
-func testJiggleVulnerability(tb testing.TB, dataPath, addr string) {
+func testJiggleVulnerability(tb testing.TB, dataPath string, addr net.Addr) {
 	data, err := os.ReadFile(dataPath)
 	require.NoError(tb, err)
 
-	conn := requireDial(tb, addr)
+	conn := requireDial(tb, addr, proxytest.Timeout)
 	requireWritePacket(tb, conn, data)
 	resp := requireReadPacket(tb, conn)
 
@@ -449,16 +450,16 @@ func testJiggleVulnerability(tb testing.TB, dataPath, addr string) {
 	assert.Equal(tb, msg.Rcode, dns.RcodeFormatError)
 }
 
-// requireDial dials the given address and returns the connection.  The
-// connection is closed in the test cleanup.
-func requireDial(tb testing.TB, addr string) (conn net.Conn) {
+// requireDial dials the given address and returns the connection, setting a
+// deadline to reflect timeout.  The connection is closed in the test cleanup.
+func requireDial(tb testing.TB, addr net.Addr, timeout time.Duration) (conn net.Conn) {
 	tb.Helper()
 
-	conn, err := net.DialTimeout(string(proxy.ProtoUDP), addr, proxytest.Timeout)
+	conn, err := net.DialTimeout(addr.Network(), addr.String(), timeout)
 	require.NoError(tb, err)
 	testutil.CleanupAndRequireSuccess(tb, conn.Close)
 
-	deadline := time.Now().Add(proxytest.Timeout)
+	deadline := time.Now().Add(timeout)
 	require.NoError(tb, conn.SetDeadline(deadline))
 
 	return conn

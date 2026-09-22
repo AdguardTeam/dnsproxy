@@ -238,7 +238,7 @@ func logWithNonCrit(ctx context.Context, err error, msg string, proto Proto, l *
 			"details", msg,
 			slogutil.KeyError, err,
 		)
-	} else if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
+	} else if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
 		l.DebugContext(
 			ctx,
 			"connection timed out",

@@ -189,24 +189,18 @@ func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn) (req *dns.Msg) {
 	return req
 }
 
-// errTooLarge means that a DNS message is larger than 64KiB.
-const errTooLarge errors.Error = "dns message is too large"
-
 // readPrefixed reads a DNS message with a 2-byte prefix containing message
 // length from conn.  conn must not be nil.
 func readPrefixed(conn net.Conn) (b []byte, err error) {
 	l := make([]byte, 2)
-	_, err = conn.Read(l)
+	_, err = io.ReadFull(conn, l)
 	if err != nil {
-		return nil, fmt.Errorf("reading len: %w", err)
+		return nil, fmt.Errorf("reading msg length: %w", err)
 	}
 
-	packetLen := binary.BigEndian.Uint16(l)
-	if packetLen > dns.MaxMsgSize {
-		return nil, errTooLarge
-	}
-
-	b = make([]byte, packetLen)
+	// Don't validate the packet length, as uint16 can't hold values larger than
+	// [dns.MaxMsgSize].
+	b = make([]byte, binary.BigEndian.Uint16(l))
 	_, err = io.ReadFull(conn, b)
 	if err != nil {
 		return nil, fmt.Errorf("reading msg: %w", err)

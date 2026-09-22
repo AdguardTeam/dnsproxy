@@ -18,7 +18,7 @@ import (
 
 const ipv4OnlyFqdn = "ipv4.only."
 
-func TestProxy_handleDNSRequest_DNS64Race(t *testing.T) {
+func TestProxy_HandleDNSRequest_DNS64Race(t *testing.T) {
 	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, dnsproxytest.IPv4)
 	ups := &testUpstream{
 		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {

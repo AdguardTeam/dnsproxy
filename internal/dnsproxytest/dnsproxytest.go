@@ -26,18 +26,17 @@ const (
 
 	// TLSServerName is a common TLS server name value for tests.
 	TLSServerName = "testdns.adguard.com"
+
+	// Host is a common host for tests.
+	Host = "test.example"
 )
 
 var (
 	// LocalhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
 	LocalhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
 
-	// IPv4 is a common IPv4 address for test response A records.  It uses the
-	// [net.IP] form for convenient comparisons with [dns.A.A].
-	//
-	// TODO(f.setrakov): Use an address from one of the IPv4 documentation
-	// ranges.
-	IPv4 = net.IPv4(8, 8, 8, 8)
+	// TestIPv4 is a common IPv4 address for tests.
+	IPv4 = net.IPv4(192, 0, 2, 1)
 )
 
 // DefaultTrustedProxies is a set of trusted proxies that includes all possible
@@ -49,7 +48,7 @@ var DefaultTrustedProxies = netutil.SliceSubnetSet{
 
 // NewTestRequest returns common DNS request for tests.
 func NewTestRequest() (msg *dns.Msg) {
-	return NewTestRequestWithHost("google-public-dns-a.google.com")
+	return NewTestRequestWithHost(Host)
 }
 
 // NewTestRequestWithHost returns DNS request with common values and given host.
@@ -65,6 +64,22 @@ func NewTestRequestWithHost(host string) (req *dns.Msg) {
 			Qclass: dns.ClassINET,
 		}},
 	}
+}
+
+// NewTestResponse is a helper that returns new default response for given
+// request.  Response will contain single A record with [IPv4] value.
+func NewTestResponse(req *dns.Msg) (resp *dns.Msg) {
+	resp = (&dns.Msg{}).SetReply(req)
+	resp.Answer = []dns.RR{&dns.A{
+		Hdr: dns.RR_Header{
+			Name:   req.Question[0].Name,
+			Class:  dns.ClassINET,
+			Rrtype: dns.TypeA,
+		},
+		A: IPv4,
+	}}
+
+	return resp
 }
 
 // RequireResponse is a test helper that ensures that the DNS reply matches the

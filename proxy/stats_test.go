@@ -15,7 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCollectQueryStats(t *testing.T) {
+func TestDNSContext_QueryStatistics(t *testing.T) {
+	t.Parallel()
+
 	testReq := &dns.Msg{
 		Question: []dns.Question{{
 			Name:   "test.",

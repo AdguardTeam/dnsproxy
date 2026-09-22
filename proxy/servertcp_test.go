@@ -61,7 +61,7 @@ func TestProxy_handleDNSRequest_splitTCPPrefix(t *testing.T) {
 	t.Parallel()
 
 	addr := mustStartDefaultProxy(t).Addr(proxy.ProtoTCP)
-	conn := requireDial(t, addr)
+	conn := requireDial(t, addr, proxytest.Timeout)
 
 	req := proxytest.NewTestRequest()
 
@@ -118,7 +118,7 @@ func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
 	require.NoError(t, err)
 	servicetest.RequireRun(t, p, proxytest.Timeout)
 
-	conn := requireDial(t, p.Addr(proxy.ProtoTCP))
+	conn := requireDial(t, p.Addr(proxy.ProtoTCP), proxytest.Timeout)
 
 	pkt := binary.BigEndian.AppendUint16(nil, 0)
 
@@ -133,24 +133,28 @@ func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
 func TestProxy_handleDNSRequest_partialTCPPrefix(t *testing.T) {
 	t.Parallel()
 
-	addr := mustStartDefaultProxy(t).Addr(proxy.ProtoTCP).String()
+	addr := mustStartDefaultProxy(t).Addr(proxy.ProtoTCP)
 
-	require.True(t, t.Run("bad_conn", func(t *testing.T) {
-		conn, err := net.Dial(string(proxy.ProtoTCP), addr)
-		require.NoError(t, err)
+	t.Run("bad_conn", func(t *testing.T) {
+		t.Parallel()
+
+		conn := requireDial(t, addr, proxytest.Timeout)
 
 		n, err := conn.Write([]byte{0x00})
 		require.NoError(t, err)
 
 		assert.Equal(t, 1, n)
+	})
 
-		require.NoError(t, conn.Close())
-	}))
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 
-	require.True(t, t.Run("success", func(t *testing.T) {
-		conn, err := dns.Dial("tcp", addr)
-		require.NoError(t, err)
+		// TODO(e.burkov):  Improve the [sendTestMessages] helper to fit into
+		// [proxytest.Timeout].
+		conn := requireDial(t, addr, 2*proxytest.Timeout)
 
-		sendTestMessages(t, conn)
-	}))
+		dnsConn := &dns.Conn{Conn: conn}
+
+		sendTestMessages(t, dnsConn)
+	})
 }

@@ -221,8 +221,6 @@ func (p *Proxy) logDNSMessage(ctx context.Context, m *dns.Msg) {
 
 // logWithNonCrit logs the error on the appropriate level depending on whether
 // err is a critical error or not.
-//
-// TODO(e.burkov):  !! Consider filtering [io.ErrUnexpectedEOF].
 func logWithNonCrit(ctx context.Context, err error, msg string, proto Proto, l *slog.Logger) {
 	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || isEPIPE(err) {
 		l.DebugContext(

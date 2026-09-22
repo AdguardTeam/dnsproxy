@@ -33,7 +33,8 @@ type recursionDetector struct {
 	ttl            time.Duration
 }
 
-// check checks if the passed req was already sent by the server.
+// check checks if the passed req was already sent by the server.  msg must not
+// be nil.
 func (rd *recursionDetector) check(msg *dns.Msg) (ok bool) {
 	if len(msg.Question) == 0 {
 		return false
@@ -50,7 +51,8 @@ func (rd *recursionDetector) check(msg *dns.Msg) (ok bool) {
 	return time.Now().Before(expire)
 }
 
-// add caches the msg if it has anything in the questions section.
+// add caches the msg if it has anything in the questions section.  msg must not
+// be nil.
 func (rd *recursionDetector) add(msg *dns.Msg) {
 	now := time.Now()
 
@@ -82,7 +84,8 @@ func newRecursionDetector(ttl time.Duration, suspectsNum uint) (rd *recursionDet
 	}
 }
 
-// msgToSignature converts msg into it's signature represented in bytes.
+// msgToSignature converts msg into it's signature represented in bytes.  msg
+// must not be nil.
 func msgToSignature(msg *dns.Msg) (sig []byte) {
 	sig = make([]byte, uint16sz*2+netutil.MaxDomainNameLen)
 	// The binary.BigEndian byte order is used everywhere except when the real

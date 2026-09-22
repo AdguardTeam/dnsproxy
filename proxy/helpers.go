@@ -7,7 +7,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-// ecsFromMsg returns the subnet from EDNS Client Subnet option of m if any.
+// ecsFromMsg returns the subnet from EDNS Client Subnet option of m if any.  m
+// must not be nil.
 func ecsFromMsg(m *dns.Msg) (subnet *net.IPNet, scope int) {
 	opt := m.IsEdns0()
 	if opt == nil {
@@ -40,7 +41,7 @@ func ecsFromMsg(m *dns.Msg) (subnet *net.IPNet, scope int) {
 }
 
 // setECS sets the EDNS client subnet option based on ip and scope into m.  It
-// returns masked IP and mask length.
+// returns masked IP and mask length.  m must not be nil.
 func setECS(m *dns.Msg, ip net.IP, scope uint8) (subnet *net.IPNet) {
 	const (
 		// defaultECSv4 is the default length of network mask for IPv4 address

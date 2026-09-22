@@ -46,6 +46,7 @@ func (u *upstreamWithStats) Close() (err error) {
 
 // upstreamsWithStats takes a list of upstreams, wraps each upstream with
 // [upstreamWithStats] to gather statistics, and returns the wrapped upstreams.
+// All upstreams elements must not be nil.
 func upstreamsWithStats(upstreams []upstream.Upstream) (wrapped []upstream.Upstream) {
 	wrapped = make([]upstream.Upstream, 0, len(upstreams))
 	for _, u := range upstreams {
@@ -159,7 +160,7 @@ type UpstreamStatistics struct {
 }
 
 // collectUpstreamStats gathers the upstream statistics from the list of wrapped
-// upstreams.  upstreams must be of type *upstreamWithStats.
+// upstreams.  upstreams must be of type [*upstreamWithStats].
 func collectUpstreamStats(upstreams ...upstream.Upstream) (stats []*UpstreamStatistics) {
 	stats = make([]*UpstreamStatistics, 0, len(upstreams))
 

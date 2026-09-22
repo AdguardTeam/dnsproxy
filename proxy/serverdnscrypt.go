@@ -69,7 +69,7 @@ func (p *Proxy) startDNSCryptServers(ctx context.Context) (err error) {
 }
 
 // shutdownDNSCryptServers shuts down the DNSCrypt servers.  If it returns an
-// error, some servers may be still running.
+// error, some servers may be still running.  srvs elements must not be nil.
 func shutdownDNSCryptServers(ctx context.Context, srvs []*dnscrypt.Server) (err error) {
 	var errs []error
 
@@ -84,7 +84,7 @@ func shutdownDNSCryptServers(ctx context.Context, srvs []*dnscrypt.Server) (err 
 }
 
 // newDNSCryptServer returns a new DNSCrypt server for the given address and
-// protocol.
+// protocol.  proto must be either [dnscrypt.ProtoTCP] or [dnscrypt.ProtoUDP].
 func (p *Proxy) newDNSCryptServer(
 	ctx context.Context,
 	addr netip.AddrPort,

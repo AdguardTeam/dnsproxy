@@ -21,26 +21,31 @@ import (
 func (p *Proxy) startListeners(ctx context.Context) (err error) {
 	err = p.initUDPListeners(ctx)
 	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
 		return err
 	}
 
 	err = p.initTCPListeners(ctx)
 	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
 		return err
 	}
 
 	err = p.initTLSListeners(ctx)
 	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
 		return err
 	}
 
 	err = p.initHTTPSListeners(ctx)
 	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
 		return err
 	}
 
 	err = p.initQUICListeners(ctx)
 	if err != nil {
+		// Don't wrap the error since it's informative enough as is.
 		return err
 	}
 
@@ -75,7 +80,7 @@ func (p *Proxy) serveListeners(ctx context.Context) {
 }
 
 // handleDNSRequest processes the context.  The only error it returns is the one
-// from the [Handler].
+// from the [Handler].  d must not be nil.
 func (p *Proxy) handleDNSRequest(ctx context.Context, d *DNSContext) (err error) {
 	p.logDNSMessage(ctx, d.Req)
 
@@ -101,6 +106,7 @@ func (p *Proxy) handleDNSRequest(ctx context.Context, d *DNSContext) (err error)
 	p.logDNSMessage(ctx, d.Res)
 	p.respond(ctx, d)
 
+	// Don't wrap the error since it's informative enough as is.
 	return err
 }
 
@@ -136,7 +142,8 @@ func (dctx *DNSContext) isForbiddenARPA(privateNets netutil.SubnetSet, l *slog.L
 	return false
 }
 
-// respond writes the specified response to the client (or does nothing if d.Res is empty)
+// respond writes the specified response to the client, if any.  d must not be
+// nil.
 func (p *Proxy) respond(ctx context.Context, d *DNSContext) {
 	// d.Conn can be nil in the case of a DoH request.
 	if d.Conn != nil {
@@ -219,8 +226,9 @@ func (p *Proxy) logDNSMessage(ctx context.Context, m *dns.Msg) {
 	slogutil.PrintLines(ctx, p.logger, slog.LevelDebug, msg, m.String())
 }
 
-// logWithNonCrit logs the error on the appropriate level depending on whether
-// err is a critical error or not.
+// logWithNonCrit logs the error on the appropriate level, depending on whether
+// err is a critical error or not.  Connection closure or timeout errors are
+// considered non-critical.  l must not be nil.
 func logWithNonCrit(ctx context.Context, err error, msg string, proto Proto, l *slog.Logger) {
 	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || isEPIPE(err) {
 		l.DebugContext(

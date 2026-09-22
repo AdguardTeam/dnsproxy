@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// cacheForContext returns cache object for the given context.
+// cacheForContext returns cache object for the given context.  d must not be nil.
 func (p *Proxy) cacheForContext(d *DNSContext) (c *cache) {
 	if d.CustomUpstreamConfig != nil && d.CustomUpstreamConfig.cache != nil {
 		return d.CustomUpstreamConfig.cache
@@ -15,7 +15,8 @@ func (p *Proxy) cacheForContext(d *DNSContext) (c *cache) {
 }
 
 // replyFromCache tries to get the response from general or subnet cache.  In
-// case the cache is present in d, it's used first.  Returns true on success.
+// case the cache is present in d, it's used first.  Returns true on success.  d
+// must not be nil.
 func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	dctxCache := p.cacheForContext(d)
 
@@ -77,7 +78,7 @@ func cloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 }
 
 // cacheResp stores the response from d in general or subnet cache.  In case the
-// cache is present in d, it's used first.
+// cache is present in d, it's used first.  d must not be nil.
 func (p *Proxy) cacheResp(d *DNSContext) {
 	dctxCache := p.cacheForContext(d)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/AdguardTeam/golibs/contextutil"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/validate"
 )
 
 // LogPrefix is a prefix for logging.
@@ -273,12 +274,15 @@ type HTTPConfig struct {
 	InsecureEnabled bool
 }
 
-// validateConfig verifies that the supplied configuration is valid and returns
-// an error if it's not.  c must be non-nil and valid.
+// type check
+var _ validate.Interface = (*Config)(nil)
+
+// Validate implements the [validate.Interface] for *Config.
 //
-// TODO(s.chzhen):  Use [validate.Interface] from golibs.
-func (p *Proxy) validateConfig(c *Config) (err error) {
-	err = c.UpstreamConfig.validate()
+// TODO(f.setrakov): Refactor configuration validation according to the
+// interface contracts.
+func (c *Config) Validate() (err error) {
+	err = c.UpstreamConfig.Validate()
 	if err != nil {
 		return fmt.Errorf("general upstreams: %w", err)
 	}
@@ -290,7 +294,8 @@ func (p *Proxy) validateConfig(c *Config) (err error) {
 		}
 	}
 
-	err = c.Fallbacks.validate()
+	err = c.Fallbacks.Validate()
+
 	// Allow [Config.Fallbacks] to be nil, but not empty.  nil means not to use
 	// fallbacks at all.
 	if errors.Is(err, upstream.ErrNoUpstreams) {
@@ -308,12 +313,9 @@ func (p *Proxy) validateConfig(c *Config) (err error) {
 		return fmt.Errorf("upstream mode: %w: %q", errors.ErrBadEnumValue, c.UpstreamMode)
 	}
 
-	err = p.validateBasicAuth()
-	if err != nil {
-		return fmt.Errorf("basic auth: %w", err)
+	if c.HTTPConfig != nil && c.HTTPConfig.Userinfo != nil {
+		return validate.NotEmptySlice("HTTPConfig.ListenAddresses", c.HTTPConfig.ListenAddresses)
 	}
-
-	p.logConfigInfo()
 
 	return nil
 }
@@ -386,7 +388,7 @@ func (p *Proxy) validateTLSConfig() (err error) {
 	return nil
 }
 
-// hasListenAddrs - is there any addresses to listen to?
+// hasListenAddrs returns true if p has at least one configured listen address.
 func (p *Proxy) hasListenAddrs() (ok bool) {
 	return p.udpListenAddr != nil ||
 		p.tcpListenAddr != nil ||

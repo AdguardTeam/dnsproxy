@@ -17,11 +17,11 @@ type pendingRequests interface {
 	// queue is called for each request.  It returns false if there are no
 	// identical requests in progress.  Otherwise it blocks until the first
 	// request is completed and returns the error that occurred during its
-	// resolution.
+	// resolution.  dctx must not be nil.
 	queue(ctx context.Context, dctx *DNSContext) (loaded bool, err error)
 
 	// done must be called after the request is completed, if queue returned
-	// false for it.
+	// false for it.  dctx must not be nil.
 	done(ctx context.Context, dctx *DNSContext, err error)
 }
 

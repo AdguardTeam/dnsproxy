@@ -12,6 +12,7 @@ import (
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/validate"
 )
 
 // UnqualifiedNames is a key for [UpstreamConfig.DomainReservedUpstreams] map to
@@ -324,10 +325,13 @@ func (p *configParser) includeToReserved(dnsUpstream upstream.Upstream, domains 
 	}
 }
 
-// validate returns an error if the upstreams aren't configured properly.  c
-// considered valid if it contains at least a single default upstream.  Empty c
+// type check
+var _ validate.Interface = (*UpstreamConfig)(nil)
+
+// Validate implements the [validate.Interface] for *UpstreamConfig.  uc
+// considered valid if it contains at least a single default upstream.  Empty uc
 // causes [upstream.ErrNoUpstreams].
-func (uc *UpstreamConfig) validate() (err error) {
+func (uc *UpstreamConfig) Validate() (err error) {
 	switch {
 	case uc == nil:
 		return errors.ErrNoValue
@@ -343,7 +347,7 @@ func (uc *UpstreamConfig) validate() (err error) {
 // ValidatePrivateConfig returns an error if uc isn't valid, or, treated as
 // private upstreams configuration, contains specifications for invalid domains.
 func ValidatePrivateConfig(uc *UpstreamConfig, privateSubnets netutil.SubnetSet) (err error) {
-	if err = uc.validate(); err != nil {
+	if err = uc.Validate(); err != nil {
 		// Don't wrap the error since it's informative enough as is.
 		return err
 	}

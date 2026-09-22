@@ -215,7 +215,7 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 			require.NoError(t, err)
 			testutil.CleanupAndRequireSuccess(t, c.Close)
 
-			assert.ErrorIs(t, c.validate(), tc.wantErr)
+			assert.ErrorIs(t, c.Validate(), tc.wantErr)
 		})
 	}
 
@@ -224,7 +224,7 @@ func TestUpstreamConfig_Validate(t *testing.T) {
 
 		var c *UpstreamConfig
 
-		assert.Equal(t, c.validate(), errors.ErrNoValue)
+		assert.Equal(t, c.Validate(), errors.ErrNoValue)
 	})
 }
 

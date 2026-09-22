@@ -70,8 +70,7 @@ func (p *Proxy) exchangeUpstreams(
 }
 
 // exchange returns the result of the DNS request exchange with the given
-// upstream and the elapsed time in milliseconds.  It uses the given clock to
-// measure the request duration.
+// upstream and the elapsed time.  u and req must not be nil.
 func (p *Proxy) exchange(
 	u upstream.Upstream,
 	req *dns.Msg,
@@ -125,7 +124,7 @@ func (stats upstreamRTTStats) update(rtt time.Duration) (updated upstreamRTTStat
 }
 
 // calcWeights returns the slice of weights, each corresponding to the upstream
-// with the same index in the given slice.
+// with the same index in the given slice.  ups elements must not be nil.
 func (p *Proxy) calcWeights(ups []upstream.Upstream) (weights []float64) {
 	weights = make([]float64, 0, len(ups))
 

@@ -365,6 +365,10 @@ type Proxy struct {
 	// never be used for clients with public IP addresses.
 	enableEDNSClientSubnet bool
 
+	// onOptimisticRefresh is called, if not nil, once an optimistic cache
+	// refresh has finished, see [Config.OnOptimisticRefresh].
+	onOptimisticRefresh func(dctx *DNSContext)
+
 	// preferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
 	// upstreams that use hostnames.
 	preferIPv6 bool
@@ -407,6 +411,7 @@ func New(c *Config) (p *Proxy, err error) {
 		cacheOptimistic:           c.CacheOptimistic,
 		cacheEnabled:              c.CacheEnabled,
 		enableEDNSClientSubnet:    c.EnableEDNSClientSubnet,
+		onOptimisticRefresh:       c.OnOptimisticRefresh,
 		dnsSecEnabled:             c.DNSSECEnabled,
 		refuseAny:                 c.RefuseAny,
 		fastestPingTimeout:        c.FastestPingTimeout,

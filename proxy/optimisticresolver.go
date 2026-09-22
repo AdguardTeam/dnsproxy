@@ -19,6 +19,10 @@ type cachingResolver interface {
 
 	// cacheResp caches the response from dctx.
 	cacheResp(dctx *DNSContext)
+
+	// reportRefresh reports that dctx has been resolved in the background, so
+	// that the exchanges it performed can be accounted for.
+	reportRefresh(dctx *DNSContext)
 }
 
 // type check
@@ -61,6 +65,10 @@ func (s *optimisticResolver) resolveOnce(dctx *DNSContext, key []byte, l *slog.L
 	if err != nil {
 		l.Debug("resolving request for optimistic cache", slogutil.KeyError, err)
 	}
+
+	// Report the refresh even when it failed, since its statistics describe the
+	// attempt either way.
+	s.cr.reportRefresh(dctx)
 
 	if ok {
 		s.cr.cacheResp(dctx)

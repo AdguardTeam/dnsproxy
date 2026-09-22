@@ -32,7 +32,8 @@ func (p *Proxy) initTCPListeners(ctx context.Context) (err error) {
 	return nil
 }
 
-// listenTCP returns a new TCP listener listening on addr.
+// listenTCP returns a new TCP listener listening on addr.  addr must not be
+// nil.
 func (p *Proxy) listenTCP(ctx context.Context, addr *net.TCPAddr) (ln *net.TCPListener, err error) {
 	addrStr := addr.String()
 	p.logger.InfoContext(ctx, "creating tcp server socket", "addr", addrStr)
@@ -87,9 +88,9 @@ func (p *Proxy) initTLSListeners(ctx context.Context) (err error) {
 }
 
 // tcpPacketLoop listens for incoming TCP packets.  proto must be either
-// [ProtoTCP] or [ProtoTLS].
+// [ProtoTCP] or [ProtoTLS].  l and reqSema must not be nil.
 //
-// See also the comment on Proxy.requestsSema.
+// See also the comment on [Proxy.requestsSema].
 func (p *Proxy) tcpPacketLoop(
 	ctx context.Context,
 	l net.Listener,
@@ -122,7 +123,8 @@ func (p *Proxy) tcpPacketLoop(
 }
 
 // handleTCPConnection starts a loop that handles an incoming TCP connection.
-// proto must be either [ProtoTCP] or [ProtoTLS].
+// proto must be either [ProtoTCP] or [ProtoTLS].  conn and reqSema must not be
+// nil.
 func (p *Proxy) handleTCPConnection(
 	ctx context.Context,
 	conn net.Conn,
@@ -166,7 +168,8 @@ func (p *Proxy) handleTCPConnection(
 }
 
 // readDNSReq returns DNS request message from the given connection or nil if
-// it failed to read it.  Properly logs the error if it happened.
+// it failed to read it.  Properly logs the error if it happened.  conn must not
+// be nil.
 func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn) (req *dns.Msg) {
 	packet, err := readPrefixed(conn)
 	if err != nil {
@@ -190,7 +193,7 @@ func (p *Proxy) readDNSReq(ctx context.Context, conn net.Conn) (req *dns.Msg) {
 const errTooLarge errors.Error = "dns message is too large"
 
 // readPrefixed reads a DNS message with a 2-byte prefix containing message
-// length from conn.
+// length from conn.  conn must not be nil.
 func readPrefixed(conn net.Conn) (b []byte, err error) {
 	l := make([]byte, 2)
 	_, err = conn.Read(l)
@@ -236,11 +239,12 @@ func (p *Proxy) respondTCP(d *DNSContext) error {
 }
 
 // writePrefixed writes a DNS message to a TCP connection it first writes
-// a 2-byte prefix followed by the message itself.
+// a 2-byte prefix followed by the message itself.  conn must not be nil.
 func writePrefixed(b []byte, conn net.Conn) (err error) {
 	l := make([]byte, 2)
 	binary.BigEndian.PutUint16(l, uint16(len(b)))
 	_, err = (&net.Buffers{l, b}).WriteTo(conn)
 
+	// Don't wrap the error, since it's informative enough as is.
 	return err
 }

@@ -275,7 +275,8 @@ func (p *Proxy) synthRR(rr dns.RR, soaTTL uint32) (result dns.RR) {
 }
 
 // performDNS64 returns the upstream that was used to perform DNS64 request, or
-// nil, if the request was not performed.
+// nil, if the request was not performed.  If origResp is not nil, origReq must
+// also not be nil.
 func (p *Proxy) performDNS64(
 	origReq *dns.Msg,
 	origResp *dns.Msg,

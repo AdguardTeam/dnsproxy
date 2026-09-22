@@ -47,17 +47,46 @@ type Proto string
 const (
 	// ProtoUDP is the plain DNS-over-UDP protocol.
 	ProtoUDP Proto = "udp"
+
 	// ProtoTCP is the plain DNS-over-TCP protocol.
 	ProtoTCP Proto = "tcp"
+
 	// ProtoTLS is the DNS-over-TLS (DoT) protocol.
 	ProtoTLS Proto = "tls"
+
 	// ProtoHTTPS is the DNS-over-HTTPS (DoH) protocol.
 	ProtoHTTPS Proto = "https"
+
 	// ProtoQUIC is the DNS-over-QUIC (DoQ) protocol.
 	ProtoQUIC Proto = "quic"
+
 	// ProtoDNSCrypt is the DNSCrypt protocol.
 	ProtoDNSCrypt Proto = "dnscrypt"
 )
+
+// type check
+var _ validate.Interface = Proto("")
+
+// Validate implements the [validate.Interface] for the Proto.
+func (p Proto) Validate() (err error) {
+	switch p {
+	case ProtoTCP, ProtoTLS, ProtoHTTPS, ProtoUDP, ProtoQUIC, ProtoDNSCrypt:
+		return nil
+	default:
+		return newBadProtoError(p)
+	}
+}
+
+// newBadProtoError returns a properly formatted bad enum proto value error for
+// p.
+func newBadProtoError(p Proto) (err error) {
+	return fmt.Errorf(
+		"proto: %w: %q, supported: %q",
+		errors.ErrBadEnumValue,
+		p,
+		[]Proto{ProtoTCP, ProtoTLS, ProtoHTTPS, ProtoUDP, ProtoQUIC, ProtoDNSCrypt},
+	)
+}
 
 // logKeyProto is the key for the DNS protocol in logs.
 const logKeyProto = "proto"
@@ -426,12 +455,12 @@ func New(c *Config) (p *Proxy, err error) {
 		logger:          loggerOrDefault(c.Logger),
 	}
 
-	// TODO(e.burkov):  Validate config separately and add the contract to the
-	// New function.
-	err = p.validateConfig(c)
+	err = c.Validate()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validating config: %w", err)
 	}
+
+	p.logConfigInfo()
 
 	p.cacheOptimisticAnswerTTL = cmp.Or(p.cacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
 	p.cacheOptimisticMaxAge = cmp.Or(p.cacheOptimisticMaxAge, DefaultOptimisticMaxAge)
@@ -485,16 +514,6 @@ func loggerOrDefault(l *slog.Logger) (logger *slog.Logger) {
 	}
 
 	return slog.Default().With(slogutil.KeyPrefix, LogPrefix)
-}
-
-// validateBasicAuth validates the HTTP settings if HTTPConfig.Userinfo is set.
-func (p *Proxy) validateBasicAuth() (err error) {
-	conf := p.httpConf
-	if conf == nil || conf.Userinfo == nil {
-		return nil
-	}
-
-	return validate.NotEmptySlice("HTTPConfig.ListenAddresses", conf.ListenAddresses)
 }
 
 // Returns true if proxy is started.  It is safe for concurrent use.
@@ -556,14 +575,15 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 }
 
 // logClose closes the closer and logs the error at the specified level if it
-// occurs.
+// occurs.  c must not be nil.
 func (p *Proxy) logClose(ctx context.Context, l slog.Level, c io.Closer, msg string, args ...any) {
 	if err := c.Close(); err != nil {
 		p.logger.Log(ctx, l, msg, append(args, slogutil.KeyError, err)...)
 	}
 }
 
-// closeAll closes all closers and appends the occurred errors to errs.
+// closeAll closes all closers and appends the occurred errors to errs.  closers
+// must not contain nil elements.
 func closeAll[C io.Closer](errs []error, closers ...C) (appended []error) {
 	for _, c := range closers {
 		err := c.Close()
@@ -675,8 +695,7 @@ func collectAddrs[A any](addressers []A, af addrFunc[A]) (addrs []net.Addr) {
 }
 
 // Addrs returns all listen addresses for the specified proto or nil if the
-// proxy does not listen to it.  proto must be one of [Proto]: [ProtoTCP],
-// [ProtoUDP], [ProtoTLS], [ProtoHTTPS], [ProtoQUIC], or [ProtoDNSCrypt].
+// proxy does not listen to it.  proto must be valid.
 func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -695,13 +714,12 @@ func (p *Proxy) Addrs(proto Proto) (addrs []net.Addr) {
 	case ProtoDNSCrypt:
 		return collectAddrs(p.dnsCryptServers, (*dnscrypt.Server).LocalAddr)
 	default:
-		// TODO(e.burkov):  Use [errors.ErrBadEnumValue].
-		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
+		panic(newBadProtoError(proto))
 	}
 }
 
 // firstAddr returns the network address of the first entry in the given
-// addressers or nil using the given addrFunc.
+// addressers or nil using the given addrFunc.  af must not be nil.
 func firstAddr[A any](addressers []A, af addrFunc[A]) (addr net.Addr) {
 	if len(addressers) == 0 {
 		return nil
@@ -711,8 +729,7 @@ func firstAddr[A any](addressers []A, af addrFunc[A]) (addr net.Addr) {
 }
 
 // Addr returns the first listen address for the specified proto or nil if the
-// proxy does not listen to it.  proto must be one of [Proto]: [ProtoTCP],
-// [ProtoUDP], [ProtoTLS], [ProtoHTTPS], [ProtoQUIC], or [ProtoDNSCrypt].
+// proxy does not listen to it.  proto must be valid.
 func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -731,13 +748,14 @@ func (p *Proxy) Addr(proto Proto) (addr net.Addr) {
 	case ProtoDNSCrypt:
 		return firstAddr(p.dnsCryptServers, (*dnscrypt.Server).LocalAddr)
 	default:
-		panic("proto must be 'tcp', 'tls', 'https', 'quic', 'dnscrypt' or 'udp'")
+		panic(newBadProtoError(proto))
 	}
 }
 
 // selectUpstreams returns the upstreams to use for the specified host.  It
 // firstly considers custom upstreams if those aren't empty and then the
-// configured ones.  The returned slice may be empty or nil.
+// configured ones.  The returned slice may be empty or nil.  d must not be nil
+// and filled with the client's request.
 func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, isPrivate bool) {
 	q := d.Req.Question[0]
 	host := q.Name
@@ -771,7 +789,8 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 }
 
 // replyFromUpstream tries to resolve the request via configured upstream
-// servers.  It returns true if the response actually came from an upstream.
+// servers.  It returns true if the response actually came from an upstream.  d
+// must not be nil.
 func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	req := d.Req
 
@@ -832,7 +851,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 // handleExchangeResult handles the result after the upstream exchange.  It sets
 // resp and the upstream that has resolved the request in d.  Also, it clears
 // the AA bit in the upstream response.  If resp is nil, it generates a server
-// failure response.  req must not be nil.
+// failure response.  d and req must not be nil.
 func (p *Proxy) handleExchangeResult(
 	ctx context.Context,
 	d *DNSContext,
@@ -877,7 +896,8 @@ func (p *Proxy) addDO(msg *dns.Msg) {
 const defaultUDPBufSize = 2048
 
 // Resolve is the default resolving method used by the DNS proxy to query
-// upstream servers.  It expects dctx is filled with the client's request.
+// upstream servers.  If err is nil, dctx.Res is guaranteed to be non-nil.  dctx
+// must not be nil and must be filled with the client's request.
 func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 	if p.enableEDNSClientSubnet {
 		dctx.processECS(p.ednsAddr, p.logger)
@@ -942,7 +962,7 @@ func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 }
 
 // validateRequest returns a response for invalid request or nil if the request
-// is ok.
+// is ok.  d must not be nil.
 func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 	switch {
 	case len(d.Req.Question) != 1:
@@ -972,7 +992,7 @@ func (p *Proxy) validateRequest(d *DNSContext) (resp *dns.Msg) {
 }
 
 // cacheWorks returns true if the cache works for the given context.  If not, it
-// returns false and logs the reason why.
+// returns false and logs the reason why.  dctx must not be nil.
 func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 	var reason string
 	switch {
@@ -1004,7 +1024,8 @@ func (p *Proxy) cacheWorks(dctx *DNSContext) (ok bool) {
 	return false
 }
 
-// processECS adds EDNS Client Subnet data into the request from d.
+// processECS adds EDNS Client Subnet data into the request from d.  l must not
+// be nil.
 func (dctx *DNSContext) processECS(cliIP net.IP, l *slog.Logger) {
 	if ecs, _ := ecsFromMsg(dctx.Req); ecs != nil {
 		if ones, _ := ecs.Mask.Size(); ones != 0 {

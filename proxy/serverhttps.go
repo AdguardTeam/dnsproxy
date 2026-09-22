@@ -24,8 +24,8 @@ import (
 )
 
 // listenHTTP creates instances of TLS listeners that will be used to run an
-// H1/H2 server.  Returns the address the listener actually listens to (useful
-// in the case if port 0 is specified).
+// HTTP/1.1 and HTTP/2 servers.  It returns the address the listener actually
+// listens to.  addr must not be nil.
 func (p *Proxy) listenHTTP(
 	ctx context.Context,
 	addr *net.TCPAddr,
@@ -34,6 +34,7 @@ func (p *Proxy) listenHTTP(
 	err = p.bindWithRetry(ctx, func() (listenErr error) {
 		tcpListen, listenErr = net.ListenTCP(bootstrap.NetworkTCP, addr)
 
+		// Don't wrap the error since it's informative enough as is.
 		return listenErr
 	})
 	if err != nil {
@@ -57,7 +58,7 @@ func (p *Proxy) listenHTTP(
 }
 
 // listenH3 creates instances of QUIC listeners that will be used for running
-// an HTTP/3 server.
+// an HTTP/3 server.  addr must not be nil.
 func (p *Proxy) listenH3(
 	ctx context.Context,
 	addr *net.UDPAddr,
@@ -139,7 +140,7 @@ func (p *Proxy) initHTTPSListeners(ctx context.Context) (err error) {
 
 // newDoHReq returns new DNS request parsed from the given HTTP request.  In
 // case of invalid request returns nil and the suitable status code for an HTTP
-// error response.  l must not be nil.
+// error response.  r and l must not be nil.
 func newDoHReq(
 	ctx context.Context,
 	r *http.Request,
@@ -195,9 +196,9 @@ func newDoHReq(
 	return req, http.StatusOK
 }
 
-// ServeHTTP is the http.Handler implementation that handles DoH queries.
+// ServeHTTP is the [http.Handler] implementation that handles DoH queries.
 //
-// Here is what it returns:
+// It returns:
 //
 //   - http.StatusNotFound if the request is not encrypted and proxy is not
 //     configured to accept unencrypted requests,
@@ -263,7 +264,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // checkBasicAuth checks the basic authorization data, if necessary, and if the
 // data isn't valid, it writes an error.  shouldHandle is false if the request
-// has been denied.  p.httpConf must not be nil.
+// has been denied.  w, r and p.httpConf must not be nil.
 func (p *Proxy) checkBasicAuth(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -327,7 +328,8 @@ func (p *Proxy) respondHTTPS(d *DNSContext) (err error) {
 
 // realIPFromHdrs extracts the actual client's IP address from the first
 // suitable r's header.  It returns an error if r doesn't contain any
-// information about real client's IP address.  Current headers priority is:
+// information about real client's IP address.  r must not be nil.  Current
+// headers priority is:
 //
 //  1. [httphdr.CFConnectingIP]
 //  2. [httphdr.TrueClientIP]
@@ -355,7 +357,7 @@ func realIPFromHdrs(r *http.Request) (realIP netip.Addr, err error) {
 }
 
 // remoteAddr returns the real client's address and the IP address of the latest
-// proxy server if any.
+// proxy server if any.  r and l must not be nil.
 func remoteAddr(r *http.Request, l *slog.Logger) (addr, prx netip.AddrPort, err error) {
 	host, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {

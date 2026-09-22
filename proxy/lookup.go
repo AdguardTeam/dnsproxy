@@ -13,7 +13,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-// helper struct to pass results of lookupIPAddr function
+// lookupResult represents the result of an IP address lookup.
 type lookupResult struct {
 	resp *dns.Msg
 	err  error

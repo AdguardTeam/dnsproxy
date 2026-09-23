@@ -225,16 +225,10 @@ func (p *dnsOverTLS) exchangeWithConn(
 
 	if p.timeout > 0 {
 		deadline := time.Now().Add(p.timeout)
-		err = dnsConn.SetWriteDeadline(deadline)
+		err = dnsConn.SetDeadline(deadline)
 		if err != nil {
-			return nil, fmt.Errorf("setting write deadline: %w", err)
+			return nil, fmt.Errorf("setting connection deadline: %w", err)
 		}
-
-		err = dnsConn.SetReadDeadline(deadline)
-		if err != nil {
-			return nil, fmt.Errorf("setting read deadline: %w", err)
-		}
-
 	}
 
 	err = dnsConn.WriteMsg(req)

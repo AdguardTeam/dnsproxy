@@ -76,19 +76,20 @@ func (f *FastestAddr) pingAll(ctx context.Context, host string, ips []netip.Addr
 	pr, scheduled := f.schedulePings(ctx, resCh, ips, host)
 	if !scheduled {
 		if pr != nil {
-			f.logger.Debug(
+			f.logger.DebugContext(
+				ctx,
 				"pinging all returns cached response",
 				"host", host,
 				"addr", pr.addrPort,
 			)
 		} else {
-			f.logger.Debug("pinging all returns nothing", "host", host)
+			f.logger.DebugContext(ctx, "pinging all returns nothing", "host", host)
 		}
 
 		return pr
 	}
 
-	res := f.firstSuccessRes(resCh, host)
+	res := f.firstSuccessRes(ctx, resCh, host)
 	if res == nil {
 		// In case of timeout return cached or nil.
 		return pr
@@ -105,12 +106,17 @@ func (f *FastestAddr) pingAll(ctx context.Context, host string, ips []netip.Addr
 
 // firstSuccessRes waits and returns the first successful ping result or nil in
 // case of timeout.
-func (f *FastestAddr) firstSuccessRes(resCh chan *pingResult, host string) (res *pingResult) {
+func (f *FastestAddr) firstSuccessRes(
+	ctx context.Context,
+	resCh chan *pingResult,
+	host string,
+) (res *pingResult) {
 	after := time.After(f.pingWaitTimeout)
 	for {
 		select {
 		case res = <-resCh:
-			f.logger.Debug(
+			f.logger.DebugContext(
+				ctx,
 				"pinging all got result",
 				"host", host,
 				"addr", res.addrPort,
@@ -123,7 +129,7 @@ func (f *FastestAddr) firstSuccessRes(resCh chan *pingResult, host string) (res 
 
 			return res
 		case <-after:
-			f.logger.Debug("pinging all timed out", "host", host)
+			f.logger.DebugContext(ctx, "pinging all timed out", "host", host)
 
 			return nil
 		}
@@ -138,16 +144,18 @@ func (f *FastestAddr) pingDoTCP(
 	resCh chan *pingResult,
 ) {
 	l := f.logger.With("host", host, "addr", addrPort)
-	l.Debug("open tcp connection")
+	l.DebugContext(ctx, "open tcp connection")
 
 	start := time.Now()
-	conn, err := f.pinger.DialContext(ctx, bootstrap.NetworkTCP, addrPort.String())
+
+	// TODO(f.setrakov): Respect context timeout.
+	conn, err := f.pinger.Dial(bootstrap.NetworkTCP, addrPort.String())
 	elapsed := time.Since(start)
 
 	success := err == nil
 	if success {
 		if cErr := conn.Close(); cErr != nil {
-			l.Debug("closing tcp connection", slogutil.KeyError, cErr)
+			l.DebugContext(ctx, "closing tcp connection", slogutil.KeyError, cErr)
 		}
 	}
 
@@ -161,10 +169,15 @@ func (f *FastestAddr) pingDoTCP(
 
 	addr := addrPort.Addr().Unmap()
 	if success {
-		l.Debug("tcp ping success", "elapsed", elapsed)
+		l.DebugContext(ctx, "tcp ping success", "elapsed", elapsed)
 		f.cacheAddSuccessful(addr, latency)
 	} else {
-		l.Debug("tcp ping failed to connect", "elapsed", elapsed, slogutil.KeyError, err)
+		l.DebugContext(
+			ctx,
+			"tcp ping failed to connect",
+			"elapsed", elapsed,
+			slogutil.KeyError, err,
+		)
 		f.cacheAddFailure(addr)
 	}
 }

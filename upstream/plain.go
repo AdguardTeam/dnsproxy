@@ -114,7 +114,11 @@ func (p *plainDNS) dialExchange(
 	logBegin(ctx, p.logger, addr, network, upstreamReq)
 	defer func() { logFinish(ctx, p.logger, addr, network, err) }()
 
-	conn.Conn, err = dial(ctx, network, "")
+	// NOTE: Discard context timeout to prevent deadline sharing between dial
+	// calls.
+	//
+	// TODO(f.setrakov): Consider supporting context timeout here.
+	conn.Conn, err = dial(context.WithoutCancel(ctx), network, "")
 	if err != nil {
 		return nil, fmt.Errorf("dialing %s over %s: %w", p.addr.Host, network, err)
 	}
@@ -128,7 +132,7 @@ func (p *plainDNS) dialExchange(
 			defer cancel()
 		}
 
-		conn.Conn, err = dial(ctx, network, "")
+		conn.Conn, err = dial(context.WithoutCancel(ctx), network, "")
 		if err != nil {
 			return nil, fmt.Errorf("dialing %s over %s again: %w", p.addr.Host, network, err)
 		}

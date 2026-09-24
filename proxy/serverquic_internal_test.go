@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_handleDNSRequest_quic(t *testing.T) {
+func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 
 	roots := x509.NewCertPool()
@@ -35,7 +35,7 @@ func TestProxy_handleDNSRequest_quic(t *testing.T) {
 		Logger:         testLogger,
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 	}
 
@@ -63,7 +63,7 @@ func TestProxy_handleDNSRequest_quic(t *testing.T) {
 	require.False(t, t.Failed())
 
 	conf.QUICListenAddr = []*net.UDPAddr{addr}
-	conf.UpstreamConfig = newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr)
+	conf.UpstreamConfig = newTestUpstreamConfig(t, newTestUpstream(t))
 
 	t.Run("rerun", func(t *testing.T) {
 		dnsProxy := mustNew(t, conf)
@@ -83,19 +83,21 @@ func TestProxy_handleDNSRequest_quic(t *testing.T) {
 	})
 }
 
-func TestProxy_handleDNSRequest_quicLargePackets(t *testing.T) {
-	reqHandler := &testHandler{
-		OnHandle: func(_ context.Context, _ *Proxy, d *DNSContext) (err error) {
-			d.Res = newTestResponse(d)
+func TestProxy_HandleDNSRequest_quicLargePackets(t *testing.T) {
+	onHandle := func(_ context.Context, _ *Proxy, d *DNSContext) (err error) {
+		d.Res = dnsproxytest.NewTestResponse(d.Req)
 
-			return nil
-		},
+		return nil
+	}
+
+	reqHandler := &testHandler{
+		OnHandle: onHandle,
 	}
 
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 	dnsProxy := mustNew(t, &Config{
 		Logger:         testLogger,
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		RequestHandler: reqHandler,
 		TLSConfig:      serverConfig,
@@ -138,14 +140,14 @@ func TestProxy_handleDNSRequest_quicLargePackets(t *testing.T) {
 	dnsproxytest.RequireResponse(t, msg, resp)
 }
 
-func TestProxy_handleDNSRequest_quicTruncatedRequest(t *testing.T) {
+func TestProxy_HandleDNSRequest_quicTruncatedRequest(t *testing.T) {
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 
 	conf := &Config{
 		Logger:         testLogger,
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		RequestHandler: &testHandler{
 			OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (_ error) {
@@ -216,22 +218,6 @@ func TestProxy_handleDNSRequest_quicTruncatedRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Greater(t, n, minDNSPacketSize)
-}
-
-// newTestResponse creates a test response for the specified request.
-func newTestResponse(d *DNSContext) (resp *dns.Msg) {
-	resp = &dns.Msg{}
-	resp.SetReply(d.Req)
-	resp.Answer = []dns.RR{&dns.A{
-		Hdr: dns.RR_Header{
-			Name:   d.Req.Question[0].Name,
-			Rrtype: dns.TypeA,
-			Class:  dns.ClassINET,
-		},
-		A: net.IP{8, 8, 8, 8},
-	}}
-
-	return resp
 }
 
 // sendQUICMessage sends msg to the specified QUIC connection.

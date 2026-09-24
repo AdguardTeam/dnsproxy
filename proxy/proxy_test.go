@@ -28,9 +28,6 @@ const (
 
 	// testTTL is a common time-to-live value in seconds for tests.
 	testTTL = 60
-
-	// testDefaultUpstreamAddr is the default upstream address for tests.
-	testDefaultUpstreamAddr = "8.8.8.8:53"
 )
 
 var (
@@ -41,24 +38,30 @@ var (
 	testIPv4 = net.IP{192, 0, 2, 0}
 )
 
-// newTestUpstreamConfig creates a new UpstreamConfig with given upstream
-// addresses and timeout.
+// newTestUpstreamConfig creates a new upstream config with the default mock
+// upstream, which expects the request will contain a single question with the
+// [proxytest.Host] name.
 //
-// TODO(f.setrakov): Dry with internal version.
-func newTestUpstreamConfig(
-	tb testing.TB,
-	timeout time.Duration,
-	addrs ...string,
-) (u *proxy.UpstreamConfig) {
-	tb.Helper()
+// TODO(f.setrakov): DRY with internal version.
+func newTestUpstreamConfig(tb testing.TB) (uc *proxy.UpstreamConfig) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
+		pt := testutil.NewPanicT(tb)
 
-	upsConf, err := proxy.ParseUpstreamsConfig(addrs, &upstream.Options{
-		Logger:  testLogger,
-		Timeout: timeout,
-	})
-	require.NoError(tb, err)
+		require.Len(pt, req.Question, 1)
+		assert.Equal(pt, dns.Fqdn(proxytest.Host), req.Question[0].Name)
 
-	return upsConf
+		return proxytest.NewTestResponse(req), nil
+	}
+
+	u := &dnsproxytest.Upstream{
+		OnAddress:  func() (addr string) { return "" },
+		OnExchange: onExchange,
+		OnClose:    func() (err error) { return nil },
+	}
+
+	return &proxy.UpstreamConfig{
+		Upstreams: []upstream.Upstream{u},
+	}
 }
 
 // mustStartDefaultProxy starts a new proxy with default settings and returns
@@ -70,7 +73,7 @@ func mustStartDefaultProxy(tb testing.TB) (p *proxy.Proxy) {
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(tb, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: newTestUpstreamConfig(tb),
 		TrustedProxies: proxytest.DefaultTrustedProxies,
 	})
 	require.NoError(tb, err)
@@ -181,15 +184,9 @@ func isCachedWithCustomConfig(
 	return s[0].IsCached
 }
 
-// TODO(f.setrakov): Make it work without a real network.
 func TestProxy_HandleDNSRequest_race(t *testing.T) {
-	upsConf := newTestUpstreamConfig(
-		t,
-		defaultTimeout,
-		// Use the same upstream twice so that we could rotate them
-		testDefaultUpstreamAddr,
-		testDefaultUpstreamAddr,
-	)
+	upsConf := newTestUpstreamConfig(t)
+
 	dnsProxy, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
@@ -222,17 +219,18 @@ func TestProxy_HandleDNSRequest_race(t *testing.T) {
 
 			require.NotNil(pt, res)
 			require.Len(pt, res.Answer, 1)
+
+			a := testutil.RequireTypeAssert[*dns.A](pt, res.Answer[0])
 			require.IsType(pt, &dns.A{}, res.Answer[0])
 
-			a := res.Answer[0].(*dns.A)
-			require.Equal(pt, net.IPv4(8, 8, 8, 8), a.A.To16())
+			require.Equal(pt, proxytest.IPv4.To16(), a.A.To16())
 		})
 	}
 
 	wg.Wait()
 }
 
-func TestProxy_handleDNSRequest_responseInRequest(t *testing.T) {
+func TestProxy_HandleDNSRequest_responseInRequest(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	addr := dnsProxy.Addr(proxy.ProtoTCP)

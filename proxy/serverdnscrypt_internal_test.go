@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDNSCryptProxy(t *testing.T) {
+func TestProxy_HandleDNSRequest_dnscrypt(t *testing.T) {
 	t.Parallel()
 
 	// Prepare the proxy server.
@@ -46,7 +46,6 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 	require.NoError(tb, err)
 
 	port := nettest.NewFreePort(tb)
-	upstreamConf := newTestUpstreamConfig(tb, defaultTimeout, testDefaultUpstreamAddr)
 	p = mustNew(tb, &Config{
 		Logger: testLogger,
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{
@@ -55,7 +54,7 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 		DNSCryptTCPListenAddr: []*net.TCPAddr{{
 			Port: int(port), IP: net.ParseIP(listenIP),
 		}},
-		UpstreamConfig:         upstreamConf,
+		UpstreamConfig:         newTestUpstreamConfig(tb, newTestUpstream(tb)),
 		TrustedProxies:         dnsproxytest.DefaultTrustedProxies,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,

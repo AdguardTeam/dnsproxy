@@ -52,7 +52,7 @@ func TestServeCached(t *testing.T) {
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		DNSSECEnabled:  false,
 		CacheEnabled:   true,
@@ -305,7 +305,7 @@ func TestCacheExpiration(t *testing.T) {
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		CacheEnabled:   true,
 	})
@@ -360,7 +360,7 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 	var ans []dns.RR
 
 	onExchange := newECSReplyHandler(&ans, nil, nil)
-	u := newTestECSUpstream(onExchange)
+	u := newTestUpstreamWithExchange(t, onExchange)
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,

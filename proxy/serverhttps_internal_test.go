@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_handleDNSRequest_https(t *testing.T) {
+func TestProxy_HandleDNSRequest_https(t *testing.T) {
 	testCases := []struct {
 		name  string
 		http3 bool
@@ -49,7 +49,7 @@ func TestProxy_handleDNSRequest_https(t *testing.T) {
 				TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 				QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
 				TLSConfig:      tlsConf,
-				UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+				UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 				HTTPConfig:     httpConf,
 			})
@@ -70,7 +70,7 @@ func TestProxy_handleDNSRequest_https(t *testing.T) {
 	}
 }
 
-func TestProxy_handleDNSRequest_trustedProxies(t *testing.T) {
+func TestProxy_HandleDNSRequest_trustedProxies(t *testing.T) {
 	var (
 		clientAddr = netip.MustParseAddr("1.2.3.4")
 		proxyAddr  = netip.MustParseAddr("127.0.0.1")
@@ -93,7 +93,7 @@ func TestProxy_handleDNSRequest_trustedProxies(t *testing.T) {
 		}
 		dnsProxy := mustNew(t, &Config{
 			Logger:         testLogger,
-			UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+			UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 			TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 			RequestHandler: reqHandler,
 			TLSConfig:      tlsConf,

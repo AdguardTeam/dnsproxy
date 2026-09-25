@@ -1,144 +1,34 @@
 package proxy
 
 import (
-	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
-	"fmt"
-	"io"
-	"net"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/AdguardTeam/golibs/testutil/servicetest"
-	"github.com/miekg/dns"
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_HandleDNSRequest_https(t *testing.T) {
-	testCases := []struct {
-		name  string
-		http3 bool
-	}{{
-		name:  "https_proxy",
-		http3: false,
-	}, {
-		name:  "h3_proxy",
-		http3: true,
-	}}
+// Common IP address strings for tests.
+const (
+	testIPStr1 = "192.0.2.1"
+	testIPStr2 = "192.0.2.2"
+	testIPStr3 = "192.0.2.3"
+)
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			tlsConf, caPem := dnsproxytest.NewTLSConfig(t)
+// Common IP adresses for tests.
+var (
+	testIP1 = netip.MustParseAddr(testIPStr1)
+	testIP2 = netip.MustParseAddr(testIPStr2)
 
-			httpConf := &HTTPConfig{
-				ListenAddresses: []netip.AddrPort{dnsproxytest.LocalhostAnyPort},
-				HTTP3Enabled:    tc.http3,
-			}
-			dnsProxy := mustNew(t, &Config{
-				Logger:         testLogger,
-				TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-				QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-				TLSConfig:      tlsConf,
-				UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
-				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
-				HTTPConfig:     httpConf,
-			})
-
-			servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
-
-			// Create the HTTP client that we'll be using for this test.
-			client := createTestHTTPClient(dnsProxy, caPem, tc.http3)
-
-			// Prepare a test message to be sent to the server.
-			msg := dnsproxytest.NewTestRequest()
-
-			// Send the test message and check if the response is what we
-			// expected.
-			resp := sendTestDoHMessage(t, client, msg, nil)
-			dnsproxytest.RequireResponse(t, msg, resp)
-		})
-	}
-}
-
-func TestProxy_HandleDNSRequest_trustedProxies(t *testing.T) {
-	var (
-		clientAddr = netip.MustParseAddr("1.2.3.4")
-		proxyAddr  = netip.MustParseAddr("127.0.0.1")
-	)
-
-	doRequest := func(t *testing.T, addr, expectedClientIP netip.Addr) {
-		var gotAddr netip.Addr
-		reqHandler := &testHandler{
-			OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (err error) {
-				gotAddr = d.Addr.Addr()
-
-				return p.Resolve(ctx, d)
-			},
-		}
-
-		// Prepare the proxy server.
-		tlsConf, caPem := dnsproxytest.NewTLSConfig(t)
-		httpConf := &HTTPConfig{
-			ListenAddresses: []netip.AddrPort{dnsproxytest.LocalhostAnyPort},
-		}
-		dnsProxy := mustNew(t, &Config{
-			Logger:         testLogger,
-			UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
-			TrustedProxies: dnsproxytest.DefaultTrustedProxies,
-			RequestHandler: reqHandler,
-			TLSConfig:      tlsConf,
-			TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-			QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-			HTTPConfig:     httpConf,
-		})
-
-		client := createTestHTTPClient(dnsProxy, caPem, false)
-
-		msg := dnsproxytest.NewTestRequest()
-
-		dnsProxy.trustedProxies = netip.PrefixFrom(addr, addr.BitLen())
-
-		servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
-
-		hdrs := map[string]string{
-			"X-Forwarded-For": strings.Join([]string{clientAddr.String(), proxyAddr.String()}, ","),
-		}
-
-		resp := sendTestDoHMessage(t, client, msg, hdrs)
-		dnsproxytest.RequireResponse(t, msg, resp)
-
-		require.Equal(t, expectedClientIP, gotAddr)
-	}
-
-	t.Run("success", func(t *testing.T) {
-		doRequest(t, proxyAddr, clientAddr)
-	})
-
-	t.Run("not_in_trusted", func(t *testing.T) {
-		doRequest(t, netip.MustParseAddr("127.0.0.2"), proxyAddr)
-	})
-}
+	testRaddr = netip.AddrPortFrom(testIP1, 1234)
+)
 
 func TestRealIPFromHdrs(t *testing.T) {
 	t.Parallel()
-
-	var (
-		theIP     = netip.AddrFrom4([4]byte{1, 2, 3, 4})
-		anotherIP = netip.AddrFrom4([4]byte{1, 2, 3, 5})
-
-		theIPStr     = theIP.String()
-		anotherIPStr = anotherIP.String()
-	)
 
 	testCases := []struct {
 		name    string
@@ -148,23 +38,30 @@ func TestRealIPFromHdrs(t *testing.T) {
 	}{{
 		name: "cf-connecting-ip",
 		hdrs: map[string]string{
-			"CF-Connecting-IP": theIPStr,
+			"CF-Connecting-IP": testIPStr1,
 		},
-		wantIP:  theIP,
+		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "true-client-ip",
 		hdrs: map[string]string{
-			"True-Client-IP": theIPStr,
+			"True-Client-IP": testIPStr1,
 		},
-		wantIP:  theIP,
+		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "x-real-ip",
 		hdrs: map[string]string{
-			"X-Real-IP": theIPStr,
+			"X-Real-IP": testIPStr1,
 		},
-		wantIP:  theIP,
+		wantIP:  testIP1,
+		wantErr: "",
+	}, {
+		name: "cf-connecting-ip_redundant_spaces",
+		hdrs: map[string]string{
+			"CF-Connecting-IP": "  " + testIPStr1 + "\t",
+		},
+		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "no_any",
@@ -178,33 +75,74 @@ func TestRealIPFromHdrs(t *testing.T) {
 	}, {
 		name: "priority",
 		hdrs: map[string]string{
-			"X-Forwarded-For":  strings.Join([]string{anotherIPStr, theIPStr}, ","),
-			"True-Client-IP":   anotherIPStr,
-			"X-Real-IP":        anotherIPStr,
-			"CF-Connecting-IP": theIPStr,
+			"X-Forwarded-For":  strings.Join([]string{testIPStr2, testIPStr1}, ","),
+			"True-Client-IP":   testIPStr2,
+			"X-Real-IP":        testIPStr2,
+			"CF-Connecting-IP": testIPStr1,
 		},
-		wantIP:  theIP,
+		wantIP:  testIP1,
 		wantErr: "",
-	}, {
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			testRealIPFromHdrs(t, tc.hdrs, tc.wantIP, tc.wantErr)
+		})
+	}
+}
+
+// testRealIPFromHdrs checks that realIPFromHdrs returns wantIP and wantErrMsg
+// for headers.
+func testRealIPFromHdrs(
+	t testing.TB,
+	headers map[string]string,
+	wantIP netip.Addr,
+	wantErrMsg string,
+) {
+	r, err := http.NewRequest(http.MethodGet, "localhost", nil)
+	require.NoError(t, err)
+
+	for h, v := range headers {
+		r.Header.Set(h, v)
+	}
+
+	var ip netip.Addr
+	ip, err = realIPFromHdrs(r)
+	testutil.AssertErrorMsg(t, wantErrMsg, err)
+
+	assert.Equal(t, wantIP, ip)
+}
+
+func TestRealIPFromHdrs_xff(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		hdrs    map[string]string
+		wantIP  netip.Addr
+		wantErr string
+	}{{
 		name: "x-forwarded-for_simple",
 		hdrs: map[string]string{
-			"X-Forwarded-For": strings.Join([]string{anotherIPStr, theIPStr}, ","),
+			"X-Forwarded-For": strings.Join([]string{testIPStr2, testIPStr1}, ","),
 		},
-		wantIP:  anotherIP,
+		wantIP:  testIP2,
 		wantErr: "",
 	}, {
 		name: "x-forwarded-for_single",
 		hdrs: map[string]string{
-			"X-Forwarded-For": theIPStr,
+			"X-Forwarded-For": testIPStr1,
 		},
-		wantIP:  theIP,
+		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "x-forwarded-for_invalid_proxy",
 		hdrs: map[string]string{
-			"X-Forwarded-For": strings.Join([]string{theIPStr, "invalid"}, ","),
+			"X-Forwarded-For": strings.Join([]string{testIPStr1, "invalid"}, ","),
 		},
-		wantIP:  theIP,
+		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "x-forwarded-for_empty",
@@ -216,56 +154,106 @@ func TestRealIPFromHdrs(t *testing.T) {
 	}, {
 		name: "x-forwarded-for_redundant_spaces",
 		hdrs: map[string]string{
-			"X-Forwarded-For": "  " + theIPStr + "   ,\t" + anotherIPStr,
+			"X-Forwarded-For": "  " + testIPStr1 + "   ,\t" + testIPStr2,
 		},
-		wantIP:  theIP,
-		wantErr: "",
-	}, {
-		name: "cf-connecting-ip_redundant_spaces",
-		hdrs: map[string]string{
-			"CF-Connecting-IP": "  " + theIPStr + "\t",
-		},
-		wantIP:  theIP,
+		wantIP:  testIP1,
 		wantErr: "",
 	}}
 
 	for _, tc := range testCases {
-
-		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
-		require.NoError(t, err)
-
-		for h, v := range tc.hdrs {
-			r.Header.Set(h, v)
-		}
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var ip netip.Addr
-			ip, err = realIPFromHdrs(r)
-			testutil.AssertErrorMsg(t, tc.wantErr, err)
-
-			assert.Equal(t, tc.wantIP, ip)
+			testRealIPFromHdrs(t, tc.hdrs, tc.wantIP, tc.wantErr)
 		})
 	}
 }
 
-func TestRemoteAddr(t *testing.T) {
+func TestRemoteAddr_direct(t *testing.T) {
 	t.Parallel()
 
-	const thePort = 4321
+	testCases := []struct {
+		name       string
+		remoteAddr string
+		hdrs       map[string]string
+		wantErr    string
+		wantIP     netip.AddrPort
+	}{{
+		name:       "no_proxy",
+		remoteAddr: testRaddr.String(),
+		hdrs:       nil,
+		wantErr:    "",
+		wantIP:     testRaddr,
+	}, {
+		name:       "no_port",
+		remoteAddr: testIPStr1,
+		hdrs:       nil,
+		wantErr:    "not an ip:port",
+		wantIP:     netip.AddrPort{},
+	}, {
+		name:       "bad_port",
+		remoteAddr: testIPStr1 + ":notport",
+		hdrs:       nil,
+		wantErr:    `invalid port "notport" parsing "` + testIPStr1 + `:notport"`,
+		wantIP:     netip.AddrPort{},
+	}, {
+		name:       "bad_host",
+		remoteAddr: "host:1",
+		hdrs:       nil,
+		wantErr:    `ParseAddr("host"): unable to parse IP`,
+		wantIP:     netip.AddrPort{},
+	}, {
+		name:       "bad_proxied_host",
+		remoteAddr: "host:1",
+		hdrs: map[string]string{
+			"CF-Connecting-IP": testIPStr1,
+		},
+		wantErr: `ParseAddr("host"): unable to parse IP`,
+		wantIP:  netip.AddrPort{},
+	}}
 
-	var (
-		theIP     = netip.AddrFrom4([4]byte{1, 2, 3, 4})
-		anotherIP = netip.AddrFrom4([4]byte{1, 2, 3, 5})
-		thirdIP   = netip.AddrFrom4([4]byte{1, 2, 3, 6})
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		theIPStr     = theIP.String()
-		anotherIPStr = anotherIP.String()
-		thirdIPStr   = thirdIP.String()
-	)
+			testRemoteAddr(t, tc.remoteAddr, tc.hdrs, tc.wantErr, tc.wantIP, netip.AddrPort{})
+		})
+	}
+}
 
-	rAddr := netip.AddrPortFrom(theIP, thePort)
+// testRemoteAddr makes sure that remoteAddr returns expected IP and proxy for
+// given raddr and headers.
+func testRemoteAddr(
+	tb testing.TB,
+	raddr string,
+	headers map[string]string,
+	wantErrMsg string,
+	wantIP netip.AddrPort,
+	wantProxy netip.AddrPort,
+) {
+	r, err := http.NewRequest(http.MethodGet, dnsproxytest.Host, nil)
+	require.NoError(tb, err)
+
+	r.RemoteAddr = raddr
+	for h, v := range headers {
+		r.Header.Set(h, v)
+	}
+
+	var addr, prx netip.AddrPort
+	addr, prx, err = remoteAddr(r, testLogger)
+	if wantErrMsg != "" {
+		testutil.AssertErrorMsg(tb, wantErrMsg, err)
+
+		return
+	}
+
+	require.NoError(tb, err)
+	assert.Equal(tb, wantIP, addr)
+	assert.Equal(tb, wantProxy, prx)
+}
+
+func TestRemoteAddr_proxied(t *testing.T) {
+	t.Parallel()
 
 	testCases := []struct {
 		name       string
@@ -275,203 +263,39 @@ func TestRemoteAddr(t *testing.T) {
 		wantIP     netip.AddrPort
 		wantProxy  netip.AddrPort
 	}{{
-		name:       "no_proxy",
-		remoteAddr: rAddr.String(),
-		hdrs:       nil,
-		wantErr:    "",
-		wantIP:     netip.AddrPortFrom(theIP, thePort),
-		wantProxy:  netip.AddrPort{},
-	}, {
 		name:       "proxied_with_cloudflare",
-		remoteAddr: rAddr.String(),
+		remoteAddr: testRaddr.String(),
 		hdrs: map[string]string{
-			"CF-Connecting-IP": anotherIPStr,
+			"CF-Connecting-IP": testIPStr2,
 		},
 		wantErr:   "",
-		wantIP:    netip.AddrPortFrom(anotherIP, 0),
-		wantProxy: netip.AddrPortFrom(theIP, thePort),
+		wantIP:    netip.AddrPortFrom(testIP2, 0),
+		wantProxy: testRaddr,
 	}, {
 		name:       "proxied_once",
-		remoteAddr: rAddr.String(),
+		remoteAddr: testRaddr.String(),
 		hdrs: map[string]string{
-			"X-Forwarded-For": anotherIPStr,
+			"X-Forwarded-For": testIPStr2,
 		},
 		wantErr:   "",
-		wantIP:    netip.AddrPortFrom(anotherIP, 0),
-		wantProxy: netip.AddrPortFrom(theIP, thePort),
+		wantIP:    netip.AddrPortFrom(testIP2, 0),
+		wantProxy: testRaddr,
 	}, {
 		name:       "proxied_multiple",
-		remoteAddr: rAddr.String(),
+		remoteAddr: testRaddr.String(),
 		hdrs: map[string]string{
-			"X-Forwarded-For": strings.Join([]string{anotherIPStr, thirdIPStr}, ","),
+			"X-Forwarded-For": strings.Join([]string{testIPStr2, testIPStr3}, ","),
 		},
 		wantErr:   "",
-		wantIP:    netip.AddrPortFrom(anotherIP, 0),
-		wantProxy: netip.AddrPortFrom(theIP, thePort),
-	}, {
-		name:       "no_port",
-		remoteAddr: theIPStr,
-		hdrs:       nil,
-		wantErr:    "not an ip:port",
-		wantIP:     netip.AddrPort{},
-		wantProxy:  netip.AddrPort{},
-	}, {
-		name:       "bad_port",
-		remoteAddr: theIPStr + ":notport",
-		hdrs:       nil,
-		wantErr:    `invalid port "notport" parsing "1.2.3.4:notport"`,
-		wantIP:     netip.AddrPort{},
-		wantProxy:  netip.AddrPort{},
-	}, {
-		name:       "bad_host",
-		remoteAddr: "host:1",
-		hdrs:       nil,
-		wantErr:    `ParseAddr("host"): unable to parse IP`,
-		wantIP:     netip.AddrPort{},
-		wantProxy:  netip.AddrPort{},
-	}, {
-		name:       "bad_proxied_host",
-		remoteAddr: "host:1",
-		hdrs: map[string]string{
-			"CF-Connecting-IP": theIPStr,
-		},
-		wantErr:   `ParseAddr("host"): unable to parse IP`,
-		wantIP:    netip.AddrPort{},
-		wantProxy: netip.AddrPort{},
+		wantIP:    netip.AddrPortFrom(testIP2, 0),
+		wantProxy: testRaddr,
 	}}
 
 	for _, tc := range testCases {
-		r, err := http.NewRequest(http.MethodGet, "localhost", nil)
-		require.NoError(t, err)
-
-		r.RemoteAddr = tc.remoteAddr
-		for h, v := range tc.hdrs {
-			r.Header.Set(h, v)
-		}
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var addr, prx netip.AddrPort
-			addr, prx, err = remoteAddr(r, testLogger)
-			if tc.wantErr != "" {
-				testutil.AssertErrorMsg(t, tc.wantErr, err)
-
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tc.wantIP, addr)
-			assert.Equal(t, tc.wantProxy, prx)
+			testRemoteAddr(t, tc.remoteAddr, tc.hdrs, tc.wantErr, tc.wantIP, tc.wantProxy)
 		})
-	}
-}
-
-// sendTestDoHMessage sends the specified DNS message using client and returns
-// the DNS response.
-func sendTestDoHMessage(
-	t *testing.T,
-	client *http.Client,
-	m *dns.Msg,
-	hdrs map[string]string,
-) (resp *dns.Msg) {
-	packed, err := m.Pack()
-	require.NoError(t, err)
-
-	u := url.URL{
-		Scheme:   "https",
-		Host:     dnsproxytest.TLSServerName,
-		Path:     "/dns-query",
-		RawQuery: fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(packed)),
-	}
-
-	method := http.MethodGet
-	if _, ok := client.Transport.(*http3.Transport); ok {
-		// If we're using HTTP/3, use http3.MethodGet0RTT to force using 0-RTT.
-		method = http3.MethodGet0RTT
-	}
-
-	req, err := http.NewRequest(method, u.String(), nil)
-	require.NoError(t, err)
-
-	req.Header.Set("Content-Type", "application/dns-message")
-	req.Header.Set("Accept", "application/dns-message")
-
-	for k, v := range hdrs {
-		req.Header.Set(k, v)
-	}
-
-	httpResp, err := client.Do(req) // nolint:bodyclose
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, httpResp.Body.Close)
-
-	require.True(
-		t,
-		httpResp.ProtoAtLeast(2, 0),
-		"the proto is too old: %s",
-		httpResp.Proto,
-	)
-
-	body, err := io.ReadAll(httpResp.Body)
-	require.NoError(t, err)
-
-	resp = &dns.Msg{}
-	err = resp.Unpack(body)
-	require.NoError(t, err)
-
-	return resp
-}
-
-// createTestHTTPClient creates an *http.Client that will be used to send
-// requests to the specified dnsProxy.
-func createTestHTTPClient(dnsProxy *Proxy, caPem []byte, http3Enabled bool) (client *http.Client) {
-	// prepare roots list so that the server cert was successfully validated.
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(caPem)
-	tlsClientConfig := &tls.Config{
-		ServerName: dnsproxytest.TLSServerName,
-		RootCAs:    roots,
-	}
-
-	var transport http.RoundTripper
-
-	if http3Enabled {
-		tlsClientConfig.NextProtos = []string{"h3"}
-
-		transport = &http3.Transport{
-			Dial: func(
-				ctx context.Context,
-				_ string,
-				tlsCfg *tls.Config,
-				cfg *quic.Config,
-			) (*quic.Conn, error) {
-				addr := dnsProxy.Addr(ProtoHTTPS).String()
-				return quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
-			},
-			TLSClientConfig:    tlsClientConfig,
-			QUICConfig:         &quic.Config{},
-			DisableCompression: true,
-		}
-	} else {
-		dialer := &net.Dialer{
-			Timeout: defaultTimeout,
-		}
-		dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
-			// Route request to the DNS-over-HTTPS server address.
-			return dialer.DialContext(ctx, network, dnsProxy.Addr(ProtoHTTPS).String())
-		}
-
-		tlsClientConfig.NextProtos = []string{"h2", "http/1.1"}
-		transport = &http.Transport{
-			TLSClientConfig:    tlsClientConfig,
-			DisableCompression: true,
-			DialContext:        dialContext,
-			ForceAttemptHTTP2:  true,
-		}
-	}
-
-	return &http.Client{
-		Transport: transport,
-		Timeout:   defaultTimeout,
 	}
 }

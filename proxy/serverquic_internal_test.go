@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TODO(e.burkov): Externalize this test.
 func TestProxy_HandleDNSRequest_quicTruncatedRequest(t *testing.T) {
 	t.Parallel()
 

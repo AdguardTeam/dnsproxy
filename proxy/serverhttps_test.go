@@ -127,13 +127,13 @@ func TestProxy_HandleDNSRequest_trustedProxies(t *testing.T) {
 		require.Equal(t, expectedClientIP, gotAddr)
 	}
 
-	t.Run("success", func(t *testing.T) {
+	require.True(t, t.Run("success", func(t *testing.T) {
 		doRequest(t, proxyAddr, clientAddr)
-	})
+	}))
 
-	t.Run("not_in_trusted", func(t *testing.T) {
+	require.True(t, t.Run("not_in_trusted", func(t *testing.T) {
 		doRequest(t, netip.MustParseAddr("127.0.0.2"), proxyAddr)
-	})
+	}))
 }
 
 // createTestHTTPClient creates an *http.Client that will be used to send
@@ -197,13 +197,13 @@ func createTestHTTPClient(
 // sendTestDoHMessage sends the specified DNS message using client and returns
 // the DNS response.
 func sendTestDoHMessage(
-	t *testing.T,
+	tb testing.TB,
 	client *http.Client,
 	m *dns.Msg,
 	hdrs map[string]string,
 ) (resp *dns.Msg) {
 	packed, err := m.Pack()
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	u := url.URL{
 		Scheme:   "https",
@@ -219,7 +219,7 @@ func sendTestDoHMessage(
 	}
 
 	req, err := http.NewRequest(method, u.String(), nil)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
@@ -228,23 +228,23 @@ func sendTestDoHMessage(
 		req.Header.Set(k, v)
 	}
 
-	httpResp, err := client.Do(req) // nolint:bodyclose
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, httpResp.Body.Close)
+	httpResp, err := client.Do(req)
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, httpResp.Body.Close)
 
 	require.True(
-		t,
+		tb,
 		httpResp.ProtoAtLeast(2, 0),
 		"the proto is too old: %s",
 		httpResp.Proto,
 	)
 
 	body, err := io.ReadAll(httpResp.Body)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	resp = &dns.Msg{}
 	err = resp.Unpack(body)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	return resp
 }

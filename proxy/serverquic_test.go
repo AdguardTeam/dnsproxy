@@ -64,26 +64,28 @@ func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 // testHandleDNSRequestQUIC starts a proxy using conf, checks both the current
 // and draft DNS-over-QUIC protocols, and returns the proxy's listening address.
 func testHandleDNSRequestQUIC(
-	t *testing.T,
+	tb testing.TB,
 	conf *proxy.Config,
 	tlsConfig *tls.Config,
 ) (addr *net.UDPAddr) {
+	tb.Helper()
+
 	dnsProxy, err := proxy.New(conf)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
+	servicetest.RequireRun(tb, dnsProxy, dnsproxytest.Timeout)
 
-	addr = testutil.RequireTypeAssert[*net.UDPAddr](t, dnsProxy.Addr(proxy.ProtoQUIC))
+	addr = testutil.RequireTypeAssert[*net.UDPAddr](tb, dnsProxy.Addr(proxy.ProtoQUIC))
 
 	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, func() (err error) {
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, func() (err error) {
 		return conn.CloseWithError(proxy.DoQCodeNoError, "")
 	})
 
 	for range 10 {
-		sendTestQUICMessage(t, conn, proxy.DoQv1)
-		sendTestQUICMessage(t, conn, proxy.DoQv1Draft)
+		sendTestQUICMessage(tb, conn, proxy.DoQv1)
+		sendTestQUICMessage(tb, conn, proxy.DoQv1Draft)
 	}
 
 	return addr
@@ -146,34 +148,33 @@ func TestProxy_HandleDNSRequest_quicLargePackets(t *testing.T) {
 
 // sendQUICMessage sends msg to the specified QUIC connection.
 func sendQUICMessage(
-	t *testing.T,
+	tb testing.TB,
 	msg *dns.Msg,
 	conn *quic.Conn,
 	doqVersion proxy.DoQVersion,
 ) (resp *dns.Msg) {
 	stream, err := conn.OpenStreamSync(context.Background())
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, stream.Close)
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, stream.Close)
 
 	packedMsg, err := msg.Pack()
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	buf := packedMsg
 	if doqVersion == proxy.DoQv1 {
 		buf = proxyutil.AddPrefix(packedMsg)
 	}
 
-	err = writeQUICStream(buf, stream)
-	require.NoError(t, err)
+	writeQUICStream(tb, buf, stream)
 
-	_ = stream.Close()
+	require.NoError(tb, stream.Close())
 
 	respBytes := make([]byte, 64*1024)
 	n, err := stream.Read(respBytes)
 	if err != nil {
-		require.ErrorIs(t, err, io.EOF)
+		require.ErrorIs(tb, err, io.EOF)
 	}
-	require.Greater(t, n, minDNSPacketSize)
+	require.Greater(tb, n, minDNSPacketSize)
 
 	resp = new(dns.Msg)
 	if doqVersion == proxy.DoQv1 {
@@ -181,14 +182,14 @@ func sendQUICMessage(
 	} else {
 		err = resp.Unpack(respBytes)
 	}
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	return resp
 }
 
 // writeQUICStream writes buf to the specified QUIC stream in chunks.  This way
 // it is possible to test how the server deals with chunked DNS messages.
-func writeQUICStream(buf []byte, stream *quic.Stream) (err error) {
+func writeQUICStream(tb testing.TB, buf []byte, stream *quic.Stream) {
 	// Send the DNS query to the stream and split it into chunks of up
 	// to 400 bytes.  400 is an arbitrary chosen value.
 	chunkSize := 400
@@ -196,23 +197,21 @@ func writeQUICStream(buf []byte, stream *quic.Stream) (err error) {
 		chunkStart := i
 		chunkEnd := min(i+chunkSize, len(buf))
 
-		_, err = stream.Write(buf[chunkStart:chunkEnd])
-		if err != nil {
-			return err
-		}
+		_, err := stream.Write(buf[chunkStart:chunkEnd])
+		require.NoError(tb, err)
 
 		if len(buf) > chunkSize {
 			// Emulate network latency.
 			time.Sleep(time.Millisecond)
 		}
 	}
-
-	return nil
 }
 
 // sendTestQUICMessage sends a test message to the specified QUIC connection.
-func sendTestQUICMessage(t *testing.T, conn *quic.Conn, doqVersion proxy.DoQVersion) {
+func sendTestQUICMessage(tb testing.TB, conn *quic.Conn, doqVersion proxy.DoQVersion) {
+	tb.Helper()
+
 	msg := dnsproxytest.NewTestRequest()
-	resp := sendQUICMessage(t, msg, conn, doqVersion)
-	dnsproxytest.RequireResponse(t, msg, resp)
+	resp := sendQUICMessage(tb, msg, conn, doqVersion)
+	dnsproxytest.RequireResponse(tb, msg, resp)
 }

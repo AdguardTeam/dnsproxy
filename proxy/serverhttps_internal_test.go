@@ -3,10 +3,10 @@ package proxy
 import (
 	"net/http"
 	"net/netip"
-	"strings"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/golibs/httphdr"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,53 +32,53 @@ func TestRealIPFromHdrs(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		hdrs    map[string]string
+		hdrs    http.Header
 		wantIP  netip.Addr
 		wantErr string
 	}{{
 		name: "cf-connecting-ip",
-		hdrs: map[string]string{
-			"CF-Connecting-IP": testIPStr1,
+		hdrs: http.Header{
+			httphdr.CFConnectingIP: []string{testIPStr1},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "true-client-ip",
-		hdrs: map[string]string{
-			"True-Client-IP": testIPStr1,
+		hdrs: http.Header{
+			httphdr.TrueClientIP: []string{testIPStr1},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "x-real-ip",
-		hdrs: map[string]string{
-			"X-Real-IP": testIPStr1,
+		hdrs: http.Header{
+			httphdr.XRealIP: []string{testIPStr1},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "cf-connecting-ip_redundant_spaces",
-		hdrs: map[string]string{
-			"CF-Connecting-IP": "  " + testIPStr1 + "\t",
+		hdrs: http.Header{
+			httphdr.CFConnectingIP: []string{"  " + testIPStr1 + "\t"},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "no_any",
-		hdrs: map[string]string{
-			"CF-Connecting-IP": "invalid",
-			"True-Client-IP":   "invalid",
-			"X-Real-IP":        "invalid",
+		hdrs: http.Header{
+			httphdr.CFConnectingIP: []string{"invalid"},
+			httphdr.TrueClientIP:   []string{"invalid"},
+			httphdr.XRealIP:        []string{"invalid"},
 		},
 		wantIP:  netip.Addr{},
 		wantErr: `ParseAddr(""): unable to parse IP`,
 	}, {
 		name: "priority",
-		hdrs: map[string]string{
-			"X-Forwarded-For":  strings.Join([]string{testIPStr2, testIPStr1}, ","),
-			"True-Client-IP":   testIPStr2,
-			"X-Real-IP":        testIPStr2,
-			"CF-Connecting-IP": testIPStr1,
+		hdrs: http.Header{
+			httphdr.XForwardedFor:  []string{testIPStr2 + "," + testIPStr1},
+			httphdr.TrueClientIP:   []string{testIPStr2},
+			httphdr.XRealIP:        []string{testIPStr2},
+			httphdr.CFConnectingIP: []string{testIPStr1},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
@@ -94,25 +94,23 @@ func TestRealIPFromHdrs(t *testing.T) {
 }
 
 // testRealIPFromHdrs checks that realIPFromHdrs returns wantIP and wantErrMsg
-// for headers.
+// for header.
 func testRealIPFromHdrs(
-	t testing.TB,
-	headers map[string]string,
+	tb testing.TB,
+	header http.Header,
 	wantIP netip.Addr,
 	wantErrMsg string,
 ) {
 	r, err := http.NewRequest(http.MethodGet, "localhost", nil)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	for h, v := range headers {
-		r.Header.Set(h, v)
-	}
+	r.Header = header
 
 	var ip netip.Addr
 	ip, err = realIPFromHdrs(r)
-	testutil.AssertErrorMsg(t, wantErrMsg, err)
+	testutil.AssertErrorMsg(tb, wantErrMsg, err)
 
-	assert.Equal(t, wantIP, ip)
+	assert.Equal(tb, wantIP, ip)
 }
 
 func TestRealIPFromHdrs_xff(t *testing.T) {
@@ -120,41 +118,41 @@ func TestRealIPFromHdrs_xff(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		hdrs    map[string]string
+		hdrs    http.Header
 		wantIP  netip.Addr
 		wantErr string
 	}{{
 		name: "x-forwarded-for_simple",
-		hdrs: map[string]string{
-			"X-Forwarded-For": strings.Join([]string{testIPStr2, testIPStr1}, ","),
+		hdrs: http.Header{
+			httphdr.XForwardedFor: []string{testIPStr2 + "," + testIPStr1},
 		},
 		wantIP:  testIP2,
 		wantErr: "",
 	}, {
 		name: "x-forwarded-for_single",
-		hdrs: map[string]string{
-			"X-Forwarded-For": testIPStr1,
+		hdrs: http.Header{
+			httphdr.XForwardedFor: []string{testIPStr1},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "x-forwarded-for_invalid_proxy",
-		hdrs: map[string]string{
-			"X-Forwarded-For": strings.Join([]string{testIPStr1, "invalid"}, ","),
+		hdrs: http.Header{
+			httphdr.XForwardedFor: []string{testIPStr1 + ",invalid"},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
 	}, {
 		name: "x-forwarded-for_empty",
-		hdrs: map[string]string{
-			"X-Forwarded-For": "",
+		hdrs: http.Header{
+			httphdr.XForwardedFor: []string{""},
 		},
 		wantIP:  netip.Addr{},
 		wantErr: `ParseAddr(""): unable to parse IP`,
 	}, {
 		name: "x-forwarded-for_redundant_spaces",
-		hdrs: map[string]string{
-			"X-Forwarded-For": "  " + testIPStr1 + "   ,\t" + testIPStr2,
+		hdrs: http.Header{
+			httphdr.XForwardedFor: []string{"  " + testIPStr1 + "   ,\t" + testIPStr2},
 		},
 		wantIP:  testIP1,
 		wantErr: "",
@@ -175,7 +173,7 @@ func TestRemoteAddr_direct(t *testing.T) {
 	testCases := []struct {
 		name       string
 		remoteAddr string
-		hdrs       map[string]string
+		hdrs       http.Header
 		wantErr    string
 		wantIP     netip.AddrPort
 	}{{
@@ -205,8 +203,8 @@ func TestRemoteAddr_direct(t *testing.T) {
 	}, {
 		name:       "bad_proxied_host",
 		remoteAddr: "host:1",
-		hdrs: map[string]string{
-			"CF-Connecting-IP": testIPStr1,
+		hdrs: http.Header{
+			httphdr.CFConnectingIP: []string{testIPStr1},
 		},
 		wantErr: `ParseAddr("host"): unable to parse IP`,
 		wantIP:  netip.AddrPort{},
@@ -222,11 +220,11 @@ func TestRemoteAddr_direct(t *testing.T) {
 }
 
 // testRemoteAddr makes sure that remoteAddr returns expected IP and proxy for
-// given raddr and headers.
+// given raddr and header.
 func testRemoteAddr(
 	tb testing.TB,
 	raddr string,
-	headers map[string]string,
+	header http.Header,
 	wantErrMsg string,
 	wantIP netip.AddrPort,
 	wantProxy netip.AddrPort,
@@ -235,9 +233,7 @@ func testRemoteAddr(
 	require.NoError(tb, err)
 
 	r.RemoteAddr = raddr
-	for h, v := range headers {
-		r.Header.Set(h, v)
-	}
+	r.Header = header
 
 	var addr, prx netip.AddrPort
 	addr, prx, err = remoteAddr(r, testLogger)
@@ -258,15 +254,15 @@ func TestRemoteAddr_proxied(t *testing.T) {
 	testCases := []struct {
 		name       string
 		remoteAddr string
-		hdrs       map[string]string
+		hdrs       http.Header
 		wantErr    string
 		wantIP     netip.AddrPort
 		wantProxy  netip.AddrPort
 	}{{
 		name:       "proxied_with_cloudflare",
 		remoteAddr: testRaddr.String(),
-		hdrs: map[string]string{
-			"CF-Connecting-IP": testIPStr2,
+		hdrs: http.Header{
+			httphdr.CFConnectingIP: []string{testIPStr2},
 		},
 		wantErr:   "",
 		wantIP:    netip.AddrPortFrom(testIP2, 0),
@@ -274,8 +270,8 @@ func TestRemoteAddr_proxied(t *testing.T) {
 	}, {
 		name:       "proxied_once",
 		remoteAddr: testRaddr.String(),
-		hdrs: map[string]string{
-			"X-Forwarded-For": testIPStr2,
+		hdrs: http.Header{
+			httphdr.XForwardedFor: []string{testIPStr2},
 		},
 		wantErr:   "",
 		wantIP:    netip.AddrPortFrom(testIP2, 0),
@@ -283,8 +279,8 @@ func TestRemoteAddr_proxied(t *testing.T) {
 	}, {
 		name:       "proxied_multiple",
 		remoteAddr: testRaddr.String(),
-		hdrs: map[string]string{
-			"X-Forwarded-For": strings.Join([]string{testIPStr2, testIPStr3}, ","),
+		hdrs: http.Header{
+			httphdr.XForwardedFor: []string{testIPStr2 + "," + testIPStr3},
 		},
 		wantErr:   "",
 		wantIP:    netip.AddrPortFrom(testIP2, 0),

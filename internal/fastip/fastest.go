@@ -19,12 +19,14 @@ import (
 	"github.com/miekg/dns"
 )
 
-// LogPrefix is a prefix for logging.
-const LogPrefix = "fastip"
+const (
+	// logPrefix is a prefix for logging.
+	logPrefix = "fastip"
 
-// DefaultPingWaitTimeout is the default period of time for waiting ping
-// operations to finish.
-const DefaultPingWaitTimeout = 1 * time.Second
+	// defaultPingWaitTimeout is the default period of time for waiting ping
+	// operations to finish.
+	defaultPingWaitTimeout = 1 * time.Second
+)
 
 // FastestAddr provides methods to determine the fastest network addresses.
 type FastestAddr struct {
@@ -76,13 +78,13 @@ func New(c *Config) (f *FastestAddr) {
 	if c.PingWaitTimeout > 0 {
 		f.pingWaitTimeout = c.PingWaitTimeout
 	} else {
-		f.pingWaitTimeout = DefaultPingWaitTimeout
+		f.pingWaitTimeout = defaultPingWaitTimeout
 	}
 
 	if c.Logger != nil {
 		f.logger = c.Logger
 	} else {
-		f.logger = slog.Default().With(slogutil.KeyPrefix, LogPrefix)
+		f.logger = slog.Default().With(slogutil.KeyPrefix, logPrefix)
 	}
 
 	return f

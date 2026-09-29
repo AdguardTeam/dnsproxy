@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"io"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -23,8 +24,17 @@ import (
 // quicNextProtos is a list of ALPN tokens used by a QUIC connection.
 var quicNextProtos = []string{proxy.NextProtoDQ, "doq-i02", "doq-i00", "dq"}
 
-// minDNSPacketSize is the smallest possible DNS packet size.
-const minDNSPacketSize = 12 + 5
+const (
+	// minDNSPacketSize is the smallest possible DNS packet size.
+	minDNSPacketSize = 12 + 5
+
+	// testChunkSize is a common chunk size for tests in bytes.
+	testChunkSize = 400
+
+	// testRepetitions is a common number of repetitions for tests that require
+	// repeating some actions.
+	testRepetitions = 10
+)
 
 func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 	t.Parallel()
@@ -77,13 +87,14 @@ func testHandleDNSRequestQUIC(
 
 	addr = testutil.RequireTypeAssert[*net.UDPAddr](tb, dnsProxy.Addr(proxy.ProtoQUIC))
 
-	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
+	ctx := testutil.ContextWithTimeout(tb, dnsproxytest.Timeout)
+	conn, err := quic.DialAddrEarly(ctx, addr.String(), tlsConfig, nil)
 	require.NoError(tb, err)
 	testutil.CleanupAndRequireSuccess(tb, func() (err error) {
 		return conn.CloseWithError(proxy.DoQCodeNoError, "")
 	})
 
-	for range 10 {
+	for range testRepetitions {
 		sendTestQUICMessage(tb, conn, proxy.DoQv1)
 		sendTestQUICMessage(tb, conn, proxy.DoQv1Draft)
 	}
@@ -126,21 +137,18 @@ func TestProxy_HandleDNSRequest_quicLargePackets(t *testing.T) {
 
 	addr := dnsProxy.Addr(proxy.ProtoQUIC)
 
-	conn, err := quic.DialAddrEarly(context.Background(), addr.String(), tlsConfig, nil)
+	ctx := testutil.ContextWithTimeout(t, dnsproxytest.Timeout)
+	conn, err := quic.DialAddrEarly(ctx, addr.String(), tlsConfig, nil)
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, func() (err error) {
 		return conn.CloseWithError(proxy.DoQCodeNoError, "")
 	})
 
 	msg := dnsproxytest.NewTestRequest()
-	msg.Extra = []dns.RR{
-		&dns.OPT{
-			Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT, Class: 4096},
-			Option: []dns.EDNS0{
-				&dns.EDNS0_PADDING{Padding: make([]byte, 4096)},
-			},
-		},
-	}
+	msg.Extra = []dns.RR{&dns.OPT{
+		Hdr:    dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT, Class: 4096},
+		Option: []dns.EDNS0{&dns.EDNS0_PADDING{Padding: make([]byte, 4096)}},
+	}}
 
 	resp := sendQUICMessage(t, msg, conn, proxy.DoQv1)
 	dnsproxytest.RequireResponse(t, msg, resp)
@@ -178,11 +186,10 @@ func sendQUICMessage(
 
 	resp = new(dns.Msg)
 	if doqVersion == proxy.DoQv1 {
-		err = resp.Unpack(respBytes[2:])
+		require.NoError(tb, resp.Unpack(respBytes[2:]))
 	} else {
-		err = resp.Unpack(respBytes)
+		require.NoError(tb, resp.Unpack(respBytes))
 	}
-	require.NoError(tb, err)
 
 	return resp
 }
@@ -190,17 +197,11 @@ func sendQUICMessage(
 // writeQUICStream writes buf to the specified QUIC stream in chunks.  This way
 // it is possible to test how the server deals with chunked DNS messages.
 func writeQUICStream(tb testing.TB, buf []byte, stream *quic.Stream) {
-	// Send the DNS query to the stream and split it into chunks of up
-	// to 400 bytes.  400 is an arbitrary chosen value.
-	chunkSize := 400
-	for i := 0; i < len(buf); i += chunkSize {
-		chunkStart := i
-		chunkEnd := min(i+chunkSize, len(buf))
-
-		_, err := stream.Write(buf[chunkStart:chunkEnd])
+	for chunk := range slices.Chunk(buf, testChunkSize) {
+		_, err := stream.Write(chunk)
 		require.NoError(tb, err)
 
-		if len(buf) > chunkSize {
+		if len(buf) > testChunkSize {
 			// Emulate network latency.
 			time.Sleep(time.Millisecond)
 		}

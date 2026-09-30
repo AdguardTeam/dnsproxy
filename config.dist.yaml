@@ -3,6 +3,8 @@
 # To use it within dnsproxy specify the --config-path=/<path-to-config.yaml>
 # option.  Any other command-line options specified will override the values
 # from the config file.
+#
+# TODO(m.kazantsev):  Add more default values.
 bootstrap:
   - "8.8.8.8:53"
 cache-size: 65536

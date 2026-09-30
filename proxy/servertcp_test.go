@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
@@ -100,9 +101,11 @@ func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
 	t.Parallel()
 
 	u := &dnsproxytest.Upstream{
-		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
-		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
-		OnClose:    func() (err error) { return nil },
+		OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+			panic(testutil.UnexpectedCall(ctx, m))
+		},
+		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:   func() (err error) { return nil },
 	}
 	upsConf := &proxy.UpstreamConfig{
 		Upstreams: []upstream.Upstream{u},

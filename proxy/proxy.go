@@ -791,7 +791,7 @@ func (p *Proxy) selectUpstreams(d *DNSContext) (upstreams []upstream.Upstream, i
 // replyFromUpstream tries to resolve the request via configured upstream
 // servers.  It returns true if the response actually came from an upstream.  d
 // must not be nil.
-func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
+func (p *Proxy) replyFromUpstream(ctx context.Context, d *DNSContext) (ok bool, err error) {
 	req := d.Req
 
 	upstreams, isPrivate := p.selectUpstreams(d)
@@ -809,40 +809,42 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
 	wrapped := upstreamsWithStats(upstreams)
 
 	// Perform the DNS request.
-	resp, u, err := p.exchangeUpstreams(req, wrapped)
-	if dns64Ups := p.performDNS64(req, resp, wrapped); dns64Ups != nil {
+	resp, u, err := p.exchangeUpstreams(ctx, req, wrapped)
+	if dns64Ups := p.performDNS64(ctx, req, resp, wrapped); dns64Ups != nil {
 		u = dns64Ups
 	} else if p.isBogusNXDomain(resp) {
-		p.logger.Debug("response contains bogus-nxdomain ip")
+		p.logger.DebugContext(ctx, "response contains bogus-nxdomain ip")
 		resp = p.messages.NewMsgNXDOMAIN(req)
 	}
 
 	var wrappedFallbacks []upstream.Upstream
 	if err != nil && !isPrivate && p.fallbacks != nil {
-		p.logger.Debug("using fallback", slogutil.KeyError, err)
+		p.logger.DebugContext(ctx, "using fallback", slogutil.KeyError, err)
 
 		src = "fallback"
 
-		// upstreams mustn't appear empty since they have been validated when
+		// Upstreams mustn't appear empty since they have been validated when
 		// creating proxy.
 		upstreams = p.fallbacks.getUpstreamsForDomain(req.Question[0].Name)
 
 		wrappedFallbacks = upstreamsWithStats(upstreams)
-		resp, u, err = upstream.ExchangeParallel(wrappedFallbacks, req)
+
+		// NOTE: Use [context.WithoutCancel] to have a separate timeout on
+		// retry.
+		resp, u, err = upstream.ExchangeParallel(context.WithoutCancel(ctx), wrappedFallbacks, req)
 	}
 
 	if err != nil {
-		p.logger.Debug("resolving err", "src", src, slogutil.KeyError, err)
+		p.logger.DebugContext(ctx, "resolving err", "src", src, slogutil.KeyError, err)
 	}
 
 	if resp != nil {
-		p.logger.Debug("resolved", "upstream", u.Address(), "src", src)
+		p.logger.DebugContext(ctx, "resolved", "upstream", u.Address(), "src", src)
 	}
 
 	unwrapped, stats := collectQueryStats(p.upstreamMode, u, wrapped, wrappedFallbacks)
 	d.queryStatistics = stats
 
-	ctx := context.TODO()
 	p.handleExchangeResult(ctx, d, req, resp, unwrapped)
 
 	return resp != nil, err
@@ -927,7 +929,7 @@ func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 		}
 		defer func() { p.pendingRequests.done(ctx, dctx, err) }()
 
-		if p.replyFromCache(dctx) {
+		if p.replyFromCache(ctx, dctx) {
 			// Complete the response from cache.
 			filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
 			dctx.scrub()
@@ -937,7 +939,7 @@ func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 	}
 
 	var ok bool
-	ok, err = p.replyFromUpstream(dctx)
+	ok, err = p.replyFromUpstream(ctx, dctx)
 
 	// Don't cache the responses having CD flag, just like Dnsmasq does.  It
 	// prevents the cache from being poisoned with unvalidated answers which may

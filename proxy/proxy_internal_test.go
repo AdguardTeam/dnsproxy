@@ -82,7 +82,7 @@ func newTestUpstreamConfig(tb testing.TB, ups ...upstream.Upstream) (u *Upstream
 func newTestUpstream(tb testing.TB) (uc upstream.Upstream) {
 	tb.Helper()
 
-	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
+	onExchange := func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 		return dnsproxytest.NewTestResponse(req), nil
 	}
 
@@ -94,7 +94,7 @@ func newTestUpstream(tb testing.TB) (uc upstream.Upstream) {
 // be replaced with stub implementations.
 func newTestUpstreamWithExchange(
 	tb testing.TB,
-	onExchange func(req *dns.Msg) (resp *dns.Msg, err error),
+	onExchange func(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error),
 ) (uc upstream.Upstream) {
 	tb.Helper()
 
@@ -220,7 +220,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 	}
 
 	u := &testUpstream{
-		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 
 			q := m.Question[0]
@@ -348,9 +348,12 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 func TestProxy_HandleDNSRequest_exchangeWithReservedDomains(t *testing.T) {
 	t.Parallel()
 
-	emptyUpstream := newTestUpstreamWithExchange(t, func(req *dns.Msg) (resp *dns.Msg, err error) {
-		return (&dns.Msg{}).SetReply(req), nil
-	})
+	emptyUpstream := newTestUpstreamWithExchange(
+		t,
+		func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+			return (&dns.Msg{}).SetReply(req), nil
+		},
+	)
 
 	const (
 		host1 = "example-1.test"
@@ -422,9 +425,12 @@ func TestProxy_HandleDNSRequest_exchangeWithReservedDomains(t *testing.T) {
 func TestProxy_HandleDNSRequest_oneByOneUpstreamsExchange(t *testing.T) {
 	t.Parallel()
 
-	errUpstream := newTestUpstreamWithExchange(t, func(req *dns.Msg) (resp *dns.Msg, err error) {
-		return nil, assert.AnError
-	})
+	errUpstream := newTestUpstreamWithExchange(
+		t,
+		func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+			return nil, assert.AnError
+		},
+	)
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
@@ -477,18 +483,21 @@ func TestProxy_HandleDNSRequest_fallback(t *testing.T) {
 
 	pt := testutil.NewPanicT(t)
 
-	successExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
+	successExchange := func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 		testutil.RequireSend(pt, responseCh, req.Id, dnsproxytest.Timeout)
 
 		return dnsproxytest.NewTestResponse(req), nil
 	}
 	successUpstream := newTestUpstreamWithExchange(t, successExchange)
 
-	failUpstream := newTestUpstreamWithExchange(t, func(req *dns.Msg) (resp *dns.Msg, err error) {
-		testutil.RequireSend(pt, failCh, req.Id, dnsproxytest.Timeout)
+	failUpstream := newTestUpstreamWithExchange(
+		t,
+		func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+			testutil.RequireSend(pt, failCh, req.Id, dnsproxytest.Timeout)
 
-		return nil, assert.AnError
-	})
+			return nil, assert.AnError
+		},
+	)
 
 	upsConf := &UpstreamConfig{
 		DomainReservedUpstreams: map[string][]upstream.Upstream{
@@ -636,7 +645,7 @@ func TestProxy_Resolve_customUpstreamConfigCache(t *testing.T) {
 
 	var count int
 
-	exchangeFunc := func(m *dns.Msg) (resp *dns.Msg, err error) {
+	exchangeFunc := func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 		resp = &dns.Msg{}
 		resp.SetReply(m)
 		resp.Answer = append(resp.Answer, &dns.A{
@@ -992,7 +1001,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	p.initCache()
 	out, in := make(chan unit), make(chan unit)
 	p.shortFlighter.cr = &testCachingResolver{
-		onReplyFromUpstream: func(dctx *DNSContext) (ok bool, err error) {
+		onReplyFromUpstream: func(_ context.Context, dctx *DNSContext) (ok bool, err error) {
 			dctx.Res = buildResp(dctx.Req, nonOptimisticTTL)
 
 			return true, nil
@@ -1077,7 +1086,7 @@ func TestProxy_ValidateRequest(t *testing.T) {
 	}
 
 	ups := &testUpstream{
-		OnExchange: func(m *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = &dns.Msg{}
 			resp.SetReply(m)
 
@@ -1206,7 +1215,7 @@ func (h *testHandler) ServeDNS(ctx context.Context, p *Proxy, dctx *DNSContext) 
 // TODO(m.kazantsev):  Use [dnsproxytest.Upstream].
 type testUpstream struct {
 	OnAddress  func() (addr string)
-	OnExchange func(req *dns.Msg) (resp *dns.Msg, err error)
+	OnExchange func(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error)
 	OnClose    func() (err error)
 }
 
@@ -1216,8 +1225,12 @@ type testUpstream struct {
 // The handler dereferences ans, ecsIP, and ecsReqIP at call time, so tests
 // can reassign those variables between sub-tests and the handler will see
 // the current values.
-func newECSReplyHandler(ans *[]dns.RR, ecsIP, ecsReqIP *net.IP) func(*dns.Msg) (*dns.Msg, error) {
-	return func(m *dns.Msg) (resp *dns.Msg, err error) {
+func newECSReplyHandler(
+	ans *[]dns.RR,
+	ecsIP *net.IP,
+	ecsReqIP *net.IP,
+) func(context.Context, *dns.Msg) (*dns.Msg, error) {
+	return func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(m)
 
 		if ans != nil && *ans != nil {
@@ -1245,8 +1258,8 @@ func newECSReplyHandler(ans *[]dns.RR, ecsIP, ecsReqIP *net.IP) func(*dns.Msg) (
 var _ upstream.Upstream = (*testUpstream)(nil)
 
 // Exchange implements the upstream.Upstream interface for *testUpstream.
-func (u *testUpstream) Exchange(m *dns.Msg) (resp *dns.Msg, err error) {
-	return u.OnExchange(m)
+func (u *testUpstream) Exchange(ctx context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
+	return u.OnExchange(ctx, m)
 }
 
 // Address implements the upstream.Upstream interface for *testUpstream.

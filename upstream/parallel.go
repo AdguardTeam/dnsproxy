@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"fmt"
 	"slices"
 
@@ -21,13 +22,17 @@ const (
 
 // ExchangeParallel returns the first successful response from one of u.  It
 // returns an error if all upstreams failed to exchange the request.
-func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Upstream, err error) {
+func ExchangeParallel(
+	ctx context.Context,
+	ups []Upstream,
+	req *dns.Msg,
+) (reply *dns.Msg, resolved Upstream, err error) {
 	upsNum := len(ups)
 	switch upsNum {
 	case 0:
 		return nil, nil, ErrNoUpstreams
 	case 1:
-		return exchangeSingle(ups[0], req)
+		return exchangeSingle(ctx, ups[0], req)
 	default:
 		// Go on.
 	}
@@ -39,7 +44,7 @@ func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Up
 		//
 		// TODO(s.chzhen):  Consider using buffer pool.
 		copyReq := req.Copy()
-		go exchangeAsync(f, copyReq, resCh)
+		go exchangeAsync(ctx, f, copyReq, resCh)
 	}
 
 	errs := []error{}
@@ -68,10 +73,11 @@ func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Up
 // exchangeSingle returns a successful response and resolver if a DNS lookup was
 // successful.
 func exchangeSingle(
+	ctx context.Context,
 	ups Upstream,
 	req *dns.Msg,
 ) (resp *dns.Msg, resolved Upstream, err error) {
-	resp, err = ups.Exchange(req)
+	resp, err = ups.Exchange(ctx, req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,14 +97,18 @@ type ExchangeAllResult struct {
 
 // ExchangeAll returns the responses from all of u.  It returns an error only if
 // all upstreams failed to exchange the request.
-func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err error) {
+func ExchangeAll(
+	ctx context.Context,
+	ups []Upstream,
+	req *dns.Msg,
+) (res []ExchangeAllResult, err error) {
 	upsNum := len(ups)
 	switch upsNum {
 	case 0:
 		return nil, ErrNoUpstreams
 	case 1:
 		var reply *dns.Msg
-		reply, err = ups[0].Exchange(req)
+		reply, err = ups[0].Exchange(ctx, req)
 		if err != nil {
 			return nil, err
 		} else if reply == nil {
@@ -122,7 +132,7 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
 		//
 		// TODO(s.chzhen):  Consider using buffer pool.
 		copyReq := req.Copy()
-		go exchangeAsync(u, copyReq, resCh)
+		go exchangeAsync(ctx, u, copyReq, resCh)
 	}
 
 	// Wait for all exchanges to finish.
@@ -162,8 +172,8 @@ func receiveAsyncResult(resCh chan any) (res *ExchangeAllResult, err error) {
 
 // exchangeAsync tries to resolve DNS request with one upstream and sends the
 // result to respCh.
-func exchangeAsync(u Upstream, req *dns.Msg, resCh chan any) {
-	reply, err := u.Exchange(req)
+func exchangeAsync(ctx context.Context, u Upstream, req *dns.Msg, resCh chan any) {
+	reply, err := u.Exchange(ctx, req)
 	if err != nil {
 		resCh <- err
 	} else {

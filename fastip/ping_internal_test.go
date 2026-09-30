@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -30,7 +31,9 @@ func TestFastestAddr_PingAll_timeout(t *testing.T) {
 		}
 
 		ip := netutil.IPv4Localhost()
-		res := f.pingAll("", []netip.Addr{ip, ip})
+
+		ctx := testutil.ContextWithTimeout(t, dnsproxytest.Timeout)
+		res := f.pingAll(ctx, "", []netip.Addr{ip, ip})
 		require.Nil(t, res)
 
 		waitCh <- unit{}
@@ -52,7 +55,8 @@ func TestFastestAddr_PingAll_timeout(t *testing.T) {
 			return nil
 		}
 
-		res := f.pingAll("", []netip.Addr{ip1, ip2})
+		ctx := testutil.ContextWithTimeout(t, dnsproxytest.Timeout)
+		res := f.pingAll(ctx, "", []netip.Addr{ip1, ip2})
 		require.NotNil(t, res)
 
 		assert.True(t, res.success)
@@ -83,7 +87,8 @@ func TestFastestAddr_PingAll_cache(t *testing.T) {
 		f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 		f.cacheAddFailure(ip)
 
-		res := f.pingAll("", []netip.Addr{ip, ip})
+		ctx := testutil.ContextWithTimeout(t, dnsproxytest.Timeout)
+		res := f.pingAll(ctx, "", []netip.Addr{ip, ip})
 		require.Nil(t, res)
 	})
 
@@ -93,7 +98,8 @@ func TestFastestAddr_PingAll_cache(t *testing.T) {
 		f := New(&Config{Logger: slogutil.NewDiscardLogger()})
 		f.cacheAddSuccessful(ip, lat)
 
-		res := f.pingAll("", []netip.Addr{ip, ip})
+		ctx := testutil.ContextWithTimeout(t, dnsproxytest.Timeout)
+		res := f.pingAll(ctx, "", []netip.Addr{ip, ip})
 		require.NotNil(t, res)
 		assert.True(t, res.success)
 		assert.Equal(t, lat, res.latency)
@@ -125,7 +131,8 @@ func TestFastestAddr_PingAll_cache(t *testing.T) {
 			return nil
 		}
 
-		res := f.pingAll("", ips)
+		ctx := testutil.ContextWithTimeout(t, dnsproxytest.Timeout)
+		res := f.pingAll(ctx, "", ips)
 		require.NotNil(t, res)
 
 		assert.True(t, res.success)

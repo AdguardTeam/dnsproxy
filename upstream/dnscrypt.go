@@ -54,8 +54,7 @@ var _ Upstream = (*dnsCrypt)(nil)
 func (p *dnsCrypt) Address() string { return p.addr.String() }
 
 // Exchange implements the [Upstream] interface for *dnsCrypt.
-func (p *dnsCrypt) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
-	ctx := context.Background()
+func (p *dnsCrypt) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 	if p.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, p.timeout)
@@ -103,7 +102,8 @@ func (p *dnsCrypt) exchangeDNSCrypt(ctx context.Context, req *dns.Msg) (resp *dn
 	resp, err = client.ExchangeContext(ctx, req, resolverInfo)
 	if resp != nil && resp.Truncated {
 		q := &req.Question[0]
-		p.logger.Debug(
+		p.logger.DebugContext(
+			ctx,
 			"dnscrypt received truncated, falling back to tcp",
 			"addr", p.addr,
 			"question", q,
@@ -113,6 +113,15 @@ func (p *dnsCrypt) exchangeDNSCrypt(ctx context.Context, req *dns.Msg) (resp *dn
 			Logger: p.logger,
 			Proto:  dnscrypt.ProtoTCP,
 		})
+
+		// NOTE: Give the TCP retry its own timeout.
+		if p.timeout > 0 {
+			ctx = context.WithoutCancel(ctx)
+
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, p.timeout)
+			defer cancel()
+		}
 
 		resp, err = tcpClient.ExchangeContext(ctx, req, resolverInfo)
 	}

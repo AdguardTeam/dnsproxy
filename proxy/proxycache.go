@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net"
 	"slices"
 )
@@ -17,7 +18,7 @@ func (p *Proxy) cacheForContext(d *DNSContext) (c *cache) {
 // replyFromCache tries to get the response from general or subnet cache.  In
 // case the cache is present in d, it's used first.  Returns true on success.  d
 // must not be nil.
-func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
+func (p *Proxy) replyFromCache(ctx context.Context, d *DNSContext) (hit bool) {
 	dctxCache := p.cacheForContext(d)
 
 	var ci *cacheItem
@@ -41,7 +42,8 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 	d.Res = ci.m
 	d.queryStatistics = cachedQueryStatistics(ci.u)
 
-	p.logger.Debug(
+	p.logger.DebugContext(
+		ctx,
 		"replying from cache",
 		"source", cacheSource,
 		"ecs_enabled", p.enableEDNSClientSubnet,
@@ -59,7 +61,7 @@ func (p *Proxy) replyFromCache(d *DNSContext) (hit bool) {
 			minCtxClone.Req = d.Req.Copy()
 		}
 
-		go p.shortFlighter.resolveOnce(minCtxClone, key, p.logger)
+		go p.shortFlighter.resolveOnce(ctx, minCtxClone, key, p.logger)
 	}
 
 	return hit

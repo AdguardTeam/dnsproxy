@@ -18,7 +18,7 @@ docker pull adguard/dnsproxy
 
 ### Run the container
 
-Run the container with the default configuration (see `config.yaml.dist` in the repository) and expose DNS ports.
+Run the container with the default configuration (see `config.dist.yaml` in the repository) and expose DNS ports.
 
 ```sh
 docker run \

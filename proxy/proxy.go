@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnscrypt"
-	"github.com/AdguardTeam/dnsproxy/fastip"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
+	"github.com/AdguardTeam/dnsproxy/internal/fastip"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/contextutil"

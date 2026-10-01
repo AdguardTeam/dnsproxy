@@ -6,10 +6,11 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
-	"github.com/AdguardTeam/dnsproxy/fastip"
 	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/internal/fastip"
 	"github.com/AdguardTeam/dnsproxy/internal/nettest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -22,6 +23,9 @@ import (
 
 // testReplacer is used to replace "/" and "_" with "-" in test domain names.
 var testReplacer = strings.NewReplacer("/", "-", "_", "-")
+
+// testPingWaitTimeout is a common ping wait timeout value for tests.
+const testPingWaitTimeout = 1 * time.Second
 
 func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	t.Parallel()
@@ -40,7 +44,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		}
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingWaitTimeout: testPingWaitTimeout,
 		})
 
 		ctx := testutil.ContextWithTimeout(t, proxytest.Timeout)
@@ -59,7 +63,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingWaitTimeout: testPingWaitTimeout,
 		})
 
 		f.SetPingPorts([]uint{port})
@@ -90,7 +94,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingWaitTimeout: testPingWaitTimeout,
 		})
 
 		f.SetPingPorts([]uint{nettest.NewFreePort(t)})

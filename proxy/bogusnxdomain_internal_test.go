@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TODO(f.setrakov): Externalize.
 func TestProxy_IsBogusNXDomain(t *testing.T) {
 	var ans []dns.RR
 

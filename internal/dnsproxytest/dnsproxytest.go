@@ -30,6 +30,9 @@ const (
 	// Host is a common host for tests.
 	Host = "test.example"
 
+	// FQDN is the FQDN for [Host].
+	FQDN = Host + "."
+
 	// TTL is a common time-to-live value in seconds for tests.
 	TTL = 300
 )
@@ -103,4 +106,52 @@ func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 	a := testutil.RequireTypeAssert[*dns.A](tb, reply.Answer[0])
 
 	require.Equal(tb, IPv4, a.A.To16())
+}
+
+// NewRR is a helper that creates a new dns.RR with the given name, qtype, ttl
+// and value.  It fails the test if the qtype is not supported or the type of
+// value doesn't match the qtype.  val is expected to be of type [net.IP] if
+// qtype is [dns.TypeA] or [dns.TypeAAAA] and a string if qtype is
+// [dns.TypeCNAME] or [dns.TypePTR].  qtype is expected to be one of the
+// following:
+//
+//   - [dns.TypeA]
+//   - [dns.TypeAAAA]
+//   - [dns.TypeCNAME]
+//   - [dns.TypeSOA]
+//   - [dns.TypePTR]
+func NewRR(tb testing.TB, name string, qtype uint16, ttl uint32, val any) (rr dns.RR) {
+	tb.Helper()
+
+	switch qtype {
+	case dns.TypeA:
+		rr = &dns.A{A: testutil.RequireTypeAssert[net.IP](tb, val)}
+	case dns.TypeAAAA:
+		rr = &dns.AAAA{AAAA: testutil.RequireTypeAssert[net.IP](tb, val)}
+	case dns.TypeCNAME:
+		rr = &dns.CNAME{Target: testutil.RequireTypeAssert[string](tb, val)}
+	case dns.TypeSOA:
+		rr = &dns.SOA{
+			Ns:      "ns." + name,
+			Mbox:    "hostmaster." + name,
+			Serial:  1,
+			Refresh: 1,
+			Retry:   1,
+			Expire:  1,
+			Minttl:  1,
+		}
+	case dns.TypePTR:
+		rr = &dns.PTR{Ptr: testutil.RequireTypeAssert[string](tb, val)}
+	default:
+		tb.Fatalf("unsupported qtype: %d", qtype)
+	}
+
+	*rr.Header() = dns.RR_Header{
+		Name:   name,
+		Rrtype: qtype,
+		Class:  dns.ClassINET,
+		Ttl:    ttl,
+	}
+
+	return rr
 }

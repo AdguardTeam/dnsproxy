@@ -75,7 +75,7 @@ func TestProxy_HandleDNSRequest_https(t *testing.T) {
 				TLSListenAddr:  []*net.TCPAddr{tlsListenAddr},
 				QUICListenAddr: []*net.UDPAddr{quicListenAddr},
 				TLSConfig:      tlsConf,
-				UpstreamConfig: newTestUpstreamConfig(t),
+				UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
 				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 				HTTPConfig:     httpConf,
 			})
@@ -151,7 +151,7 @@ func testProxyRealIPDetection(
 	trustedProxies := netip.PrefixFrom(trustedProxy, trustedProxy.BitLen())
 	dnsProxy, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,
-		UpstreamConfig: newTestUpstreamConfig(tb),
+		UpstreamConfig: newTestUpstreamConfig(tb, newTestUpstream(tb)),
 		TrustedProxies: trustedProxies,
 		RequestHandler: reqHandler,
 		TLSConfig:      tlsConf,

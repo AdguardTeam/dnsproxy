@@ -1,4 +1,4 @@
-package proxy
+package proxy_test
 
 import (
 	"context"
@@ -7,7 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -17,11 +19,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const ipv4OnlyFqdn = "ipv4.only."
+// testSynTTL is a common TTL for DNS64 synthesized records.
+const testSynTTL uint32 = 600
 
 func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
-	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, dnsproxytest.IPv4)
-	ups := &testUpstream{
+	fakeHost := "fake.address"
+
+	ans := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 3600, proxytest.IPv4)
+	ups := &dnsproxytest.Upstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(req)
 			if req.Question[0].Qtype == dns.TypeA {
@@ -30,53 +35,55 @@ func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
 
 			return resp, nil
 		},
-		OnAddress: func() (addr string) { return "fake.address" },
+		OnAddress: func() (addr string) { return fakeHost },
 		OnClose:   func() (err error) { return nil },
 	}
-	localUps := &testUpstream{
+	localUps := &dnsproxytest.Upstream{
 		OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
 			panic(testutil.UnexpectedCall(ctx, m))
 		},
-		OnAddress: func() (addr string) { return "fake.address" },
+		OnAddress: func() (addr string) { return fakeHost },
 		OnClose:   func() (err error) { return nil },
 	}
 
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		UpstreamConfig: &UpstreamConfig{
+		UpstreamConfig: &proxy.UpstreamConfig{
 			Upstreams: []upstream.Upstream{ups},
 		},
-		PrivateRDNSUpstreamConfig: &UpstreamConfig{
+		PrivateRDNSUpstreamConfig: &proxy.UpstreamConfig{
 			Upstreams: []upstream.Upstream{localUps},
 		},
-		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
+		TrustedProxies: proxytest.DefaultTrustedProxies,
 
 		UseDNS64:       true,
 		UsePrivateRDNS: true,
 		// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server.
 		DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")},
 	})
+	require.NoError(t, err)
 
-	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
+	servicetest.RequireRun(t, dnsProxy, proxytest.Timeout)
 
 	syncCh := make(chan struct{})
 
 	// Send requests.
 	g := &sync.WaitGroup{}
-	g.Add(dnsproxytest.MessageCount)
+	g.Add(proxytest.MessageCount)
 
-	addr := dnsProxy.Addr(ProtoTCP).String()
-	for range dnsproxytest.MessageCount {
+	addr := dnsProxy.Addr(proxy.ProtoTCP).String()
+	for range proxytest.MessageCount {
 		// The [dns.Conn] isn't safe for concurrent use despite the requirements
 		// from the [net.Conn] documentation.
-		conn, err := dns.Dial("tcp", addr)
+		var conn *dns.Conn
+		conn, err = dns.Dial("tcp", addr)
 		require.NoError(t, err)
 		testutil.CleanupAndRequireSuccess(t, conn.Close)
 
-		go exchangeTestAAAARequestAsync(t, conn, g, ipv4OnlyFqdn, syncCh)
+		go exchangeTestAAAARequestAsync(t, conn, g, proxytest.FQDN, syncCh)
 	}
 
 	close(syncCh)
@@ -113,50 +120,12 @@ func exchangeTestAAAARequestAsync(
 	require.IsType(pt, &dns.AAAA{}, res.Answer[0])
 }
 
-// newRR is a helper that creates a new dns.RR with the given name, qtype,
-// ttl and value.  It fails the test if the qtype is not supported or the type
-// of value doesn't match the qtype.
-func newRR(tb testing.TB, name string, qtype uint16, ttl uint32, val any) (rr dns.RR) {
-	tb.Helper()
-
-	switch qtype {
-	case dns.TypeA:
-		rr = &dns.A{A: testutil.RequireTypeAssert[net.IP](tb, val)}
-	case dns.TypeAAAA:
-		rr = &dns.AAAA{AAAA: testutil.RequireTypeAssert[net.IP](tb, val)}
-	case dns.TypeCNAME:
-		rr = &dns.CNAME{Target: testutil.RequireTypeAssert[string](tb, val)}
-	case dns.TypeSOA:
-		rr = &dns.SOA{
-			Ns:      "ns." + name,
-			Mbox:    "hostmaster." + name,
-			Serial:  1,
-			Refresh: 1,
-			Retry:   1,
-			Expire:  1,
-			Minttl:  1,
-		}
-	case dns.TypePTR:
-		rr = &dns.PTR{Ptr: testutil.RequireTypeAssert[string](tb, val)}
-	default:
-		tb.Fatalf("unsupported qtype: %d", qtype)
-	}
-
-	*rr.Header() = dns.RR_Header{
-		Name:   name,
-		Rrtype: qtype,
-		Class:  dns.ClassINET,
-		Ttl:    ttl,
-	}
-
-	return rr
-}
-
-// TODO(e.burkov):  Refactor the test.
+// TODO(f.setrakov):  Refactor the test.
 func TestProxy_Resolve_dns64(t *testing.T) {
 	someIPv4 := net.IP{1, 2, 3, 4}
 	someIPv6 := net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	mappedIPv6 := net.ParseIP("64:ff9b::102:304")
+	filteredIPv6 := net.ParseIP("64:ff9b::506:708")
 
 	ptr64Domain, err := netutil.IPToReversedAddr(mappedIPv6)
 	require.NoError(t, err)
@@ -165,8 +134,6 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 	ptrGlobDomain, err := netutil.IPToReversedAddr(someIPv4)
 	require.NoError(t, err)
 	ptrGlobDomain = dns.Fqdn(ptrGlobDomain)
-
-	localCliAddr := netip.MustParseAddrPort("192.168.1.1:1234")
 
 	const (
 		domainIPv6    = "ipv6.only."
@@ -195,7 +162,7 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	pt := testutil.NewPanicT(t)
 	newUps := func(answers answerMap) (u upstream.Upstream) {
-		return &testUpstream{
+		return &dnsproxytest.Upstream{
 			OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 				q := req.Question[0]
 				require.Contains(pt, answers, q.Qtype)
@@ -214,8 +181,8 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		}
 	}
 
-	localRR := newRR(t, ptr64Domain, dns.TypePTR, 3600, domainPointed)
-	localUps := &testUpstream{
+	localRR := proxytest.NewRR(t, ptr64Domain, dns.TypePTR, 3600, domainPointed)
+	localUps := &dnsproxytest.Upstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			require.Equal(pt, req.Question[0].Name, ptr64Domain)
 			resp = (&dns.Msg{}).SetReply(req)
@@ -235,19 +202,20 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qtype   uint16
 	}{{
 		name:  "simple_a",
-		qname: ipv4OnlyFqdn,
+		qname: proxytest.FQDN,
 		upsAns: answerMap{
 			dns.TypeA: {
-				sectionAnswer: {newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, someIPv4)},
+				sectionAnswer: {proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 3600, someIPv4)},
 			},
 			dns.TypeAAAA: {},
 		},
 		wantAns: []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
-				Name:   ipv4OnlyFqdn,
-				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Name:     proxytest.FQDN,
+				Rrtype:   dns.TypeA,
+				Class:    dns.ClassINET,
+				Ttl:      3600,
+				Rdlength: 4,
 			},
 			A: someIPv4,
 		}},
@@ -258,34 +226,36 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		upsAns: answerMap{
 			dns.TypeA: {},
 			dns.TypeAAAA: {
-				sectionAnswer: {newRR(t, domainIPv6, dns.TypeAAAA, 3600, someIPv6)},
+				sectionAnswer: {proxytest.NewRR(t, domainIPv6, dns.TypeAAAA, 3600, someIPv6)},
 			},
 		},
 		wantAns: []dns.RR{&dns.AAAA{
 			Hdr: dns.RR_Header{
-				Name:   domainIPv6,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Name:     domainIPv6,
+				Rrtype:   dns.TypeAAAA,
+				Class:    dns.ClassINET,
+				Ttl:      3600,
+				Rdlength: 16,
 			},
 			AAAA: someIPv6,
 		}},
 		qtype: dns.TypeAAAA,
 	}, {
 		name:  "actual_dns64",
-		qname: ipv4OnlyFqdn,
+		qname: proxytest.FQDN,
 		upsAns: answerMap{
 			dns.TypeA: {
-				sectionAnswer: {newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, someIPv4)},
+				sectionAnswer: {proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 3600, someIPv4)},
 			},
 			dns.TypeAAAA: {},
 		},
 		wantAns: []dns.RR{&dns.AAAA{
 			Hdr: dns.RR_Header{
-				Name:   ipv4OnlyFqdn,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
-				Ttl:    maxDNS64SynTTL,
+				Name:     proxytest.FQDN,
+				Rrtype:   dns.TypeAAAA,
+				Class:    dns.ClassINET,
+				Ttl:      testSynTTL,
+				Rdlength: 16,
 			},
 			AAAA: mappedIPv6,
 		}},
@@ -295,18 +265,19 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qname: domainSOA,
 		upsAns: answerMap{
 			dns.TypeA: {
-				sectionAnswer: {newRR(t, domainSOA, dns.TypeA, 3600, someIPv4)},
+				sectionAnswer: {proxytest.NewRR(t, domainSOA, dns.TypeA, 3600, someIPv4)},
 			},
 			dns.TypeAAAA: {
-				sectionAuthority: {newRR(t, domainSOA, dns.TypeSOA, maxDNS64SynTTL+50, nil)},
+				sectionAuthority: {proxytest.NewRR(t, domainSOA, dns.TypeSOA, testSynTTL+50, nil)},
 			},
 		},
 		wantAns: []dns.RR{&dns.AAAA{
 			Hdr: dns.RR_Header{
-				Name:   domainSOA,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
-				Ttl:    maxDNS64SynTTL + 50,
+				Name:     domainSOA,
+				Rrtype:   dns.TypeAAAA,
+				Class:    dns.ClassINET,
+				Ttl:      testSynTTL + 50,
+				Rdlength: 16,
 			},
 			AAAA: mappedIPv6,
 		}},
@@ -318,17 +289,18 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 			dns.TypeA: {},
 			dns.TypeAAAA: {
 				sectionAnswer: {
-					newRR(t, domainMapped, dns.TypeAAAA, 3600, net.ParseIP("64:ff9b::506:708")),
-					newRR(t, domainMapped, dns.TypeCNAME, 3600, domainAnother),
+					proxytest.NewRR(t, domainMapped, dns.TypeAAAA, 3600, filteredIPv6),
+					proxytest.NewRR(t, domainMapped, dns.TypeCNAME, 3600, domainAnother),
 				},
 			},
 		},
 		wantAns: []dns.RR{&dns.CNAME{
 			Hdr: dns.RR_Header{
-				Name:   domainMapped,
-				Rrtype: dns.TypeCNAME,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Name:     domainMapped,
+				Rrtype:   dns.TypeCNAME,
+				Class:    dns.ClassINET,
+				Ttl:      3600,
+				Rdlength: 16,
 			},
 			Target: domainAnother,
 		}},
@@ -339,10 +311,11 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		upsAns: nil,
 		wantAns: []dns.RR{&dns.PTR{
 			Hdr: dns.RR_Header{
-				Name:   ptr64Domain,
-				Rrtype: dns.TypePTR,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Name:     ptr64Domain,
+				Rrtype:   dns.TypePTR,
+				Class:    dns.ClassINET,
+				Ttl:      3600,
+				Rdlength: 16,
 			},
 			Ptr: domainPointed,
 		}},
@@ -352,15 +325,16 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		qname: ptrGlobDomain,
 		upsAns: answerMap{
 			dns.TypePTR: {
-				sectionAnswer: {newRR(t, ptrGlobDomain, dns.TypePTR, 3600, domainGlob)},
+				sectionAnswer: {proxytest.NewRR(t, ptrGlobDomain, dns.TypePTR, 3600, domainGlob)},
 			},
 		},
 		wantAns: []dns.RR{&dns.PTR{
 			Hdr: dns.RR_Header{
-				Name:   ptrGlobDomain,
-				Rrtype: dns.TypePTR,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Name:     ptrGlobDomain,
+				Rrtype:   dns.TypePTR,
+				Class:    dns.ClassINET,
+				Ttl:      3600,
+				Rdlength: 15,
 			},
 			Ptr: domainGlob,
 		}},
@@ -371,35 +345,37 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 		upsAns: answerMap{
 			dns.TypeA: {
 				sectionAnswer: {
-					newRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
-					newRR(t, fqdnTerminal, dns.TypeA, 3600, someIPv4),
+					proxytest.NewRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
+					proxytest.NewRR(t, fqdnTerminal, dns.TypeA, 3600, someIPv4),
 				},
 			},
 			dns.TypeAAAA: {
 				sectionAnswer: {
-					newRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
+					proxytest.NewRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
 				},
 				sectionAuthority: {
-					newRR(t, fqdnTerminal, dns.TypeSOA, 300, nil),
+					proxytest.NewRR(t, fqdnTerminal, dns.TypeSOA, 300, nil),
 				},
 			},
 		},
 		wantAns: []dns.RR{
 			&dns.CNAME{
 				Hdr: dns.RR_Header{
-					Name:   fqdnCNAMEOnly,
-					Rrtype: dns.TypeCNAME,
-					Class:  dns.ClassINET,
-					Ttl:    3600,
+					Name:     fqdnCNAMEOnly,
+					Rrtype:   dns.TypeCNAME,
+					Class:    dns.ClassINET,
+					Ttl:      3600,
+					Rdlength: 15,
 				},
 				Target: fqdnTerminal,
 			},
 			&dns.AAAA{
 				Hdr: dns.RR_Header{
-					Name:   fqdnTerminal,
-					Rrtype: dns.TypeAAAA,
-					Class:  dns.ClassINET,
-					Ttl:    maxDNS64SynTTL,
+					Name:     fqdnTerminal,
+					Rrtype:   dns.TypeAAAA,
+					Class:    dns.ClassINET,
+					Ttl:      testSynTTL,
+					Rdlength: 16,
 				},
 				AAAA: mappedIPv6,
 			},
@@ -409,39 +385,42 @@ func TestProxy_Resolve_dns64(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			udpAddr := net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
-			tcpAddr := net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
+			udpAddr := net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)
+			tcpAddr := net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)
 
-			p := mustNew(t, &Config{
+			var p *proxy.Proxy
+			p, err = proxy.New(&proxy.Config{
 				Logger:        testLogger,
 				UDPListenAddr: []*net.UDPAddr{udpAddr},
 				TCPListenAddr: []*net.TCPAddr{tcpAddr},
-				UpstreamConfig: &UpstreamConfig{
+				UpstreamConfig: &proxy.UpstreamConfig{
 					Upstreams: []upstream.Upstream{newUps(tc.upsAns)},
 				},
-				PrivateRDNSUpstreamConfig: &UpstreamConfig{
+				PrivateRDNSUpstreamConfig: &proxy.UpstreamConfig{
 					Upstreams: []upstream.Upstream{localUps},
 				},
-				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
+				TrustedProxies: proxytest.DefaultTrustedProxies,
 				CacheEnabled:   true,
 
 				UseDNS64:       true,
 				UsePrivateRDNS: true,
 				PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 			})
+			require.NoError(t, err)
+			servicetest.RequireRun(t, p, proxytest.Timeout)
 
-			servicetest.RequireRun(t, p, dnsproxytest.Timeout)
-
-			dctx := &DNSContext{
-				Req:  (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype),
-				Addr: localCliAddr,
-			}
-
-			err = p.handleDNSRequest(testutil.ContextWithTimeout(t, defaultTimeout), dctx)
+			var conn *dns.Conn
+			conn, err = dns.Dial("tcp", p.Addr(proxy.ProtoTCP).String())
 			require.NoError(t, err)
 
-			res := dctx.Res
+			err = conn.WriteMsg((&dns.Msg{}).SetQuestion(tc.qname, tc.qtype))
+			require.NoError(t, err)
+
+			var res *dns.Msg
+			res, err = conn.ReadMsg()
+			require.NoError(t, err)
 			require.NotNil(t, res)
+
 			assert.Equal(t, tc.wantAns, res.Answer)
 		})
 	}

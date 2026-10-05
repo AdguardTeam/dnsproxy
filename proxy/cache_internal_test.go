@@ -52,10 +52,12 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 
 func TestServeCached(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
-		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
+		Logger:        testLogger,
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		DNSSECEnabled:  false,
 		CacheEnabled:   true,
@@ -310,10 +312,12 @@ func TestCacheExpiration(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
-		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
+		Logger:        testLogger,
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		CacheEnabled:   true,
 	})
@@ -372,8 +376,8 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{u},
 		},

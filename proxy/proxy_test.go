@@ -42,15 +42,6 @@ var (
 
 // TODO(f.setrakov): DRY upstream helpers with their internal versions.
 
-// newTestUpstreamConfig creates a new upstream config with given upstreams set.
-func newTestUpstreamConfig(tb testing.TB, ups ...upstream.Upstream) (u *proxy.UpstreamConfig) {
-	tb.Helper()
-
-	return &proxy.UpstreamConfig{
-		Upstreams: ups,
-	}
-}
-
 // newTestUpstream returns default upstream mock, which responds with single A
 // record with [proxytest.IPv4] value to all requests.  Other upstream
 // methods will be replaced with stub implementations.
@@ -86,10 +77,12 @@ func mustStartDefaultProxy(tb testing.TB) (p *proxy.Proxy) {
 	tb.Helper()
 
 	p, err := proxy.New(&proxy.Config{
-		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(tb, newTestUpstream(tb)),
+		Logger:        testLogger,
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(tb)},
+		},
 		TrustedProxies: proxytest.DefaultTrustedProxies,
 	})
 	require.NoError(tb, err)
@@ -201,7 +194,9 @@ func isCachedWithCustomConfig(
 }
 
 func TestProxy_HandleDNSRequest_race(t *testing.T) {
-	upsConf := newTestUpstreamConfig(t, newTestUpstream(t))
+	upsConf := &proxy.UpstreamConfig{
+		Upstreams: []upstream.Upstream{newTestUpstream(t)},
+	}
 
 	dnsProxy, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,
@@ -601,14 +596,13 @@ func TestProxy_HandleDNSRequest_oneByOneUpstreamsExchange(t *testing.T) {
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		UpstreamConfig: newTestUpstreamConfig(
-			t,
-			errUpstream,
-			errUpstream,
-			newTestUpstream(t),
-		),
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{errUpstream, errUpstream, newTestUpstream(t)},
+		},
 		TrustedProxies: proxytest.DefaultTrustedProxies,
-		Fallbacks:      newTestUpstreamConfig(t, errUpstream),
+		Fallbacks: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{errUpstream},
+		},
 	})
 	require.NoError(t, err)
 	servicetest.RequireRun(t, dnsProxy, proxytest.Timeout)

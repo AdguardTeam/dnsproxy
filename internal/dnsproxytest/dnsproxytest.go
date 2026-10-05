@@ -41,6 +41,12 @@ var (
 	// LocalhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
 	LocalhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
 
+	// UDPLocalhostAnyPort is a [net.UDPAddr] for [LocalhostAnyPort].
+	UDPLocalhostAnyPort = net.UDPAddrFromAddrPort(LocalhostAnyPort)
+
+	// TCPLocalhostAnyPort is a [net.TCPAddr] for [LocalhostAnyPort].
+	TCPLocalhostAnyPort = net.TCPAddrFromAddrPort(LocalhostAnyPort)
+
 	// IPv4 is a common IPv4 address for tests.
 	IPv4 = net.IPv4(192, 0, 2, 1)
 )
@@ -114,7 +120,6 @@ func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 // qtype is [dns.TypeA] or [dns.TypeAAAA] and a string if qtype is
 // [dns.TypeCNAME] or [dns.TypePTR].  qtype is expected to be one of the
 // following:
-//
 //   - [dns.TypeA]
 //   - [dns.TypeAAAA]
 //   - [dns.TypeCNAME]

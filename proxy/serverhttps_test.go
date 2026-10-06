@@ -69,8 +69,8 @@ func TestProxy_HandleDNSRequest_https(t *testing.T) {
 				HTTP3Enabled:    tc.http3,
 			}
 
-			tlsListenAddr := dnsproxytest.TCPLocalhostAnyPort
-			quicListenAddr := dnsproxytest.UDPLocalhostAnyPort
+			tlsListenAddr := dnsproxytest.LocalhostAnyPortTCP
+			quicListenAddr := dnsproxytest.LocalhostAnyPortUDP
 			dnsProxy, err := proxy.New(&proxy.Config{
 				Logger:         testLogger,
 				TLSListenAddr:  []*net.TCPAddr{tlsListenAddr},
@@ -160,8 +160,8 @@ func testProxyRealIPDetection(
 		TrustedProxies: trustedProxies,
 		RequestHandler: reqHandler,
 		TLSConfig:      tlsConf,
-		TLSListenAddr:  []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
-		QUICListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		TLSListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		HTTPConfig:     httpConf,
 	})
 	require.NoError(tb, err)

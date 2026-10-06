@@ -48,8 +48,8 @@ func TestFilteringHandler(t *testing.T) {
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
 		},
 		RequestHandler: reqHandler,
-		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 	})
 
 	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)

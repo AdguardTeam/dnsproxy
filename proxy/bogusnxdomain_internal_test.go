@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO(f.setrakov): Externalize.
+// TODO(f.setrakov): Externalize when ECS helpers are moved to golibs.
 func TestProxy_IsBogusNXDomain(t *testing.T) {
 	var ans []dns.RR
 
@@ -25,8 +25,8 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 
 	prx := mustNew(t, &Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: upsConf,
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		CacheEnabled:   true,

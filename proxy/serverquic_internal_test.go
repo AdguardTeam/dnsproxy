@@ -27,7 +27,7 @@ func TestProxy_HandleDNSRequest_quicTruncatedRequest(t *testing.T) {
 
 	conf := &Config{
 		Logger:         testLogger,
-		QUICListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TLSConfig:      serverConfig,
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},

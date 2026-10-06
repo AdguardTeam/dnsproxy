@@ -244,8 +244,8 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 
 	p := mustNew(t, &Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		CacheEnabled:   true,
@@ -338,8 +338,8 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 func TestProxy_Resolve_exchangeCustomUpstreamConfig(t *testing.T) {
 	p := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
 		},
@@ -380,8 +380,8 @@ func TestProxy_Resolve_exchangeCustomUpstreamConfig(t *testing.T) {
 func TestProxy_Resolve_customUpstreamConfigCache(t *testing.T) {
 	prx := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
 		},
@@ -516,8 +516,8 @@ func TestProxy_Resolve_ecs(t *testing.T) {
 
 	prx := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{u},
 		},
@@ -636,8 +636,8 @@ func TestProxy_Resolve_ecsProxyCacheMinMaxTTL(t *testing.T) {
 	}}
 	ecsIP = clientIP
 
-	udpAddr := dnsproxytest.UDPLocalhostAnyPort
-	tcpAddr := dnsproxytest.TCPLocalhostAnyPort
+	udpAddr := dnsproxytest.LocalhostAnyPortUDP
+	tcpAddr := dnsproxytest.LocalhostAnyPortTCP
 
 	prx := mustNew(t, &Config{
 		Logger:                 testLogger,
@@ -847,7 +847,7 @@ func TestProxy_ValidateRequest(t *testing.T) {
 
 	p, err := New(&Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		UpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{ups}},
 		RefuseAny:      true,
 		PrivateSubnets: privateNets,

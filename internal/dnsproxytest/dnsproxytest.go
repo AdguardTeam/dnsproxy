@@ -30,7 +30,7 @@ const (
 	// Host is a common host for tests.
 	Host = "test.example"
 
-	// FQDN is the FQDN for [Host].
+	// FQDN is the fully-qualified domain name for [Host].
 	FQDN = Host + "."
 
 	// TTL is a common time-to-live value in seconds for tests.
@@ -41,11 +41,11 @@ var (
 	// LocalhostAnyPort is a [netip.AddrPort] having a value of 127.0.0.1:0.
 	LocalhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
 
-	// UDPLocalhostAnyPort is a [net.UDPAddr] for [LocalhostAnyPort].
-	UDPLocalhostAnyPort = net.UDPAddrFromAddrPort(LocalhostAnyPort)
+	// LocalhostAnyPortUDP is a [net.UDPAddr] for [LocalhostAnyPort].
+	LocalhostAnyPortUDP = net.UDPAddrFromAddrPort(LocalhostAnyPort)
 
-	// TCPLocalhostAnyPort is a [net.TCPAddr] for [LocalhostAnyPort].
-	TCPLocalhostAnyPort = net.TCPAddrFromAddrPort(LocalhostAnyPort)
+	// LocalhostAnyPortTCP is a [net.TCPAddr] for [LocalhostAnyPort].
+	LocalhostAnyPortTCP = net.TCPAddrFromAddrPort(LocalhostAnyPort)
 
 	// IPv4 is a common IPv4 address for tests.
 	IPv4 = net.IPv4(192, 0, 2, 1)

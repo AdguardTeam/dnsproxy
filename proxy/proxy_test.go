@@ -509,8 +509,8 @@ func TestProxy_HandleDNSRequest_exchangeWithReservedDomains(t *testing.T) {
 	)
 
 	const (
-		host1 = "example-1.test"
-		host2 = "test.example-1.test"
+		host1 = "test-1.example"
+		host2 = "subdomain." + host1
 
 		fqdn1 = host1 + "."
 		fqdn2 = host2 + "."

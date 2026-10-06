@@ -53,8 +53,8 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 func TestServeCached(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
 		},
@@ -313,8 +313,8 @@ func TestCacheExpiration(t *testing.T) {
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
 		},
@@ -376,8 +376,8 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		UpstreamConfig: &UpstreamConfig{
 			Upstreams: []upstream.Upstream{u},
 		},

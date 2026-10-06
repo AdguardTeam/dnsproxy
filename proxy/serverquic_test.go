@@ -52,7 +52,7 @@ func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 
 	conf := &proxy.Config{
 		Logger:         testLogger,
-		QUICListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TLSConfig:      serverConfig,
 		UpstreamConfig: &proxy.UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
@@ -127,8 +127,8 @@ func TestProxy_HandleDNSRequest_quicLargePackets(t *testing.T) {
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		RequestHandler: reqHandler,
 		TLSConfig:      serverConfig,
-		TLSListenAddr:  []*net.TCPAddr{dnsproxytest.TCPLocalhostAnyPort},
-		QUICListenAddr: []*net.UDPAddr{dnsproxytest.UDPLocalhostAnyPort},
+		TLSListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 	})
 	require.NoError(t, err)
 

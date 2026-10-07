@@ -14,6 +14,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
@@ -51,9 +52,11 @@ func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 
 	conf := &proxy.Config{
 		Logger:         testLogger,
-		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: newTestUpstreamConfig(t),
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 	}
 
@@ -64,7 +67,9 @@ func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 	require.False(t, t.Failed())
 
 	conf.QUICListenAddr = []*net.UDPAddr{addr}
-	conf.UpstreamConfig = newTestUpstreamConfig(t)
+	conf.UpstreamConfig = &proxy.UpstreamConfig{
+		Upstreams: []upstream.Upstream{newTestUpstream(t)},
+	}
 
 	require.True(t, t.Run("rerun", func(t *testing.T) {
 		testHandleDNSRequestQUIC(t, conf, tlsConfig)
@@ -115,13 +120,15 @@ func TestProxy_HandleDNSRequest_quicLargePackets(t *testing.T) {
 
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
 	dnsProxy, err := proxy.New(&proxy.Config{
-		Logger:         testLogger,
-		UpstreamConfig: newTestUpstreamConfig(t),
+		Logger: testLogger,
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		RequestHandler: reqHandler,
 		TLSConfig:      serverConfig,
-		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TLSListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 	})
 	require.NoError(t, err)
 

@@ -39,7 +39,9 @@ func TestProxy_HandleDNSRequest_tls(t *testing.T) {
 		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: newTestUpstreamConfig(t),
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		TrustedProxies: proxytest.DefaultTrustedProxies,
 	})
 	require.NoError(t, err)

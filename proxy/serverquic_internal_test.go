@@ -9,6 +9,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
@@ -26,9 +27,11 @@ func TestProxy_HandleDNSRequest_quicTruncatedRequest(t *testing.T) {
 
 	conf := &Config{
 		Logger:         testLogger,
-		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		RequestHandler: &testHandler{
 			OnHandle: func(ctx context.Context, p *Proxy, d *DNSContext) (_ error) {

@@ -214,8 +214,8 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 
 		p := mustNew(t, &Config{
 			Logger:        testLogger,
-			UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-			TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+			UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+			TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 			UpstreamConfig: &UpstreamConfig{
 				Upstreams: ups,
 			},

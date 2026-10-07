@@ -371,8 +371,12 @@ func (p *dnsOverHTTPS) resetClient(
 	p.clientMu.Lock()
 	defer p.clientMu.Unlock()
 
-	if errors.Is(resetErr, quic.Err0RTTRejected) {
-		// Reset the TokenStore only if 0-RTT was rejected.
+	shouldResetQUIC := errors.Is(resetErr, quic.Err0RTTRejected)
+	var qAppErr *quic.ApplicationError
+	if errors.As(resetErr, &qAppErr) && qAppErr.ErrorCode == quic.ApplicationErrorCode(http3.ErrCodeNoError) {
+		shouldResetQUIC = true
+	}
+	if shouldResetQUIC {
 		p.resetQUICConfig()
 	}
 

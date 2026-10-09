@@ -24,7 +24,6 @@ import (
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	"golang.org/x/net/http2"
 )
 
 // Values to configure HTTP and HTTP/2 transport.
@@ -79,7 +78,7 @@ type dnsOverHTTPS struct {
 	quicConfMu *sync.Mutex
 
 	// transportH2 is an HTTP/2 transport if any.
-	transportH2 *http2.Transport
+	transportH2 *http.Transport
 
 	// addrRedacted is the redacted string representation of addr.  It is saved
 	// separately to reduce allocations during logging and error reporting.
@@ -490,6 +489,10 @@ func (p *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper
 		return nil, errors.Error("HTTP1/1 and HTTP2 are not supported by this upstream")
 	}
 
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+
 	transport := &http.Transport{
 		TLSClientConfig:    tlsConf,
 		DisableCompression: true,
@@ -498,21 +501,19 @@ func (p *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper
 		MaxConnsPerHost:    dohMaxConnsPerHost,
 		MaxIdleConns:       dohMaxIdleConns,
 		// Since we have a custom DialContext, we need to use this field to make
-		// golang http.Client attempt to use HTTP/2. Otherwise, it would only be
+		// [http.Client] attempt to use HTTP/2.  Otherwise, it would only be
 		// used when negotiated on the TLS level.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/11.
 		ForceAttemptHTTP2: true,
+		Protocols:         protocols,
+		HTTP2: &http.HTTP2Config{
+			// Enable HTTP/2 pings on idle connections.
+			SendPingTimeout: transportDefaultReadIdleTimeout,
+		},
 	}
 
-	// Explicitly configure transport to use HTTP/2.
-	//
-	// See https://github.com/AdguardTeam/dnsproxy/issues/11.
-	p.transportH2, err = http2.ConfigureTransports(transport)
-	if err != nil {
-		return nil, err
-	}
-
-	// Enable HTTP/2 pings on idle connections.
-	p.transportH2.ReadIdleTimeout = transportDefaultReadIdleTimeout
+	p.transportH2 = transport
 
 	return transport, nil
 }

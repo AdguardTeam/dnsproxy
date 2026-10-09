@@ -48,7 +48,7 @@ func TestExchangeParallel(t *testing.T) {
 	}
 }
 
-func TestExchangeParallelEmpty(t *testing.T) {
+func TestExchangeParallel_empty(t *testing.T) {
 	ups := []Upstream{
 		&testUpstream{empty: true},
 		&testUpstream{empty: true},
@@ -63,6 +63,46 @@ func TestExchangeParallelEmpty(t *testing.T) {
 	assert.Nil(t, up)
 }
 
+func TestExchangeParallel_servFail(t *testing.T) {
+	valid := &testUpstream{
+		addr:  netip.MustParseAddr("1.1.1.1"),
+		sleep: 100 * time.Millisecond,
+	}
+	ups := []Upstream{
+		&testUpstream{rcode: dns.RcodeServerFailure},
+		valid,
+	}
+
+	req := createTestMessage()
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	resp, up, err := ExchangeParallel(ctx, ups, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
+	assert.Same(t, valid, up)
+}
+
+func TestExchangeParallel_servFailAll(t *testing.T) {
+	first := &testUpstream{rcode: dns.RcodeServerFailure}
+	ups := []Upstream{
+		first,
+		&testUpstream{
+			rcode: dns.RcodeServerFailure,
+			sleep: 100 * time.Millisecond,
+		},
+	}
+
+	req := createTestMessage()
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	resp, up, err := ExchangeParallel(ctx, ups, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, dns.RcodeServerFailure, resp.Rcode)
+	assert.Same(t, first, up)
+}
+
 // testUpstream represents a mock upstream structure.
 type testUpstream struct {
 	// addr is a mock A record IP address to be returned.
@@ -73,6 +113,9 @@ type testUpstream struct {
 
 	// empty indicates if a nil response is returned.
 	empty bool
+
+	// rcode is the response code to be set in the response.
+	rcode int
 
 	// sleep is a delay before response.
 	sleep time.Duration
@@ -96,7 +139,7 @@ func (u *testUpstream) Exchange(_ context.Context, req *dns.Msg) (resp *dns.Msg,
 	}
 
 	resp = &dns.Msg{}
-	resp.SetReply(req)
+	resp.SetRcode(req, u.rcode)
 
 	if u.addr != (netip.Addr{}) {
 		a := dns.A{

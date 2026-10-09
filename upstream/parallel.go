@@ -21,7 +21,14 @@ const (
 )
 
 // ExchangeParallel returns the first successful response from one of u.  It
-// returns an error if all upstreams failed to exchange the request.
+// returns an error if all upstreams failed to exchange the request.  Each
+// element of ups must not be nil, req must not be nil.
+//
+// A response with the SERVFAIL code is not considered successful.  Such a
+// response is returned only if all upstreams respond with SERVFAIL, in which
+// case the first received one is returned.
+//
+// See https://www.rfc-editor.org/rfc/rfc9520#section-2.1.
 func ExchangeParallel(
 	ctx context.Context,
 	ups []Upstream,
@@ -47,17 +54,40 @@ func ExchangeParallel(
 		go exchangeAsync(ctx, f, copyReq, resCh)
 	}
 
-	errs := []error{}
-	for range ups {
+	return receiveParallelResult(upsNum, resCh)
+}
+
+// receiveParallelResult waits for the first successful response from resCh.  A
+// SERVFAIL response is returned only if all upstreams respond with SERVFAIL, in
+// which case the first received one is returned.  See [ExchangeParallel].
+func receiveParallelResult(
+	upsNum int,
+	resCh <-chan any,
+) (reply *dns.Msg, resolved Upstream, err error) {
+	var errs []error
+	var firstServFail *ExchangeAllResult
+	for range upsNum {
 		var r *ExchangeAllResult
 		r, err = receiveAsyncResult(resCh)
 		if err != nil {
-			if !errors.Is(err, ErrNoReply) {
-				errs = append(errs, err)
-			}
-		} else {
+			errs = appendResultErr(errs, err)
+
+			continue
+		}
+
+		if r.Resp.Rcode != dns.RcodeServerFailure {
 			return r.Resp, r.Upstream, nil
 		}
+
+		// Save the first SERVFAIL response and keep waiting for a successful
+		// response.
+		if firstServFail == nil {
+			firstServFail = r
+		}
+	}
+
+	if firstServFail != nil {
+		return firstServFail.Resp, firstServFail.Upstream, nil
 	}
 
 	// TODO(e.burkov):  Probably it's better to return the joined error from
@@ -70,8 +100,19 @@ func ExchangeParallel(
 	return nil, nil, errors.Join(errs...)
 }
 
+// appendResultErr appends err to errs if err is not [ErrNoReply].
+func appendResultErr(orig []error, err error) (errs []error) {
+	errs = orig
+
+	if !errors.Is(err, ErrNoReply) {
+		errs = append(errs, err)
+	}
+
+	return errs
+}
+
 // exchangeSingle returns a successful response and resolver if a DNS lookup was
-// successful.
+// successful.  ups, req must not be nil.
 func exchangeSingle(
 	ctx context.Context,
 	ups Upstream,
@@ -155,7 +196,7 @@ func ExchangeAll(
 
 // receiveAsyncResult receives a single result from resCh or an error from
 // errCh.  It returns either a non-nil result or an error.
-func receiveAsyncResult(resCh chan any) (res *ExchangeAllResult, err error) {
+func receiveAsyncResult(resCh <-chan any) (res *ExchangeAllResult, err error) {
 	switch res := (<-resCh).(type) {
 	case error:
 		return nil, res

@@ -102,10 +102,8 @@ func TestCache_expired(t *testing.T) {
 		A: net.IP{8, 8, 8, 8},
 	}
 	reply := (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Response: true,
-		},
-		Answer: []dns.RR{ans},
+		Response: true,
+		Answer:   []dns.RR{ans},
 	}).SetQuestion(host, dns.TypeA)
 
 	testCases := []struct {
@@ -190,10 +188,8 @@ func TestCacheDO(t *testing.T) {
 
 	// Fill the cache.
 	reply := (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Response: true,
-		},
-		Answer: []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
+		Response: true,
+		Answer:   []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
 	}).SetQuestion("google.com.", dns.TypeA)
 	reply.SetEdns0(4096, false)
 
@@ -228,9 +224,7 @@ func TestCacheCNAME(t *testing.T) {
 
 	// Fill the cache
 	reply := (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Response: true,
-		},
+		Response: true,
 		Answer: []dns.RR{
 			dnsproxytest.NewRR(t, "google.com.", dns.TypeCNAME, 3600, "test.google.com."),
 		},
@@ -334,9 +328,7 @@ func TestCacheExpiration(t *testing.T) {
 	responses := make([]*dns.Msg, 0, len(rrs))
 	for _, rr := range rrs {
 		req := (&dns.Msg{
-			MsgHdr: dns.MsgHdr{
-				Id: dns.Id(),
-			},
+			Id: dns.Id(),
 		}).SetQuestion(rr.Header().Name, dns.TypeA)
 		requests = append(requests, req)
 
@@ -561,10 +553,8 @@ func (tests testCases) run(t *testing.T) {
 		request := (&dns.Msg{}).SetQuestion(res.q, res.t)
 
 		reply := (&dns.Msg{
-			MsgHdr: dns.MsgHdr{
-				Response: true,
-			},
-			Answer: res.a,
+			Response: true,
+			Answer:   res.a,
 		}).SetReply(request)
 		testCache.set(request, reply, upstreamWithAddr, testLogger)
 	}
@@ -583,10 +573,8 @@ func (tests testCases) run(t *testing.T) {
 		}
 
 		reply := (&dns.Msg{
-			MsgHdr: dns.MsgHdr{
-				Response: true,
-			},
-			Answer: tc.a,
+			Response: true,
+			Answer:   tc.a,
 		}).SetQuestion(tc.q, tc.t)
 
 		testCache.set(request, reply, upstreamWithAddr, testLogger)
@@ -630,16 +618,12 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 	ipAddr := net.ParseIP(ip)
 
 	req := (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id: dns.Id(),
-		},
+		Id: dns.Id(),
 	}).SetQuestion(host, dns.TypeA)
 
 	dnsMsg := (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Response: true,
-		},
-		Answer: []dns.RR{dnsproxytest.NewRR(t, host, dns.TypeA, 1, ipAddr)},
+		Response: true,
+		Answer:   []dns.RR{dnsproxytest.NewRR(t, host, dns.TypeA, 1, ipAddr)},
 	}).SetQuestion(host, dns.TypeA)
 
 	c.set(req, dnsMsg, upstreamWithAddr, testLogger)

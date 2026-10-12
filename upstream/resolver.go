@@ -213,10 +213,8 @@ func (r *UpstreamResolver) request(
 	}
 
 	req := &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
+		Id:               dns.Id(),
+		RecursionDesired: true,
 		Question: []dns.Question{{
 			Name:   host,
 			Qtype:  qtype,

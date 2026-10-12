@@ -1,62 +1,67 @@
-package upstream
+package upstream_test
 
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestExchangeParallel launches several parallel exchanges
 func TestExchangeParallel(t *testing.T) {
-	upstreams := []Upstream{}
-	upstreamList := []string{"1.2.3.4:55", "8.8.8.1", "8.8.8.8:53"}
+	t.Parallel()
+
+	const publicDNSAddr = "8.8.8.8:53"
+
+	var upstreams []upstream.Upstream
+	upstreamList := []string{
+		"1.2.3.4:55",
+		"8.8.8.1",
+		publicDNSAddr,
+	}
 
 	for _, s := range upstreamList {
-		u, err := AddressToUpstream(s, &Options{
+		u, err := upstream.AddressToUpstream(s, &upstream.Options{
 			Logger:  testLogger,
 			Timeout: testTimeout,
 		})
-		if err != nil {
-			t.Fatalf("cannot create upstream: %s", err)
-		}
+		require.NoError(t, err)
+
 		upstreams = append(upstreams, u)
 	}
 
-	req := createTestMessage()
-	start := time.Now()
+	req := newTestMessage()
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, u, err := ExchangeParallel(ctx, upstreams, req)
-	if err != nil {
-		t.Fatalf("no response from test upstreams: %s", err)
-	}
+	resp, u, err := upstream.ExchangeParallel(ctx, upstreams, req)
+	require.NoError(t, err)
+	require.Equal(t, u.Address(), publicDNSAddr)
 
-	if u.Address() != "8.8.8.8:53" {
-		t.Fatalf("shouldn't happen. This upstream can't resolve DNS request: %s", u.Address())
-	}
+	require.NotNil(t, resp)
+	require.Len(t, resp.Answer, 1)
 
-	requireResponse(t, req, resp)
-	elapsed := time.Since(start)
-	if elapsed > testTimeout {
-		t.Fatalf("exchange took more time than the configured timeout: %v", elapsed)
-	}
+	assert.Equal(t, req.Id, resp.Id)
+
+	a := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0])
+	assert.Equal(t, net.IPv4(8, 8, 8, 8), a.A.To16())
 }
 
 func TestExchangeParallel_empty(t *testing.T) {
-	ups := []Upstream{
+	ups := []upstream.Upstream{
 		&testUpstream{empty: true},
 		&testUpstream{empty: true},
 	}
 
-	req := createTestMessage()
+	req := newTestMessage()
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, up, err := ExchangeParallel(ctx, ups, req)
+	resp, up, err := upstream.ExchangeParallel(ctx, ups, req)
 	require.Error(t, err)
 
 	assert.Nil(t, resp)
@@ -68,14 +73,14 @@ func TestExchangeParallel_servFail(t *testing.T) {
 		addr:  netip.MustParseAddr("1.1.1.1"),
 		sleep: 100 * time.Millisecond,
 	}
-	ups := []Upstream{
+	ups := []upstream.Upstream{
 		&testUpstream{rcode: dns.RcodeServerFailure},
 		valid,
 	}
 
-	req := createTestMessage()
+	req := newTestMessage()
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, up, err := ExchangeParallel(ctx, ups, req)
+	resp, up, err := upstream.ExchangeParallel(ctx, ups, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -85,7 +90,7 @@ func TestExchangeParallel_servFail(t *testing.T) {
 
 func TestExchangeParallel_servFailAll(t *testing.T) {
 	first := &testUpstream{rcode: dns.RcodeServerFailure}
-	ups := []Upstream{
+	ups := []upstream.Upstream{
 		first,
 		&testUpstream{
 			rcode: dns.RcodeServerFailure,
@@ -93,9 +98,9 @@ func TestExchangeParallel_servFailAll(t *testing.T) {
 		},
 	}
 
-	req := createTestMessage()
+	req := newTestMessage()
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, up, err := ExchangeParallel(ctx, ups, req)
+	resp, up, err := upstream.ExchangeParallel(ctx, ups, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -122,7 +127,7 @@ type testUpstream struct {
 }
 
 // type check
-var _ Upstream = (*testUpstream)(nil)
+var _ upstream.Upstream = (*testUpstream)(nil)
 
 // Exchange implements the [Upstream] interface for *testUpstream.
 func (u *testUpstream) Exchange(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
@@ -166,7 +171,7 @@ func TestExchangeAll(t *testing.T) {
 	delayedAnsAddr := netip.MustParseAddr("1.1.1.1")
 	ansAddr := netip.MustParseAddr("3.3.3.3")
 
-	ups := []Upstream{&testUpstream{
+	ups := []upstream.Upstream{&testUpstream{
 		addr:  delayedAnsAddr,
 		sleep: 100 * time.Millisecond,
 	}, &testUpstream{
@@ -175,9 +180,9 @@ func TestExchangeAll(t *testing.T) {
 		addr: ansAddr,
 	}}
 
-	req := createHostTestMessage("test.org")
+	req := dnsproxytest.NewTestRequestWithHost("test.org")
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	res, err := ExchangeAll(ctx, ups, req)
+	res, err := upstream.ExchangeAll(ctx, ups, req)
 	require.NoError(t, err)
 	require.Len(t, res, 2)
 
@@ -194,4 +199,9 @@ func TestExchangeAll(t *testing.T) {
 
 	ip = testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
 	assert.Equal(t, delayedAnsAddr.AsSlice(), []byte(ip))
+}
+
+// newTestMessage creates a [*dns.Msg] that we use for tests.
+func newTestMessage() (m *dns.Msg) {
+	return dnsproxytest.NewTestRequestWithHost("google-public-dns-a.google.com")
 }

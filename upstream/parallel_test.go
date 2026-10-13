@@ -53,59 +53,98 @@ func TestExchangeParallel(t *testing.T) {
 	assert.Equal(t, net.IPv4(8, 8, 8, 8), a.A.To16())
 }
 
-func TestExchangeParallel_empty(t *testing.T) {
-	ups := []upstream.Upstream{
-		&testUpstream{empty: true},
-		&testUpstream{empty: true},
+func TestExchangeParallel_noReply(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		want string
+		ups  []upstream.Upstream
+	}{{
+		name: "no_upstreams",
+		want: "no upstream specified",
+		ups:  []upstream.Upstream{},
+	}, {
+		name: "single_upstream",
+		want: upstream.ErrNoReply.Error(),
+		ups: []upstream.Upstream{
+			&testUpstream{empty: true},
+		},
+	}, {
+		name: "multiple_upstreams",
+		want: "none of upstream servers responded",
+		ups: []upstream.Upstream{
+			&testUpstream{empty: true},
+			&testUpstream{empty: true},
+		},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := newTestMessage()
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			resp, up, err := upstream.ExchangeParallel(ctx, tc.ups, req)
+			testutil.AssertErrorMsg(t, tc.want, err)
+			assert.Nil(t, resp)
+			assert.Nil(t, up)
+		})
 	}
-
-	req := newTestMessage()
-	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, up, err := upstream.ExchangeParallel(ctx, ups, req)
-	require.Error(t, err)
-
-	assert.Nil(t, resp)
-	assert.Nil(t, up)
 }
 
 func TestExchangeParallel_servFail(t *testing.T) {
+	t.Parallel()
+
+	servFail := &testUpstream{
+		rcode: dns.RcodeServerFailure,
+	}
+
 	valid := &testUpstream{
 		addr:  netip.MustParseAddr("1.1.1.1"),
 		sleep: 100 * time.Millisecond,
 	}
-	ups := []upstream.Upstream{
-		&testUpstream{rcode: dns.RcodeServerFailure},
-		valid,
-	}
 
-	req := newTestMessage()
-	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, up, err := upstream.ExchangeParallel(ctx, ups, req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-
-	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
-	assert.Same(t, valid, up)
-}
-
-func TestExchangeParallel_servFailAll(t *testing.T) {
-	first := &testUpstream{rcode: dns.RcodeServerFailure}
-	ups := []upstream.Upstream{
-		first,
-		&testUpstream{
-			rcode: dns.RcodeServerFailure,
-			sleep: 100 * time.Millisecond,
+	testCases := []struct {
+		want      upstream.Upstream
+		name      string
+		ups       []upstream.Upstream
+		wantRcode int
+	}{{
+		want: valid,
+		name: "valid",
+		ups: []upstream.Upstream{
+			servFail,
+			valid,
 		},
+		wantRcode: dns.RcodeSuccess,
+	}, {
+		want: servFail,
+		name: "servFail",
+		ups: []upstream.Upstream{
+			servFail,
+			&testUpstream{
+				rcode: dns.RcodeServerFailure,
+				sleep: 100 * time.Millisecond,
+			},
+		},
+		wantRcode: dns.RcodeServerFailure,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := newTestMessage()
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			resp, up, err := upstream.ExchangeParallel(ctx, tc.ups, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+
+			assert.Equal(t, tc.wantRcode, resp.Rcode)
+			assert.Same(t, tc.want, up)
+		})
 	}
-
-	req := newTestMessage()
-	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, up, err := upstream.ExchangeParallel(ctx, ups, req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-
-	assert.Equal(t, dns.RcodeServerFailure, resp.Rcode)
-	assert.Same(t, first, up)
 }
 
 // testUpstream represents a mock upstream structure.

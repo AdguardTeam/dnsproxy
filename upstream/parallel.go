@@ -93,6 +93,8 @@ func receiveParallelResult(
 	// TODO(e.burkov):  Probably it's better to return the joined error from
 	// each upstream that returned no response, and get rid of multiple
 	// [errors.Is] calls.  This will change the behavior though.
+	//
+	// TODO(e.burkov):  Consider returning [ErrNoReply].
 	if len(errs) == 0 {
 		return nil, nil, errors.Error("none of upstream servers responded")
 	}
@@ -100,7 +102,7 @@ func receiveParallelResult(
 	return nil, nil, errors.Join(errs...)
 }
 
-// appendResultErr appends err to errs if err is not [ErrNoReply].
+// appendResultErr appends err to orig if err is not [ErrNoReply].
 func appendResultErr(orig []error, err error) (errs []error) {
 	errs = orig
 
@@ -112,7 +114,8 @@ func appendResultErr(orig []error, err error) (errs []error) {
 }
 
 // exchangeSingle returns a successful response and resolver if a DNS lookup was
-// successful.  ups, req must not be nil.
+// successful.  Returns [ErrNoReply] if exchange returned a nil response.  ups
+// and req must not be nil.
 func exchangeSingle(
 	ctx context.Context,
 	ups Upstream,
@@ -123,7 +126,11 @@ func exchangeSingle(
 		return nil, nil, err
 	}
 
-	return resp, ups, err
+	if resp == nil {
+		return nil, nil, ErrNoReply
+	}
+
+	return resp, ups, nil
 }
 
 // ExchangeAllResult is the successful result of [ExchangeAll] for a single

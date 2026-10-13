@@ -3,7 +3,9 @@
 package upstream
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -183,11 +185,11 @@ const (
 //
 // opts are applied to the u and shouldn't be modified afterwards, nil value is
 // valid.
-//
-// TODO(e.burkov):  Clone opts?
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 	if opts == nil {
 		opts = &Options{}
+	} else {
+		opts = opts.Clone()
 	}
 
 	if opts.Logger == nil {
@@ -299,6 +301,22 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 		opts.Bootstrap = StaticResolver{ip}
 	}
 
+	if len(stamp.Hashes) > 0 {
+		existingVerifyConn := opts.VerifyConnection
+		hashes := stamp.Hashes
+		opts.VerifyConnection = func(state tls.ConnectionState) error {
+			if pinErr := verifyTBSPinning(state.PeerCertificates, hashes); pinErr != nil {
+				return pinErr
+			}
+
+			if existingVerifyConn != nil {
+				return existingVerifyConn(state)
+			}
+
+			return nil
+		}
+	}
+
 	switch stamp.Proto {
 	case dnsstamps.StampProtoTypePlain:
 		return newPlain(&url.URL{Scheme: "udp", Host: stamp.ServerAddrStr}, opts)
@@ -313,6 +331,22 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 	default:
 		return nil, fmt.Errorf("unsupported stamp protocol %s", &stamp.Proto)
 	}
+}
+
+// verifyTBSPinning checks that at least one certificate in certs has a
+// SHA256(RawTBSCertificate) matching one of the expected hashes.
+func verifyTBSPinning(certs []*x509.Certificate, hashes [][]uint8) error {
+	for _, cert := range certs {
+		tbsHash := sha256.Sum256(cert.RawTBSCertificate)
+		for _, expected := range hashes {
+			if bytes.Equal(tbsHash[:], expected) {
+				return nil
+			}
+		}
+	}
+
+	return errors.Error("tbs certificate hash pinning failed: " +
+		"no certificate in the chain matches any expected hash")
 }
 
 // addPort appends port to u if it's absent.

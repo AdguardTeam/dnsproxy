@@ -327,9 +327,7 @@ func TestCacheExpiration(t *testing.T) {
 	requests := make([]*dns.Msg, 0, len(rrs))
 	responses := make([]*dns.Msg, 0, len(rrs))
 	for _, rr := range rrs {
-		req := (&dns.Msg{
-			Id: dns.Id(),
-		}).SetQuestion(rr.Header().Name, dns.TypeA)
+		req := (&dns.Msg{}).SetQuestion(rr.Header().Name, dns.TypeA)
 		requests = append(requests, req)
 
 		resp := (&dns.Msg{}).SetReply(req)
@@ -551,11 +549,7 @@ func (tests testCases) run(t *testing.T) {
 
 	for _, res := range tests.cache {
 		request := (&dns.Msg{}).SetQuestion(res.q, res.t)
-
-		reply := (&dns.Msg{
-			Response: true,
-			Answer:   res.a,
-		}).SetReply(request)
+		reply := (&dns.Msg{Response: true, Answer: res.a}).SetReply(request)
 		testCache.set(request, reply, upstreamWithAddr, testLogger)
 	}
 
@@ -572,10 +566,7 @@ func (tests testCases) run(t *testing.T) {
 			continue
 		}
 
-		reply := (&dns.Msg{
-			Response: true,
-			Answer:   tc.a,
-		}).SetQuestion(tc.q, tc.t)
+		reply := (&dns.Msg{Response: true, Answer: tc.a}).SetQuestion(tc.q, tc.t)
 
 		testCache.set(request, reply, upstreamWithAddr, testLogger)
 
@@ -617,9 +608,7 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 
 	ipAddr := net.ParseIP(ip)
 
-	req := (&dns.Msg{
-		Id: dns.Id(),
-	}).SetQuestion(host, dns.TypeA)
+	req := (&dns.Msg{}).SetQuestion(host, dns.TypeA)
 
 	dnsMsg := (&dns.Msg{
 		Response: true,

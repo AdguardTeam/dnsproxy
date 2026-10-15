@@ -810,8 +810,9 @@ func (p *Proxy) replyFromUpstream(ctx context.Context, d *DNSContext) (ok bool, 
 
 	// Perform the DNS request.
 	resp, u, err := p.exchangeUpstreams(ctx, req, wrapped)
-	if dns64Ups := p.performDNS64(ctx, req, resp, wrapped); dns64Ups != nil {
+	if dns64Ups, dns64Wrapped := p.performDNS64(ctx, req, resp, upstreams); dns64Ups != nil {
 		u = dns64Ups
+		wrapped = dns64Wrapped
 	} else if p.isBogusNXDomain(resp) {
 		p.logger.DebugContext(ctx, "response contains bogus-nxdomain ip")
 		resp = p.messages.NewMsgNXDOMAIN(req)

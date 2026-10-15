@@ -89,11 +89,16 @@ func (s *QueryStatistics) Fallback() (us []*UpstreamStatistics) {
 }
 
 // collectQueryStats gathers the statistics from the wrapped upstreams.
-// resolver is an upstream DNS resolver that successfully resolved the request,
-// if any.  Provided upstreams must be of type [*upstreamWithStats].  unwrapped
-// is the unwrapped resolver, see [upstreamWithStats.upstream].  The returned
-// statistics depend on whether the DNS request was successfully resolved and
-// the upstream mode, see [DNSContext.QueryStatistics].
+// resolver is the upstream that has successfully resolved the request, if any.
+// It must be of type [*upstreamWithStats], and all elements of upstreams and
+// fallbacks must be of type [*upstreamWithStats] as well.  When resolver is
+// nil, all the upstreams passed to the function must have already finished
+// their exchanges, because their statistics are read, and
+// [*upstreamWithStats] is not safe for concurrent use.  unwrapped is nil if
+// and only if resolver is nil; otherwise, it is the upstream wrapped by
+// resolver, see [upstreamWithStats.upstream].  stats is never nil.  The
+// returned statistics depend on whether the DNS request was successfully
+// resolved and the upstream mode, see [DNSContext.QueryStatistics].
 func collectQueryStats(
 	mode UpstreamMode,
 	resolver upstream.Upstream,

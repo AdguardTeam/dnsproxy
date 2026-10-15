@@ -148,9 +148,7 @@ func newDNSContext(
 // newReq returns new request message for provided parameters.
 func newReq(domain string, qtype, qclass uint16) (req *dns.Msg) {
 	return &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id: dns.Id(),
-		},
+		Id:       dns.Id(),
 		Compress: true,
 		Question: []dns.Question{{
 			Name:   dns.Fqdn(domain),
@@ -708,7 +706,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 	buildCtx := func() (dctx *DNSContext) {
 		req := &dns.Msg{
-			MsgHdr: dns.MsgHdr{Id: dns.Id()},
+			Id: dns.Id(),
 			Question: []dns.Question{{
 				Name:   host,
 				Qtype:  dns.TypeA,
@@ -870,7 +868,7 @@ func TestProxy_ValidateRequest(t *testing.T) {
 	}, {
 		name: "no_questions",
 		req: &dns.Msg{
-			MsgHdr:   dns.MsgHdr{Id: dns.Id()},
+			Id:       dns.Id(),
 			Question: []dns.Question{},
 		},
 		addr:            testAddr,

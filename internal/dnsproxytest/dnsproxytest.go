@@ -68,10 +68,8 @@ func NewTestRequest() (msg *dns.Msg) {
 // This helper must not be used in IPv6-related tests.
 func NewTestRequestWithHost(host string) (req *dns.Msg) {
 	return &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
+		Id:               dns.Id(),
+		RecursionDesired: true,
 		Question: []dns.Question{{
 			Name:   dns.Fqdn(host),
 			Qtype:  dns.TypeA,

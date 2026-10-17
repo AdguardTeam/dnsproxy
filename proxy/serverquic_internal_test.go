@@ -43,10 +43,8 @@ func TestProxy_HandleDNSRequest_quicTruncatedRequest(t *testing.T) {
 	dnsProxy := mustNew(t, conf)
 
 	req := (&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               0,
-			RecursionDesired: true,
-		},
+		Id:               0,
+		RecursionDesired: true,
 		Question: []dns.Question{{
 			Name:   dns.Fqdn(dnsproxytest.Host),
 			Qtype:  dns.TypeA,

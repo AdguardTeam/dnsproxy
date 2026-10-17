@@ -93,10 +93,10 @@ func TestExchangeParallel_noReply(t *testing.T) {
 	}
 }
 
-func TestExchangeParallel_servFail(t *testing.T) {
+func TestExchangeParallel_servfail(t *testing.T) {
 	t.Parallel()
 
-	servFail := &testUpstream{
+	servfail := &testUpstream{
 		rcode: dns.RcodeServerFailure,
 	}
 
@@ -114,15 +114,15 @@ func TestExchangeParallel_servFail(t *testing.T) {
 		want: valid,
 		name: "valid",
 		ups: []upstream.Upstream{
-			servFail,
+			servfail,
 			valid,
 		},
 		wantRcode: dns.RcodeSuccess,
 	}, {
-		want: servFail,
-		name: "servFail",
+		want: servfail,
+		name: "servfail",
 		ups: []upstream.Upstream{
-			servFail,
+			servfail,
 			&testUpstream{
 				rcode: dns.RcodeServerFailure,
 				sleep: 100 * time.Millisecond,

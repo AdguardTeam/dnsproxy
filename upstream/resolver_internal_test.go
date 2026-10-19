@@ -15,5 +15,10 @@ func (r *CachingResolver) FindCached(
 	network bootstrap.Network,
 	now time.Time,
 ) (addrs []netip.Addr) {
-	return r.findCached(host, network, now)
+	key := cacheKey{
+		network:       network,
+		lowercaseHost: host,
+	}
+
+	return r.findCached(key, now)
 }

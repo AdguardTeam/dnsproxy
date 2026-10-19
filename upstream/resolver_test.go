@@ -150,8 +150,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 			hdr.Ttl = uint32(largeTTL.Seconds())
 			rr = &dns.AAAA{Hdr: hdr, AAAA: ip6.AsSlice()}
 		default:
-			pt := testutil.NewPanicT(t)
-			require.Contains(pt, []uint16{dns.TypeA, dns.TypeAAAA}, q.Qtype)
+			require.Contains(t, []uint16{dns.TypeA, dns.TypeAAAA}, q.Qtype)
 		}
 		resp.Answer = append(resp.Answer, rr)
 

@@ -303,11 +303,12 @@ func (r *CachingResolver) LookupNetIP(
 	now := time.Now()
 	host = dns.Fqdn(strings.ToLower(host))
 
-	if !isValidNetwork(network) {
-		return nil, fmt.Errorf("invalid network: %s", network)
+	key := cacheKey{
+		network:       network,
+		lowercaseHost: host,
 	}
 
-	addrs = r.findCached(host, network, now)
+	addrs = r.findCached(key, now)
 	if addrs != nil {
 		return slices.Clone(addrs), nil
 	}
@@ -317,7 +318,7 @@ func (r *CachingResolver) LookupNetIP(
 		return []netip.Addr{}, err
 	}
 
-	r.setCached(host, network, res)
+	r.setCached(key, res)
 
 	return slices.Clone(res.addrs), nil
 }
@@ -325,17 +326,11 @@ func (r *CachingResolver) LookupNetIP(
 // findCached returns the cached addresses for host if it's not expired yet, and
 // the corresponding cached result, if any.  It's safe for concurrent use.
 func (r *CachingResolver) findCached(
-	host string,
-	network bootstrap.Network,
+	key cacheKey,
 	now time.Time,
 ) (addrs []netip.Addr) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
-	key := cacheKey{
-		network:       network,
-		lowercaseHost: host,
-	}
 
 	res, ok := r.cache[key]
 	if !ok || res.expire.Before(now) {
@@ -347,14 +342,9 @@ func (r *CachingResolver) findCached(
 
 // setCached sets the result into the address cache for host.  It's safe for
 // concurrent use.
-func (r *CachingResolver) setCached(host string, network bootstrap.Network, res *ipResult) {
+func (r *CachingResolver) setCached(key cacheKey, res *ipResult) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	key := cacheKey{
-		network:       network,
-		lowercaseHost: host,
-	}
 
 	r.cache[key] = res
 }
@@ -370,18 +360,4 @@ type cacheKey struct {
 
 	// lowercaseHost is the hostname.  It must be lowercase only.
 	lowercaseHost string
-}
-
-// isValidNetwork checks if the given network is one of the supported network
-// types.  The supported values are:
-//   - [bootstrap.NetworkIP4]
-//   - [bootstrap.NetworkIP6]
-//   - [bootstrap.NetworkIP]
-func isValidNetwork(network bootstrap.Network) (ok bool) {
-	switch network {
-	case bootstrap.NetworkIP4, bootstrap.NetworkIP6, bootstrap.NetworkIP:
-		return true
-	default:
-		return false
-	}
 }

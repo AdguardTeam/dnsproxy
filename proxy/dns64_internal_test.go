@@ -8,22 +8,15 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// testIPv4 is a test IPv4 address used for tests.
-var testIPv4 = netutil.IPv4Localhost()
-
-// testDomain is a test FQDN used for tests.
-const testDomain = "dns64.example.com."
-
 func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
-	nat64Pref := "64:ff9b::/96"
-	wantAAAA := "64:ff9b::7f00:1"
+	nat64Pref := netip.MustParsePrefix("64:ff9b::/96")
+	wantAAAA := "64:ff9b::c000:201"
 
 	upstreams := []upstream.Upstream{
 		newNamedUpstream(t, "upstream1"),
@@ -31,24 +24,18 @@ func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
 	}
 
 	p := mustNew(t, &Config{
-		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
-		UpstreamConfig: &UpstreamConfig{
-			Upstreams: upstreams,
-		},
+		Logger:         testLogger,
+		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+		UpstreamConfig: &UpstreamConfig{Upstreams: upstreams},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		UseDNS64:       true,
-		DNS64Prefs:     []netip.Prefix{netip.MustParsePrefix(nat64Pref)},
+		DNS64Prefs:     []netip.Prefix{nat64Pref},
 		UpstreamMode:   UpstreamModeParallel,
 	})
 
-	origReq := (&dns.Msg{}).SetQuestion(testDomain, dns.TypeAAAA)
+	origReq := (&dns.Msg{}).SetQuestion(dnsproxytest.FQDN, dns.TypeAAAA)
 	origResp := (&dns.Msg{}).SetReply(origReq)
-
-	// Mimic replyFromUpstream: the first exchange uses its own wrappers,
-	// while performDNS64 must wrap the original upstreams itself.
-	wrappedFirst := upstreamsWithStats(upstreams)
 
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
 	u, wrappedDNS64 := p.performDNS64(ctx, origReq, origResp, upstreams)
@@ -60,13 +47,19 @@ func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
 		w, ok := wrappedDNS64[i].(*upstreamWithStats)
 		require.Truef(t, ok, "unexpected wrapper type %T at index %d", wrappedDNS64[i], i)
 
-		assert.NotSamef(t, wrappedFirst[i], wrappedDNS64[i], "wrapper at index %d is reused", i)
-		assert.Samef(t, upstreams[i], w.upstream, "the wrapper at index %d must wrap the original upstream", i)
+		assert.NotSame(t, upstreams[i], wrappedDNS64[i], "wrapper at index %d is not fresh", i)
+		assert.Samef(
+			t,
+			upstreams[i],
+			w.upstream,
+			"the wrapper at index %d must wrap the original upstream", i,
+		)
 	}
 
 	// The response must have been synthesized from the DNS64 exchange.
 	require.Len(t, origResp.Answer, 1)
-	require.IsType(t, &dns.AAAA{}, origResp.Answer[0])
+
+	testutil.RequireTypeAssert[*dns.AAAA](t, origResp.Answer[0])
 
 	assert.Equal(t, wantAAAA, origResp.Answer[0].(*dns.AAAA).AAAA.String())
 }
@@ -83,9 +76,9 @@ func newNamedUpstream(tb testing.TB, name string) (ups *testUpstream) {
 		}
 
 		resp.Answer = []dns.RR{&dns.A{
-			A: testIPv4.AsSlice(),
+			A: dnsproxytest.IPv4,
 			Hdr: dns.RR_Header{
-				Name:   testDomain,
+				Name:   dnsproxytest.FQDN,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
 				Ttl:    600,

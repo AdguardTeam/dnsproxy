@@ -44,8 +44,7 @@ func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
 	require.Contains(t, wrappedDNS64, u)
 
 	for i := range upstreams {
-		w, ok := wrappedDNS64[i].(*upstreamWithStats)
-		require.Truef(t, ok, "unexpected wrapper type %T at index %d", wrappedDNS64[i], i)
+		w := testutil.RequireTypeAssert[*upstreamWithStats](t, wrappedDNS64[i])
 
 		assert.NotSame(t, upstreams[i], wrappedDNS64[i], "wrapper at index %d is not fresh", i)
 		assert.Samef(
@@ -59,12 +58,14 @@ func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
 	// The response must have been synthesized from the DNS64 exchange.
 	require.Len(t, origResp.Answer, 1)
 
-	testutil.RequireTypeAssert[*dns.AAAA](t, origResp.Answer[0])
+	res := testutil.RequireTypeAssert[*dns.AAAA](t, origResp.Answer[0])
 
-	assert.Equal(t, wantAAAA, origResp.Answer[0].(*dns.AAAA).AAAA.String())
+	assert.Equal(t, wantAAAA, res.AAAA.String())
 }
 
-// newNamedUpstream creates a new test upstream with the given name.
+// newNamedUpstream creates a new test upstream with the given name.  It
+// implements the Exchange method by returning a synthesized A record for A
+// queries.
 func newNamedUpstream(tb testing.TB, name string) (ups *testUpstream) {
 	tb.Helper()
 

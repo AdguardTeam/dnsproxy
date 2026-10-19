@@ -810,6 +810,10 @@ func (p *Proxy) replyFromUpstream(ctx context.Context, d *DNSContext) (ok bool, 
 
 	// Perform the DNS request.
 	resp, u, err := p.exchangeUpstreams(ctx, req, wrapped)
+
+	// Pass the original, unwrapped upstreams: performDNS64 wraps them itself,
+	// so that the DNS64 exchange doesn't update the statistics of the first
+	// exchange's wrappers concurrently with it.
 	if dns64Ups, dns64Wrapped := p.performDNS64(ctx, req, resp, upstreams); dns64Ups != nil {
 		u = dns64Ups
 		wrapped = dns64Wrapped

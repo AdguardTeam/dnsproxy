@@ -16,7 +16,7 @@ import (
 
 func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
 	nat64Pref := netip.MustParsePrefix("64:ff9b::/96")
-	wantAAAA := "64:ff9b::c000:201"
+	wantAAAA := net.ParseIP("64:ff9b::c000:201")
 
 	upstreams := []upstream.Upstream{
 		newNamedUpstream(t, "upstream1"),
@@ -60,7 +60,7 @@ func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
 
 	res := testutil.RequireTypeAssert[*dns.AAAA](t, origResp.Answer[0])
 
-	assert.Equal(t, wantAAAA, res.AAAA.String())
+	assert.Equal(t, wantAAAA, res.AAAA)
 }
 
 // newNamedUpstream creates a new test upstream with the given name.  It

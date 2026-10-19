@@ -2,13 +2,13 @@ package upstream_test
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/netip"
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	dpt "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -56,6 +56,11 @@ func TestExchangeParallel(t *testing.T) {
 func TestExchangeParallel_noReply(t *testing.T) {
 	t.Parallel()
 
+	noReply := dnsproxytest.NewUpstream()
+	noReply.OnExchange = func(_ context.Context, _ *dns.Msg) (resp *dns.Msg, err error) {
+		return nil, nil
+	}
+
 	testCases := []struct {
 		name string
 		want string
@@ -68,14 +73,14 @@ func TestExchangeParallel_noReply(t *testing.T) {
 		name: "single_upstream",
 		want: upstream.ErrNoReply.Error(),
 		ups: []upstream.Upstream{
-			&testUpstream{empty: true},
+			noReply,
 		},
 	}, {
 		name: "multiple_upstreams",
 		want: "none of upstream servers responded",
 		ups: []upstream.Upstream{
-			&testUpstream{empty: true},
-			&testUpstream{empty: true},
+			noReply,
+			noReply,
 		},
 	}}
 
@@ -96,13 +101,35 @@ func TestExchangeParallel_noReply(t *testing.T) {
 func TestExchangeParallel_servfail(t *testing.T) {
 	t.Parallel()
 
-	servfail := &testUpstream{
-		rcode: dns.RcodeServerFailure,
+	servfail := dnsproxytest.NewUpstream()
+	servfail.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+		resp = &dns.Msg{}
+		resp.SetRcode(req, dns.RcodeServerFailure)
+
+		return resp, nil
 	}
 
-	valid := &testUpstream{
-		addr:  netip.MustParseAddr("1.1.1.1"),
-		sleep: 100 * time.Millisecond,
+	servfailDelay := dnsproxytest.NewUpstream()
+	servfailDelay.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+		time.Sleep(100 * time.Millisecond)
+
+		resp = &dns.Msg{}
+		resp.SetRcode(req, dns.RcodeServerFailure)
+
+		return resp, nil
+	}
+
+	valid := dnsproxytest.NewUpstream()
+	valid.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+		time.Sleep(100 * time.Millisecond)
+
+		resp = &dns.Msg{}
+		resp.SetRcode(req, dns.RcodeSuccess)
+		resp.Answer = append(resp.Answer, &dns.A{
+			A: netip.MustParseAddr("1.1.1.1").AsSlice(),
+		})
+
+		return resp, nil
 	}
 
 	testCases := []struct {
@@ -123,10 +150,7 @@ func TestExchangeParallel_servfail(t *testing.T) {
 		name: "servfail",
 		ups: []upstream.Upstream{
 			servfail,
-			&testUpstream{
-				rcode: dns.RcodeServerFailure,
-				sleep: 100 * time.Millisecond,
-			},
+			servfailDelay,
 		},
 		wantRcode: dns.RcodeServerFailure,
 	}}
@@ -147,79 +171,46 @@ func TestExchangeParallel_servfail(t *testing.T) {
 	}
 }
 
-// testUpstream represents a mock upstream structure.
-type testUpstream struct {
-	// addr is a mock A record IP address to be returned.
-	addr netip.Addr
-
-	// err is a mock error to be returned.
-	err bool
-
-	// empty indicates if a nil response is returned.
-	empty bool
-
-	// rcode is the response code to be set in the response.
-	rcode int
-
-	// sleep is a delay before response.
-	sleep time.Duration
-}
-
-// type check
-var _ upstream.Upstream = (*testUpstream)(nil)
-
-// Exchange implements the [Upstream] interface for *testUpstream.
-func (u *testUpstream) Exchange(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
-	if u.sleep != 0 {
-		time.Sleep(u.sleep)
-	}
-
-	if u.empty {
-		return nil, nil
-	}
-
-	if u.err {
-		return nil, fmt.Errorf("upstream error")
-	}
-
-	resp = &dns.Msg{}
-	resp.SetRcode(req, u.rcode)
-
-	if u.addr != (netip.Addr{}) {
-		a := dns.A{
-			A: u.addr.AsSlice(),
-		}
-
-		resp.Answer = append(resp.Answer, &a)
-	}
-
-	return resp, nil
-}
-
-// Address implements the [Upstream] interface for *testUpstream.
-func (u *testUpstream) Address() (addr string) {
-	return ""
-}
-
-// Close implements the [Upstream] interface for *testUpstream.
-func (u *testUpstream) Close() (err error) {
-	return nil
-}
-
 func TestExchangeAll(t *testing.T) {
 	delayedAnsAddr := netip.MustParseAddr("1.1.1.1")
 	ansAddr := netip.MustParseAddr("3.3.3.3")
 
-	ups := []upstream.Upstream{&testUpstream{
-		addr:  delayedAnsAddr,
-		sleep: 100 * time.Millisecond,
-	}, &testUpstream{
-		err: true,
-	}, &testUpstream{
-		addr: ansAddr,
-	}}
+	valid := dnsproxytest.NewUpstream()
+	valid.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+		resp = &dns.Msg{}
+		resp.SetRcode(req, dns.RcodeSuccess)
+		resp.Answer = append(resp.Answer, &dns.A{
+			A: ansAddr.AsSlice(),
+		})
 
-	req := dnsproxytest.NewTestRequestWithHost("test.org")
+		return resp, nil
+	}
+
+	delayed := dnsproxytest.NewUpstream()
+	delayed.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+		time.Sleep(100 * time.Millisecond)
+
+		resp = &dns.Msg{}
+		resp.SetRcode(req, dns.RcodeSuccess)
+		resp.Answer = append(resp.Answer, &dns.A{
+			A: delayedAnsAddr.AsSlice(),
+		})
+
+		return resp, nil
+	}
+
+	errExchange := dnsproxytest.NewUpstream()
+	errExchange.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+		return nil, assert.AnError
+	}
+
+	ups := []upstream.Upstream{
+		delayed,
+		errExchange,
+		valid,
+	}
+
+	req := dpt.NewTestRequestWithHost("test.org")
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
 	res, err := upstream.ExchangeAll(ctx, ups, req)
 	require.NoError(t, err)
@@ -242,5 +233,5 @@ func TestExchangeAll(t *testing.T) {
 
 // newTestMessage creates a [*dns.Msg] that we use for tests.
 func newTestMessage() (m *dns.Msg) {
-	return dnsproxytest.NewTestRequestWithHost("google-public-dns-a.google.com")
+	return dpt.NewTestRequestWithHost("google-public-dns-a.google.com")
 }

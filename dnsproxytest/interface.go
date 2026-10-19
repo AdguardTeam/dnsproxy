@@ -36,6 +36,17 @@ func (u *Upstream) Close() (err error) {
 	return u.OnClose()
 }
 
+// NewUpstream creates a new *Upstream with all its methods set to panic.
+func NewUpstream() (u *Upstream) {
+	return &Upstream{
+		OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+			panic(testutil.UnexpectedCall(ctx, m))
+		},
+		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
+	}
+}
+
 // Handler is a mock [proxy.Handler] implementation for tests.
 type Handler struct {
 	OnHandle func(ctx context.Context, p *proxy.Proxy, dctx *proxy.DNSContext) (err error)

@@ -150,7 +150,8 @@ func TestCachingResolver_staleness(t *testing.T) {
 			hdr.Ttl = uint32(largeTTL.Seconds())
 			rr = &dns.AAAA{Hdr: hdr, AAAA: ip6.AsSlice()}
 		default:
-			require.Contains(testutil.PanicT{}, []uint16{dns.TypeA, dns.TypeAAAA}, q.Qtype)
+			pt := testutil.NewPanicT(t)
+			require.Contains(pt, []uint16{dns.TypeA, dns.TypeAAAA}, q.Qtype)
 		}
 		resp.Answer = append(resp.Answer, rr)
 
@@ -186,10 +187,6 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				if tc.name != "both" {
-					t.Skip(`TODO(e.burkov):  Bootstrap now only uses "ip" network, see TODO there.`)
-				}
-
 				res, err := r.LookupNetIP(context.Background(), tc.network, fqdn)
 				require.NoError(t, err)
 
@@ -200,10 +197,10 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 	t.Run("staleness", func(t *testing.T) {
 		now := time.Now()
-		cached := r.FindCached(fqdn, now)
+		cached := r.FindCached(fqdn, bootstrap.NetworkIP, now)
 		require.ElementsMatch(t, []netip.Addr{ip4, ip6}, cached)
 
-		cached = r.FindCached(fqdn, now.Add(smallTTL+time.Second))
+		cached = r.FindCached(fqdn, bootstrap.NetworkIP, now.Add(smallTTL+time.Second))
 		require.Empty(t, cached)
 	})
 }

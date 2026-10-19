@@ -276,7 +276,7 @@ type CachingResolver struct {
 	// cache is the set of resolved hostnames mapped to cached addresses.
 	//
 	// TODO(e.burkov):  Use expiration cache.
-	cache map[string]*ipResult
+	cache map[cacheKey]*ipResult
 }
 
 // NewCachingResolver creates a new caching resolver that uses r for lookups.
@@ -284,7 +284,7 @@ func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 	return &CachingResolver{
 		resolver: r,
 		mu:       &sync.RWMutex{},
-		cache:    map[string]*ipResult{},
+		cache:    map[cacheKey]*ipResult{},
 	}
 }
 
@@ -303,7 +303,11 @@ func (r *CachingResolver) LookupNetIP(
 	now := time.Now()
 	host = dns.Fqdn(strings.ToLower(host))
 
-	addrs = r.findCached(host, now)
+	if !isValidNetwork(network) {
+		return nil, fmt.Errorf("invalid network: %s", network)
+	}
+
+	addrs = r.findCached(host, network, now)
 	if addrs != nil {
 		return slices.Clone(addrs), nil
 	}
@@ -313,18 +317,27 @@ func (r *CachingResolver) LookupNetIP(
 		return []netip.Addr{}, err
 	}
 
-	r.setCached(host, res)
+	r.setCached(host, network, res)
 
 	return slices.Clone(res.addrs), nil
 }
 
 // findCached returns the cached addresses for host if it's not expired yet, and
 // the corresponding cached result, if any.  It's safe for concurrent use.
-func (r *CachingResolver) findCached(host string, now time.Time) (addrs []netip.Addr) {
+func (r *CachingResolver) findCached(
+	host string,
+	network bootstrap.Network,
+	now time.Time,
+) (addrs []netip.Addr) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	res, ok := r.cache[host]
+	key := cacheKey{
+		network:       network,
+		lowercaseHost: host,
+	}
+
+	res, ok := r.cache[key]
 	if !ok || res.expire.Before(now) {
 		return nil
 	}
@@ -334,9 +347,41 @@ func (r *CachingResolver) findCached(host string, now time.Time) (addrs []netip.
 
 // setCached sets the result into the address cache for host.  It's safe for
 // concurrent use.
-func (r *CachingResolver) setCached(host string, res *ipResult) {
+func (r *CachingResolver) setCached(host string, network bootstrap.Network, res *ipResult) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.cache[host] = res
+	key := cacheKey{
+		network:       network,
+		lowercaseHost: host,
+	}
+
+	r.cache[key] = res
+}
+
+// cacheKey represents a unique key for the address cache, consisting of the
+// network and the host.
+type cacheKey struct {
+	// network is the network type.  The supported values are:
+	//   - [bootstrap.NetworkIP4]
+	//   - [bootstrap.NetworkIP6]
+	//   - [bootstrap.NetworkIP]
+	network bootstrap.Network
+
+	// lowercaseHost is the hostname.  It must be lowercase only.
+	lowercaseHost string
+}
+
+// isValidNetwork checks if the given network is one of the supported network
+// types.  The supported values are:
+//   - [bootstrap.NetworkIP4]
+//   - [bootstrap.NetworkIP6]
+//   - [bootstrap.NetworkIP]
+func isValidNetwork(network bootstrap.Network) (ok bool) {
+	switch network {
+	case bootstrap.NetworkIP4, bootstrap.NetworkIP6, bootstrap.NetworkIP:
+		return true
+	default:
+		return false
+	}
 }

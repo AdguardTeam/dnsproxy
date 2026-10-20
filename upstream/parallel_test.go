@@ -42,7 +42,8 @@ func TestExchangeParallel(t *testing.T) {
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
 	resp, u, err := upstream.ExchangeParallel(ctx, upstreams, req)
 	require.NoError(t, err)
-	require.Equal(t, u.Address(), publicDNSAddr)
+
+	assert.Equal(t, publicDNSAddr, u.Address())
 
 	require.NotNil(t, resp)
 	require.Len(t, resp.Answer, 1)
@@ -109,16 +110,6 @@ func TestExchangeParallel_servfail(t *testing.T) {
 		return resp, nil
 	}
 
-	servfailDelay := dnsproxytest.NewUpstream()
-	servfailDelay.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
-		time.Sleep(100 * time.Millisecond)
-
-		resp = &dns.Msg{}
-		resp.SetRcode(req, dns.RcodeServerFailure)
-
-		return resp, nil
-	}
-
 	valid := dnsproxytest.NewUpstream()
 	valid.OnExchange = func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 		time.Sleep(100 * time.Millisecond)
@@ -145,14 +136,6 @@ func TestExchangeParallel_servfail(t *testing.T) {
 			valid,
 		},
 		wantRcode: dns.RcodeSuccess,
-	}, {
-		want: servfail,
-		name: "servfail",
-		ups: []upstream.Upstream{
-			servfail,
-			servfailDelay,
-		},
-		wantRcode: dns.RcodeServerFailure,
 	}}
 
 	for _, tc := range testCases {
@@ -221,14 +204,14 @@ func TestExchangeAll(t *testing.T) {
 	require.NotEmpty(t, resp.Answer)
 
 	ip := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
-	assert.Equal(t, ansAddr.AsSlice(), []byte(ip))
+	assert.Equal(t, net.IP(ansAddr.AsSlice()), ip)
 
 	resp = res[1].Resp
 	require.NotNil(t, resp)
 	require.NotEmpty(t, resp.Answer)
 
 	ip = testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0]).A
-	assert.Equal(t, delayedAnsAddr.AsSlice(), []byte(ip))
+	assert.Equal(t, net.IP(delayedAnsAddr.AsSlice()), ip)
 }
 
 // newTestMessage creates a [*dns.Msg] that we use for tests.

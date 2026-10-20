@@ -201,8 +201,9 @@ func ExchangeAll(
 	return slices.Clip(res), nil
 }
 
-// receiveAsyncResult receives a single result from resCh or an error from
-// errCh.  It returns either a non-nil result or an error.
+// receiveAsyncResult waits for the result from resCh and returns it.  If the
+// result is an error, it returns that error.  If the result is a nil response,
+// it returns [ErrNoReply].
 func receiveAsyncResult(resCh <-chan any) (res *ExchangeAllResult, err error) {
 	switch res := (<-resCh).(type) {
 	case error:

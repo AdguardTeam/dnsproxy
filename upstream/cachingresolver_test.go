@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	dnsproxytest1 "github.com/AdguardTeam/dnsproxy/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	intdnsproxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -16,14 +17,12 @@ import (
 )
 
 func TestCachingResolver_staleness(t *testing.T) {
-	ip4 := netip.MustParseAddr("1.2.3.4")
+	ip4 := netip.MustParseAddr("192.0.2.1")
 	ip6 := netip.MustParseAddr("2001:db8::1")
 
 	const (
 		smallTTL = 10 * time.Second
 		largeTTL = 1000 * time.Second
-
-		fqdn = "test.fully.qualified.name."
 	)
 
 	onExchange := func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
@@ -50,7 +49,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 		return resp, nil
 	}
 
-	ups := &dnsproxytest.Upstream{
+	ups := &dnsproxytest1.Upstream{
 		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
 		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
 		OnExchange: onExchange,
@@ -79,7 +78,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				res, err := r.LookupNetIP(context.Background(), tc.network, fqdn)
+				res, err := r.LookupNetIP(context.Background(), tc.network, intdnsproxytest.FQDN)
 				require.NoError(t, err)
 
 				assert.ElementsMatch(t, tc.want, res)
@@ -89,10 +88,14 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 	t.Run("staleness", func(t *testing.T) {
 		now := time.Now()
-		cached := r.FindCached(fqdn, bootstrap.NetworkIP, now)
+		cached := r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP, now)
 		require.ElementsMatch(t, []netip.Addr{ip4, ip6}, cached)
 
-		cached = r.FindCached(fqdn, bootstrap.NetworkIP, now.Add(smallTTL+time.Second))
+		cached = r.FindCached(
+			intdnsproxytest.FQDN,
+			bootstrap.NetworkIP,
+			now.Add(smallTTL+time.Second),
+		)
 		require.Empty(t, cached)
 	})
 }

@@ -60,6 +60,7 @@ func ExchangeParallel(
 // receiveParallelResult waits for the first successful response from resCh.  A
 // SERVFAIL response is returned only if all upstreams respond with SERVFAIL, in
 // which case the first received one is returned.  See [ExchangeParallel].
+// resCh must not be nil.
 func receiveParallelResult(
 	upsNum int,
 	resCh <-chan any,
@@ -144,7 +145,8 @@ type ExchangeAllResult struct {
 }
 
 // ExchangeAll returns the responses from all of u.  It returns an error only if
-// all upstreams failed to exchange the request.
+// all upstreams failed to exchange the request.  Each element of ups must not
+// be nil, req must not be nil.
 func ExchangeAll(
 	ctx context.Context,
 	ups []Upstream,
@@ -203,7 +205,7 @@ func ExchangeAll(
 
 // receiveAsyncResult waits for the result from resCh and returns it.  If the
 // result is an error, it returns that error.  If the result is a nil response,
-// it returns [ErrNoReply].
+// it returns [ErrNoReply].  resCh must not be nil.
 func receiveAsyncResult(resCh <-chan any) (res *ExchangeAllResult, err error) {
 	switch res := (<-resCh).(type) {
 	case error:
@@ -220,7 +222,7 @@ func receiveAsyncResult(resCh <-chan any) (res *ExchangeAllResult, err error) {
 }
 
 // exchangeAsync tries to resolve DNS request with one upstream and sends the
-// result to respCh.
+// result to respCh.  u, req, and resCh must not be nil.
 func exchangeAsync(ctx context.Context, u Upstream, req *dns.Msg, resCh chan any) {
 	reply, err := u.Exchange(ctx, req)
 	if err != nil {

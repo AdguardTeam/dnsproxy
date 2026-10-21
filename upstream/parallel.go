@@ -24,9 +24,10 @@ const (
 // returns an error if all upstreams failed to exchange the request.  Each
 // element of ups must not be nil, req must not be nil.
 //
-// A response with the SERVFAIL code is not considered successful.  Such a
-// response is returned only if all upstreams respond with SERVFAIL, in which
-// case the first received one is returned.
+// A SERVFAIL response is not considered successful.  It is returned only when
+// at least one upstream responds with SERVFAIL and no upstream returns a
+// non-SERVFAIL response; the first SERVFAIL received is returned.  Failures of
+// the other upstreams are ignored in this case.
 //
 // See https://www.rfc-editor.org/rfc/rfc9520#section-2.1.
 func ExchangeParallel(
@@ -57,10 +58,13 @@ func ExchangeParallel(
 	return receiveParallelResult(upsNum, resCh)
 }
 
-// receiveParallelResult waits for the first successful response from resCh.  A
-// SERVFAIL response is returned only if all upstreams respond with SERVFAIL, in
-// which case the first received one is returned.  See [ExchangeParallel].
+// receiveParallelResult waits for the first successful response from resCh.
 // resCh must not be nil.
+//
+// A SERVFAIL response is not considered successful.  It is returned only when
+// at least one upstream responds with SERVFAIL and no upstream returns a
+// non-SERVFAIL response; the first SERVFAIL received is returned.  Failures of
+// the other upstreams are ignored in this case.  See [ExchangeParallel].
 func receiveParallelResult(
 	upsNum int,
 	resCh <-chan any,

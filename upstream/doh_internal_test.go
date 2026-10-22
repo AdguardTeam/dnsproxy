@@ -6,11 +6,13 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -267,6 +270,69 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestUpstreamDoH_hungTLSHandshake checks that connections to a server, which
+// accepts TCP connections but never answers the TLS ClientHello, are closed
+// after the exchanges time out instead of piling up with every client reset.
+// The exchanges are concurrent, because a reset only cancels the dials of the
+// requests that have already given up.
+func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
+	t.Parallel()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, l.Close)
+
+	var accepted, open atomic.Int32
+	go func() {
+		for {
+			conn, acceptErr := l.Accept()
+			if acceptErr != nil {
+				return
+			}
+
+			accepted.Add(1)
+			open.Add(1)
+			go func() {
+				defer open.Add(-1)
+				defer func() { _ = conn.Close() }()
+
+				// Read the ClientHello and never answer it.
+				_, _ = io.Copy(io.Discard, conn)
+			}()
+		}
+	}()
+
+	upsAddr := (&url.URL{
+		Scheme: "https",
+		Host:   l.Addr().String(),
+		Path:   "dns-query",
+	}).String()
+
+	u, err := AddressToUpstream(upsAddr, &Options{
+		Logger:             testLogger,
+		InsecureSkipVerify: true,
+		HTTPVersions:       []HTTPVersion{HTTPVersion11, HTTPVersion2},
+		Timeout:            100 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
+
+	wg := &sync.WaitGroup{}
+	for range 10 {
+		wg.Go(func() {
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			_, exchErr := u.Exchange(ctx, createTestMessage())
+			assert.Error(t, exchErr)
+		})
+	}
+	wg.Wait()
+
+	require.Positive(t, accepted.Load())
+	assert.Eventually(t, func() (ok bool) {
+		return open.Load() == 0
+	}, testTimeout, testTimeout/100, "connections with a hung handshake are left open")
 }
 
 func TestUpstreamDoH_0RTT(t *testing.T) {

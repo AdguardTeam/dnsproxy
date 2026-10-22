@@ -275,7 +275,7 @@ func TestCachingResolver_LookupNetIP(t *testing.T) {
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP, intdnsproxytest.FQDN)
 			require.NoError(t, err)
-			assert.Empty(t, addrs)
+			require.Empty(t, addrs)
 
 			// The second call to LookupNetIP should result in a panic because
 			// the first call is uncacheable.  Therefore, rather than going to
@@ -286,6 +286,7 @@ func TestCachingResolver_LookupNetIP(t *testing.T) {
 					addrs, err = r.LookupNetIP(ctx, bootstrap.NetworkIP, intdnsproxytest.FQDN)
 				})
 				require.NoError(t, err)
+				require.Empty(t, addrs)
 			*/
 		})
 	}

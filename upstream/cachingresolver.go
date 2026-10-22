@@ -66,6 +66,11 @@ func (r *CachingResolver) LookupNetIP(
 		return []netip.Addr{}, err
 	}
 
+	// Do not cache empty results.
+	if res == nil || len(res.addrs) == 0 {
+		return []netip.Addr{}, nil
+	}
+
 	r.setCached(key, res)
 
 	return slices.Clone(res.addrs), nil

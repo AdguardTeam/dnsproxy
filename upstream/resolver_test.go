@@ -10,6 +10,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,11 @@ func TestNewUpstreamResolver(t *testing.T) {
 		},
 	}
 
-	r := &upstream.UpstreamResolver{Upstream: ups}
+	r := &upstream.UpstreamResolver{
+		Upstream: ups,
+		Logger:   testLogger,
+		Clock:    &timeutil.SystemClock{},
+	}
 
 	ipAddrs, err := r.LookupNetIP(context.Background(), "ip", "cloudflare-dns.com")
 	require.NoError(t, err)
@@ -47,6 +52,7 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 	t.Parallel()
 
 	withTimeoutOpt := &upstream.Options{
+		Clock:   &timeutil.SystemClock{},
 		Logger:  testLogger,
 		Timeout: 3 * time.Second,
 	}

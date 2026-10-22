@@ -22,6 +22,7 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -60,9 +61,12 @@ type QUICTracer interface {
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
 type Options struct {
-	// Logger is used for logging during parsing and upstream exchange.  If nil,
-	// [slog.Default] is used.
+	// Logger is used for logging during parsing and upstream exchange.  It must
+	// not be nil.
 	Logger *slog.Logger
+
+	// Clock is used to get the current time.  It must not be nil.
+	Clock timeutil.Clock
 
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
 	// of the *tls.Config for DNS-over-HTTPS, DNS-over-QUIC, and DNS-over-TLS.

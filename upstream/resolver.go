@@ -3,15 +3,17 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"math"
+	"log/slog"
 	"net/netip"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	"github.com/AdguardTeam/dnsproxy/proxyutil"
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
 )
 
@@ -38,6 +40,13 @@ type ConsequentResolver = bootstrap.ConsequentResolver
 type UpstreamResolver struct {
 	// Upstream is used for lookups.  It must not be nil.
 	Upstream
+
+	// Logger logs messages related to the upstream resolver's operations.  It
+	// must not be nil.
+	Logger *slog.Logger
+
+	// Clock provides the current time.  It must not be nil.
+	Clock timeutil.Clock
 }
 
 // NewUpstreamResolver creates an upstream that can be used as bootstrap
@@ -63,7 +72,11 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 		return nil, err
 	}
 
-	return &UpstreamResolver{Upstream: ups}, validateBootstrap(ups)
+	return &UpstreamResolver{
+		Upstream: ups,
+		Logger:   opts.Logger,
+		Clock:    opts.Clock,
+	}, validateBootstrap(ups)
 }
 
 // NotBootstrapError is returned by [AddressToUpstream] when the parsed upstream
@@ -171,7 +184,10 @@ func (r *UpstreamResolver) lookupNetIP(
 	go r.resolveAsync(ctx, resCh, host, bootstrap.NetworkIP6)
 
 	var errs []error
-	result = &ipResult{}
+	result = &ipResult{
+		expire: r.Clock.Now(),
+		addrs:  make([]netip.Addr, 0, 2),
+	}
 
 	for range 2 {
 		switch res := <-resCh; res := res.(type) {
@@ -181,6 +197,7 @@ func (r *UpstreamResolver) lookupNetIP(
 			if result.expire.Equal(time.Time{}) || res.expire.Before(result.expire) {
 				result.expire = res.expire
 			}
+
 			result.addrs = append(result.addrs, res.addrs...)
 		}
 	}
@@ -228,10 +245,11 @@ func (r *UpstreamResolver) request(
 	}
 
 	res = &ipResult{
-		expire: time.Now(),
+		expire: r.Clock.Now(),
 		addrs:  make([]netip.Addr, 0, len(resp.Answer)),
 	}
-	var minTTL uint32 = math.MaxUint32
+
+	minTTL := dnsmsg.CacheTTL(resp, r.Logger)
 
 	for _, rr := range resp.Answer {
 		ip := proxyutil.IPFromRR(rr)
@@ -240,7 +258,6 @@ func (r *UpstreamResolver) request(
 		}
 
 		res.addrs = append(res.addrs, ip)
-		minTTL = min(minTTL, rr.Header().Ttl)
 	}
 	res.expire = res.expire.Add(time.Duration(minTTL) * time.Second)
 

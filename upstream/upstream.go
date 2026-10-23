@@ -61,11 +61,11 @@ type QUICTracer interface {
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
 type Options struct {
-	// Logger is used for logging during parsing and upstream exchange.  It must
-	// not be nil.
+	// Logger is used for logging during parsing and upstream exchange.  It may
+	// be nil.
 	Logger *slog.Logger
 
-	// Clock is used to get the current time.  It must not be nil.
+	// Clock is used to get the current time.  It may be nil.
 	Clock timeutil.Clock
 
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
@@ -196,6 +196,10 @@ func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
+	}
+
+	if opts.Clock == nil {
+		opts.Clock = &timeutil.SystemClock{}
 	}
 
 	var uu *url.URL

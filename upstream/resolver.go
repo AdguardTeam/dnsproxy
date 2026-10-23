@@ -57,6 +57,10 @@ type UpstreamResolver struct {
 func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
 	upsOpts := &Options{}
 
+	if opts != nil && opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
+
 	// TODO(ameshkov):  Aren't other options needed here?
 	if opts != nil {
 		upsOpts.Timeout = opts.Timeout
@@ -70,6 +74,10 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 		err = fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
 
 		return nil, err
+	}
+
+	if opts.Clock == nil {
+		opts.Clock = timeutil.SystemClock{}
 	}
 
 	return &UpstreamResolver{
@@ -186,7 +194,9 @@ func (r *UpstreamResolver) lookupNetIP(
 	var errs []error
 	result = &ipResult{
 		expire: r.Clock.Now(),
-		addrs:  make([]netip.Addr, 0, 2),
+		// Set the slice initial capacity to 2, as we expect at most two results
+		// (IPv4 and IPv6).
+		addrs: make([]netip.Addr, 0, 2),
 	}
 
 	for range 2 {
@@ -194,10 +204,7 @@ func (r *UpstreamResolver) lookupNetIP(
 		case error:
 			errs = append(errs, res)
 		case *ipResult:
-			if result.expire.Equal(time.Time{}) || res.expire.Before(result.expire) {
-				result.expire = res.expire
-			}
-
+			result.expire = res.expire
 			result.addrs = append(result.addrs, res.addrs...)
 		}
 	}
@@ -249,7 +256,7 @@ func (r *UpstreamResolver) request(
 		addrs:  make([]netip.Addr, 0, len(resp.Answer)),
 	}
 
-	minTTL := dnsmsg.CacheTTL(resp, r.Logger)
+	minTTL := dnsmsg.CacheTTL(ctx, r.Logger, resp)
 
 	for _, rr := range resp.Answer {
 		ip := proxyutil.IPFromRR(rr)

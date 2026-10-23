@@ -9,12 +9,16 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
 )
 
 // CachingResolver is a [Resolver] that caches the results of lookups.  It's
 // required to be created with [NewCachingResolver].
 type CachingResolver struct {
+	// clock is used to get the current time.  It may be nil.
+	clock timeutil.Clock
+
 	// resolver is the underlying resolver to use for lookups.
 	resolver *UpstreamResolver
 
@@ -29,7 +33,12 @@ type CachingResolver struct {
 
 // NewCachingResolver creates a new caching resolver that uses r for lookups.
 func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
+	if r.Clock == nil {
+		r.Clock = timeutil.SystemClock{}
+	}
+
 	return &CachingResolver{
+		clock:    r.Clock,
 		resolver: r,
 		mu:       &sync.RWMutex{},
 		cache:    map[cacheKey]*ipResult{},
@@ -48,7 +57,7 @@ func (r *CachingResolver) LookupNetIP(
 	network bootstrap.Network,
 	host string,
 ) (addrs []netip.Addr, err error) {
-	now := time.Now()
+	now := r.clock.Now()
 	host = dns.Fqdn(strings.ToLower(host))
 
 	key := cacheKey{

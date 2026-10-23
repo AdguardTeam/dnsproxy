@@ -52,7 +52,6 @@ func TestNewUpstreamResolver_validity(t *testing.T) {
 	t.Parallel()
 
 	withTimeoutOpt := &upstream.Options{
-		Clock:   &timeutil.SystemClock{},
 		Logger:  testLogger,
 		Timeout: 3 * time.Second,
 	}

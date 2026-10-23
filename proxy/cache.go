@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"log/slog"
 	"net"
@@ -58,8 +59,13 @@ type cacheItem struct {
 
 // respToItem converts the pair of the response and upstream resolved the one
 // into item for storing it in cache.  l must not be nil.
-func (c *cache) respToItem(m *dns.Msg, u upstream.Upstream, l *slog.Logger) (item *cacheItem) {
-	ttl := dnsmsg.CacheTTL(m, l)
+func (c *cache) respToItem(
+	ctx context.Context,
+	m *dns.Msg,
+	u upstream.Upstream,
+	l *slog.Logger,
+) (item *cacheItem) {
+	ttl := dnsmsg.CacheTTL(ctx, l, m)
 	if ttl == 0 {
 		return nil
 	}
@@ -328,8 +334,8 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 
 // set stores response and upstream for req in the cache.  u and l must not be
 // nil.
-func (c *cache) set(req, m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
-	item := c.respToItem(m, u, l)
+func (c *cache) set(ctx context.Context, l *slog.Logger, req, m *dns.Msg, u upstream.Upstream) {
+	item := c.respToItem(ctx, m, u, l)
 	if item == nil {
 		return
 	}
@@ -346,8 +352,15 @@ func (c *cache) set(req, m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
 // setWithSubnet stores response and upstream with subnet in the cache.  The
 // given subnet mask and IP address are used to calculate the cache key.  u, n,
 // and l must not be nil.
-func (c *cache) setWithSubnet(req, m *dns.Msg, u upstream.Upstream, n *net.IPNet, l *slog.Logger) {
-	item := c.respToItem(m, u, l)
+func (c *cache) setWithSubnet(
+	ctx context.Context,
+	l *slog.Logger,
+	req *dns.Msg,
+	m *dns.Msg,
+	u upstream.Upstream,
+	n *net.IPNet,
+) {
+	item := c.respToItem(ctx, m, u, l)
 	if item == nil {
 		return
 	}

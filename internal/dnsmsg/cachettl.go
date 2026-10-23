@@ -1,6 +1,7 @@
 package dnsmsg
 
 import (
+	"context"
 	"log/slog"
 	"math"
 
@@ -20,22 +21,22 @@ const ServFailMaxCacheTTL = 30
 //
 // See https://datatracker.ietf.org/doc/html/rfc2308#section-2.1,
 // https://datatracker.ietf.org/doc/html/rfc2308#section-2.2.
-func CacheTTL(m *dns.Msg, l *slog.Logger) (ttl uint32) {
+func CacheTTL(ctx context.Context, l *slog.Logger, m *dns.Msg) (ttl uint32) {
 	switch {
 	case m == nil:
 		return 0
 	case m.Truncated:
-		l.Debug("truncated message; not caching")
+		l.DebugContext(ctx, "truncated message; not caching")
 
 		return 0
 	case len(m.Question) != 1:
-		l.Debug("message with wrong number of questions; not caching")
+		l.DebugContext(ctx, "message with wrong number of questions; not caching")
 
 		return 0
 	default:
 		ttl = calculateTTL(m)
 		if ttl == 0 {
-			l.Debug("ttl calculated to be 0; not caching")
+			l.DebugContext(ctx, "ttl calculated to be 0; not caching")
 
 			return 0
 		}
@@ -47,17 +48,18 @@ func CacheTTL(m *dns.Msg, l *slog.Logger) (ttl uint32) {
 			return ttl
 		}
 
-		l.Debug("not a cacheable noerror response; not caching")
+		l.DebugContext(ctx, "not a cacheable noerror response; not caching")
 	case dns.RcodeNameError:
 		if isCacheableNegative(m) {
 			return ttl
 		}
 
-		l.Debug("not a cacheable nxdomain response; not caching")
+		l.DebugContext(ctx, "not a cacheable nxdomain response; not caching")
 	case dns.RcodeServerFailure:
+		l.DebugContext(ctx, "server failure response; caching with ttl %d", "ttl", ttl)
 		return ttl
 	default:
-		l.Debug("response code %s; not caching", "rcode", dns.RcodeToString[rcode])
+		l.DebugContext(ctx, "response code %s; not caching", "rcode", dns.RcodeToString[rcode])
 	}
 
 	return 0

@@ -76,7 +76,8 @@ func TestServeCached(t *testing.T) {
 	}).SetReply(request)
 	reply.SetEdns0(defaultUDPBufSize, false)
 
-	dnsProxy.cache.set(request, reply, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	dnsProxy.cache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	addr := dnsProxy.Addr(ProtoTCP)
 	client := &dns.Client{
@@ -194,7 +195,8 @@ func TestCacheDO(t *testing.T) {
 	reply.SetEdns0(4096, false)
 
 	// Store in cache.
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	t.Run("without_do", func(t *testing.T) {
 		ci, expired, _ := testCache.get(request)
@@ -229,7 +231,9 @@ func TestCacheCNAME(t *testing.T) {
 			dnsproxytest.NewRR(t, "google.com.", dns.TypeCNAME, 3600, "test.google.com."),
 		},
 	}).SetQuestion("google.com.", dns.TypeA)
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	t.Run("no_cnames", func(t *testing.T) {
 		r, expired, _ := testCache.get(request)
@@ -242,7 +246,9 @@ func TestCacheCNAME(t *testing.T) {
 		reply.Answer,
 		dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8}),
 	)
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+
+	ctx = testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	// We are testing that a proper CNAME response gets cached
 	t.Run("cnames_exist", func(t *testing.T) {
@@ -265,7 +271,8 @@ func TestCache_uncacheable(t *testing.T) {
 	reply := (&dns.Msg{}).SetRcode(request, dns.RcodeBadAlg)
 
 	// We are testing that SERVFAIL responses aren't cached
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	r, expired, _ := testCache.get(request)
 	assert.Nil(t, r)
@@ -334,7 +341,8 @@ func TestCacheExpiration(t *testing.T) {
 		resp.Answer = append(resp.Answer, rr)
 		responses = append(responses, resp)
 
-		dnsProxy.cache.set(req, resp, upstreamWithAddr, testLogger)
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		dnsProxy.cache.set(ctx, testLogger, req, resp, upstreamWithAddr)
 	}
 
 	for i, r := range requests {
@@ -550,7 +558,9 @@ func (tests testCases) run(t *testing.T) {
 	for _, res := range tests.cache {
 		request := (&dns.Msg{}).SetQuestion(res.q, res.t)
 		reply := (&dns.Msg{Response: true, Answer: res.a}).SetReply(request)
-		testCache.set(request, reply, upstreamWithAddr, testLogger)
+
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 	}
 
 	for _, tc := range tests.cases {
@@ -568,7 +578,8 @@ func (tests testCases) run(t *testing.T) {
 
 		reply := (&dns.Msg{Response: true, Answer: tc.a}).SetQuestion(tc.q, tc.t)
 
-		testCache.set(request, reply, upstreamWithAddr, testLogger)
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 		requireEqualMsgs(t, ci.m, reply)
 	}
@@ -615,7 +626,8 @@ func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) 
 		Answer:   []dns.RR{dnsproxytest.NewRR(t, host, dns.TypeA, 1, ipAddr)},
 	}).SetQuestion(host, dns.TypeA)
 
-	c.set(req, dnsMsg, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	c.set(ctx, testLogger, req, dnsMsg, upstreamWithAddr)
 
 	for range 2 {
 		ci, expired, key := c.get(dnsMsg)
@@ -654,7 +666,16 @@ func TestCache_getWithSubnet(t *testing.T) {
 	resp := (&dns.Msg{
 		Answer: []dns.RR{dnsproxytest.NewRR(t, testFQDN, dns.TypeA, 1, net.IP{1, 1, 1, 1})},
 	}).SetReply(req)
-	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{IP: ip1234, Mask: mask16}, testLogger)
+
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	c.setWithSubnet(
+		ctx,
+		testLogger,
+		req,
+		resp,
+		upstreamWithAddr,
+		&net.IPNet{IP: ip1234, Mask: mask16},
+	)
 
 	t.Run("different_ip", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip2234, Mask: mask24})
@@ -667,13 +688,21 @@ func TestCache_getWithSubnet(t *testing.T) {
 	resp = (&dns.Msg{
 		Answer: []dns.RR{dnsproxytest.NewRR(t, testFQDN, dns.TypeA, 1, net.IP{2, 2, 2, 2})},
 	}).SetReply(req)
-	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{IP: ip2234, Mask: mask16}, testLogger)
+
+	ctx = testutil.ContextWithTimeout(t, testTimeout)
+	c.setWithSubnet(ctx,
+		testLogger,
+		req,
+		resp,
+		upstreamWithAddr,
+		&net.IPNet{IP: ip2234, Mask: mask16},
+	)
 
 	// Add a response entry without subnet.
 	resp = (&dns.Msg{
 		Answer: []dns.RR{dnsproxytest.NewRR(t, testFQDN, dns.TypeA, 1, net.IP{3, 3, 3, 3})},
 	}).SetReply(req)
-	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{IP: nil, Mask: nil}, testLogger)
+	c.setWithSubnet(ctx, testLogger, req, resp, upstreamWithAddr, &net.IPNet{IP: nil, Mask: nil})
 
 	t.Run("with_subnet_1", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
@@ -739,12 +768,14 @@ func TestCache_getWithSubnet_mask(t *testing.T) {
 	}).SetReply(req)
 
 	// Cache IP network that contains the testIP.
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
 	c.setWithSubnet(
+		ctx,
+		testLogger,
 		req,
 		resp,
 		upstreamWithAddr,
 		&net.IPNet{IP: cachedIP, Mask: cidrMask},
-		testLogger,
 	)
 
 	t.Run("mask_matched", func(t *testing.T) {

@@ -24,7 +24,6 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -68,7 +67,6 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, udpListener.Close)
 
 	rslv, err := NewUpstreamResolver(udpListener.LocalAddr().String(), &Options{
-		Clock:   &timeutil.SystemClock{},
 		Logger:  testLogger,
 		Timeout: timeout,
 	})
@@ -76,7 +74,6 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 
 	// Create an upstream that uses this faulty bootstrap.
 	u, err := AddressToUpstream("tls://random-domain-name", &Options{
-		Clock:     &timeutil.SystemClock{},
 		Logger:    testLogger,
 		Bootstrap: NewCachingResolver(rslv),
 		Timeout:   timeout,
@@ -132,13 +129,11 @@ func TestUpstreams(t *testing.T) {
 	googleRslv, err := NewUpstreamResolver("8.8.8.8:53", &Options{
 		Logger:  l,
 		Timeout: upsTimeout,
-		Clock:   &timeutil.SystemClock{},
 	})
 	require.NoError(t, err)
 	cloudflareRslv, err := NewUpstreamResolver("1.0.0.1:53", &Options{
 		Logger:  l,
 		Timeout: upsTimeout,
-		Clock:   &timeutil.SystemClock{},
 	})
 	require.NoError(t, err)
 
@@ -244,7 +239,6 @@ func TestUpstreams(t *testing.T) {
 func TestAddressToUpstream(t *testing.T) {
 	cloudflareRslv, err := NewUpstreamResolver("1.1.1.1", &Options{
 		Logger: testLogger,
-		Clock:  &timeutil.SystemClock{},
 	})
 	require.NoError(t, err)
 
@@ -396,7 +390,6 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
 			rslv, err := NewUpstreamResolver(tc.bootstrap, &Options{
-				Clock:   &timeutil.SystemClock{},
 				Logger:  testLogger,
 				Timeout: testTimeout,
 			})
@@ -453,7 +446,6 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 				r, err := NewUpstreamResolver(b, &Options{
 					Logger:  l,
 					Timeout: testTimeout,
-					Clock:   &timeutil.SystemClock{},
 				})
 				require.NoError(t, err)
 
@@ -464,7 +456,6 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 				Logger:    l,
 				Bootstrap: rslv,
 				Timeout:   upstreamTimeout,
-				Clock:     &timeutil.SystemClock{},
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)

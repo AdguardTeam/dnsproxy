@@ -3,7 +3,6 @@ package upstream_test
 import (
 	"context"
 	"net/netip"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,7 +60,6 @@ func TestCachingResolver_staleness(t *testing.T) {
 	r := upstream.NewCachingResolver(&upstream.UpstreamResolver{
 		Upstream: ups,
 		Logger:   testLogger,
-		Clock:    &timeutil.SystemClock{},
 	})
 
 	require.True(t, t.Run("resolve", func(t *testing.T) {
@@ -109,28 +107,18 @@ func TestCachingResolver_staleness(t *testing.T) {
 }
 
 // newTestUpstreamResolver returns a new upstream resolver with the upstream
-// mock that answers using onExchange and panics on if Exchange is called more
-// than maxCalls times.
+// mock that answers using onExchange.
 func newTestUpstreamResolver(
 	tb testing.TB,
 	clock timeutil.Clock,
 	onExchange func(req *dns.Msg) (resp *dns.Msg),
-	maxCalls int32,
 ) (r *upstream.UpstreamResolver) {
 	tb.Helper()
-
-	cnt := &atomic.Int32{}
 
 	ups := &dnsproxytest.Upstream{
 		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 		OnExchange: func(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
-			if cnt.Load() >= maxCalls {
-				panic(testutil.UnexpectedCall(ctx, req))
-			}
-
-			cnt.Add(1)
-
 			return onExchange(req), nil
 		},
 	}
@@ -202,19 +190,19 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 		wantExpire time.Duration
 	}{{
 		name:       "empty_no_error",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeSuccess), 1),
+		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeSuccess)),
 		wantExpire: 0,
 	}, {
 		name:       "nxdomain_no_soa",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeNameError), 1),
+		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeNameError)),
 		wantExpire: 0,
 	}, {
 		name:       "nxdomain_with_soa",
-		resolver:   newTestUpstreamResolver(t, clock, onExchangeWithSOA, 1),
+		resolver:   newTestUpstreamResolver(t, clock, onExchangeWithSOA),
 		wantExpire: soaTTL * time.Second,
 	}, {
 		name:       "servfail",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeServerFailure), 1),
+		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeServerFailure)),
 		wantExpire: servFailTTL * time.Second,
 	}}
 
@@ -233,7 +221,7 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 	}
 }
 
-func TestCachingResolver_LookupNetIP(t *testing.T) {
+func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 	now := time.Now()
 	clock := &faketime.Clock{
 		OnNow: func() time.Time {
@@ -247,19 +235,19 @@ func TestCachingResolver_LookupNetIP(t *testing.T) {
 		wantCached bool
 	}{{
 		name:       "empty_no_error",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeSuccess), 2),
+		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeSuccess)),
 		wantCached: false,
 	}, {
 		name:       "nxdomain_no_soa",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeNameError), 2),
+		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeNameError)),
 		wantCached: false,
 	}, {
 		name:       "nxdomain_with_soa",
-		resolver:   newTestUpstreamResolver(t, clock, onExchangeWithSOA, 2),
+		resolver:   newTestUpstreamResolver(t, clock, onExchangeWithSOA),
 		wantCached: true,
 	}, {
 		name:       "servfail",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeServerFailure), 2),
+		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeServerFailure)),
 		wantCached: true,
 	}}
 
@@ -272,17 +260,10 @@ func TestCachingResolver_LookupNetIP(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, addrs)
 
-			// TODO(m.kazantsev): !! This should panic, as we don't cache empty
-			// responses anymore.  There are exact four calls to the Exchange
-			// method, two for each call to LookupNetIP.  Some reason, panic is
-			// not caught as expected and the test fails.
-			/*
-				require.Panics(t, func() {
-					addrs, err = r.LookupNetIP(ctx, bootstrap.NetworkIP, intdnsproxytest.FQDN)
-				})
-				require.NoError(t, err)
-				require.Empty(t, addrs)
-			*/
+			// The first call to LookupNetIP should not cache the result because
+			// it is empty.  Thus, the cache should not contain any entry for
+			// this query.
+			require.Empty(t, r.FindCached(bootstrap.NetworkIP, intdnsproxytest.FQDN, now))
 		})
 	}
 }

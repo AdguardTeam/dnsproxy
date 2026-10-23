@@ -948,7 +948,7 @@ func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 	// See https://github.com/imp/dnsmasq/blob/770bce967cfc9967273d0acfb3ea018fb7b17522/src/forward.c#L1169-L1172.
 	if cacheWorks && ok && !dctx.Res.CheckingDisabled {
 		// Cache the response with DNSSEC RRs.
-		p.cacheResp(dctx)
+		p.cacheResp(ctx, dctx)
 	}
 
 	// It is possible that the response is nil if the upstream hasn't been

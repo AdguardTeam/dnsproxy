@@ -16,7 +16,7 @@ import (
 // to simplify testing.
 type testCachingResolver struct {
 	onReplyFromUpstream func(ctx context.Context, dctx *DNSContext) (ok bool, err error)
-	onCacheResp         func(dctx *DNSContext)
+	onCacheResp         func(ctx context.Context, dctx *DNSContext)
 }
 
 // replyFromUpstream implements the cachingResolver interface for
@@ -29,8 +29,8 @@ func (tcr *testCachingResolver) replyFromUpstream(
 }
 
 // cacheResp implements the cachingResolver interface for *testCachingResolver.
-func (tcr *testCachingResolver) cacheResp(dctx *DNSContext) {
-	tcr.onCacheResp(dctx)
+func (tcr *testCachingResolver) cacheResp(ctx context.Context, dctx *DNSContext) {
+	tcr.onCacheResp(ctx, dctx)
 }
 
 func TestOptimisticResolver_ResolveOnce(t *testing.T) {
@@ -43,7 +43,7 @@ func TestOptimisticResolver_ResolveOnce(t *testing.T) {
 
 			return true, nil
 		},
-		onCacheResp: func(_ *DNSContext) {
+		onCacheResp: func(_ context.Context, _ *DNSContext) {
 			timesSet++
 
 			// Pass the signal to begin running secondary goroutines.
@@ -100,7 +100,7 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 			onReplyFromUpstream: func(_ context.Context, _ *DNSContext) (ok bool, err error) {
 				return true, rErr
 			},
-			onCacheResp: func(_ *DNSContext) { cached = true },
+			onCacheResp: func(_ context.Context, _ *DNSContext) { cached = true },
 		})
 
 		ctx := testutil.ContextWithTimeout(t, testTimeout)
@@ -116,7 +116,7 @@ func TestOptimisticResolver_ResolveOnce_unsuccessful(t *testing.T) {
 			onReplyFromUpstream: func(_ context.Context, _ *DNSContext) (ok bool, err error) {
 				return false, nil
 			},
-			onCacheResp: func(_ *DNSContext) { cached = true },
+			onCacheResp: func(_ context.Context, _ *DNSContext) { cached = true },
 		})
 
 		ctx := testutil.ContextWithTimeout(t, testTimeout)

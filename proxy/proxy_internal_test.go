@@ -753,13 +753,13 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 			return true, nil
 		},
-		onCacheResp: func(dctx *DNSContext) {
+		onCacheResp: func(ctx context.Context, dctx *DNSContext) {
 			// Report adding to cache is in process.
 			out <- unit{}
 			// Wait for tests to finish.
 			<-in
 
-			p.cacheResp(dctx)
+			p.cacheResp(ctx, dctx)
 
 			// Report adding to cache is finished.
 			out <- unit{}

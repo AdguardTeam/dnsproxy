@@ -321,7 +321,7 @@ var commandLineOptions = []*commandLineOption{
 		valueType:   "",
 	},
 	hostsFileEnabledIdx: {
-		description: "If specified, use hosts files for resolving.",
+		description: "Use hosts files for resolving (default: true). Set to false to disable.",
 		long:        "hosts-file-enabled",
 		short:       "",
 		valueType:   "",

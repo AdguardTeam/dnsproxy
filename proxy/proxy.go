@@ -257,7 +257,7 @@ type Proxy struct {
 	// upstreamRTTStats maps the upstream address to its round-trip time
 	// statistics.  It's holds the statistics for all upstreams to perform a
 	// weighted random selection when using the load balancing mode.
-	upstreamRTTStats map[string]upstreamRTTStats
+	upstreamRTTStats map[string]*upstreamRTTStats
 
 	// quicListenAddr is the set of UDP addresses to listen for DNS-over-QUIC
 	// requests.
@@ -300,6 +300,15 @@ type Proxy struct {
 	// cacheOptimisticMaxAge is the maximum time entries remain in the cache
 	// when cache is optimistic.  Default value is [DefaultOptimisticMaxAge].
 	cacheOptimisticMaxAge time.Duration
+
+	// upstreamRTTDecay is the time constant of the pull of the upstreams'
+	// round-trip time scores towards their long-term averages.  Default value
+	// is [DefaultUpstreamRTTDecay].
+	upstreamRTTDecay time.Duration
+
+	// upstreamTimeout is recorded as the round-trip time of a failed exchange.
+	// Default value is [defaultTimeout].
+	upstreamTimeout time.Duration
 
 	// fastestPingTimeout is the timeout for waiting the first successful
 	// dialing when the UpstreamMode is set to [UpstreamModeFastestAddr].
@@ -414,6 +423,8 @@ func New(c *Config) (p *Proxy, err error) {
 		maxGoroutines:             c.MaxGoroutines,
 		cacheOptimisticMaxAge:     c.CacheOptimisticMaxAge,
 		cacheOptimisticAnswerTTL:  c.CacheOptimisticAnswerTTL,
+		upstreamRTTDecay:          c.UpstreamRTTDecay,
+		upstreamTimeout:           c.UpstreamTimeout,
 		cacheMaxTTL:               c.CacheMaxTTL,
 		cacheMinTTL:               c.CacheMinTTL,
 		cacheSizeBytes:            c.CacheSizeBytes,
@@ -439,7 +450,7 @@ func New(c *Config) (p *Proxy, err error) {
 			contextutil.EmptyConstructor{},
 		),
 		requestHandler:   cmp.Or[Handler](c.RequestHandler, DefaultHandler{}),
-		upstreamRTTStats: map[string]upstreamRTTStats{},
+		upstreamRTTStats: map[string]*upstreamRTTStats{},
 		rttLock:          &sync.Mutex{},
 		mu:               &sync.RWMutex{},
 		// 2 bytes may be used to store packet length (see TCP/TLS).
@@ -464,6 +475,8 @@ func New(c *Config) (p *Proxy, err error) {
 
 	p.cacheOptimisticAnswerTTL = cmp.Or(p.cacheOptimisticAnswerTTL, DefaultOptimisticAnswerTTL)
 	p.cacheOptimisticMaxAge = cmp.Or(p.cacheOptimisticMaxAge, DefaultOptimisticMaxAge)
+	p.upstreamRTTDecay = cmp.Or(p.upstreamRTTDecay, DefaultUpstreamRTTDecay)
+	p.upstreamTimeout = cmp.Or(p.upstreamTimeout, defaultTimeout)
 
 	p.initCache()
 

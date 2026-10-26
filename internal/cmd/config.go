@@ -103,6 +103,11 @@ type configuration struct {
 	// human-readable form.  Default is 10s.
 	Timeout timeutil.Duration `yaml:"timeout"`
 
+	// UpstreamRTTDecay is the time constant of the pull of the upstreams'
+	// round-trip time scores towards their long-term averages, used by the
+	// load_balance upstream mode.  Default is 2m.
+	UpstreamRTTDecay timeutil.Duration `yaml:"upstream-rtt-decay"`
+
 	// CacheMinTTL is the minimum TTL value for caching DNS entries, in seconds.
 	// It overrides the TTL value from the upstream server, if the one is less.
 	CacheMinTTL uint32 `yaml:"cache-min-ttl"`
@@ -223,6 +228,7 @@ func parseConfig() (conf *configuration, exitCode int, err error) {
 		UpstreamMode:           string(proxy.UpstreamModeLoadBalance),
 		CacheSizeBytes:         64 * 1024,
 		Timeout:                timeutil.Duration(10 * time.Second),
+		UpstreamRTTDecay:       timeutil.Duration(proxy.DefaultUpstreamRTTDecay),
 		OptimisticAnswerTTL:    timeutil.Duration(proxy.DefaultOptimisticAnswerTTL),
 		OptimisticMaxAge:       timeutil.Duration(proxy.DefaultOptimisticMaxAge),
 		RatelimitSubnetLenIPv4: 24,

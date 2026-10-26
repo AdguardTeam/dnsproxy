@@ -40,6 +40,7 @@ const (
 	bogusNXDomainIdx
 	hostsFilesIdx
 	timeoutIdx
+	upstreamRTTDecayIdx
 	cacheMinTTLIdx
 	cacheMaxTTLIdx
 	cacheOptimisticAnswerTTLIdx
@@ -236,6 +237,14 @@ var commandLineOptions = []*commandLineOption{
 		description: "Timeout for outbound DNS queries to remote upstream servers in a " +
 			"human-readable form",
 		long:      "timeout",
+		short:     "",
+		valueType: "duration",
+	},
+	upstreamRTTDecayIdx: {
+		description: "Time constant of the pull of the upstreams' round-trip time scores " +
+			"towards their long-term averages, used by the load_balance upstream mode, " +
+			"in a human-readable form",
+		long:      "upstream-rtt-decay",
 		short:     "",
 		valueType: "duration",
 	},
@@ -458,6 +467,7 @@ func parseCmdLineOptions(conf *configuration) (err error) {
 		bogusNXDomainIdx:            &conf.BogusNXDomain,
 		hostsFilesIdx:               &conf.HostsFiles,
 		timeoutIdx:                  &conf.Timeout,
+		upstreamRTTDecayIdx:         &conf.UpstreamRTTDecay,
 		cacheMinTTLIdx:              &conf.CacheMinTTL,
 		cacheMaxTTLIdx:              &conf.CacheMaxTTL,
 		cacheOptimisticAnswerTTLIdx: &conf.OptimisticAnswerTTL,

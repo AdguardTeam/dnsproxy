@@ -1,13 +1,16 @@
 package fastip_test
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
-	"github.com/AdguardTeam/dnsproxy/fastip"
+	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/internal/fastip"
 	"github.com/AdguardTeam/dnsproxy/internal/nettest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -21,6 +24,9 @@ import (
 // testReplacer is used to replace "/" and "_" with "-" in test domain names.
 var testReplacer = strings.NewReplacer("/", "-", "_", "-")
 
+// testPingWaitTimeout is a common ping wait timeout value for tests.
+const testPingWaitTimeout = 1 * time.Second
+
 func TestFastestAddr_ExchangeFastest(t *testing.T) {
 	t.Parallel()
 
@@ -30,16 +36,19 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		t.Parallel()
 
 		u := &dnsproxytest.Upstream{
-			OnAddress:  func() (addr string) { return "bad_upstream" },
-			OnExchange: func(_ *dns.Msg) (resp *dns.Msg, err error) { return nil, assert.AnError },
-			OnClose:    func() (err error) { return nil },
+			OnAddress: func() (addr string) { return "bad_upstream" },
+			OnExchange: func(_ context.Context, _ *dns.Msg) (resp *dns.Msg, err error) {
+				return nil, assert.AnError
+			},
+			OnClose: func() (err error) { return nil },
 		}
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingWaitTimeout: testPingWaitTimeout,
 		})
 
-		resp, up, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{u})
+		ctx := testutil.ContextWithTimeout(t, proxytest.Timeout)
+		resp, up, err := f.ExchangeFastest(ctx, newTestReq(t), []upstream.Upstream{u})
 		require.Error(t, err)
 
 		assert.ErrorIs(t, err, assert.AnError)
@@ -54,7 +63,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingWaitTimeout: testPingWaitTimeout,
 		})
 
 		f.SetPingPorts([]uint{port})
@@ -67,7 +76,8 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 		alive := newTestAUpstream(t, []*dns.A{newTestRec(t, aliveAddr)})
 		dead := newTestAUpstream(t, []*dns.A{newTestRec(t, netip.MustParseAddr("192.0.2.1"))})
 
-		rep, ups, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{dead, alive})
+		ctx := testutil.ContextWithTimeout(t, proxytest.Timeout)
+		rep, ups, err := f.ExchangeFastest(ctx, newTestReq(t), []upstream.Upstream{dead, alive})
 		require.NoError(t, err)
 
 		assert.Equal(t, ups, alive)
@@ -84,7 +94,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 
 		f := fastip.New(&fastip.Config{
 			Logger:          l,
-			PingWaitTimeout: fastip.DefaultPingWaitTimeout,
+			PingWaitTimeout: testPingWaitTimeout,
 		})
 
 		f.SetPingPorts([]uint{nettest.NewFreePort(t)})
@@ -96,7 +106,8 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 			newTestRec(t, netip.MustParseAddr("127.0.0.3")),
 		})
 
-		resp, _, err := f.ExchangeFastest(newTestReq(t), []upstream.Upstream{ups})
+		ctx := testutil.ContextWithTimeout(t, proxytest.Timeout)
+		resp, _, err := f.ExchangeFastest(ctx, newTestReq(t), []upstream.Upstream{ups})
 		require.NoError(t, err)
 
 		require.NotNil(t, resp)
@@ -112,7 +123,7 @@ func TestFastestAddr_ExchangeFastest(t *testing.T) {
 func newTestAUpstream(tb testing.TB, recs []*dns.A) (ups *dnsproxytest.Upstream) {
 	tb.Helper()
 
-	onExchange := func(m *dns.Msg) (resp *dns.Msg, err error) {
+	onExchange := func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 		resp = &dns.Msg{}
 		resp.SetReply(m)
 
@@ -153,10 +164,8 @@ func newTestReq(tb testing.TB) (req *dns.Msg) {
 	domain := testReplacer.Replace(tb.Name())
 
 	return &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
+		Id:               dns.Id(),
+		RecursionDesired: true,
 		Question: []dns.Question{{
 			Name:   dns.Fqdn(domain),
 			Qtype:  dns.TypeA,

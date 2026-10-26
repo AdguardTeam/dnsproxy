@@ -6,9 +6,7 @@ import (
 	"math"
 	"net/netip"
 	"net/url"
-	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
@@ -154,16 +152,14 @@ type ipResult struct {
 // lookupNetIP performs a DNS lookup of host and returns the result.  network
 // must be either [bootstrap.NetworkIP4], [bootstrap.NetworkIP6], or
 // [bootstrap.NetworkIP].  host must be in a lower-case FQDN form.
-//
-// TODO(e.burkov):  Use context.
 func (r *UpstreamResolver) lookupNetIP(
-	_ context.Context,
+	ctx context.Context,
 	network bootstrap.Network,
 	host string,
 ) (result *ipResult, err error) {
 	switch network {
 	case bootstrap.NetworkIP4, bootstrap.NetworkIP6:
-		return r.request(host, network)
+		return r.request(ctx, host, network)
 	case bootstrap.NetworkIP:
 		// Go on.
 	default:
@@ -171,8 +167,8 @@ func (r *UpstreamResolver) lookupNetIP(
 	}
 
 	resCh := make(chan any, 2)
-	go r.resolveAsync(resCh, host, bootstrap.NetworkIP4)
-	go r.resolveAsync(resCh, host, bootstrap.NetworkIP6)
+	go r.resolveAsync(ctx, resCh, host, bootstrap.NetworkIP4)
+	go r.resolveAsync(ctx, resCh, host, bootstrap.NetworkIP6)
 
 	var errs []error
 	result = &ipResult{}
@@ -199,7 +195,11 @@ func (r *UpstreamResolver) lookupNetIP(
 //
 // TODO(e.burkov):  Consider NS and Extra sections when setting TTL.  Check out
 // what RFCs say about it.
-func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipResult, err error) {
+func (r *UpstreamResolver) request(
+	ctx context.Context,
+	host string,
+	n bootstrap.Network,
+) (res *ipResult, err error) {
 	var qtype uint16
 	switch n {
 	case bootstrap.NetworkIP4:
@@ -211,10 +211,8 @@ func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipRes
 	}
 
 	req := &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
+		Id:               dns.Id(),
+		RecursionDesired: true,
 		Question: []dns.Question{{
 			Name:   host,
 			Qtype:  qtype,
@@ -224,7 +222,7 @@ func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipRes
 
 	// As per [Upstream.Exchange] documentation, the response is always returned
 	// if no error occurred.
-	resp, err := r.Exchange(req)
+	resp, err := r.Exchange(ctx, req)
 	if err != nil {
 		return res, err
 	}
@@ -251,88 +249,15 @@ func (r *UpstreamResolver) request(host string, n bootstrap.Network) (res *ipRes
 
 // resolveAsync performs a single DNS lookup and sends the result to ch.  It's
 // intended to be used as a goroutine.
-func (r *UpstreamResolver) resolveAsync(resCh chan<- any, host, network string) {
-	res, err := r.request(host, network)
+func (r *UpstreamResolver) resolveAsync(
+	ctx context.Context,
+	resCh chan<- any,
+	host, network string,
+) {
+	res, err := r.request(ctx, host, network)
 	if err != nil {
 		resCh <- err
 	} else {
 		resCh <- res
 	}
-}
-
-// CachingResolver is a [Resolver] that caches the results of lookups.  It's
-// required to be created with [NewCachingResolver].
-type CachingResolver struct {
-	// resolver is the underlying resolver to use for lookups.
-	resolver *UpstreamResolver
-
-	// mu protects cache and it's elements.
-	mu *sync.RWMutex
-
-	// cache is the set of resolved hostnames mapped to cached addresses.
-	//
-	// TODO(e.burkov):  Use expiration cache.
-	cache map[string]*ipResult
-}
-
-// NewCachingResolver creates a new caching resolver that uses r for lookups.
-func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
-	return &CachingResolver{
-		resolver: r,
-		mu:       &sync.RWMutex{},
-		cache:    map[string]*ipResult{},
-	}
-}
-
-// type check
-var _ Resolver = (*CachingResolver)(nil)
-
-// LookupNetIP implements the [Resolver] interface for *CachingResolver.
-//
-// TODO(e.burkov):  It may appear that several concurrent lookup results rewrite
-// each other in the cache.
-func (r *CachingResolver) LookupNetIP(
-	ctx context.Context,
-	network bootstrap.Network,
-	host string,
-) (addrs []netip.Addr, err error) {
-	now := time.Now()
-	host = dns.Fqdn(strings.ToLower(host))
-
-	addrs = r.findCached(host, now)
-	if addrs != nil {
-		return slices.Clone(addrs), nil
-	}
-
-	res, err := r.resolver.lookupNetIP(ctx, network, host)
-	if err != nil {
-		return []netip.Addr{}, err
-	}
-
-	r.setCached(host, res)
-
-	return slices.Clone(res.addrs), nil
-}
-
-// findCached returns the cached addresses for host if it's not expired yet, and
-// the corresponding cached result, if any.  It's safe for concurrent use.
-func (r *CachingResolver) findCached(host string, now time.Time) (addrs []netip.Addr) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	res, ok := r.cache[host]
-	if !ok || res.expire.Before(now) {
-		return nil
-	}
-
-	return res.addrs
-}
-
-// setCached sets the result into the address cache for host.  It's safe for
-// concurrent use.
-func (r *CachingResolver) setCached(host string, res *ipResult) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.cache[host] = res
 }

@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
@@ -20,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_handleDNSRequest_tcp(t *testing.T) {
+func TestProxy_HandleDNSRequest_tcp(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	// Create a DNS-over-TCP client connection
@@ -31,14 +32,16 @@ func TestProxy_handleDNSRequest_tcp(t *testing.T) {
 	sendTestMessages(t, conn)
 }
 
-func TestProxy_handleDNSRequest_tls(t *testing.T) {
+func TestProxy_HandleDNSRequest_tls(t *testing.T) {
 	serverConfig, caPem := proxytest.NewTLSConfig(t)
 	dnsProxy, err := proxy.New(&proxy.Config{
 		Logger:         testLogger,
 		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TLSConfig:      serverConfig,
-		UpstreamConfig: newTestUpstreamConfig(t, defaultTimeout, testDefaultUpstreamAddr),
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		TrustedProxies: proxytest.DefaultTrustedProxies,
 	})
 	require.NoError(t, err)
@@ -100,9 +103,11 @@ func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
 	t.Parallel()
 
 	u := &dnsproxytest.Upstream{
-		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
-		OnAddress:  func() (_ string) { panic(testutil.UnexpectedCall()) },
-		OnClose:    func() (err error) { return nil },
+		OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
+			panic(testutil.UnexpectedCall(ctx, m))
+		},
+		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnClose:   func() (err error) { return nil },
 	}
 	upsConf := &proxy.UpstreamConfig{
 		Upstreams: []upstream.Upstream{u},

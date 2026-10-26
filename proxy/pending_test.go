@@ -65,7 +65,7 @@ func TestPendingRequests(t *testing.T) {
 
 	once := &sync.Once{}
 	u := &dnsproxytest.Upstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			once.Do(func() {
 				resp = (&dns.Msg{}).SetReply(req)
 			})
@@ -138,7 +138,7 @@ func TestPendingRequestsDifferentUpstreamResponses(t *testing.T) {
 		return &dnsproxytest.Upstream{
 			OnAddress: func() string { return "stub" },
 			OnClose:   func() error { return nil },
-			OnExchange: func(req *dns.Msg) (*dns.Msg, error) {
+			OnExchange: func(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
 				beforeReply()
 				resp := (&dns.Msg{}).SetReply(req)
 				resp.Answer = []dns.RR{&dns.A{
@@ -200,7 +200,7 @@ func TestPendingRequestsNestedResolveDoesNotDeadlock(t *testing.T) {
 	innerUpstream := &dnsproxytest.Upstream{
 		OnAddress: func() string { return "inner" },
 		OnClose:   func() error { return nil },
-		OnExchange: func(req *dns.Msg) (*dns.Msg, error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
 			return (&dns.Msg{}).SetReply(req), nil
 		},
 	}
@@ -210,7 +210,7 @@ func TestPendingRequestsNestedResolveDoesNotDeadlock(t *testing.T) {
 	outerUpstream := &dnsproxytest.Upstream{
 		OnAddress: func() string { return "outer" },
 		OnClose:   func() error { return nil },
-		OnExchange: func(req *dns.Msg) (*dns.Msg, error) {
+		OnExchange: func(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
 			err := p.Resolve(ctx, inner)
 			if inner.Res != nil {
 				inner.Res.Id = req.Id

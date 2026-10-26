@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
@@ -274,38 +275,41 @@ func (p *Proxy) synthRR(rr dns.RR, soaTTL uint32) (result dns.RR) {
 	return aaaa
 }
 
-// performDNS64 returns the upstream that was used to perform DNS64 request, or
-// nil, if the request was not performed.  If origResp is not nil, origReq must
-// also not be nil.
+// performDNS64 receives unwrapped upstreams, wraps them itself and returns
+// both the resolver and the wrapped upstreams, or nil, nil, if DNS64 was not
+// applied.  If origResp is not nil, origReq must also not be nil.
 func (p *Proxy) performDNS64(
+	ctx context.Context,
 	origReq *dns.Msg,
 	origResp *dns.Msg,
 	upstreams []upstream.Upstream,
-) (u upstream.Upstream) {
+) (u upstream.Upstream, wrapped []upstream.Upstream) {
 	if origResp == nil {
-		return nil
+		return nil, nil
 	}
 
 	dns64Req := p.checkDNS64(origReq, origResp)
 	if dns64Req == nil {
-		return nil
+		return nil, nil
 	}
 
 	host := origReq.Question[0].Name
-	p.logger.Debug("received an empty aaaa response, checking dns64", "host", host)
+	p.logger.DebugContext(ctx, "received an empty aaaa response, checking dns64", "host", host)
 
-	dns64Resp, u, err := p.exchangeUpstreams(dns64Req, upstreams)
+	wrapped = upstreamsWithStats(upstreams)
+
+	dns64Resp, u, err := p.exchangeUpstreams(ctx, dns64Req, wrapped)
 	if err != nil {
-		p.logger.Error("dns64 request failed", slogutil.KeyError, err)
+		p.logger.ErrorContext(ctx, "dns64 request failed", slogutil.KeyError, err)
 
-		return nil
+		return nil, nil
 	}
 
 	if dns64Resp != nil && p.synthDNS64(origReq, origResp, dns64Resp) {
-		p.logger.Debug("synthesized aaaa response", "host", host)
+		p.logger.DebugContext(ctx, "synthesized aaaa response", "host", host)
 
-		return u
+		return u, wrapped
 	}
 
-	return nil
+	return nil, nil
 }

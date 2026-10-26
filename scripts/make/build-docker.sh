@@ -78,7 +78,7 @@ cp "${dist_dir}/linux-ppc64le/dnsproxy" \
 	"${dist_docker}/dnsproxy_linux_ppc64le_"
 
 # Prepare the default configuration for the Docker image.
-cp ./config.yaml.dist "${dist_docker}/config.yaml"
+cp ./config.dist.yaml "${dist_docker}/config.yaml"
 
 # docker_build_opt_tag is a function that wraps the call of docker build command
 # with optionally --tag flags.

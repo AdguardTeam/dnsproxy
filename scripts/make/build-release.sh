@@ -114,7 +114,7 @@ build() {
 	log "build output: $build_output"
 
 	# Prepare the build directory for archiving.
-	cp ./LICENSE ./README.md "$build_dir"
+	cp ./LICENSE ./README.md ./config.dist.yaml "$build_dir"
 
 	# Make archives.  Windows prefers ZIP archives; the rest, gzipped tarballs.
 	case "$build_os" in

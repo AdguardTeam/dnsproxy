@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_handleDNSRequest_udp(t *testing.T) {
+func TestProxy_HandleDNSRequest_udp(t *testing.T) {
 	dnsProxy := mustStartDefaultProxy(t)
 
 	// Create a DNS-over-UDP client connection

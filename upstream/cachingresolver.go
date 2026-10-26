@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/miekg/dns"
+	"golang.org/x/sync/singleflight"
 )
 
 // CachingResolver is a [Resolver] that caches the results of lookups.  It's
@@ -17,6 +19,9 @@ import (
 type CachingResolver struct {
 	// resolver is the underlying resolver to use for lookups.
 	resolver *UpstreamResolver
+
+	// queries is used to deduplicate concurrent lookups for the same key.
+	queries *singleflight.Group
 
 	// mu protects cache and it's elements.
 	mu *sync.RWMutex
@@ -32,6 +37,7 @@ func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 	return &CachingResolver{
 		resolver: r,
 		mu:       &sync.RWMutex{},
+		queries:  &singleflight.Group{},
 		cache:    map[cacheKey]*ipResult{},
 	}
 }
@@ -40,9 +46,6 @@ func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 var _ Resolver = (*CachingResolver)(nil)
 
 // LookupNetIP implements the [Resolver] interface for *CachingResolver.
-//
-// TODO(e.burkov):  It may appear that several concurrent lookup results rewrite
-// each other in the cache.
 func (r *CachingResolver) LookupNetIP(
 	ctx context.Context,
 	network bootstrap.Network,
@@ -61,24 +64,38 @@ func (r *CachingResolver) LookupNetIP(
 		return slices.Clone(addrs), nil
 	}
 
-	res, err := r.resolver.lookupNetIP(ctx, network, host)
+	lookupFn := func() (a any, err error) {
+		res, err := r.resolver.lookupNetIP(ctx, network, host)
+		if err != nil {
+			return nil, err
+		}
+
+		// Do not cache empty results.
+		if res == nil || len(res.addrs) == 0 {
+			return nil, nil
+		}
+
+		r.setCached(key, res)
+
+		return res, nil
+	}
+
+	v, err, _ := r.queries.Do(fmt.Sprintf("%s:%s", host, network), lookupFn)
 	if err != nil {
 		return []netip.Addr{}, err
 	}
 
-	// Do not cache empty results.
-	if res == nil || len(res.addrs) == 0 {
+	if v == nil {
 		return []netip.Addr{}, nil
 	}
 
-	r.setCached(key, res)
+	res := v.(*ipResult)
 
 	return slices.Clone(res.addrs), nil
 }
 
 // findCached returns the cached addresses for host and network if it's not
-// expired yet, and the corresponding cached result, if any.  It's safe for
-// concurrent use.
+// expired yet.  It's safe for concurrent use.
 func (r *CachingResolver) findCached(
 	key cacheKey,
 	now time.Time,

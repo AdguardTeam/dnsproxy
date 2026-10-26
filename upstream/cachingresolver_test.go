@@ -2,7 +2,9 @@ package upstream_test
 
 import (
 	"context"
+	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -285,4 +287,62 @@ func TestCachingResolver_LookupNetIP(t *testing.T) {
 			*/
 		})
 	}
+}
+
+func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
+	t.Parallel()
+
+	const attemptNum = 3
+
+	now := time.Now()
+	clock := &faketime.Clock{
+		OnNow: func() time.Time {
+			return now
+		},
+	}
+
+	ip4Str := "192.0.2.1"
+
+	addr := netip.MustParseAddr(ip4Str)
+	wantAddrs := [][]netip.Addr{{addr}, {addr}, {addr}}
+	ip := net.ParseIP(ip4Str)
+
+	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+		resp = (&dns.Msg{}).SetReply(req)
+		resp.Rcode = dns.RcodeSuccess
+		resp.Answer = append(resp.Answer, &dns.A{
+			Hdr: dns.RR_Header{
+				Name:   req.Question[0].Name,
+				Rrtype: dns.TypeA,
+				Class:  dns.ClassINET,
+				Ttl:    60,
+			},
+			A: ip,
+		})
+
+		return resp
+	}
+
+	require.True(t, t.Run("concurrent_lookup", func(t *testing.T) {
+		r := upstream.NewCachingResolver(
+			newTestUpstreamResolver(t, clock, onExchange, 1),
+		)
+
+		wg := &sync.WaitGroup{}
+
+		gotAddrs := make([][]netip.Addr, attemptNum)
+		for i := range attemptNum {
+			wg.Go(func() {
+				ctx := testutil.ContextWithTimeout(t, testTimeout)
+				addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP4, intdnsproxytest.FQDN)
+				assert.NoError(t, err)
+				assert.NotEmpty(t, addrs)
+
+				gotAddrs[i] = addrs
+			})
+		}
+		wg.Wait()
+
+		require.Equal(t, wantAddrs, gotAddrs)
+	}))
 }

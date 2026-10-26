@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"cmp"
 	"context"
 	"net/netip"
 	"slices"
@@ -16,7 +17,7 @@ import (
 // CachingResolver is a [Resolver] that caches the results of lookups.  It's
 // required to be created with [NewCachingResolver].
 type CachingResolver struct {
-	// clock is used to get the current time.  It may be nil.
+	// clock is used to get the current time.
 	clock timeutil.Clock
 
 	// resolver is the underlying resolver to use for lookups.
@@ -32,10 +33,9 @@ type CachingResolver struct {
 }
 
 // NewCachingResolver creates a new caching resolver that uses r for lookups.
+// r must not be nil.
 func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
-	if r.Clock == nil {
-		r.Clock = timeutil.SystemClock{}
-	}
+	r.Clock = cmp.Or[timeutil.Clock](r.Clock, &timeutil.SystemClock{})
 
 	return &CachingResolver{
 		clock:    r.Clock,
@@ -75,8 +75,8 @@ func (r *CachingResolver) LookupNetIP(
 		return []netip.Addr{}, err
 	}
 
-	// Do not cache empty results.
-	if res == nil || len(res.addrs) == 0 {
+	// Do not cache nil results.
+	if res == nil {
 		return []netip.Addr{}, nil
 	}
 

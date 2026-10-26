@@ -230,25 +230,20 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 	}
 
 	testCases := []struct {
-		resolver   *upstream.UpstreamResolver
-		name       string
-		wantCached bool
+		resolver *upstream.UpstreamResolver
+		name     string
 	}{{
-		name:       "empty_no_error",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeSuccess)),
-		wantCached: false,
+		name:     "empty_no_error",
+		resolver: newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeSuccess)),
 	}, {
-		name:       "nxdomain_no_soa",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeNameError)),
-		wantCached: false,
+		name:     "nxdomain_no_soa",
+		resolver: newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeNameError)),
 	}, {
-		name:       "nxdomain_with_soa",
-		resolver:   newTestUpstreamResolver(t, clock, onExchangeWithSOA),
-		wantCached: true,
+		name:     "nxdomain_with_soa",
+		resolver: newTestUpstreamResolver(t, clock, onExchangeWithSOA),
 	}, {
-		name:       "servfail",
-		resolver:   newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeServerFailure)),
-		wantCached: true,
+		name:     "servfail",
+		resolver: newTestUpstreamResolver(t, clock, newOnExchange(t, dns.RcodeServerFailure)),
 	}}
 
 	for _, tc := range testCases {

@@ -3,6 +3,7 @@
 package upstream
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -190,17 +191,9 @@ const (
 //
 // TODO(e.burkov):  Clone opts?
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
-	if opts == nil {
-		opts = &Options{}
-	}
-
-	if opts.Logger == nil {
-		opts.Logger = slog.Default()
-	}
-
-	if opts.Clock == nil {
-		opts.Clock = &timeutil.SystemClock{}
-	}
+	opts = cmp.Or(opts, &Options{})
+	opts.Logger = cmp.Or(opts.Logger, slog.Default())
+	opts.Clock = cmp.Or[timeutil.Clock](opts.Clock, &timeutil.SystemClock{})
 
 	var uu *url.URL
 	if strings.Contains(addr, "://") {

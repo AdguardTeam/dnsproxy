@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/miekg/dns"
 )
@@ -56,10 +57,11 @@ func CacheTTL(ctx context.Context, l *slog.Logger, m *dns.Msg) (ttl uint32) {
 
 		l.DebugContext(ctx, "not a cacheable nxdomain response; not caching")
 	case dns.RcodeServerFailure:
-		l.DebugContext(ctx, "server failure response; caching with ttl %d", "ttl", ttl)
+		l.DebugContext(ctx, "server failure response; caching", "ttl", ttl)
+
 		return ttl
 	default:
-		l.DebugContext(ctx, "response code %s; not caching", "rcode", dns.RcodeToString[rcode])
+		l.DebugContext(ctx, "response code; not caching", "rcode", dns.RcodeToString[rcode])
 	}
 
 	return 0
@@ -113,19 +115,18 @@ func isCacheableSucceded(m *dns.Msg) (ok bool) {
 }
 
 // hasIPAns check the m for containing at least one A or AAAA RR in answer
-// section.
+// section.  m must not be nil.
 func hasIPAns(m *dns.Msg) (ok bool) {
-	for _, rr := range m.Answer {
-		if t := rr.Header().Rrtype; t == dns.TypeA || t == dns.TypeAAAA {
-			return true
-		}
-	}
+	return slices.ContainsFunc(m.Answer, func(rr dns.RR) bool {
+		t := rr.Header().Rrtype
 
-	return false
+		return t == dns.TypeA || t == dns.TypeAAAA
+	})
 }
 
 // isCacheableNegative returns true if m's header has at least a single SOA RR
-// and no NS records so that it can be declared authoritative.
+// and no NS records so that it can be declared authoritative.  m must not be
+// nil.
 //
 // See https://datatracker.ietf.org/doc/html/rfc2308#section-5 for the
 // information on the responses from the authoritative server that should be

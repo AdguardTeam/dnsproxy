@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -57,27 +58,27 @@ type UpstreamResolver struct {
 func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
 	upsOpts := &Options{}
 
-	if opts != nil && opts.Logger == nil {
-		opts.Logger = slog.Default()
-	}
-
 	// TODO(ameshkov):  Aren't other options needed here?
 	if opts != nil {
 		upsOpts.Timeout = opts.Timeout
 		upsOpts.VerifyServerCertificate = opts.VerifyServerCertificate
 		upsOpts.PreferIPv6 = opts.PreferIPv6
-		upsOpts.Logger = opts.Logger
+		upsOpts.Logger = cmp.Or(opts.Logger, slog.Default())
 	}
 
 	ups, err := AddressToUpstream(resolverAddress, upsOpts)
 	if err != nil {
-		err = fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
+		return nil, fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
+	}
 
-		return nil, err
+	opts = cmp.Or(opts, &Options{})
+
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
 	}
 
 	if opts.Clock == nil {
-		opts.Clock = timeutil.SystemClock{}
+		opts.Clock = &timeutil.SystemClock{}
 	}
 
 	return &UpstreamResolver{

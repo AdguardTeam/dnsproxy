@@ -58,12 +58,12 @@ type cacheItem struct {
 }
 
 // respToItem converts the pair of the response and upstream resolved the one
-// into item for storing it in cache.  l must not be nil.
-func (c *cache) respToItem(
+// into item for storing it in cache.  l and must not be nil.
+func respToItem(
 	ctx context.Context,
+	l *slog.Logger,
 	m *dns.Msg,
 	u upstream.Upstream,
-	l *slog.Logger,
 ) (item *cacheItem) {
 	ttl := dnsmsg.CacheTTL(ctx, l, m)
 	if ttl == 0 {
@@ -335,7 +335,7 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 // set stores response and upstream for req in the cache.  u and l must not be
 // nil.
 func (c *cache) set(ctx context.Context, l *slog.Logger, req, m *dns.Msg, u upstream.Upstream) {
-	item := c.respToItem(ctx, m, u, l)
+	item := respToItem(ctx, l, m, u)
 	if item == nil {
 		return
 	}
@@ -360,7 +360,7 @@ func (c *cache) setWithSubnet(
 	u upstream.Upstream,
 	n *net.IPNet,
 ) {
-	item := c.respToItem(ctx, m, u, l)
+	item := respToItem(ctx, l, m, u)
 	if item == nil {
 		return
 	}

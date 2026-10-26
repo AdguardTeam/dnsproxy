@@ -33,6 +33,12 @@ type plainDNS struct {
 	// addr is the DNS server URL.  Scheme is always "udp" or "tcp".
 	addr *url.URL
 
+	// addrStr is the address returned by [plainDNS.Address]: the host of addr
+	// for UDP, and the whole URL for TCP.  It is saved separately to reduce
+	// allocations, since [Upstream.Address] is called for every load-balanced
+	// request.
+	addrStr string
+
 	// logger is used for exchange logging.  It is never nil.
 	logger *slog.Logger
 
@@ -59,8 +65,14 @@ func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
 
 	addPort(addr, defaultPortPlain)
 
+	addrStr := addr.Host
+	if addr.Scheme == networkTCP {
+		addrStr = addr.String()
+	}
+
 	return &plainDNS{
 		addr:      addr,
+		addrStr:   addrStr,
 		logger:    opts.Logger,
 		getDialer: newDialerInitializer(addr, opts),
 		net:       addr.Scheme,
@@ -72,16 +84,7 @@ func newPlain(addr *url.URL, opts *Options) (u *plainDNS, err error) {
 var _ Upstream = &plainDNS{}
 
 // Address implements the [Upstream] interface for *plainDNS.
-func (p *plainDNS) Address() string {
-	switch p.net {
-	case networkUDP:
-		return p.addr.Host
-	case networkTCP:
-		return p.addr.String()
-	default:
-		panic(fmt.Sprintf("unexpected network: %s", p.net))
-	}
-}
+func (p *plainDNS) Address() string { return p.addrStr }
 
 // dialExchange performs a DNS exchange with the specified dial handler.
 // network must be either [networkUDP] or [networkTCP].

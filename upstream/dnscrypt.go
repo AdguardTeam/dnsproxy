@@ -32,6 +32,11 @@ type dnsCrypt struct {
 	// verifyCert is a callback that verifies the resolver's certificate.
 	verifyCert func(cert *dnscrypt.Certificate) (err error)
 
+	// addrStr is the string representation of addr.  It is saved separately
+	// to reduce allocations, since [Upstream.Address] is called for every
+	// load-balanced request.
+	addrStr string
+
 	// timeout is the timeout for the DNS requests.
 	timeout time.Duration
 }
@@ -41,6 +46,7 @@ func newDNSCrypt(addr *url.URL, opts *Options) (u *dnsCrypt) {
 	return &dnsCrypt{
 		mu:         &sync.RWMutex{},
 		addr:       addr,
+		addrStr:    addr.String(),
 		logger:     opts.Logger,
 		verifyCert: opts.VerifyDNSCryptCertificate,
 		timeout:    opts.Timeout,
@@ -51,7 +57,7 @@ func newDNSCrypt(addr *url.URL, opts *Options) (u *dnsCrypt) {
 var _ Upstream = (*dnsCrypt)(nil)
 
 // Address implements the [Upstream] interface for *dnsCrypt.
-func (p *dnsCrypt) Address() string { return p.addr.String() }
+func (p *dnsCrypt) Address() string { return p.addrStr }
 
 // Exchange implements the [Upstream] interface for *dnsCrypt.
 func (p *dnsCrypt) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {

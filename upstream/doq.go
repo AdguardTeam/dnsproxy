@@ -94,6 +94,11 @@ type dnsOverQUIC struct {
 	// logger is used for exchange logging.  It is never nil.
 	logger *slog.Logger
 
+	// addrStr is the string representation of addr.  It is saved separately
+	// to reduce allocations, since [Upstream.Address] is called for every
+	// load-balanced request.
+	addrStr string
+
 	// timeout is the timeout for the upstream connection.
 	timeout time.Duration
 }
@@ -131,6 +136,7 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 	u = &dnsOverQUIC{
 		getDialer:  newDialerInitializer(addr, opts),
 		addr:       addr,
+		addrStr:    addr.String(),
 		quicConfig: quicConf,
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
@@ -164,7 +170,7 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
 var _ Upstream = (*dnsOverQUIC)(nil)
 
 // Address implements the [Upstream] interface for *dnsOverQUIC.
-func (p *dnsOverQUIC) Address() string { return p.addr.String() }
+func (p *dnsOverQUIC) Address() string { return p.addrStr }
 
 // Exchange implements the [Upstream] interface for *dnsOverQUIC.
 func (p *dnsOverQUIC) Exchange(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {

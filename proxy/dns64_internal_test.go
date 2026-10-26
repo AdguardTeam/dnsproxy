@@ -1,445 +1,97 @@
 package proxy
 
 import (
+	"context"
 	"net"
 	"net/netip"
-	"sync"
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-const ipv4OnlyFqdn = "ipv4.only."
+func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
+	nat64Pref := netip.MustParsePrefix("64:ff9b::/96")
+	wantAAAA := net.ParseIP("64:ff9b::c000:201")
 
-func TestProxy_handleDNSRequest_DNS64Race(t *testing.T) {
-	ans := newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, dnsproxytest.IPv4)
-	ups := &testUpstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
-			resp = (&dns.Msg{}).SetReply(req)
-			if req.Question[0].Qtype == dns.TypeA {
-				resp.Answer = []dns.RR{dns.Copy(ans)}
-			}
-
-			return resp, nil
-		},
-		OnAddress: func() (addr string) { return "fake.address" },
-		OnClose:   func() (err error) { return nil },
-	}
-	localUps := &testUpstream{
-		OnExchange: func(m *dns.Msg) (_ *dns.Msg, _ error) { panic(testutil.UnexpectedCall(m)) },
-		OnAddress:  func() (addr string) { return "fake.address" },
-		OnClose:    func() (err error) { return nil },
+	upstreams := []upstream.Upstream{
+		newNamedUpstream(t, "upstream1"),
+		newNamedUpstream(t, "upstream2"),
 	}
 
-	dnsProxy := mustNew(t, &Config{
+	p := mustNew(t, &Config{
 		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		UpstreamConfig: &UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
-		},
-		PrivateRDNSUpstreamConfig: &UpstreamConfig{
-			Upstreams: []upstream.Upstream{localUps},
-		},
+		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+		UpstreamConfig: &UpstreamConfig{Upstreams: upstreams},
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
-
 		UseDNS64:       true,
-		UsePrivateRDNS: true,
-		// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server.
-		DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")},
+		DNS64Prefs:     []netip.Prefix{nat64Pref},
+		UpstreamMode:   UpstreamModeParallel,
 	})
 
-	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
+	origReq := (&dns.Msg{}).SetQuestion(dnsproxytest.FQDN, dns.TypeAAAA)
+	origResp := (&dns.Msg{}).SetReply(origReq)
 
-	syncCh := make(chan struct{})
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	u, wrappedDNS64 := p.performDNS64(ctx, origReq, origResp, upstreams)
+	require.NotNil(t, u)
+	require.Len(t, wrappedDNS64, len(upstreams))
+	require.Contains(t, wrappedDNS64, u)
 
-	// Send requests.
-	g := &sync.WaitGroup{}
-	g.Add(dnsproxytest.MessageCount)
+	for i := range upstreams {
+		w := testutil.RequireTypeAssert[*upstreamWithStats](t, wrappedDNS64[i])
 
-	addr := dnsProxy.Addr(ProtoTCP).String()
-	for range dnsproxytest.MessageCount {
-		// The [dns.Conn] isn't safe for concurrent use despite the requirements
-		// from the [net.Conn] documentation.
-		conn, err := dns.Dial("tcp", addr)
-		require.NoError(t, err)
-		testutil.CleanupAndRequireSuccess(t, conn.Close)
-
-		go exchangeTestAAAARequestAsync(t, conn, g, ipv4OnlyFqdn, syncCh)
+		assert.NotSame(t, upstreams[i], wrappedDNS64[i], "wrapper at index %d is not fresh", i)
+		assert.Samef(
+			t,
+			upstreams[i],
+			w.upstream,
+			"the wrapper at index %d must wrap the original upstream", i,
+		)
 	}
 
-	close(syncCh)
-	g.Wait()
+	// The response must have been synthesized from the DNS64 exchange.
+	require.Len(t, origResp.Answer, 1)
+
+	res := testutil.RequireTypeAssert[*dns.AAAA](t, origResp.Answer[0])
+
+	assert.Equal(t, wantAAAA, res.AAAA)
 }
 
-// exchangeTestAAAARequestAsync is a test helper that sends an AAAA DNS request
-// for the given FQDN and verifies the response contains a single AAAA record.
-// It is intended to be used as a goroutine.
-func exchangeTestAAAARequestAsync(
-	tb testing.TB,
-	conn *dns.Conn,
-	g *sync.WaitGroup,
-	fqdn string,
-	syncCh chan struct{},
-) {
+// newNamedUpstream creates a new test upstream with the given name.  It
+// implements the Exchange method by returning a synthesized A record for A
+// queries.
+func newNamedUpstream(tb testing.TB, name string) (ups *testUpstream) {
 	tb.Helper()
 
-	pt := testutil.NewPanicT(tb)
+	onExchange := func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+		resp = (&dns.Msg{}).SetReply(req)
 
-	defer g.Done()
-
-	req := (&dns.Msg{}).SetQuestion(fqdn, dns.TypeAAAA)
-	<-syncCh
-
-	err := conn.WriteMsg(req)
-	require.NoError(pt, err)
-
-	res, err := conn.ReadMsg()
-	require.NoError(pt, err)
-	require.Equal(pt, dns.RcodeSuccess, res.Rcode)
-	require.NotEmpty(pt, res.Answer)
-
-	require.IsType(pt, &dns.AAAA{}, res.Answer[0])
-}
-
-// newRR is a helper that creates a new dns.RR with the given name, qtype,
-// ttl and value.  It fails the test if the qtype is not supported or the type
-// of value doesn't match the qtype.
-func newRR(tb testing.TB, name string, qtype uint16, ttl uint32, val any) (rr dns.RR) {
-	tb.Helper()
-
-	switch qtype {
-	case dns.TypeA:
-		rr = &dns.A{A: testutil.RequireTypeAssert[net.IP](tb, val)}
-	case dns.TypeAAAA:
-		rr = &dns.AAAA{AAAA: testutil.RequireTypeAssert[net.IP](tb, val)}
-	case dns.TypeCNAME:
-		rr = &dns.CNAME{Target: testutil.RequireTypeAssert[string](tb, val)}
-	case dns.TypeSOA:
-		rr = &dns.SOA{
-			Ns:      "ns." + name,
-			Mbox:    "hostmaster." + name,
-			Serial:  1,
-			Refresh: 1,
-			Retry:   1,
-			Expire:  1,
-			Minttl:  1,
-		}
-	case dns.TypePTR:
-		rr = &dns.PTR{Ptr: testutil.RequireTypeAssert[string](tb, val)}
-	default:
-		tb.Fatalf("unsupported qtype: %d", qtype)
-	}
-
-	*rr.Header() = dns.RR_Header{
-		Name:   name,
-		Rrtype: qtype,
-		Class:  dns.ClassINET,
-		Ttl:    ttl,
-	}
-
-	return rr
-}
-
-// TODO(e.burkov):  Refactor the test.
-func TestProxy_Resolve_dns64(t *testing.T) {
-	someIPv4 := net.IP{1, 2, 3, 4}
-	someIPv6 := net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	mappedIPv6 := net.ParseIP("64:ff9b::102:304")
-
-	ptr64Domain, err := netutil.IPToReversedAddr(mappedIPv6)
-	require.NoError(t, err)
-	ptr64Domain = dns.Fqdn(ptr64Domain)
-
-	ptrGlobDomain, err := netutil.IPToReversedAddr(someIPv4)
-	require.NoError(t, err)
-	ptrGlobDomain = dns.Fqdn(ptrGlobDomain)
-
-	localCliAddr := netip.MustParseAddrPort("192.168.1.1:1234")
-
-	const (
-		domainIPv6    = "ipv6.only."
-		domainSOA     = "ipv4.soa."
-		domainMapped  = "filterable.ipv6."
-		domainAnother = "another.domain."
-
-		domainPointed = "local1234.ipv4."
-		domainGlob    = "real1234.ipv4."
-
-		fqdnCNAMEOnly = "cname.chain."
-		fqdnTerminal  = "terminal.node."
-	)
-
-	const (
-		sectionAnswer = iota
-		sectionAuthority
-		sectionAdditional
-
-		sectionsNum
-	)
-
-	// answerMap is a convenience alias for describing the upstream response for
-	// a given question type.
-	type answerMap = map[uint16][sectionsNum][]dns.RR
-
-	pt := testutil.NewPanicT(t)
-	newUps := func(answers answerMap) (u upstream.Upstream) {
-		return &testUpstream{
-			OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
-				q := req.Question[0]
-				require.Contains(pt, answers, q.Qtype)
-
-				answer := answers[q.Qtype]
-
-				resp = (&dns.Msg{}).SetReply(req)
-				resp.Answer = answer[sectionAnswer]
-				resp.Ns = answer[sectionAuthority]
-				resp.Extra = answer[sectionAdditional]
-
-				return resp, nil
-			},
-			OnAddress: func() (addr string) { return "fake.address" },
-			OnClose:   func() (err error) { return nil },
-		}
-	}
-
-	localRR := newRR(t, ptr64Domain, dns.TypePTR, 3600, domainPointed)
-	localUps := &testUpstream{
-		OnExchange: func(req *dns.Msg) (resp *dns.Msg, err error) {
-			require.Equal(pt, req.Question[0].Name, ptr64Domain)
-			resp = (&dns.Msg{}).SetReply(req)
-			resp.Answer = []dns.RR{localRR}
-
+		if req.Question[0].Qtype != dns.TypeA {
 			return resp, nil
-		},
-		OnAddress: func() (addr string) { return "fake.local.address" },
-		OnClose:   func() (err error) { return nil },
-	}
+		}
 
-	testCases := []struct {
-		name    string
-		qname   string
-		upsAns  answerMap
-		wantAns []dns.RR
-		qtype   uint16
-	}{{
-		name:  "simple_a",
-		qname: ipv4OnlyFqdn,
-		upsAns: answerMap{
-			dns.TypeA: {
-				sectionAnswer: {newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, someIPv4)},
-			},
-			dns.TypeAAAA: {},
-		},
-		wantAns: []dns.RR{&dns.A{
+		resp.Answer = []dns.RR{&dns.A{
+			A: dnsproxytest.IPv4,
 			Hdr: dns.RR_Header{
-				Name:   ipv4OnlyFqdn,
+				Name:   dnsproxytest.FQDN,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
-				Ttl:    3600,
+				Ttl:    600,
 			},
-			A: someIPv4,
-		}},
-		qtype: dns.TypeA,
-	}, {
-		name:  "simple_aaaa",
-		qname: domainIPv6,
-		upsAns: answerMap{
-			dns.TypeA: {},
-			dns.TypeAAAA: {
-				sectionAnswer: {newRR(t, domainIPv6, dns.TypeAAAA, 3600, someIPv6)},
-			},
-		},
-		wantAns: []dns.RR{&dns.AAAA{
-			Hdr: dns.RR_Header{
-				Name:   domainIPv6,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
-			},
-			AAAA: someIPv6,
-		}},
-		qtype: dns.TypeAAAA,
-	}, {
-		name:  "actual_dns64",
-		qname: ipv4OnlyFqdn,
-		upsAns: answerMap{
-			dns.TypeA: {
-				sectionAnswer: {newRR(t, ipv4OnlyFqdn, dns.TypeA, 3600, someIPv4)},
-			},
-			dns.TypeAAAA: {},
-		},
-		wantAns: []dns.RR{&dns.AAAA{
-			Hdr: dns.RR_Header{
-				Name:   ipv4OnlyFqdn,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
-				Ttl:    maxDNS64SynTTL,
-			},
-			AAAA: mappedIPv6,
-		}},
-		qtype: dns.TypeAAAA,
-	}, {
-		name:  "actual_dns64_soattl",
-		qname: domainSOA,
-		upsAns: answerMap{
-			dns.TypeA: {
-				sectionAnswer: {newRR(t, domainSOA, dns.TypeA, 3600, someIPv4)},
-			},
-			dns.TypeAAAA: {
-				sectionAuthority: {newRR(t, domainSOA, dns.TypeSOA, maxDNS64SynTTL+50, nil)},
-			},
-		},
-		wantAns: []dns.RR{&dns.AAAA{
-			Hdr: dns.RR_Header{
-				Name:   domainSOA,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
-				Ttl:    maxDNS64SynTTL + 50,
-			},
-			AAAA: mappedIPv6,
-		}},
-		qtype: dns.TypeAAAA,
-	}, {
-		name:  "filtered",
-		qname: domainMapped,
-		upsAns: answerMap{
-			dns.TypeA: {},
-			dns.TypeAAAA: {
-				sectionAnswer: {
-					newRR(t, domainMapped, dns.TypeAAAA, 3600, net.ParseIP("64:ff9b::506:708")),
-					newRR(t, domainMapped, dns.TypeCNAME, 3600, domainAnother),
-				},
-			},
-		},
-		wantAns: []dns.RR{&dns.CNAME{
-			Hdr: dns.RR_Header{
-				Name:   domainMapped,
-				Rrtype: dns.TypeCNAME,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
-			},
-			Target: domainAnother,
-		}},
-		qtype: dns.TypeAAAA,
-	}, {
-		name:   "ptr",
-		qname:  ptr64Domain,
-		upsAns: nil,
-		wantAns: []dns.RR{&dns.PTR{
-			Hdr: dns.RR_Header{
-				Name:   ptr64Domain,
-				Rrtype: dns.TypePTR,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
-			},
-			Ptr: domainPointed,
-		}},
-		qtype: dns.TypePTR,
-	}, {
-		name:  "ptr_glob",
-		qname: ptrGlobDomain,
-		upsAns: answerMap{
-			dns.TypePTR: {
-				sectionAnswer: {newRR(t, ptrGlobDomain, dns.TypePTR, 3600, domainGlob)},
-			},
-		},
-		wantAns: []dns.RR{&dns.PTR{
-			Hdr: dns.RR_Header{
-				Name:   ptrGlobDomain,
-				Rrtype: dns.TypePTR,
-				Class:  dns.ClassINET,
-				Ttl:    3600,
-			},
-			Ptr: domainGlob,
-		}},
-		qtype: dns.TypePTR,
-	}, {
-		name:  "dns64_cname_chain_no_aaaa",
-		qname: fqdnCNAMEOnly,
-		upsAns: answerMap{
-			dns.TypeA: {
-				sectionAnswer: {
-					newRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
-					newRR(t, fqdnTerminal, dns.TypeA, 3600, someIPv4),
-				},
-			},
-			dns.TypeAAAA: {
-				sectionAnswer: {
-					newRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
-				},
-				sectionAuthority: {
-					newRR(t, fqdnTerminal, dns.TypeSOA, 300, nil),
-				},
-			},
-		},
-		wantAns: []dns.RR{
-			&dns.CNAME{
-				Hdr: dns.RR_Header{
-					Name:   fqdnCNAMEOnly,
-					Rrtype: dns.TypeCNAME,
-					Class:  dns.ClassINET,
-					Ttl:    3600,
-				},
-				Target: fqdnTerminal,
-			},
-			&dns.AAAA{
-				Hdr: dns.RR_Header{
-					Name:   fqdnTerminal,
-					Rrtype: dns.TypeAAAA,
-					Class:  dns.ClassINET,
-					Ttl:    maxDNS64SynTTL,
-				},
-				AAAA: mappedIPv6,
-			},
-		},
-		qtype: dns.TypeAAAA,
-	}}
+		}}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			udpAddr := net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
-			tcpAddr := net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
+		return resp, nil
+	}
 
-			p := mustNew(t, &Config{
-				Logger:        testLogger,
-				UDPListenAddr: []*net.UDPAddr{udpAddr},
-				TCPListenAddr: []*net.TCPAddr{tcpAddr},
-				UpstreamConfig: &UpstreamConfig{
-					Upstreams: []upstream.Upstream{newUps(tc.upsAns)},
-				},
-				PrivateRDNSUpstreamConfig: &UpstreamConfig{
-					Upstreams: []upstream.Upstream{localUps},
-				},
-				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
-				CacheEnabled:   true,
-
-				UseDNS64:       true,
-				UsePrivateRDNS: true,
-				PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
-			})
-
-			servicetest.RequireRun(t, p, dnsproxytest.Timeout)
-
-			dctx := &DNSContext{
-				Req:  (&dns.Msg{}).SetQuestion(tc.qname, tc.qtype),
-				Addr: localCliAddr,
-			}
-
-			err = p.handleDNSRequest(testutil.ContextWithTimeout(t, defaultTimeout), dctx)
-			require.NoError(t, err)
-
-			res := dctx.Res
-			require.NotNil(t, res)
-			assert.Equal(t, tc.wantAns, res.Answer)
-		})
+	return &testUpstream{
+		OnExchange: onExchange,
+		OnAddress:  func() (addr string) { return name },
+		OnClose:    func() (err error) { panic(testutil.UnexpectedCall()) },
 	}
 }

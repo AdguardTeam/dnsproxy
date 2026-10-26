@@ -61,7 +61,7 @@ Usage of ./dnsproxy:
   --cache-size=int
         Cache size (in bytes). Default: 64k.
   --config-path=path
-        YAML configuration file. Minimal working configuration in config.yaml.dist. Options passed through command line will override the ones from this file.
+        YAML configuration file. Minimal working configuration in config.dist.yaml. Options passed through command line will override the ones from this file.
   --dnssec
         Defines whether the proxy should set the DO bits in the upstream requests.  Default: true.
   --doh-insecure-enabled

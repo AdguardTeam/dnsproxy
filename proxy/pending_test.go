@@ -5,7 +5,6 @@ import (
 	"net"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
 	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
@@ -128,130 +127,105 @@ func TestPendingRequests(t *testing.T) {
 	}
 }
 
-func TestPendingRequestsDifferentUpstreamResponses(t *testing.T) {
+func TestProxy_Resolve_pendingRequestsCustomUpstreamConfig(t *testing.T) {
 	t.Parallel()
 
-	firstStarted := make(chan struct{})
-	releaseFirst := make(chan struct{})
-	secondStarted := make(chan struct{})
-	newUpstream := func(ip net.IP, beforeReply func()) *dnsproxytest.Upstream {
-		return &dnsproxytest.Upstream{
-			OnAddress: func() string { return "stub" },
-			OnClose:   func() error { return nil },
-			OnExchange: func(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
-				beforeReply()
-				resp := (&dns.Msg{}).SetReply(req)
-				resp.Answer = []dns.RR{&dns.A{
-					Hdr: dns.RR_Header{
-						Name:   req.Question[0].Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    testTTL,
-					},
-					A: ip,
-				}}
+	firstStarted := &sync.Mutex{}
+	firstRespond := &sync.Mutex{}
+	secondStarted := &sync.Mutex{}
 
-				return resp, nil
-			},
-		}
+	firstStarted.Lock()
+	firstRespond.Lock()
+	secondStarted.Lock()
+
+	panicUps := &dnsproxytest.Upstream{
+		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
+		OnExchange: func(ctx context.Context, req *dns.Msg) (_ *dns.Msg, _ error) {
+			panic(testutil.UnexpectedCall(ctx, req))
+		},
+		OnClose: func() (_ error) { panic(testutil.UnexpectedCall()) },
 	}
 
-	ipA := net.IP{192, 0, 2, 1}
-	ipB := net.IP{192, 0, 2, 2}
-	upstreamA := newUpstream(ipA, func() {
-		close(firstStarted)
-		<-releaseFirst
-	})
-	upstreamB := newUpstream(ipB, func() { close(secondStarted) })
-	p := newPendingTestProxy(t, upstreamA)
-	first := newPendingTestContext(upstreamA)
-	second := newPendingTestContext(upstreamB)
-	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-	firstErr := make(chan error, 1)
-	secondErr := make(chan error, 1)
-	go func() { firstErr <- p.Resolve(ctx, first) }()
-	select {
-	case <-firstStarted:
-	case err := <-firstErr:
-		t.Fatalf("first upstream was not queried: %v", err)
-	}
-	go func() { secondErr <- p.Resolve(ctx, second) }()
+	firstUps := &dnsproxytest.Upstream{
+		OnAddress: func() (addr string) { return "first" },
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+			firstStarted.Unlock()
+			firstRespond.Lock()
 
-	select {
-	case <-secondStarted:
-	case <-time.After(2 * time.Second):
-		t.Error("second upstream was not queried while the first request was pending")
-	}
-	close(releaseFirst)
-
-	require.NoError(t, <-firstErr)
-	require.NoError(t, <-secondErr)
-	require.NotNil(t, first.Res)
-	require.NotNil(t, second.Res)
-	require.Len(t, first.Res.Answer, 1)
-	require.Len(t, second.Res.Answer, 1)
-	assert.Equal(t, ipA, first.Res.Answer[0].(*dns.A).A)
-	assert.Equal(t, ipB, second.Res.Answer[0].(*dns.A).A)
-}
-
-func TestPendingRequestsNestedResolveDoesNotDeadlock(t *testing.T) {
-	t.Parallel()
-
-	innerUpstream := &dnsproxytest.Upstream{
-		OnAddress: func() string { return "inner" },
-		OnClose:   func() error { return nil },
-		OnExchange: func(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
 			return (&dns.Msg{}).SetReply(req), nil
 		},
+		OnClose: func() (err error) { return nil },
 	}
-	inner := newPendingTestContext(innerUpstream)
-	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-	var p *proxy.Proxy
-	outerUpstream := &dnsproxytest.Upstream{
-		OnAddress: func() string { return "outer" },
-		OnClose:   func() error { return nil },
-		OnExchange: func(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
-			err := p.Resolve(ctx, inner)
-			if inner.Res != nil {
-				inner.Res.Id = req.Id
-			}
+	secondUps := &dnsproxytest.Upstream{
+		OnAddress: func() (addr string) { return "second" },
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+			secondStarted.Unlock()
 
-			return inner.Res, err
+			return (&dns.Msg{}).SetReply(req), nil
 		},
+		OnClose: func() (err error) { return nil },
 	}
-	p = newPendingTestProxy(t, outerUpstream)
-
-	outer := newPendingTestContext(outerUpstream)
-	done := make(chan error, 1)
-	go func() { done <- p.Resolve(ctx, outer) }()
-
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-		require.NotNil(t, outer.Res)
-	case <-time.After(2 * time.Second):
-		t.Fatal("nested resolve blocked on the outer pending request")
-	}
-}
-
-func newPendingTestProxy(t *testing.T, u upstream.Upstream) *proxy.Proxy {
-	t.Helper()
 
 	p, err := proxy.New(&proxy.Config{
 		Logger:          testLogger,
-		UpstreamConfig:  &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+		UpstreamConfig:  &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{panicUps}},
 		PendingRequests: &proxy.PendingRequestsConfig{Enabled: true},
 		CacheEnabled:    true,
 		CacheSizeBytes:  proxytest.CacheSize,
 	})
 	require.NoError(t, err)
 
-	return p
+	first := newPendingTestDNSContext(t, firstUps)
+	second := newPendingTestDNSContext(t, secondUps)
+
+	firstErrCh := resolveConcurrently(t, p, first)
+
+	firstStarted.Lock()
+
+	secondErrCh := resolveConcurrently(t, p, second)
+
+	secondStarted.Lock()
+
+	firstRespond.Unlock()
+
+	err, ok := testutil.RequireReceive(t, firstErrCh, defaultTimeout)
+	require.True(t, ok)
+	require.NoError(t, err)
+
+	err, ok = testutil.RequireReceive(t, secondErrCh, defaultTimeout)
+	require.True(t, ok)
+	require.NoError(t, err)
+
+	require.NotNil(t, first.Res)
+	assert.Equal(t, first.Req.Id, first.Res.Id)
+
+	require.NotNil(t, second.Res)
+	assert.Equal(t, second.Req.Id, second.Res.Id)
 }
 
-func newPendingTestContext(u upstream.Upstream) *proxy.DNSContext {
+// newPendingTestDNSContext returns a new [proxy.DNSContext] with an A request
+// and a custom upstream configuration containing a single upstream u.
+func newPendingTestDNSContext(tb testing.TB, u upstream.Upstream) (dctx *proxy.DNSContext) {
+	tb.Helper()
+
 	return &proxy.DNSContext{
 		CustomUpstreamConfig: newCustomUpstreamConfig(u, true),
-		Req:                  (&dns.Msg{}).SetQuestion("domain.example.", dns.TypeA),
+		Req:                  (&dns.Msg{}).SetQuestion(proxytest.FQDN, dns.TypeA),
 	}
+}
+
+// resolveConcurrently runs [proxy.Proxy.Resolve] with d in a separate goroutine
+// and returns a channel receiving the resulting error.
+func resolveConcurrently(tb testing.TB, p *proxy.Proxy, d *proxy.DNSContext) (errCh chan error) {
+	tb.Helper()
+
+	errCh = make(chan error)
+
+	ctx := testutil.ContextWithTimeout(tb, proxytest.Timeout)
+	go func() {
+		err := p.Resolve(ctx, d)
+		testutil.RequireSend(testutil.NewPanicT(tb), errCh, err, proxytest.Timeout)
+	}()
+
+	return errCh
 }

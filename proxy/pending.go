@@ -27,16 +27,23 @@ type pendingRequests interface {
 
 // defaultPendingRequests is a default implementation of the [pendingRequests]
 // interface.  It must be created with [newDefaultPendingRequests].
+//
+// TODO(e.burkov):  Consider pooling both keys and requests as they created for
+// each request regardless of whether it is the first one or not.
 type defaultPendingRequests struct {
 	storage *syncutil.Map[pendingRequestKey, *pendingRequest]
 }
 
-// pendingRequestKey is the key for an in-progress request.  The custom
-// upstream configuration is part of the key since identical queries using
-// different upstream configurations must be resolved independently.
+// pendingRequestKey is the key for an in-progress request.
 type pendingRequestKey struct {
+	// customUpstreamConfig is the custom upstream configuration for the
+	// request, specified in the context.  It is part of the key to ensure that
+	// identical queries with different upstream configurations are handled
+	// separately.
 	customUpstreamConfig *CustomUpstreamConfig
-	msg                  string
+
+	// msg is a key built from the DNS query message.
+	msg string
 }
 
 // pendingRequest is a structure that stores the query state and result.

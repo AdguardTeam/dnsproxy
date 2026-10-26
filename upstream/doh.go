@@ -498,11 +498,10 @@ func (p *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper
 		DisableCompression: true,
 		DialContext:        dialContext,
 		IdleConnTimeout:    transportDefaultIdleConnTimeout,
-		// Bound the TLS handshake, since [http.Transport] doesn't cancel a dial
-		// when the request that started it is canceled.  Without this, a
-		// server that accepts the connection but never answers the
-		// ClientHello keeps it open indefinitely, and every reset of the
-		// client leaves more of these behind.
+		// Restrict a single TLS handshake.
+		//
+		// TODO(e.burkov):  Consider adding a separate field into [Options] to
+		// control the TLS handshake timeout for encrypted connections.
 		TLSHandshakeTimeout: p.timeout,
 		MaxConnsPerHost:     dohMaxConnsPerHost,
 		MaxIdleConns:        dohMaxIdleConns,

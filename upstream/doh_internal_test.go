@@ -272,41 +272,54 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 	}
 }
 
-// TestUpstreamDoH_hungTLSHandshake checks that connections to a server, which
-// accepts TCP connections but never answers the TLS ClientHello, are closed
-// after the exchanges time out instead of piling up with every client reset.
-// The exchanges are concurrent, because a reset only cancels the dials of the
-// requests that have already given up.
-func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
-	t.Parallel()
-
+// listenAndDiscard starts a TCP listener that accepts connections and discards
+// all data.  It returns the listener address and atomic counter for open
+// connections.  The listener is stopped at the end of the test.
+func listenAndDiscard(tb testing.TB) (addr net.Addr, open *atomic.Int32) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	testutil.CleanupAndRequireSuccess(t, l.Close)
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, l.Close)
 
-	var accepted, open atomic.Int32
+	pt := testutil.NewPanicT(tb)
+
+	open = &atomic.Int32{}
+
+	discard := func(conn net.Conn) {
+		defer func() {
+			require.NoError(pt, conn.Close())
+			open.Add(-1)
+		}()
+
+		_, copyErr := io.Copy(io.Discard, conn)
+		require.NoError(pt, copyErr)
+	}
+
 	go func() {
 		for {
-			conn, acceptErr := l.Accept()
-			if acceptErr != nil {
+			conn, accErr := l.Accept()
+			if accErr != nil {
+				require.ErrorIs(pt, accErr, net.ErrClosed)
+
 				return
 			}
 
-			accepted.Add(1)
 			open.Add(1)
-			go func() {
-				defer open.Add(-1)
-				defer func() { _ = conn.Close() }()
 
-				// Read the ClientHello and never answer it.
-				_, _ = io.Copy(io.Discard, conn)
-			}()
+			go discard(conn)
 		}
 	}()
 
+	return l.Addr(), open
+}
+
+func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
+	t.Parallel()
+
+	addr, open := listenAndDiscard(t)
+
 	upsAddr := (&url.URL{
 		Scheme: "https",
-		Host:   l.Addr().String(),
+		Host:   addr.String(),
 		Path:   "dns-query",
 	}).String()
 
@@ -319,8 +332,10 @@ func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)
 
+	const queriesCount = 10
+
 	wg := &sync.WaitGroup{}
-	for range 10 {
+	for range queriesCount {
 		wg.Go(func() {
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			_, exchErr := u.Exchange(ctx, createTestMessage())
@@ -329,10 +344,9 @@ func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
 	}
 	wg.Wait()
 
-	require.Positive(t, accepted.Load())
-	assert.Eventually(t, func() (ok bool) {
-		return open.Load() == 0
-	}, testTimeout, testTimeout/100, "connections with a hung handshake are left open")
+	assert.EventuallyWithT(t, func(ct *assert.CollectT) {
+		assert.Equal(ct, int32(0), open.Load())
+	}, testTimeout, testTimeout/10)
 }
 
 func TestUpstreamDoH_0RTT(t *testing.T) {

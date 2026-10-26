@@ -89,7 +89,7 @@ Usage of ./dnsproxy:
   --help/-h
         Print this help message and quit.
   --hosts-file-enabled
-        Use hosts files for resolving (default: true). Set to false to disable.
+        Use hosts files for resolving. Default: true.
   --hosts-files=path
         List of paths to the hosts files, can be specified multiple times.
   --http3

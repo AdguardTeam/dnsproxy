@@ -21,8 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testIPv4 is a common IPv4 for tests.
+const testIPv4 = "192.0.2.1"
+
 func TestCachingResolver_staleness(t *testing.T) {
-	ip4 := netip.MustParseAddr("192.0.2.1")
+	ip4 := netip.MustParseAddr(testIPv4)
 	ip6 := netip.MustParseAddr("2001:db8::1")
 
 	const (
@@ -116,7 +119,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 func newTestUpstreamResolver(
 	tb testing.TB,
 	clock timeutil.Clock,
-	onExchange func(req *dns.Msg) (resp *dns.Msg),
+	onExchange func(req *dns.Msg) (resp *dns.Msg, err error),
 	maxCalls int32,
 ) (r *upstream.UpstreamResolver) {
 	tb.Helper()
@@ -133,7 +136,7 @@ func newTestUpstreamResolver(
 
 			cnt.Add(1)
 
-			return onExchange(req), nil
+			return onExchange(req)
 		},
 	}
 
@@ -146,14 +149,14 @@ func newTestUpstreamResolver(
 
 // newOnExchange returns a new Exchange function for the upstream mock that
 // always responds with the given rcode.
-func newOnExchange(tb testing.TB, rcode int) (f func(req *dns.Msg) (resp *dns.Msg)) {
+func newOnExchange(tb testing.TB, rcode int) (f func(req *dns.Msg) (resp *dns.Msg, err error)) {
 	tb.Helper()
 
-	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = rcode
 
-		return resp
+		return resp, nil
 	}
 
 	return onExchange
@@ -163,7 +166,7 @@ const soaTTL = 40
 
 // onExchangeWithSOA is a common Exchange function for the upstream mock that
 // always responds with NXDOMAIN and includes a SOA record.
-var onExchangeWithSOA = func(req *dns.Msg) (resp *dns.Msg) {
+var onExchangeWithSOA = func(req *dns.Msg) (resp *dns.Msg, err error) {
 	resp = (&dns.Msg{}).SetReply(req)
 	resp.Rcode = dns.RcodeNameError
 
@@ -185,7 +188,7 @@ var onExchangeWithSOA = func(req *dns.Msg) (resp *dns.Msg) {
 
 	resp.Ns = []dns.RR{soa}
 
-	return resp
+	return resp, nil
 }
 
 func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
@@ -301,13 +304,10 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 		},
 	}
 
-	ip4Str := "192.0.2.1"
+	addr := netip.MustParseAddr(testIPv4)
+	ip := net.ParseIP(testIPv4)
 
-	addr := netip.MustParseAddr(ip4Str)
-	wantAddrs := [][]netip.Addr{{addr}, {addr}, {addr}}
-	ip := net.ParseIP(ip4Str)
-
-	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = dns.RcodeSuccess
 		resp.Answer = append(resp.Answer, &dns.A{
@@ -320,29 +320,26 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 			A: ip,
 		})
 
-		return resp
+		return resp, nil
 	}
 
-	require.True(t, t.Run("concurrent_lookup", func(t *testing.T) {
-		r := upstream.NewCachingResolver(
-			newTestUpstreamResolver(t, clock, onExchange, 1),
-		)
+	r := upstream.NewCachingResolver(
+		newTestUpstreamResolver(t, clock, onExchange, 1),
+	)
 
-		wg := &sync.WaitGroup{}
+	wg := &sync.WaitGroup{}
 
-		gotAddrs := make([][]netip.Addr, attemptNum)
-		for i := range attemptNum {
-			wg.Go(func() {
-				ctx := testutil.ContextWithTimeout(t, testTimeout)
-				addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP4, intdnsproxytest.FQDN)
-				assert.NoError(t, err)
-				assert.NotEmpty(t, addrs)
+	for range attemptNum {
+		wg.Go(func() {
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP4, intdnsproxytest.FQDN)
 
-				gotAddrs[i] = addrs
-			})
-		}
-		wg.Wait()
+			pt := testutil.NewPanicT(t)
+			require.NoError(pt, err)
+			require.NotEmpty(pt, addrs)
+			assert.Equal(pt, []netip.Addr{addr}, addrs)
+		})
+	}
 
-		require.Equal(t, wantAddrs, gotAddrs)
-	}))
+	wg.Wait()
 }

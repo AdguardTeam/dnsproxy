@@ -64,23 +64,11 @@ func (r *CachingResolver) LookupNetIP(
 		return slices.Clone(addrs), nil
 	}
 
-	lookupFn := func() (a any, err error) {
-		res, err := r.resolver.lookupNetIP(ctx, network, host)
-		if err != nil {
-			return nil, err
-		}
-
-		// Do not cache empty results.
-		if res == nil || len(res.addrs) == 0 {
-			return nil, nil
-		}
-
-		r.setCached(key, res)
-
-		return res, nil
-	}
-
-	v, err, _ := r.queries.Do(fmt.Sprintf("%s:%s", host, network), lookupFn)
+	// TODO(m.kazantsev):  Use some hash as a key instead of the plain host and
+	// network combination.
+	v, err, _ := r.queries.Do(fmt.Sprintf("%s:%s", host, network), func() (any, error) {
+		return r.lookupAndCache(ctx, key)
+	})
 	if err != nil {
 		return []netip.Addr{}, err
 	}
@@ -89,9 +77,36 @@ func (r *CachingResolver) LookupNetIP(
 		return []netip.Addr{}, nil
 	}
 
-	res := v.(*ipResult)
+	res, ok := v.(*ipResult)
+	if !ok {
+		panic(fmt.Sprintf("invalid value from singleflight %v: bad type: %T", v, v))
+	}
+
+	if res == nil {
+		return []netip.Addr{}, nil
+	}
 
 	return slices.Clone(res.addrs), nil
+}
+
+func (r *CachingResolver) lookupAndCache(
+	ctx context.Context,
+	key cacheKey,
+) (res *ipResult, err error) {
+	res, err = r.resolver.lookupNetIP(ctx, key.network, key.lowercaseHost)
+	if err != nil {
+		// Do not wrap the error, because it is informative enough as is.
+		return nil, err
+	}
+
+	// Do not cache empty results.
+	if res == nil || len(res.addrs) == 0 {
+		return nil, nil
+	}
+
+	r.setCached(key, res)
+
+	return res, nil
 }
 
 // findCached returns the cached addresses for host and network if it's not

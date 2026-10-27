@@ -217,6 +217,7 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 				bootstrap.NetworkIP4,
 			)
 			require.Empty(t, addrs)
+			require.NotNil(t, addrs)
 			require.Equal(t, now.Add(tc.wantExpire), expire)
 			require.NoError(t, err)
 		})
@@ -259,8 +260,8 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 
 			// The first call to LookupNetIP should not cache the result because
 			// it is empty.  Thus, the cache should not contain any entry for
-			// this query.
-			require.Empty(t, r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP, now))
+			// this query. Therefore, the result should be nil.
+			require.Nil(t, r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP, now))
 		})
 	}
 }

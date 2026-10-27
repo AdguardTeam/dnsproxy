@@ -199,16 +199,14 @@ const (
 //
 // TODO(e.burkov):  Clone opts?
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
-	if opts == nil {
-		opts = &Options{}
+	optsToUse := opts.Clone()
+
+	if optsToUse.Logger == nil {
+		optsToUse.Logger = slog.Default()
 	}
 
-	if opts.Logger == nil {
-		opts.Logger = slog.Default()
-	}
-
-	if opts.Clock == nil {
-		opts.Clock = &timeutil.SystemClock{}
+	if optsToUse.Clock == nil {
+		optsToUse.Clock = &timeutil.SystemClock{}
 	}
 
 	var uu *url.URL
@@ -230,7 +228,7 @@ func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 		return nil, err
 	}
 
-	return urlToUpstream(uu, opts)
+	return urlToUpstream(uu, optsToUse)
 }
 
 // validateUpstreamURL returns an error if the upstream URL is not valid.

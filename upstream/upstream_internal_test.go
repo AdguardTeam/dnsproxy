@@ -483,8 +483,10 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 	require.NoError(t, err)
 
 	badResolver := &UpstreamResolver{
-		Logger:   testLogger,
-		Clock:    &timeutil.SystemClock{},
+		Logger: testLogger,
+		Clock:  &timeutil.SystemClock{},
+		// TODO(m.kazantsev):  Do not pass a nil Upstream here, as it violates
+		// the UpstreamResolver contract.
 		Upstream: nil,
 	}
 

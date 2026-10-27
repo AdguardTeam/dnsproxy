@@ -54,8 +54,10 @@ type UpstreamResolver struct {
 // [AddressToUpstream].  If the upstream can't be used as a bootstrap, the
 // returned error will have the underlying type of [NotBootstrapError], and r
 // itself will be fully usable.  Closing r.Upstream is caller's responsibility.
+// The created Upstream used by the UpstreamResolver uses the clone of the
+// provided options.
 func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
-	ups, err := AddressToUpstream(resolverAddress, opts.Clone())
+	ups, err := AddressToUpstream(resolverAddress, opts)
 	if err != nil {
 		return nil, fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
 	}

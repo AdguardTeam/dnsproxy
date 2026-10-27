@@ -3,7 +3,6 @@
 package upstream
 
 import (
-	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -62,11 +61,12 @@ type QUICTracer interface {
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
 type Options struct {
-	// Logger is used for logging during parsing and upstream exchange.  It may
-	// be nil.
+	// Logger is used for logging during parsing and upstream exchange.  If nil,
+	// [slog.Default] is used.
 	Logger *slog.Logger
 
-	// Clock is used to get the current time.  It may be nil.
+	// Clock is used to get the current time.  If nil, the
+	// [timeutil.SystemClock] clock is used.
 	Clock timeutil.Clock
 
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
@@ -114,8 +114,15 @@ type Options struct {
 	PreferIPv6 bool
 }
 
-// Clone copies o to a new struct.  Note, that this is not a deep clone.
+// Clone copies o to a new struct.  If o is nil, an empty Options struct is
+// returned.
+//
+// NOTE:  Clone does not produce a deep copy of o.
 func (o *Options) Clone() (clone *Options) {
+	if o == nil {
+		return &Options{}
+	}
+
 	return &Options{
 		Bootstrap:                 o.Bootstrap,
 		Timeout:                   o.Timeout,
@@ -129,6 +136,7 @@ func (o *Options) Clone() (clone *Options) {
 		RootCAs:                   o.RootCAs,
 		CipherSuites:              o.CipherSuites,
 		Logger:                    o.Logger,
+		Clock:                     o.Clock,
 	}
 }
 
@@ -191,9 +199,17 @@ const (
 //
 // TODO(e.burkov):  Clone opts?
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
-	opts = cmp.Or(opts, &Options{})
-	opts.Logger = cmp.Or(opts.Logger, slog.Default())
-	opts.Clock = cmp.Or[timeutil.Clock](opts.Clock, &timeutil.SystemClock{})
+	if opts == nil {
+		opts = &Options{}
+	}
+
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
+
+	if opts.Clock == nil {
+		opts.Clock = &timeutil.SystemClock{}
+	}
 
 	var uu *url.URL
 	if strings.Contains(addr, "://") {

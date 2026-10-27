@@ -58,7 +58,7 @@ type cacheItem struct {
 }
 
 // respToItem converts the pair of the response and upstream resolved the one
-// into item for storing it in cache.  l and must not be nil.
+// into item for storing it in cache.  l and m must not be nil.
 func respToItem(
 	ctx context.Context,
 	l *slog.Logger,
@@ -374,6 +374,13 @@ func (c *cache) setWithSubnet(
 
 	c.itemsWithSubnet.Set(key, packed)
 }
+
+// ServFailMaxCacheTTL is the maximum time-to-live value for caching
+// SERVFAIL responses in seconds.  It's consistent with the upper constraint
+// of 5 minutes given by RFC 2308.
+//
+// See https://datatracker.ietf.org/doc/html/rfc2308#section-7.1.
+const ServFailMaxCacheTTL = dnsmsg.ServFailMaxCacheTTL
 
 // clearItems empties the simple cache.
 func (c *cache) clearItems() {

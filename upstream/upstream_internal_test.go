@@ -24,6 +24,7 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -481,7 +482,11 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 	_, dohPort, err := net.SplitHostPort(dohSrv.addr)
 	require.NoError(t, err)
 
-	badResolver := &UpstreamResolver{Upstream: nil}
+	badResolver := &UpstreamResolver{
+		Logger:   testLogger,
+		Clock:    &timeutil.SystemClock{},
+		Upstream: nil,
+	}
 
 	dotStamp := (&dnsstamps.ServerStamp{
 		ServerAddrStr: netip.AddrPortFrom(netutil.IPv4Localhost(), uint16(dotSrv.port)).String(),

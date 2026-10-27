@@ -44,7 +44,8 @@ func TestCachingResolver_staleness(t *testing.T) {
 			hdr.Ttl = uint32(largeTTL.Seconds())
 			rr = &dns.AAAA{Hdr: hdr, AAAA: ip6.AsSlice()}
 		default:
-			require.Contains(t, []uint16{dns.TypeA, dns.TypeAAAA}, q.Qtype)
+			pt := testutil.NewPanicT(t)
+			require.Contains(pt, []uint16{dns.TypeA, dns.TypeAAAA}, q.Qtype)
 		}
 		resp.Answer = append(resp.Answer, rr)
 
@@ -60,6 +61,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 	r := upstream.NewCachingResolver(&upstream.UpstreamResolver{
 		Upstream: ups,
 		Logger:   testLogger,
+		Clock:    &timeutil.SystemClock{},
 	})
 
 	require.True(t, t.Run("resolve", func(t *testing.T) {
@@ -94,12 +96,12 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 	t.Run("staleness", func(t *testing.T) {
 		now := time.Now()
-		cached := r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP4, now)
-		require.ElementsMatch(t, []netip.Addr{ip4}, cached)
+		cached := r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP, now)
+		require.ElementsMatch(t, []netip.Addr{ip4, ip6}, cached)
 
 		cached = r.FindCached(
 			intdnsproxytest.FQDN,
-			bootstrap.NetworkIP4,
+			bootstrap.NetworkIP,
 			now.Add(smallTTL+time.Second),
 		)
 		require.Empty(t, cached)
@@ -258,7 +260,7 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 			// The first call to LookupNetIP should not cache the result because
 			// it is empty.  Thus, the cache should not contain any entry for
 			// this query.
-			require.Empty(t, r.FindCached(bootstrap.NetworkIP, intdnsproxytest.FQDN, now))
+			require.Empty(t, r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP, now))
 		})
 	}
 }

@@ -1,7 +1,6 @@
 package upstream
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -56,35 +55,25 @@ type UpstreamResolver struct {
 // returned error will have the underlying type of [NotBootstrapError], and r
 // itself will be fully usable.  Closing r.Upstream is caller's responsibility.
 func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
-	upsOpts := &Options{}
-
-	// TODO(ameshkov):  Aren't other options needed here?
-	if opts != nil {
-		upsOpts.Timeout = opts.Timeout
-		upsOpts.VerifyServerCertificate = opts.VerifyServerCertificate
-		upsOpts.PreferIPv6 = opts.PreferIPv6
-		upsOpts.Logger = cmp.Or(opts.Logger, slog.Default())
-	}
-
-	ups, err := AddressToUpstream(resolverAddress, upsOpts)
+	ups, err := AddressToUpstream(resolverAddress, opts.Clone())
 	if err != nil {
 		return nil, fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
 	}
 
-	opts = cmp.Or(opts, &Options{})
+	resolverOpts := opts.Clone()
 
-	if opts.Logger == nil {
-		opts.Logger = slog.Default()
+	if resolverOpts.Logger == nil {
+		resolverOpts.Logger = slog.Default()
 	}
 
-	if opts.Clock == nil {
-		opts.Clock = &timeutil.SystemClock{}
+	if resolverOpts.Clock == nil {
+		resolverOpts.Clock = &timeutil.SystemClock{}
 	}
 
 	return &UpstreamResolver{
 		Upstream: ups,
-		Logger:   opts.Logger,
-		Clock:    opts.Clock,
+		Logger:   resolverOpts.Logger,
+		Clock:    resolverOpts.Clock,
 	}, validateBootstrap(ups)
 }
 
@@ -194,7 +183,6 @@ func (r *UpstreamResolver) lookupNetIP(
 
 	var errs []error
 	result = &ipResult{
-		expire: r.Clock.Now(),
 		// Set the slice initial capacity to 2, as we expect at most two results
 		// (IPv4 and IPv6).
 		addrs: make([]netip.Addr, 0, 2),
@@ -205,7 +193,10 @@ func (r *UpstreamResolver) lookupNetIP(
 		case error:
 			errs = append(errs, res)
 		case *ipResult:
-			result.expire = res.expire
+			if result.expire.Equal(time.Time{}) || res.expire.Before(result.expire) {
+				result.expire = res.expire
+			}
+
 			result.addrs = append(result.addrs, res.addrs...)
 		}
 	}
@@ -217,9 +208,6 @@ func (r *UpstreamResolver) lookupNetIP(
 // addresses from the answer section of the response.  network must be either
 // [bootstrap.NetworkIP4], or [bootstrap.NetworkIP6].  host must be in a
 // lower-case FQDN form.
-//
-// TODO(e.burkov):  Consider NS and Extra sections when setting TTL.  Check out
-// what RFCs say about it.
 func (r *UpstreamResolver) request(
 	ctx context.Context,
 	host string,

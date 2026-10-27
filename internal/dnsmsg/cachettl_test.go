@@ -23,10 +23,10 @@ const testTTL = 3600
 
 // Shared consts.
 const (
-	anotherHostname = "ANOTHER.EXAMPLE."
-	mbox            = "HOSTMASTER.NS1.XX."
-	ns1, ns2        = "NS1.XX.", "NS2.XX."
-	xx              = "XX."
+	testAnotherHostname = "ANOTHER.EXAMPLE."
+	testMBox            = "HOSTMASTER.NS1.XX."
+	testNS1, testNS2    = "NS1.XX.", "NS2.XX."
+	testXX              = "XX."
 )
 
 func TestCacheTTL(t *testing.T) {
@@ -46,13 +46,13 @@ func TestCacheTTL(t *testing.T) {
 			Question: aQuestions(hostname),
 			Answer:   []dns.RR{cnameAns(hostname, cname)},
 			Ns: []dns.RR{
-				soaAns(xx, ns1, mbox),
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
+				soaAns(testXX, testNS1, testMBox),
+				nsAns(testXX, testNS1),
+				nsAns(testXX, testNS2),
 			},
 			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
+				aAns(testNS1, net.IP{127, 0, 0, 2}),
+				aAns(testNS2, net.IP{127, 0, 0, 3}),
 			},
 		},
 		name:    "rfc2308_nxdomain_response_type_1",
@@ -62,7 +62,7 @@ func TestCacheTTL(t *testing.T) {
 			MsgHdr:   msgHdr(dns.RcodeNameError),
 			Question: aQuestions(hostname),
 			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns:       []dns.RR{soaAns("XX.", ns1, mbox)},
+			Ns:       []dns.RR{soaAns("XX.", testNS1, testMBox)},
 		},
 		name:    "rfc2308_nxdomain_response_type_2",
 		wantTTL: testTTL,
@@ -80,12 +80,12 @@ func TestCacheTTL(t *testing.T) {
 			Question: aQuestions(hostname),
 			Answer:   []dns.RR{cnameAns(hostname, cname)},
 			Ns: []dns.RR{
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
+				nsAns(testXX, testNS1),
+				nsAns(testXX, testNS2),
 			},
 			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
+				aAns(testNS1, net.IP{127, 0, 0, 2}),
+				aAns(testNS2, net.IP{127, 0, 0, 3}),
 			},
 		},
 		name:    "rfc2308_nxdomain_response_type_4",
@@ -96,12 +96,12 @@ func TestCacheTTL(t *testing.T) {
 			Question: aQuestions(hostname),
 			Answer:   []dns.RR{cnameAns(hostname, cname)},
 			Ns: []dns.RR{
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
+				nsAns(testXX, testNS1),
+				nsAns(testXX, testNS2),
 			},
 			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
+				aAns(testNS1, net.IP{127, 0, 0, 2}),
+				aAns(testNS2, net.IP{127, 0, 0, 3}),
 			},
 		},
 		name:    "rfc2308_nxdomain_referral_response",
@@ -109,7 +109,7 @@ func TestCacheTTL(t *testing.T) {
 	}, {
 		req: &dns.Msg{
 			MsgHdr:   msgHdr(dns.RcodeServerFailure),
-			Question: aQuestions(anotherHostname),
+			Question: aQuestions(testAnotherHostname),
 		},
 		name:    "servfail_response",
 		wantTTL: dnsmsg.ServFailMaxCacheTTL,
@@ -124,59 +124,53 @@ func TestCacheTTL(t *testing.T) {
 }
 
 func TestCacheTTL_nodata_responses(t *testing.T) {
+	testIP := net.IPv4(127, 0, 0, 2)
+	testAnotherIP := net.IPv4(127, 0, 0, 3)
+
+	testNS := []dns.RR{
+		soaAns(testXX, testNS1, testMBox),
+		nsAns(testXX, testNS1),
+		nsAns(testXX, testNS2),
+	}
+
 	testCases := []struct {
 		req     *dns.Msg
 		name    string
 		wantTTL uint32
-	}{
-		{
-			req: &dns.Msg{
-				MsgHdr:   msgHdr(dns.RcodeSuccess),
-				Question: aQuestions(anotherHostname),
-				Ns: []dns.RR{
-					soaAns(xx, ns1, mbox),
-					nsAns(xx, ns1),
-					nsAns(xx, ns2),
-				},
-				Extra: []dns.RR{
-					aAns(ns1, net.IP{127, 0, 0, 2}),
-					aAns(ns2, net.IP{127, 0, 0, 3}),
-				},
-			},
-			name:    "rfc2308_nodata_response_type_1",
-			wantTTL: 0,
-		}, {
-			req: &dns.Msg{
-				MsgHdr:   msgHdr(dns.RcodeSuccess),
-				Question: aQuestions(anotherHostname),
-				Ns:       []dns.RR{soaAns(xx, ns1, mbox)},
-			},
-			name:    "rfc2308_nodata_response_type_2",
-			wantTTL: testTTL,
-		}, {
-			req: &dns.Msg{
-				MsgHdr:   msgHdr(dns.RcodeSuccess),
-				Question: aQuestions(anotherHostname),
-			},
-			name:    "rfc2308_nodata_response_type_3",
-			wantTTL: 0,
-		}, {
-			req: &dns.Msg{
-				MsgHdr:   msgHdr(dns.RcodeSuccess),
-				Question: aQuestions(anotherHostname),
-				Ns: []dns.RR{
-					nsAns(xx, ns1),
-					nsAns(xx, ns2),
-				},
-				Extra: []dns.RR{
-					aAns(ns1, net.IP{127, 0, 0, 2}),
-					aAns(ns2, net.IP{127, 0, 0, 3}),
-				},
-			},
-			name:    "rfc2308_nodata_referral_response",
-			wantTTL: 0,
+	}{{
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(testAnotherHostname),
+			Ns:       testNS,
+			Extra:    []dns.RR{aAns(testNS1, testIP), aAns(testNS2, testAnotherIP)},
 		},
-	}
+		name:    "rfc2308_nodata_response_type_1",
+		wantTTL: 0,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(testAnotherHostname),
+			Ns:       []dns.RR{soaAns(testXX, testNS1, testMBox)},
+		},
+		name:    "rfc2308_nodata_response_type_2",
+		wantTTL: testTTL,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(testAnotherHostname),
+		},
+		name:    "rfc2308_nodata_response_type_3",
+		wantTTL: 0,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   msgHdr(dns.RcodeSuccess),
+			Question: aQuestions(testAnotherHostname),
+			Ns:       []dns.RR{nsAns(testXX, testNS1), nsAns(testXX, testNS2)},
+			Extra:    []dns.RR{aAns(testNS1, testIP), aAns(testNS2, testAnotherIP)},
+		},
+		name:    "rfc2308_nodata_referral_response",
+		wantTTL: 0,
+	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,7 +1,6 @@
 package upstream
 
 import (
-	"cmp"
 	"context"
 	"net/netip"
 	"slices"
@@ -35,10 +34,13 @@ type CachingResolver struct {
 // NewCachingResolver creates a new caching resolver that uses r for lookups.
 // r must not be nil.
 func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
-	r.Clock = cmp.Or[timeutil.Clock](r.Clock, &timeutil.SystemClock{})
+	clock := r.Clock
+	if clock == nil {
+		clock = &timeutil.SystemClock{}
+	}
 
 	return &CachingResolver{
-		clock:    r.Clock,
+		clock:    clock,
 		resolver: r,
 		mu:       &sync.RWMutex{},
 		cache:    map[cacheKey]*ipResult{},
@@ -73,11 +75,6 @@ func (r *CachingResolver) LookupNetIP(
 	res, err := r.resolver.lookupNetIP(ctx, network, host)
 	if err != nil {
 		return []netip.Addr{}, err
-	}
-
-	// Do not cache nil results.
-	if res == nil {
-		return []netip.Addr{}, nil
 	}
 
 	r.setCached(key, res)

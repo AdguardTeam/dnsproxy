@@ -9,11 +9,9 @@ import (
 	"github.com/miekg/dns"
 )
 
-// ServFailMaxCacheTTL is the maximum time-to-live value for caching
-// SERVFAIL responses in seconds.  It's consistent with the upper constraint
-// of 5 minutes given by RFC 2308.
+// ServFailMaxCacheTTL is an alias for the [proxy.ServFailMaxCacheTTL] constant.
 //
-// See https://datatracker.ietf.org/doc/html/rfc2308#section-7.1.
+// NOTE: Keep in sync with the [proxy.ServFailMaxCacheTTL] constant.
 const ServFailMaxCacheTTL = 30
 
 // CacheTTL returns the number of seconds for which m is valid to be cached.

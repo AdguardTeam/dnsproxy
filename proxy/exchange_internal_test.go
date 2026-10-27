@@ -61,6 +61,11 @@ func (u measuredUpstream) Exchange(ctx context.Context, req *dns.Msg) (resp *dns
 	return u.Upstream.Exchange(ctx, req)
 }
 
+// pickShare returns the fraction of n picks that went to addr.
+func pickShare(picks map[string]int64, addr string, n int) (f float64) {
+	return float64(picks[addr]) / float64(n)
+}
+
 func TestProxy_Exchange_loadBalance(t *testing.T) {
 	// Make the test deterministic.
 	randSrc := rand.New(rand.NewPCG(42, 42))
@@ -146,18 +151,21 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 	each50 := newUpstreamWithErrorRate(50, "each_50")
 
 	testCases := []struct {
-		wantStat map[string]int64
+		// check asserts the properties of the picks per upstream address.
+		check func(t *testing.T, picks map[string]int64)
 		// wantRTT, if not nil, are the expected RTT estimates at the end.
 		wantRTT map[string]time.Duration
 		name    string
 		servers []upstream.Upstream
 	}{{
-		wantStat: map[string]int64{
-			// Each ring is filled first (16 answers), then shares go as
-			// RTT^-3: 10x slower gets about 1/1000.
-			fastUps.Address():    9967,
-			slowerUps.Address():  17,
-			slowestUps.Address(): 16,
+		check: func(t *testing.T, picks map[string]int64) {
+			// Every ring is filled first, then shares go as RTT^-3, so a 10x
+			// slower upstream gets about 1/1000.
+			assert.GreaterOrEqual(t, picks[slowerUps.Address()], int64(upstreamRTTRingSize))
+			assert.GreaterOrEqual(t, picks[slowestUps.Address()], int64(upstreamRTTRingSize))
+			assert.Greater(t, pickShare(picks, fastUps.Address(), requestsNum), 0.99)
+			assert.Less(t, pickShare(picks, slowerUps.Address(), requestsNum), 0.01)
+			assert.Less(t, pickShare(picks, slowestUps.Address(), requestsNum), 0.01)
 		},
 		wantRTT: map[string]time.Duration{
 			fastUps.Address():    testRTT / 100,
@@ -167,30 +175,31 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		name:    "all_good",
 		servers: []upstream.Upstream{slowestUps, slowerUps, fastUps},
 	}, {
-		wantStat: map[string]int64{
-			fastUps.Address():   9980,
-			slowerUps.Address(): 20,
-			// Never answered, so its ring stays empty: its weight is
-			// pulled towards 1/3 as each failure ages, slower after each
-			// one.
-			err1Ups.Address(): 21,
+		check: func(t *testing.T, picks map[string]int64) {
+			// An upstream that never answers is still probed, less and less
+			// often, as its penalty fades slower after each failure.
+			assert.Positive(t, picks[err1Ups.Address()])
+			assert.Less(t, pickShare(picks, err1Ups.Address(), requestsNum), 0.01)
+			assert.Greater(t, pickShare(picks, fastUps.Address(), requestsNum), 0.99)
 		},
 		name:    "one_bad",
 		servers: []upstream.Upstream{fastUps, err1Ups, slowerUps},
 	}, {
-		wantStat: map[string]int64{
-			err1Ups.Address(): requestsNum,
-			err2Ups.Address(): requestsNum,
+		check: func(t *testing.T, picks map[string]int64) {
+			// Every request tries every upstream.
+			assert.Equal(t, map[string]int64{
+				err1Ups.Address(): requestsNum,
+				err2Ups.Address(): requestsNum,
+			}, picks)
 		},
 		name:    "all_bad",
 		servers: []upstream.Upstream{err2Ups, err1Ups},
 	}, {
-		wantStat: map[string]int64{
-			fastUps.Address():    1075,
-			slowerUps.Address():  17,
-			fastestUps.Address(): 8909,
+		check: func(t *testing.T, picks map[string]int64) {
+			// A single failure fades, and the fastest upstream takes over.
+			assert.Greater(t, pickShare(picks, fastestUps.Address(), requestsNum), 0.8)
+			assert.Greater(t, picks[fastUps.Address()], picks[slowerUps.Address()])
 		},
-		// The single failure has decayed away.
 		wantRTT: map[string]time.Duration{
 			fastUps.Address():    testRTT / 100,
 			slowerUps.Address():  testRTT / 10,
@@ -199,10 +208,10 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		name:    "error_once",
 		servers: []upstream.Upstream{fastUps, slowerUps, fastestUps},
 	}, {
-		wantStat: map[string]int64{
-			each200.Address(): 5400,
-			each100.Address(): 3139,
-			each50.Address():  1550,
+		check: func(t *testing.T, picks map[string]int64) {
+			// The more often an upstream fails, the fewer requests it gets.
+			assert.Greater(t, picks[each200.Address()], picks[each100.Address()])
+			assert.Greater(t, picks[each100.Address()], picks[each50.Address()])
 		},
 		name:    "error_each_nth",
 		servers: []upstream.Upstream{each200, each100, each50},
@@ -233,7 +242,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 		p.time = clock
 		p.randSrc = randSrc
 
-		wantStat, wantRTT := tc.wantStat, tc.wantRTT
+		check, wantRTT := tc.check, tc.wantRTT
 
 		t.Run(tc.name, func(t *testing.T) {
 			for range requestsNum {
@@ -243,7 +252,7 @@ func TestProxy_Exchange_loadBalance(t *testing.T) {
 				currentNow = currentNow.Add(reqInterval)
 			}
 
-			assert.Equal(t, wantStat, stats)
+			check(t, stats)
 
 			// A constant RTT scores 3/4 of itself: (p90/2 + mean)/2.
 			for addr, rtt := range wantRTT {

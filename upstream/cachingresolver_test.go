@@ -8,7 +8,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
-	intdnsproxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/golibs/testutil/faketime"
@@ -59,9 +59,8 @@ func TestCachingResolver_staleness(t *testing.T) {
 	}
 
 	r := upstream.NewCachingResolver(&upstream.UpstreamResolver{
-		Upstream: ups,
-		Logger:   testLogger,
 		Clock:    &timeutil.SystemClock{},
+		Upstream: ups,
 	})
 
 	require.True(t, t.Run("resolve", func(t *testing.T) {
@@ -86,7 +85,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				ctx := testutil.ContextWithTimeout(t, testTimeout)
-				res, err := r.LookupNetIP(ctx, tc.network, intdnsproxytest.FQDN)
+				res, err := r.LookupNetIP(ctx, tc.network, proxytest.FQDN)
 				require.NoError(t, err)
 
 				assert.ElementsMatch(t, tc.want, res)
@@ -96,11 +95,11 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 	t.Run("staleness", func(t *testing.T) {
 		now := time.Now()
-		cached := r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP, now)
+		cached := r.FindCached(proxytest.FQDN, bootstrap.NetworkIP, now)
 		require.ElementsMatch(t, []netip.Addr{ip4, ip6}, cached)
 
 		cached = r.FindCached(
-			intdnsproxytest.FQDN,
+			proxytest.FQDN,
 			bootstrap.NetworkIP,
 			now.Add(smallTTL+time.Second),
 		)
@@ -157,13 +156,13 @@ var onExchangeWithSOA = func(req *dns.Msg) (resp *dns.Msg) {
 
 	soa := &dns.SOA{
 		Hdr: dns.RR_Header{
-			Name:   intdnsproxytest.FQDN,
+			Name:   proxytest.FQDN,
 			Rrtype: dns.TypeSOA,
 			Class:  dns.ClassINET,
 			Ttl:    soaTTL,
 		},
-		Ns:      "ns." + intdnsproxytest.FQDN,
-		Mbox:    "hostmaster." + intdnsproxytest.FQDN,
+		Ns:      "ns." + proxytest.FQDN,
+		Mbox:    "hostmaster." + proxytest.FQDN,
 		Serial:  1,
 		Refresh: 1,
 		Retry:   1,
@@ -213,7 +212,7 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			addrs, expire, err := tc.resolver.RequestResult(
 				ctx,
-				intdnsproxytest.FQDN,
+				proxytest.FQDN,
 				bootstrap.NetworkIP4,
 			)
 			require.Empty(t, addrs)
@@ -254,14 +253,14 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 			r := upstream.NewCachingResolver(tc.resolver)
 
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
-			addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP, intdnsproxytest.FQDN)
+			addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP, proxytest.FQDN)
 			require.NoError(t, err)
 			require.Empty(t, addrs)
 
 			// The first call to LookupNetIP should not cache the result because
 			// it is empty.  Thus, the cache should not contain any entry for
 			// this query. Therefore, the result should be nil.
-			require.Nil(t, r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP, now))
+			require.Nil(t, r.FindCached(proxytest.FQDN, bootstrap.NetworkIP, now))
 		})
 	}
 }

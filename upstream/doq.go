@@ -94,9 +94,8 @@ type dnsOverQUIC struct {
 	// logger is used for exchange logging.  It is never nil.
 	logger *slog.Logger
 
-	// addrStr is the string representation of addr.  It is saved separately
-	// to reduce allocations, since [Upstream.Address] is called for every
-	// load-balanced request.
+	// addrStr is addr.String(), cached since [Upstream.Address] is called on
+	// every load-balanced request.
 	addrStr string
 
 	// timeout is the timeout for the upstream connection.

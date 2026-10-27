@@ -28,9 +28,8 @@ type dnsOverTLS struct {
 	// addr is the DNS-over-TLS server URL.
 	addr *url.URL
 
-	// addrStr is the string representation of addr.  It is saved separately
-	// to reduce allocations, since [Upstream.Address] is called for every
-	// load-balanced request.
+	// addrStr is addr.String(), cached since [Upstream.Address] is called on
+	// every load-balanced request.
 	addrStr string
 
 	// getDialer either returns an initialized dial handler or creates a

@@ -179,18 +179,16 @@ type Config struct {
 	// Non-positive value will be replaced with the default one.
 	FastestPingTimeout time.Duration
 
-	// UpstreamRTTDecay is the time constant used to weight upstreams in
-	// [UpstreamModeLoadBalance].  An upstream's score, from its latest
-	// round-trip times, is pulled towards its long-term average by a factor of
-	// e per UpstreamRTTDecay since its latest answer, and a failure's penalty
+	// UpstreamRTTDecay is the time constant of [UpstreamModeLoadBalance]: an
+	// upstream's score is pulled towards its long-term average by a factor of e
+	// per UpstreamRTTDecay since its latest answer, and a failure's penalty
 	// fades over a multiple of it.  It must not be negative.  Default value is
 	// [DefaultUpstreamRTTDecay].
 	UpstreamRTTDecay time.Duration
 
-	// UpstreamTimeout is the timeout configured for upstreams.  It's recorded
-	// as the round-trip time of a failed exchange in
-	// [UpstreamModeLoadBalance].  It must not be negative.  Default value is
-	// 10 seconds.
+	// UpstreamTimeout is the timeout configured for upstreams.  In
+	// [UpstreamModeLoadBalance], it's the estimate of an upstream that has
+	// just failed.  It must not be negative.  Default value is 10 seconds.
 	UpstreamTimeout time.Duration
 
 	// RefuseAny makes proxy refuse the requests of type ANY.

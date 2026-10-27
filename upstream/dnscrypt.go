@@ -32,9 +32,8 @@ type dnsCrypt struct {
 	// verifyCert is a callback that verifies the resolver's certificate.
 	verifyCert func(cert *dnscrypt.Certificate) (err error)
 
-	// addrStr is the string representation of addr.  It is saved separately
-	// to reduce allocations, since [Upstream.Address] is called for every
-	// load-balanced request.
+	// addrStr is addr.String(), cached since [Upstream.Address] is called on
+	// every load-balanced request.
 	addrStr string
 
 	// timeout is the timeout for the DNS requests.

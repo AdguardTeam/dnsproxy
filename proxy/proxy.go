@@ -301,13 +301,10 @@ type Proxy struct {
 	// when cache is optimistic.  Default value is [DefaultOptimisticMaxAge].
 	cacheOptimisticMaxAge time.Duration
 
-	// upstreamRTTDecay is the time constant of the pull of the upstreams'
-	// round-trip time scores towards their long-term averages.  Default value
-	// is [DefaultUpstreamRTTDecay].
+	// upstreamRTTDecay is [Config.UpstreamRTTDecay].
 	upstreamRTTDecay time.Duration
 
-	// upstreamTimeout is recorded as the round-trip time of a failed exchange.
-	// Default value is [defaultTimeout].
+	// upstreamTimeout is [Config.UpstreamTimeout].
 	upstreamTimeout time.Duration
 
 	// fastestPingTimeout is the timeout for waiting the first successful

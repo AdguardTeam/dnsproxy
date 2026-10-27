@@ -241,9 +241,8 @@ var commandLineOptions = []*commandLineOption{
 		valueType: "duration",
 	},
 	upstreamRTTDecayIdx: {
-		description: "Time constant of the pull of the upstreams' round-trip time scores " +
-			"towards their long-term averages, used by the load_balance upstream mode, " +
-			"in a human-readable form",
+		description: "Time constant of the load_balance upstream mode: how fast an " +
+			"upstream's score fades towards its long-term average, in a human-readable form",
 		long:      "upstream-rtt-decay",
 		short:     "",
 		valueType: "duration",

@@ -33,9 +33,8 @@ type plainDNS struct {
 	// addr is the DNS server URL.  Scheme is always "udp" or "tcp".
 	addr *url.URL
 
-	// addrStr is the address returned by [plainDNS.Address]: the host of addr
-	// for UDP, and the whole URL for TCP.  It is saved separately to reduce
-	// allocations, since [Upstream.Address] is called for every load-balanced
+	// addrStr is returned by [plainDNS.Address]: the host of addr for UDP and
+	// the whole URL for TCP, cached since it's called on every load-balanced
 	// request.
 	addrStr string
 

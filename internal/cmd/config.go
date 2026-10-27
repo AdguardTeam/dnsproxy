@@ -103,9 +103,8 @@ type configuration struct {
 	// human-readable form.  Default is 10s.
 	Timeout timeutil.Duration `yaml:"timeout"`
 
-	// UpstreamRTTDecay is the time constant of the pull of the upstreams'
-	// round-trip time scores towards their long-term averages, used by the
-	// load_balance upstream mode.  Default is 2m.
+	// UpstreamRTTDecay is the time constant of the load_balance upstream mode,
+	// see [proxy.Config.UpstreamRTTDecay].  Default is 2m.
 	UpstreamRTTDecay timeutil.Duration `yaml:"upstream-rtt-decay"`
 
 	// CacheMinTTL is the minimum TTL value for caching DNS entries, in seconds.

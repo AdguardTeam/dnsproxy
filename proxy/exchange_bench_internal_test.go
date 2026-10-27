@@ -224,9 +224,7 @@ func (env *benchEnv) reportExchanges(b *testing.B) {
 
 // BenchmarkProxy_exchangeUpstreams measures the cost of a load-balanced cache
 // miss, excluding the network: the upstreams' weights, the weighted pick, the
-// exchange with an instant upstream, and the round-trip time update.  It only
-// uses code that exists at both the original round-trip time selection and the
-// fork's, so that the same file benchmarks either.
+// exchange with an instant upstream, and the round-trip time update.
 func BenchmarkProxy_exchangeUpstreams(b *testing.B) {
 	debugLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
@@ -287,11 +285,11 @@ func BenchmarkProxy_exchangeUpstreams(b *testing.B) {
 	//	goarch: arm64
 	//	pkg: github.com/AdguardTeam/dnsproxy/proxy
 	//	cpu: Apple M3 Pro
-	//	BenchmarkProxy_exchangeUpstreams/n=2/log=info-4         	 2287138	       515.2 ns/op	         1.000 exch/op	     128 B/op	      10 allocs/op
-	//	BenchmarkProxy_exchangeUpstreams/n=6/log=info-4         	 1410781	       855.2 ns/op	         1.000 exch/op	     272 B/op	      11 allocs/op
-	//	BenchmarkProxy_exchangeUpstreams/n=16/log=info-4        	  655818	      1779 ns/op	         1.000 exch/op	     592 B/op	      11 allocs/op
-	//	BenchmarkProxy_exchangeUpstreams/n=6/log=debug-4        	  303004	      3929 ns/op	         1.000 exch/op	     744 B/op	      33 allocs/op
-	//	BenchmarkProxy_exchangeUpstreams/n=6/fail=1/log=info-4  	 1347042	       887.3 ns/op	         1.000 exch/op	     272 B/op	      11 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams/n=2/log=info-4         	 2960556	       397.4 ns/op	         1.000 exch/op	      88 B/op	       6 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams/n=6/log=info-4         	 1922134	       633.8 ns/op	         1.000 exch/op	     232 B/op	       7 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams/n=16/log=info-4        	  789747	      1427 ns/op	         1.000 exch/op	     552 B/op	       7 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams/n=6/log=debug-4        	  339398	      3456 ns/op	         1.000 exch/op	     744 B/op	      18 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams/n=6/fail=1/log=info-4  	 1787308	       660.1 ns/op	         1.000 exch/op	     232 B/op	       7 allocs/op
 }
 
 // BenchmarkProxy_exchangeUpstreams_parallel measures the contention of
@@ -327,7 +325,7 @@ func BenchmarkProxy_exchangeUpstreams_parallel(b *testing.B) {
 	//	goarch: arm64
 	//	pkg: github.com/AdguardTeam/dnsproxy/proxy
 	//	cpu: Apple M3 Pro
-	//	BenchmarkProxy_exchangeUpstreams_parallel     	 1311153	       904.3 ns/op	         1.000 exch/op	     272 B/op	      11 allocs/op
-	//	BenchmarkProxy_exchangeUpstreams_parallel-2   	 1000000	      1115 ns/op	         1.000 exch/op	     272 B/op	      11 allocs/op
-	//	BenchmarkProxy_exchangeUpstreams_parallel-4   	  880927	      1334 ns/op	         1.000 exch/op	     272 B/op	      11 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams_parallel     	 1810530	       684.9 ns/op	         1.000 exch/op	     232 B/op	       7 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams_parallel-2   	 1390624	       866.1 ns/op	         1.000 exch/op	     232 B/op	       7 allocs/op
+	//	BenchmarkProxy_exchangeUpstreams_parallel-4   	 1000000	      1122 ns/op	         1.000 exch/op	     232 B/op	       7 allocs/op
 }

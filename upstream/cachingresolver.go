@@ -64,12 +64,15 @@ func (r *CachingResolver) LookupNetIP(
 		return slices.Clone(addrs), nil
 	}
 
+	sglflightKey := fmt.Sprintf("%s:%s", host, network)
+
 	// TODO(m.kazantsev):  Use some hash as a key instead of the plain host and
 	// network combination.
-	v, err, _ := r.queries.Do(fmt.Sprintf("%s:%s", host, network), func() (any, error) {
+	v, err, _ := r.queries.Do(sglflightKey, func() (any, error) {
 		return r.lookupAndCache(ctx, key)
 	})
 	if err != nil {
+		// Do not wrap the error, because it is informative enough as is.
 		return []netip.Addr{}, err
 	}
 
@@ -79,7 +82,7 @@ func (r *CachingResolver) LookupNetIP(
 
 	res, ok := v.(*ipResult)
 	if !ok {
-		panic(fmt.Sprintf("invalid value from singleflight %v: bad type: %T", v, v))
+		panic(fmt.Sprintf("bad type for cache value: %T(%[1]v)", v, v))
 	}
 
 	if res == nil {
@@ -89,6 +92,9 @@ func (r *CachingResolver) LookupNetIP(
 	return slices.Clone(res.addrs), nil
 }
 
+// lookupAndCache performs the actual lookup using the underlying resolver and
+// caches the result if successful.  It returns the resolved IP addresses or an
+// error if the lookup fails.
 func (r *CachingResolver) lookupAndCache(
 	ctx context.Context,
 	key cacheKey,

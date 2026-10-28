@@ -2,7 +2,6 @@ package upstream_test
 
 import (
 	"context"
-	"net"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -305,7 +304,7 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 	}
 
 	addr := netip.MustParseAddr(testIPv4)
-	ip := net.ParseIP(testIPv4)
+	ip := addr.AsSlice()
 
 	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(req)
@@ -328,16 +327,16 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 	)
 
 	wg := &sync.WaitGroup{}
+	pt := testutil.NewPanicT(t)
 
 	for range attemptNum {
 		wg.Go(func() {
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP4, intdnsproxytest.FQDN)
 
-			pt := testutil.NewPanicT(t)
 			require.NoError(pt, err)
-			require.NotEmpty(pt, addrs)
-			assert.Equal(pt, []netip.Addr{addr}, addrs)
+			require.Len(pt, addrs, 1)
+			assert.Equal(pt, addr, addrs[0])
 		})
 	}
 

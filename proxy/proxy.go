@@ -153,6 +153,10 @@ type Proxy struct {
 	// TODO(d.kolyshev): Move this cache to [Proxy.upstreamConf] field.
 	cache *cache
 
+	// cacheStatsStop stops the cache stats logger started by [Proxy.Start].
+	// It is nil if the cache is disabled or the proxy isn't started.
+	cacheStatsStop chan struct{}
+
 	// dnsCryptProviderName is the DNSCrypt provider name.  Required for
 	// DNSCrypt server.
 	dnsCryptProviderName string
@@ -569,6 +573,11 @@ func (p *Proxy) Start(ctx context.Context) (err error) {
 		return err
 	}
 
+	if p.cache != nil {
+		p.cacheStatsStop = make(chan struct{})
+		go p.logCacheStats(context.WithoutCancel(ctx), p.cacheStatsStop)
+	}
+
 	p.started = true
 
 	return nil
@@ -608,6 +617,11 @@ func (p *Proxy) Shutdown(ctx context.Context) (err error) {
 		p.logger.WarnContext(ctx, "dns proxy server is not started")
 
 		return nil
+	}
+
+	if p.cacheStatsStop != nil {
+		close(p.cacheStatsStop)
+		p.cacheStatsStop = nil
 	}
 
 	errs := p.closeListeners(nil)

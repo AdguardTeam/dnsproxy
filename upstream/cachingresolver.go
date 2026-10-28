@@ -51,7 +51,6 @@ func (r *CachingResolver) LookupNetIP(
 	network bootstrap.Network,
 	host string,
 ) (addrs []netip.Addr, err error) {
-	now := time.Now()
 	host = dns.Fqdn(strings.ToLower(host))
 
 	key := cacheKey{
@@ -59,16 +58,11 @@ func (r *CachingResolver) LookupNetIP(
 		lowercaseHost: host,
 	}
 
-	addrs = r.findCached(key, now)
-	if addrs != nil {
-		return slices.Clone(addrs), nil
-	}
-
 	sglflightKey := fmt.Sprintf("%s:%s", host, network)
 
 	// TODO(m.kazantsev):  Use some hash as a key instead of the plain host and
 	// network combination.
-	v, err, _ := r.queries.Do(sglflightKey, func() (any, error) {
+	v, err, _ := r.queries.Do(sglflightKey, func() (v any, err error) {
 		return r.lookupAndCache(ctx, key)
 	})
 	if err != nil {
@@ -92,13 +86,25 @@ func (r *CachingResolver) LookupNetIP(
 	return slices.Clone(res.addrs), nil
 }
 
-// lookupAndCache performs the actual lookup using the underlying resolver and
-// caches the result if successful.  It returns the resolved IP addresses or an
+// lookupAndCache looks for the result in the cache first and, if not found or
+// expired, performs the actual lookup using the underlying resolver and caches
+// the result if successful.  It returns the resolved IP addresses or an
 // error if the lookup fails.
 func (r *CachingResolver) lookupAndCache(
 	ctx context.Context,
 	key cacheKey,
 ) (res *ipResult, err error) {
+	now := time.Now()
+
+	// Due to TOCTOU, the cache can be only checked once for identical requests.
+	res = r.findCached(key, now)
+	if res != nil && res.addrs != nil {
+		return &ipResult{
+			addrs:  slices.Clone(res.addrs),
+			expire: res.expire,
+		}, nil
+	}
+
 	res, err = r.resolver.lookupNetIP(ctx, key.network, key.lowercaseHost)
 	if err != nil {
 		// Do not wrap the error, because it is informative enough as is.
@@ -120,7 +126,7 @@ func (r *CachingResolver) lookupAndCache(
 func (r *CachingResolver) findCached(
 	key cacheKey,
 	now time.Time,
-) (addrs []netip.Addr) {
+) (res *ipResult) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -129,7 +135,7 @@ func (r *CachingResolver) findCached(
 		return nil
 	}
 
-	return res.addrs
+	return res
 }
 
 // setCached sets the result into the address cache for host and network.  It's

@@ -21,8 +21,33 @@ import (
 	"github.com/miekg/dns"
 )
 
-// testUpsAddr is the mock upstream address for tests.
-const testUpsAddr = "https://upstream.address"
+const (
+	// testUpsAddr is the mock upstream address for tests.
+	testUpsAddr = "https://" + dnsproxytest.Host
+
+	// testTTL is a common time-to-live value for tests.
+	testTTL = 3600
+
+	// cacheTick is a cache check period.
+	testCacheTick = 100 * time.Millisecond
+
+	// cacheTimeout is the timeout of cache check.
+	testCacheTimeout = 20 * testCacheTick
+)
+
+// Common IP address strings for cache tests.
+const (
+	testCacheIPStr1 = "192.0.2.65"
+	testCacheIPStr2 = "192.0.2.129"
+	testCacheIPStr3 = "198.51.100.1"
+)
+
+// Common parsed IP addresses for cache tests.
+var (
+	testCacheIP1 net.IP = netip.MustParseAddr(testCacheIPStr1).AsSlice()
+	testCacheIP2 net.IP = netip.MustParseAddr(testCacheIPStr2).AsSlice()
+	testCacheIP3 net.IP = netip.MustParseAddr(testCacheIPStr3).AsSlice()
+)
 
 // upstreamWithAddr is a [dnsproxytest.Upstream] that is only expected to be
 // used to get its address.
@@ -39,18 +64,18 @@ var upstreamWithAddr = &testUpstream{
 func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 	tb.Helper()
 
-	conf = cmp.Or(conf, &cacheConfig{})
+	conf = cmp.Or(conf, &cacheConfig{size: dnsproxytest.CacheSize})
 
 	return newCache(&cacheConfig{
-		size:             cmp.Or(conf.size, dnsproxytest.CacheSize),
-		optimisticTTL:    cmp.Or(conf.optimisticTTL, testOptimisticTTL),
-		optimisticMaxAge: cmp.Or(conf.optimisticMaxAge, testOptimisticMaxAge),
+		size:             conf.size,
+		optimisticTTL:    conf.optimisticTTL,
+		optimisticMaxAge: conf.optimisticMaxAge,
 		withECS:          conf.withECS,
 		optimistic:       conf.optimistic,
 	})
 }
 
-func TestServeCached(t *testing.T) {
+func TestProxy_ServeDNS_cached(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
@@ -63,16 +88,15 @@ func TestServeCached(t *testing.T) {
 		CacheEnabled:   true,
 	})
 
-	// Start listening.
 	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
-	// Create a DNS request.
-	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
+	request := dnsproxytest.NewTestRequest()
 	request.SetEdns0(defaultUDPBufSize, false)
 
-	// Fill the cache.
 	reply := (&dns.Msg{
-		Answer: []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
+		Answer: []dns.RR{
+			dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, testTTL, dnsproxytest.IPv4.To4()),
+		},
 	}).SetReply(request)
 	reply.SetEdns0(defaultUDPBufSize, false)
 
@@ -91,118 +115,103 @@ func TestServeCached(t *testing.T) {
 }
 
 func TestCache_expired(t *testing.T) {
-	const host = "google.com."
-
-	ans := &dns.A{
-		Hdr: dns.RR_Header{
-			Name:   host,
-			Rrtype: dns.TypeA,
-			Class:  dns.ClassINET,
-		},
-		A: net.IP{8, 8, 8, 8},
-	}
-	reply := (&dns.Msg{
-		Response: true,
-		Answer:   []dns.RR{ans},
-	}).SetQuestion(host, dns.TypeA)
+	t.Parallel()
 
 	testCases := []struct {
 		name             string
+		optimisticMaxAge time.Duration
 		ttl              uint32
 		wantTTL          uint32
 		optimistic       bool
-		optimisticMaxAge time.Duration
 	}{{
-		name: "realistic_hit",
-
-		ttl:        defaultTestTTL,
-		wantTTL:    defaultTestTTL,
-		optimistic: false,
-	}, {
-		name:       "realistic_miss",
-		ttl:        0,
-		wantTTL:    0,
-		optimistic: false,
+		name:             "regular_expired",
+		optimisticMaxAge: 0,
+		ttl:              0,
+		wantTTL:          0,
+		optimistic:       false,
 	}, {
 		name:             "optimistic_hit",
+		optimisticMaxAge: testOptimisticMaxAge,
 		ttl:              defaultTestTTL,
 		wantTTL:          defaultTestTTL,
 		optimistic:       true,
-		optimisticMaxAge: testOptimisticMaxAge,
 	}, {
 		name:             "optimistic_expired",
+		optimisticMaxAge: testOptimisticMaxAge,
 		ttl:              0,
 		wantTTL:          uint32(testOptimisticTTL.Seconds()),
 		optimistic:       true,
-		optimisticMaxAge: testOptimisticMaxAge,
 	}, {
 		name:             "optimistic_max_age_exceeded",
+		optimisticMaxAge: -time.Hour,
 		ttl:              0,
 		wantTTL:          0,
 		optimistic:       true,
-		optimisticMaxAge: time.Hour * -1,
 	}}
 
-	testCache := newTestCache(t, nil)
 	for _, tc := range testCases {
-		ans.Hdr.Ttl = tc.ttl
-		req := (&dns.Msg{}).SetQuestion(host, dns.TypeA)
-
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.optimistic {
-				testCache.optimistic = true
-				testCache.optimisticMaxAge = tc.optimisticMaxAge
-				t.Cleanup(func() { testCache.optimistic = false })
-			}
+			t.Parallel()
 
-			key := msgToKey(reply)
-			data := (&cacheItem{
-				m:   reply,
-				u:   testUpsAddr,
-				ttl: tc.ttl,
-			}).pack()
-			testCache.items.Set(key, data)
-			t.Cleanup(testCache.items.Clear)
-
-			r, expired, key := testCache.get(req)
-			assert.Equal(t, msgToKey(req), key)
-			assert.Equal(t, tc.ttl == 0, expired)
-
-			if tc.wantTTL != 0 {
-				require.NotNil(t, r)
-
-				assert.Equal(t, tc.wantTTL, r.m.Answer[0].Header().Ttl)
-				assert.Equal(t, testUpsAddr, r.u)
-			} else {
-				require.Nil(t, r)
-			}
+			testCache := newTestCache(t, &cacheConfig{
+				optimisticTTL:    testOptimisticTTL,
+				optimisticMaxAge: tc.optimisticMaxAge,
+				optimistic:       tc.optimistic,
+			})
+			assertExpiredCache(t, testCache, tc.ttl, tc.wantTTL)
 		})
 	}
 }
 
-func TestCacheDO(t *testing.T) {
+// assertExpiredCache checks cache expiration and the returned TTL.
+func assertExpiredCache(tb testing.TB, c *cache, ttl, wantTTL uint32) {
+	req := dnsproxytest.NewTestRequest()
+	reply := dnsproxytest.NewTestResponse(req)
+	reply.Answer[0].Header().Ttl = ttl
+	data := (&cacheItem{
+		m:   reply,
+		u:   testUpsAddr,
+		ttl: ttl,
+	}).pack()
+	c.items.Set(msgToKey(req), data)
+
+	r, expired, key := c.get(req)
+	assert.Equal(tb, msgToKey(req), key)
+	assert.Equal(tb, ttl == 0, expired)
+	if wantTTL == 0 {
+		assert.Nil(tb, r)
+
+		return
+	}
+
+	require.NotNil(tb, r)
+	require.Len(tb, r.m.Answer, 1)
+
+	assert.Equal(tb, wantTTL, r.m.Answer[0].Header().Ttl)
+	assert.Equal(tb, testUpsAddr, r.u)
+}
+
+func TestCache_do(t *testing.T) {
 	testCache := newTestCache(t, nil)
 
-	// Make a request.
-	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
-
-	// Fill the cache.
+	request := dnsproxytest.NewTestRequest()
 	reply := (&dns.Msg{
 		Response: true,
-		Answer:   []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
-	}).SetQuestion("google.com.", dns.TypeA)
+		Answer: []dns.RR{
+			dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, testTTL, dnsproxytest.IPv4.To4()),
+		},
+	}).SetQuestion(dnsproxytest.FQDN, dns.TypeA)
 	reply.SetEdns0(4096, false)
 
-	// Store in cache.
 	testCache.set(request, reply, upstreamWithAddr, testLogger)
 
-	t.Run("without_do", func(t *testing.T) {
+	require.True(t, t.Run("without_do", func(t *testing.T) {
 		ci, expired, _ := testCache.get(request)
 		assert.False(t, expired)
 		assert.NotNil(t, ci)
-	})
+	}))
 
-	t.Run("with_do", func(t *testing.T) {
+	require.True(t, t.Run("with_do", func(t *testing.T) {
 		reqClone := request.Copy()
 		t.Cleanup(func() {
 			request = reqClone
@@ -213,39 +222,42 @@ func TestCacheDO(t *testing.T) {
 		ci, expired, _ := testCache.get(request)
 		require.Nil(t, ci)
 		assert.False(t, expired)
-	})
+	}))
 }
 
-func TestCacheCNAME(t *testing.T) {
+func TestCache_cname(t *testing.T) {
+	t.Parallel()
+
 	testCache := newTestCache(t, nil)
 
-	// Create a DNS request.
-	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
+	request := dnsproxytest.NewTestRequest()
 
-	// Fill the cache
+	answ := dnsproxytest.NewRR(
+		t,
+		dnsproxytest.FQDN,
+		dns.TypeCNAME,
+		testTTL,
+		"alias."+dnsproxytest.FQDN,
+	)
 	reply := (&dns.Msg{
 		Response: true,
-		Answer: []dns.RR{
-			dnsproxytest.NewRR(t, "google.com.", dns.TypeCNAME, 3600, "test.google.com."),
-		},
-	}).SetQuestion("google.com.", dns.TypeA)
+		Answer:   []dns.RR{answ},
+	}).SetQuestion(dnsproxytest.FQDN, dns.TypeA)
 	testCache.set(request, reply, upstreamWithAddr, testLogger)
 
-	t.Run("no_cnames", func(t *testing.T) {
+	require.True(t, t.Run("no_cnames", func(t *testing.T) {
 		r, expired, _ := testCache.get(request)
 		assert.Nil(t, r)
 		assert.False(t, expired)
-	})
+	}))
 
-	// Now fill the cache with a cacheable CNAME response.
 	reply.Answer = append(
 		reply.Answer,
-		dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8}),
+		dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, testTTL, dnsproxytest.IPv4.To4()),
 	)
 	testCache.set(request, reply, upstreamWithAddr, testLogger)
 
-	// We are testing that a proper CNAME response gets cached
-	t.Run("cnames_exist", func(t *testing.T) {
+	require.True(t, t.Run("cnames_exist", func(t *testing.T) {
 		r, expired, key := testCache.get(request)
 		assert.False(t, expired)
 		assert.Equal(t, key, msgToKey(request))
@@ -253,18 +265,15 @@ func TestCacheCNAME(t *testing.T) {
 		require.NotNil(t, r)
 
 		assert.Equal(t, testUpsAddr, r.u)
-	})
+	}))
 }
 
 func TestCache_uncacheable(t *testing.T) {
 	testCache := newTestCache(t, nil)
 
-	// Create a DNS request.
-	request := (&dns.Msg{}).SetQuestion("google.com.", dns.TypeA)
-	// Fill the cache.
+	request := dnsproxytest.NewTestRequest()
 	reply := (&dns.Msg{}).SetRcode(request, dns.RcodeBadAlg)
 
-	// We are testing that SERVFAIL responses aren't cached
 	testCache.set(request, reply, upstreamWithAddr, testLogger)
 
 	r, expired, _ := testCache.get(request)
@@ -276,12 +285,12 @@ func TestCache_concurrent(t *testing.T) {
 	testCache := newTestCache(t, nil)
 
 	hosts := map[string]string{
-		dns.Fqdn("yandex.com"):     "213.180.204.62",
-		dns.Fqdn("google.com"):     "8.8.8.8",
-		dns.Fqdn("www.google.com"): "8.8.4.4",
-		dns.Fqdn("youtube.com"):    "173.194.221.198",
-		dns.Fqdn("car.ru"):         "37.220.161.35",
-		dns.Fqdn("cat.ru"):         "192.56.231.67",
+		dnsproxytest.FQDN:            dnsproxytest.IPv4.String(),
+		"two." + dnsproxytest.FQDN:   testCacheIPStr1,
+		"three." + dnsproxytest.FQDN: testCacheIPStr2,
+		"four." + dnsproxytest.FQDN:  dnsproxytest.IPv4.String(),
+		"five." + dnsproxytest.FQDN:  testCacheIPStr1,
+		"six." + dnsproxytest.FQDN:   testCacheIPStr2,
 	}
 
 	g := &sync.WaitGroup{}
@@ -294,15 +303,7 @@ func TestCache_concurrent(t *testing.T) {
 	g.Wait()
 }
 
-const (
-	// cacheTick is a cache check period.
-	cacheTick = 100 * time.Millisecond
-
-	// cacheTimeout is the timeout of cache check.
-	cacheTimeout = 20 * cacheTick
-)
-
-func TestCacheExpiration(t *testing.T) {
+func TestCache_expiration(t *testing.T) {
 	t.Parallel()
 
 	dnsProxy := mustNew(t, &Config{
@@ -320,14 +321,14 @@ func TestCacheExpiration(t *testing.T) {
 
 	// Create dns messages with TTL of 1 second.
 	rrs := []dns.RR{
-		dnsproxytest.NewRR(t, "youtube.com.", dns.TypeA, 1, net.IP{173, 194, 221, 198}),
-		dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 1, net.IP{8, 8, 8, 8}),
-		dnsproxytest.NewRR(t, "yandex.com.", dns.TypeA, 1, net.IP{213, 180, 204, 62}),
+		dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, 1, dnsproxytest.IPv4.To4()),
+		dnsproxytest.NewRR(t, "two."+dnsproxytest.FQDN, dns.TypeA, 1, testCacheIP1),
+		dnsproxytest.NewRR(t, "three."+dnsproxytest.FQDN, dns.TypeA, 1, testCacheIP2),
 	}
 	requests := make([]*dns.Msg, 0, len(rrs))
 	responses := make([]*dns.Msg, 0, len(rrs))
 	for _, rr := range rrs {
-		req := (&dns.Msg{}).SetQuestion(rr.Header().Name, dns.TypeA)
+		req := dnsproxytest.NewTestRequestWithHost(rr.Header().Name)
 		requests = append(requests, req)
 
 		resp := (&dns.Msg{}).SetReply(req)
@@ -355,16 +356,36 @@ func TestCacheExpiration(t *testing.T) {
 		}
 
 		return true
-	}, cacheTimeout, cacheTick)
+	}, testCacheTimeout, testCacheTick)
 }
 
-func TestCacheExpirationWithTTLOverride(t *testing.T) {
-	var ans []dns.RR
+func TestCache_ttlOverride(t *testing.T) {
+	t.Parallel()
+
+	t.Run("min", func(t *testing.T) {
+		t.Parallel()
+
+		assertCacheTTLOverride(t, 10, 20)
+	})
+
+	t.Run("max", func(t *testing.T) {
+		t.Parallel()
+
+		assertCacheTTLOverride(t, 60, 40)
+	})
+}
+
+// assertCacheTTLOverride runs a separate proxy instance and checks the TTL of a
+// cached response after an override.
+func assertCacheTTLOverride(tb testing.TB, ttl, wantTTL uint32) {
+	ans := []dns.RR{
+		dnsproxytest.NewRR(tb, dnsproxytest.FQDN, dns.TypeA, ttl, dnsproxytest.IPv4.To4()),
+	}
 
 	onExchange := newECSReplyHandler(&ans, nil, nil)
-	u := newTestUpstreamWithExchange(t, onExchange)
+	u := newTestUpstreamWithExchange(tb, onExchange)
 
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := mustNew(tb, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -378,364 +399,239 @@ func TestCacheExpirationWithTTLOverride(t *testing.T) {
 		CacheMaxTTL:    40,
 	})
 
-	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
+	servicetest.RequireRun(tb, dnsProxy, dnsproxytest.Timeout)
 
-	d := &DNSContext{}
-
-	t.Run("replace_min", func(t *testing.T) {
-		d.Req = dnsproxytest.NewTestRequestWithHost("host")
-		d.Addr = netip.AddrPort{}
-
-		ans = []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{
-				Rrtype: dns.TypeA,
-				Name:   "host.",
-				Ttl:    10,
-			},
-			A: net.IP{4, 3, 2, 1},
-		}}
-
-		err := dnsProxy.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
-		require.NoError(t, err)
-
-		ci, expired, key := dnsProxy.cache.get(d.Req)
-		assert.False(t, expired)
-		assert.Equal(t, msgToKey(d.Req), key)
-
-		require.NotNil(t, ci)
-		assert.Equal(t, dnsProxy.cacheMinTTL, ci.m.Answer[0].Header().Ttl)
-	})
-
-	t.Run("replace_max", func(t *testing.T) {
-		d.Req = dnsproxytest.NewTestRequestWithHost("host2")
-		d.Addr = netip.AddrPort{}
-
-		ans = []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{
-				Rrtype: dns.TypeA,
-				Name:   "host2.",
-				Ttl:    60,
-			},
-			A: net.IP{4, 3, 2, 1},
-		}}
-
-		err := dnsProxy.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
-		require.NoError(t, err)
-
-		ci, expired, key := dnsProxy.cache.get(d.Req)
-		assert.False(t, expired)
-		assert.Equal(t, msgToKey(d.Req), key)
-
-		require.NotNil(t, ci)
-		assert.Equal(t, dnsProxy.cacheMaxTTL, ci.m.Answer[0].Header().Ttl)
-	})
-}
-
-type testEntry struct {
-	q string
-	a []dns.RR
-	t uint16
-}
-
-type testCase struct {
-	ok require.BoolAssertionFunc
-	q  string
-	a  []dns.RR
-	t  uint16
-}
-
-type testCases struct {
-	cache []testEntry
-	cases []testCase
-}
-
-func TestCache(t *testing.T) {
-	t.Run("simple", func(t *testing.T) {
-		testCases{
-			cache: []testEntry{{
-				q: "google.com.",
-				a: []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
-				t: dns.TypeA,
-			}},
-			cases: []testCase{{
-				ok: require.True,
-				q:  "google.com.",
-				a:  []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
-				t:  dns.TypeA,
-			}, {
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeMX,
-			}},
-		}.run(t)
-	})
-
-	t.Run("mixed_case", func(t *testing.T) {
-		testCases{
-			cache: []testEntry{{
-				q: "gOOgle.com.",
-				a: []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
-				t: dns.TypeA,
-			}},
-			cases: []testCase{{
-				ok: require.True,
-				q:  "gOOgle.com.",
-				a:  []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
-				t:  dns.TypeA,
-			}, {
-				ok: require.True,
-				q:  "google.com.",
-				a:  []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
-				t:  dns.TypeA,
-			}, {
-				ok: require.True,
-				q:  "GOOGLE.COM.",
-				a:  []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 3600, net.IP{8, 8, 8, 8})},
-				t:  dns.TypeA,
-			}, {
-				q:  "gOOgle.com.",
-				t:  dns.TypeMX,
-				ok: require.False,
-			}, {
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeMX,
-			}, {
-				ok: require.False,
-				q:  "GOOGLE.COM.",
-				t:  dns.TypeMX,
-			}},
-		}.run(t)
-	})
-
-	t.Run("zero_ttl", func(t *testing.T) {
-		testCases{
-			cache: []testEntry{{
-				q: "gOOgle.com.",
-				a: []dns.RR{dnsproxytest.NewRR(t, "google.com.", dns.TypeA, 0, net.IP{8, 8, 8, 8})},
-				t: dns.TypeA,
-			}},
-			cases: []testCase{{
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeA,
-			}, {
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeA,
-			}, {
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeA,
-			}, {
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeMX,
-			}, {
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeMX,
-			}, {
-				ok: require.False,
-				q:  "google.com.",
-				t:  dns.TypeMX,
-			}},
-		}.run(t)
-	})
-}
-
-func (tests testCases) run(t *testing.T) {
-	testCache := newTestCache(t, nil)
-
-	for _, res := range tests.cache {
-		request := (&dns.Msg{}).SetQuestion(res.q, res.t)
-		reply := (&dns.Msg{Response: true, Answer: res.a}).SetReply(request)
-		testCache.set(request, reply, upstreamWithAddr, testLogger)
+	d := &DNSContext{
+		Req:  dnsproxytest.NewTestRequest(),
+		Addr: netip.AddrPort{},
 	}
+	err := dnsProxy.Resolve(testutil.ContextWithTimeout(tb, defaultTimeout), d)
+	require.NoError(tb, err)
 
-	for _, tc := range tests.cases {
-		request := (&dns.Msg{}).SetQuestion(tc.q, tc.t)
+	ci, expired, key := dnsProxy.cache.get(d.Req)
+	require.NotNil(tb, ci)
+	require.Len(tb, ci.m.Answer, 1)
 
-		ci, expired, _ := testCache.get(request)
-		assert.False(t, expired)
-		tc.ok(t, ci != nil)
+	assert.False(tb, expired)
+	assert.Equal(tb, msgToKey(d.Req), key)
+	assert.Equal(tb, wantTTL, ci.m.Answer[0].Header().Ttl)
+}
 
-		if tc.a == nil {
-			return
-		} else if ci == nil {
-			continue
-		}
+func TestCache_simple(t *testing.T) {
+	t.Parallel()
 
-		reply := (&dns.Msg{Response: true, Answer: tc.a}).SetQuestion(tc.q, tc.t)
+	testCases := []struct {
+		name    string
+		qtype   uint16
+		wantHit bool
+	}{{
+		name:    "hit",
+		qtype:   dns.TypeA,
+		wantHit: true,
+	}, {
+		name:    "different_type",
+		qtype:   dns.TypeMX,
+		wantHit: false,
+	}}
 
-		testCache.set(request, reply, upstreamWithAddr, testLogger)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		requireEqualMsgs(t, ci.m, reply)
+			req := (&dns.Msg{}).SetQuestion(dnsproxytest.FQDN, tc.qtype)
+			assertResponseCache(t, dnsproxytest.FQDN, dnsproxytest.TTL, req, tc.wantHit)
+		})
 	}
 }
 
-// requireEqualMsgs asserts the messages are equal except their ID, Rdlength, and
-// the case of questions.
-func requireEqualMsgs(tb testing.TB, expected, actual *dns.Msg) {
-	tb.Helper()
+// assertResponseCache caches an A response for host with the given ttl and
+// checks whether req produces a cache hit with the expected response.
+func assertResponseCache(tb testing.TB, host string, ttl uint32, req *dns.Msg, wantHit bool) {
+	testCache := newTestCache(tb, nil)
+	request := dnsproxytest.NewTestRequestWithHost(host)
+	reply := (&dns.Msg{
+		Answer: []dns.RR{
+			dnsproxytest.NewRR(tb, host, dns.TypeA, ttl, dnsproxytest.IPv4.To4()),
+		},
+	}).SetReply(request)
+	testCache.set(request, reply, upstreamWithAddr, testLogger)
 
-	temp := *expected
-	temp.Id = actual.Id
+	ci, expired, _ := testCache.get(req)
+	assert.False(tb, expired)
+	if !wantHit {
+		assert.Nil(tb, ci)
 
-	require.Equal(tb, len(temp.Answer), len(actual.Answer))
-	for i, ans := range actual.Answer {
-		temp.Answer[i].Header().Rdlength = ans.Header().Rdlength
-	}
-	for _, rr := range actual.Answer {
-		if a, ok := rr.(*dns.A); ok {
-			if a4 := a.A.To4(); a4 != nil {
-				a.A = a4
-			}
-		}
-	}
-	for i := range temp.Question {
-		temp.Question[i].Name = strings.ToLower(temp.Question[i].Name)
-	}
-	for i := range actual.Question {
-		actual.Question[i].Name = strings.ToLower(actual.Question[i].Name)
+		return
 	}
 
-	assert.Equal(tb, &temp, actual)
+	require.NotNil(tb, ci)
+
+	reply.SetReply(req)
+	requireEqualMsgs(tb, reply, ci.m)
 }
 
-func setAndGetCache(t *testing.T, c *cache, g *sync.WaitGroup, host, ip string) {
-	defer g.Done()
+func TestCache_mixedCase(t *testing.T) {
+	t.Parallel()
 
-	ipAddr := net.ParseIP(ip)
+	const mixedCaseHost = "teST.ExAmPlE."
+	testCases := []struct {
+		name string
+		host string
+	}{{
+		name: "mixed_case",
+		host: mixedCaseHost,
+	}, {
+		name: "lower_case",
+		host: dnsproxytest.FQDN,
+	}, {
+		name: "upper_case",
+		host: strings.ToUpper(dnsproxytest.FQDN),
+	}}
 
-	req := (&dns.Msg{}).SetQuestion(host, dns.TypeA)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	dnsMsg := (&dns.Msg{
-		Response: true,
-		Answer:   []dns.RR{dnsproxytest.NewRR(t, host, dns.TypeA, 1, ipAddr)},
-	}).SetQuestion(host, dns.TypeA)
-
-	c.set(req, dnsMsg, upstreamWithAddr, testLogger)
-
-	for range 2 {
-		ci, expired, key := c.get(dnsMsg)
-		require.NotNilf(t, ci, "no cache found for %s", host)
-
-		assert.False(t, expired)
-		assert.Equal(t, msgToKey(req), key)
-
-		requireEqualMsgs(t, ci.m, dnsMsg)
+			req := dnsproxytest.NewTestRequestWithHost(tc.host)
+			assertResponseCache(t, mixedCaseHost, dnsproxytest.TTL, req, true)
+		})
 	}
-
-	assert.Eventuallyf(t, func() bool {
-		ci, _, _ := c.get(req)
-
-		return ci == nil
-	}, cacheTimeout, cacheTick, "cache for %s should already be removed", host)
 }
 
-func TestCache_getWithSubnet(t *testing.T) {
-	const testFQDN = "example.com."
+func TestCache_zeroTTL(t *testing.T) {
+	t.Parallel()
 
-	ip1234, ip2234, ip3234 := net.IP{1, 2, 3, 4}, net.IP{2, 2, 3, 4}, net.IP{3, 2, 3, 4}
-	req := (&dns.Msg{}).SetQuestion(testFQDN, dns.TypeA)
-	mask16 := net.CIDRMask(16, netutil.IPv4BitLen)
-	mask24 := net.CIDRMask(24, netutil.IPv4BitLen)
+	testCases := []struct {
+		name  string
+		qtype uint16
+	}{{
+		name:  "same_type",
+		qtype: dns.TypeA,
+	}, {
+		name:  "different_type",
+		qtype: dns.TypeMX,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := (&dns.Msg{}).SetQuestion(dnsproxytest.FQDN, tc.qtype)
+			assertResponseCache(t, dnsproxytest.FQDN, 0, req, false)
+		})
+	}
+}
+
+func TestCache_getWithSubnetEmpty(t *testing.T) {
+	t.Parallel()
 
 	c := newTestCache(t, &cacheConfig{withECS: true})
+	req := dnsproxytest.NewTestRequest()
 
-	t.Run("empty", func(t *testing.T) {
-		ci, expired, _ := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
-		assert.Nil(t, ci)
-		assert.False(t, expired)
+	ci, expired, _ := c.getWithSubnet(req, &net.IPNet{
+		IP:   dnsproxytest.IPv4,
+		Mask: net.CIDRMask(28, netutil.IPv4BitLen),
 	})
-
-	// Add a response with subnet.
-	resp := (&dns.Msg{
-		Answer: []dns.RR{dnsproxytest.NewRR(t, testFQDN, dns.TypeA, 1, net.IP{1, 1, 1, 1})},
-	}).SetReply(req)
-	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{IP: ip1234, Mask: mask16}, testLogger)
-
-	t.Run("different_ip", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip2234, Mask: mask24})
-		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, ip2234, 0), key)
-		assert.Nil(t, ci)
-	})
-
-	// Add a response entry with subnet #2.
-	resp = (&dns.Msg{
-		Answer: []dns.RR{dnsproxytest.NewRR(t, testFQDN, dns.TypeA, 1, net.IP{2, 2, 2, 2})},
-	}).SetReply(req)
-	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{IP: ip2234, Mask: mask16}, testLogger)
-
-	// Add a response entry without subnet.
-	resp = (&dns.Msg{
-		Answer: []dns.RR{dnsproxytest.NewRR(t, testFQDN, dns.TypeA, 1, net.IP{3, 3, 3, 3})},
-	}).SetReply(req)
-	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{IP: nil, Mask: nil}, testLogger)
-
-	t.Run("with_subnet_1", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip1234, Mask: mask24})
-		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, ip1234.Mask(mask16), 16), key)
-
-		require.NotNil(t, ci)
-		require.NotNil(t, ci.m)
-		require.NotEmpty(t, ci.m.Answer)
-
-		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
-		assert.True(t, a.A.Equal(net.IP{1, 1, 1, 1}))
-	})
-
-	t.Run("with_subnet_2", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip2234, Mask: mask24})
-		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, ip2234.Mask(mask16), 16), key)
-
-		require.NotNil(t, ci)
-		require.NotNil(t, ci.m)
-		require.NotEmpty(t, ci.m.Answer)
-
-		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
-		assert.True(t, a.A.Equal(net.IP{2, 2, 2, 2}))
-	})
-
-	t.Run("with_subnet_3", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{IP: ip3234, Mask: mask24})
-		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, ip1234, 0), key)
-
-		require.NotNil(t, ci)
-		require.NotNil(t, ci.m)
-		require.NotEmpty(t, ci.m.Answer)
-
-		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
-		assert.True(t, a.A.Equal(net.IP{3, 3, 3, 3}))
-	})
+	assert.Nil(t, ci)
+	assert.False(t, expired)
 }
 
-func TestCache_getWithSubnet_mask(t *testing.T) {
-	const testFQDN = "example.com."
+func TestCache_getWithSubnetMiss(t *testing.T) {
+	t.Parallel()
 
-	testIP := net.IP{176, 112, 191, 0}
-	noMatchIP := net.IP{177, 112, 191, 0}
+	c := newTestCache(t, &cacheConfig{withECS: true})
+	req := dnsproxytest.NewTestRequest()
+	resp := dnsproxytest.NewTestResponse(req)
+	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{
+		IP:   dnsproxytest.IPv4,
+		Mask: net.CIDRMask(26, netutil.IPv4BitLen),
+	}, testLogger)
+
+	ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+		IP:   testCacheIP1,
+		Mask: net.CIDRMask(28, netutil.IPv4BitLen),
+	})
+	assert.False(t, expired)
+	assert.Equal(t, msgToKeyWithSubnet(req, testCacheIP1, 0), key)
+	assert.Nil(t, ci)
+}
+
+func TestCache_getWithSubnetHit(t *testing.T) {
+	t.Parallel()
+
+	c := newTestCache(t, &cacheConfig{withECS: true})
+	mask26 := net.CIDRMask(26, netutil.IPv4BitLen)
+	req := dnsproxytest.NewTestRequest()
+	testCases := []struct {
+		name string
+		ip   net.IP
+		mask int
+	}{{
+		name: "with_subnet_1",
+		ip:   dnsproxytest.IPv4,
+		mask: 26,
+	}, {
+		name: "with_subnet_2",
+		ip:   testCacheIP1,
+		mask: 26,
+	}, {
+		name: "without_subnet",
+		ip:   testCacheIP2,
+		mask: 0,
+	}}
+
+	for _, tc := range testCases {
+		resp := (&dns.Msg{
+			Answer: []dns.RR{
+				dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, dnsproxytest.TTL, tc.ip),
+			},
+		}).SetReply(req)
+		c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{
+			IP:   tc.ip,
+			Mask: net.CIDRMask(tc.mask, netutil.IPv4BitLen),
+		}, testLogger)
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+				IP:   tc.ip,
+				Mask: net.CIDRMask(28, netutil.IPv4BitLen),
+			})
+			assert.False(t, expired)
+			assert.Equal(t, msgToKeyWithSubnet(req, tc.ip.Mask(mask26), tc.mask), key)
+
+			require.NotNil(t, ci)
+			require.NotNil(t, ci.m)
+			require.NotEmpty(t, ci.m.Answer)
+
+			a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
+			assert.True(t, a.A.Equal(tc.ip))
+		})
+	}
+}
+
+func TestCache_getWithSubnetMask(t *testing.T) {
+	noMatchIP := testCacheIP1
+	testIP := testCacheIP3
 
 	// cachedIP/cidrMask network contains the testIP.
 	const cidrMaskOnes = 20
 	cidrMask := net.CIDRMask(cidrMaskOnes, netutil.IPv4BitLen)
-	cachedIP := net.IP{176, 112, 176, 0}
+	cachedIP := testCacheIP3.Mask(cidrMask)
 
-	ansIP := net.IP{4, 4, 4, 4}
+	ansIP := testCacheIP2
 
 	c := newTestCache(t, &cacheConfig{
 		withECS:    true,
 		optimistic: true,
 	})
 
-	req := (&dns.Msg{}).SetQuestion(testFQDN, dns.TypeA)
+	req := dnsproxytest.NewTestRequestWithHost(dnsproxytest.FQDN)
 	resp := (&dns.Msg{
-		Answer: []dns.RR{dnsproxytest.NewRR(t, testFQDN, dns.TypeA, 300, ansIP)},
+		Answer: []dns.RR{dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, 300, ansIP)},
 	}).SetReply(req)
 
 	// Cache IP network that contains the testIP.
@@ -747,9 +643,9 @@ func TestCache_getWithSubnet_mask(t *testing.T) {
 		testLogger,
 	)
 
-	t.Run("mask_matched", func(t *testing.T) {
+	require.True(t, t.Run("mask_matched", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
-			IP:   testIP,
+			IP:   testCacheIP3,
 			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
 		})
 		assert.False(t, expired)
@@ -761,9 +657,9 @@ func TestCache_getWithSubnet_mask(t *testing.T) {
 
 		a := testutil.RequireTypeAssert[*dns.A](t, ci.m.Answer[0])
 		assert.True(t, a.A.Equal(ansIP))
-	})
+	}))
 
-	t.Run("no_mask_matched", func(t *testing.T) {
+	require.True(t, t.Run("no_mask_matched", func(t *testing.T) {
 		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
 			IP:   noMatchIP,
 			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
@@ -771,78 +667,32 @@ func TestCache_getWithSubnet_mask(t *testing.T) {
 		assert.False(t, expired)
 		assert.Equal(t, msgToKeyWithSubnet(req, noMatchIP, 0), key)
 		assert.Nil(t, ci)
-	})
+	}))
 }
 
-func TestCache_IsCacheable_negative(t *testing.T) {
-	const someTTL = 3600
+func TestCacheTTL_isCacheableNegative(t *testing.T) {
+	t.Parallel()
 
-	msgHdr := func(rcode int) (hdr dns.MsgHdr) { return dns.MsgHdr{Id: dns.Id(), Rcode: rcode} }
-	aQuestions := func(name string) []dns.Question {
-		return []dns.Question{{
-			Name:   name,
-			Qtype:  dns.TypeA,
-			Qclass: dns.ClassINET,
-		}}
-	}
+	question := []dns.Question{{
+		Name:   dnsproxytest.FQDN,
+		Qtype:  dns.TypeA,
+		Qclass: dns.ClassINET,
+	}}
 
-	cnameAns := func(name, cname string) (rr dns.RR) {
-		return &dns.CNAME{
-			Hdr: dns.RR_Header{
-				Name:   name,
-				Rrtype: dns.TypeCNAME,
-				Class:  dns.ClassINET,
-				Ttl:    someTTL,
-			},
-			Target: cname,
-		}
-	}
-
-	soaAns := func(name, ns, mbox string) (rr dns.RR) {
-		return &dns.SOA{
-			Hdr: dns.RR_Header{
-				Name:   name,
-				Rrtype: dns.TypeSOA,
-				Class:  dns.ClassINET,
-				Ttl:    someTTL,
-			},
-			Ns:   ns,
-			Mbox: mbox,
-		}
-	}
-
-	nsAns := func(name, ns string) (rr dns.RR) {
-		return &dns.NS{
-			Hdr: dns.RR_Header{
-				Name:   name,
-				Rrtype: dns.TypeNS,
-				Class:  dns.ClassINET,
-				Ttl:    someTTL,
-			},
-			Ns: ns,
-		}
-	}
-
-	aAns := func(name string, a net.IP) (rr dns.RR) {
-		return &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   name,
-				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
-				Ttl:    someTTL,
-			},
-			A: a,
-		}
-	}
-
-	const (
-		hostname        = "AN.EXAMPLE."
-		anotherHostname = "ANOTHER.EXAMPLE."
-		cname           = "TRIPPLE.XX."
-		mbox            = "HOSTMASTER.NS1.XX."
-		ns1, ns2        = "NS1.XX.", "NS2.XX."
-		xx              = "XX."
+	cnameRR := dnsproxytest.NewRR(
+		t,
+		dnsproxytest.FQDN,
+		dns.TypeCNAME,
+		testTTL,
+		"alias."+dnsproxytest.FQDN,
 	)
+	soa := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeSOA, testTTL, nil)
+	nsRR1 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns1."+dnsproxytest.FQDN)
+	nsRR2 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns2."+dnsproxytest.FQDN)
+	extra := []dns.RR{
+		dnsproxytest.NewRR(t, "ns1."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP1),
+		dnsproxytest.NewRR(t, "ns2."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP2),
+	}
 
 	// See https://datatracker.ietf.org/doc/html/rfc2308.
 	testCases := []struct {
@@ -851,120 +701,55 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 		wantTTL uint32
 	}{{
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns: []dns.RR{
-				soaAns(xx, ns1, mbox),
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
-			},
-			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
-			},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{soa, nsRR1, nsRR2},
+			Extra:    extra,
 		},
 		name:    "rfc2308_nxdomain_response_type_1",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns:       []dns.RR{soaAns("XX.", ns1, mbox)},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{soa},
 		},
 		name:    "rfc2308_nxdomain_response_type_2",
-		wantTTL: someTTL,
+		wantTTL: testTTL,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
 		},
 		name:    "rfc2308_nxdomain_response_type_3",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns: []dns.RR{
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
-			},
-			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
-			},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{nsRR1, nsRR2},
+			Extra:    extra,
 		},
 		name:    "rfc2308_nxdomain_response_type_4",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns: []dns.RR{
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
-			},
-			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
-			},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{nsRR1, nsRR2},
+			Extra:    extra,
 		},
 		name:    "rfc2308_nxdomain_referral_response",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(anotherHostname),
-			Ns: []dns.RR{
-				soaAns(xx, ns1, mbox),
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
-			},
-			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
-			},
-		},
-		name:    "rfc2308_nodata_response_type_1",
-		wantTTL: 0,
-	}, {
-		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(anotherHostname),
-			Ns:       []dns.RR{soaAns(xx, ns1, mbox)},
-		},
-		name:    "rfc2308_nodata_response_type_2",
-		wantTTL: someTTL,
-	}, {
-		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(anotherHostname),
-		},
-		name:    "rfc2308_nodata_response_type_3",
-		wantTTL: 0,
-	}, {
-		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(anotherHostname),
-			Ns: []dns.RR{
-				nsAns(xx, ns1),
-				nsAns(xx, ns2),
-			},
-			Extra: []dns.RR{
-				aAns(ns1, net.IP{127, 0, 0, 2}),
-				aAns(ns2, net.IP{127, 0, 0, 3}),
-			},
-		},
-		name:    "rfc2308_nodata_referral_response",
-		wantTTL: 0,
-	}, {
-		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeServerFailure),
-			Question: aQuestions(anotherHostname),
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeServerFailure},
+			Question: question,
 		},
 		name:    "servfail_response",
 		wantTTL: ServFailMaxCacheTTL,
@@ -972,7 +757,132 @@ func TestCache_IsCacheable_negative(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tc.wantTTL, cacheTTL(tc.req, testLogger))
 		})
+	}
+}
+
+func TestCacheTTL_isCacheableNegativeNoData(t *testing.T) {
+	t.Parallel()
+
+	question := dnsproxytest.NewTestRequest().Question
+	soa := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeSOA, testTTL, nil)
+	nsRR1 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns1."+dnsproxytest.FQDN)
+	nsRR2 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns2."+dnsproxytest.FQDN)
+	extra := []dns.RR{
+		dnsproxytest.NewRR(t, "ns1."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP1),
+		dnsproxytest.NewRR(t, "ns2."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP2),
+	}
+
+	// See https://datatracker.ietf.org/doc/html/rfc2308.
+	testCases := []struct {
+		req     *dns.Msg
+		name    string
+		wantTTL uint32
+	}{{
+		req: &dns.Msg{
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Ns: []dns.RR{
+				soa, nsRR1, nsRR2,
+			},
+			Extra: extra,
+		},
+		name:    "rfc2308_nodata_response_type_1",
+		wantTTL: 0,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Ns:       []dns.RR{soa},
+		},
+		name:    "rfc2308_nodata_response_type_2",
+		wantTTL: testTTL,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+		},
+		name:    "rfc2308_nodata_response_type_3",
+		wantTTL: 0,
+	}, {
+		req: &dns.Msg{
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Ns:       []dns.RR{nsRR1, nsRR2},
+			Extra:    extra,
+		},
+		name:    "rfc2308_nodata_referral_response",
+		wantTTL: 0,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.wantTTL, cacheTTL(tc.req, testLogger))
+		})
+	}
+}
+
+// setAndGetCache is a helper that checks cache storage, retrieval, and
+// expiration for host.  It is intended to be used as a goroutine.
+func setAndGetCache(tb testing.TB, c *cache, g *sync.WaitGroup, host, ip string) {
+	tb.Helper()
+
+	defer g.Done()
+
+	pt := testutil.NewPanicT(tb)
+
+	ipAddr := net.ParseIP(ip)
+
+	req := dnsproxytest.NewTestRequestWithHost(host)
+
+	dnsMsg := (&dns.Msg{
+		Response: true,
+		Answer:   []dns.RR{dnsproxytest.NewRR(tb, host, dns.TypeA, 1, ipAddr)},
+	}).SetQuestion(host, dns.TypeA)
+
+	c.set(req, dnsMsg, upstreamWithAddr, testLogger)
+
+	for range 2 {
+		ci, expired, key := c.get(dnsMsg)
+		require.NotNilf(pt, ci, "no cache found for %s", host)
+
+		assert.False(pt, expired)
+		assert.Equal(pt, msgToKey(req), key)
+
+		requireEqualMsgs(pt, ci.m, dnsMsg)
+	}
+
+	assert.Eventuallyf(pt, func() bool {
+		ci, _, _ := c.get(req)
+
+		return ci == nil
+	}, testCacheTimeout, testCacheTick, "cache for %s should already be removed", host)
+}
+
+// requireEqualMsgs asserts the messages are equal.  It only compares rcodes,
+// question and answer names, and A record values.
+func requireEqualMsgs(t testutil.RequireT, expected, got *dns.Msg) {
+	t.Helper()
+
+	require.Equal(t, expected.Rcode, got.Rcode)
+	require.Len(t, got.Question, len(expected.Question))
+
+	for i := range expected.Question {
+		want, got := expected.Question[i], got.Question[i]
+		require.True(t, strings.EqualFold(want.Name, got.Name))
+		assert.Equal(t, want.Qtype, got.Qtype)
+	}
+
+	require.Len(t, got.Answer, len(expected.Answer))
+	for i, want := range expected.Answer {
+		wantA := testutil.RequireTypeAssert[*dns.A](t, want)
+		gotA := testutil.RequireTypeAssert[*dns.A](t, got.Answer[i])
+
+		assert.Equal(t, wantA.A, gotA.A.To4())
 	}
 }

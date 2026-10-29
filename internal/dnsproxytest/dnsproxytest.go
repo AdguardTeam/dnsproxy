@@ -116,11 +116,12 @@ func RequireResponse(tb testing.TB, req, reply *dns.Msg) {
 // and value.  It fails the test if the qtype is not supported or the type of
 // value doesn't match the qtype.  val is expected to be of type [net.IP] if
 // qtype is [dns.TypeA] or [dns.TypeAAAA] and a string if qtype is
-// [dns.TypeCNAME] or [dns.TypePTR].  qtype is expected to be one of the
-// following:
+// [dns.TypeCNAME], [dns.TypeNS], or [dns.TypePTR].  qtype is expected to be one
+// of the following:
 //   - [dns.TypeA]
 //   - [dns.TypeAAAA]
 //   - [dns.TypeCNAME]
+//   - [dns.TypeNS]
 //   - [dns.TypeSOA]
 //   - [dns.TypePTR]
 func NewRR(tb testing.TB, name string, qtype uint16, ttl uint32, val any) (rr dns.RR) {
@@ -133,6 +134,8 @@ func NewRR(tb testing.TB, name string, qtype uint16, ttl uint32, val any) (rr dn
 		rr = &dns.AAAA{AAAA: testutil.RequireTypeAssert[net.IP](tb, val)}
 	case dns.TypeCNAME:
 		rr = &dns.CNAME{Target: testutil.RequireTypeAssert[string](tb, val)}
+	case dns.TypeNS:
+		rr = &dns.NS{Ns: testutil.RequireTypeAssert[string](tb, val)}
 	case dns.TypeSOA:
 		rr = &dns.SOA{
 			Ns:      "ns." + name,

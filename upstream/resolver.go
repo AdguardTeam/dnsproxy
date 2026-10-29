@@ -246,6 +246,9 @@ func (r *UpstreamResolver) request(
 	}
 
 	res = &ipResult{
+		// TODO(m.kazantsev):  If one of the IP families has no alternative
+		// timeout set, both IPv4 and IPv6 are stale.  Consider refactoring the
+		// expiration logic.
 		expire: r.clock.Now(),
 		addrs:  make([]netip.Addr, 0, len(resp.Answer)),
 	}

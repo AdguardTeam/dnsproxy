@@ -96,13 +96,11 @@ func (r *CachingResolver) lookupAndCache(
 ) (res *ipResult, err error) {
 	now := time.Now()
 
-	// Due to TOCTOU, the cache can be only checked once for identical requests.
+	// Cache must be checked by a single goroutine to avoid write-after-check
+	// TOCTOU.
 	res = r.findCached(key, now)
-	if res != nil && res.addrs != nil {
-		return &ipResult{
-			addrs:  slices.Clone(res.addrs),
-			expire: res.expire,
-		}, nil
+	if res != nil {
+		return res, nil
 	}
 
 	res, err = r.resolver.lookupNetIP(ctx, key.network, key.lowercaseHost)

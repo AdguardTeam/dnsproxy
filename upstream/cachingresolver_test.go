@@ -100,10 +100,10 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 	t.Run("staleness", func(t *testing.T) {
 		now := time.Now()
-		cached, _ := r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP4, now)
+		cached := r.FindCached(intdnsproxytest.FQDN, bootstrap.NetworkIP4, now)
 		require.ElementsMatch(t, []netip.Addr{ip4}, cached)
 
-		cached, _ = r.FindCached(
+		cached = r.FindCached(
 			intdnsproxytest.FQDN,
 			bootstrap.NetworkIP4,
 			now.Add(smallTTL+time.Second),

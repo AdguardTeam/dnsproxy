@@ -15,19 +15,18 @@ func (r *CachingResolver) FindCached(
 	host string,
 	network bootstrap.Network,
 	now time.Time,
-) (addrs []netip.Addr, expire time.Time) {
+) (addrs []netip.Addr) {
 	key := cacheKey{
 		network:       network,
 		lowercaseHost: host,
 	}
 
 	res := r.findCached(key, now)
-
 	if res != nil {
-		return res.addrs, res.expire
+		return res.addrs
 	}
 
-	return nil, time.Time{}
+	return nil
 }
 
 // RequestResult exports the internal method r.request for testing.

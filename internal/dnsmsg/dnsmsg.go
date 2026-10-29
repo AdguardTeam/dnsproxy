@@ -1,3 +1,5 @@
+// Package dnsmsg contains common constants, functions, and types for inspecting
+// and constructing DNS messages.
 package dnsmsg
 
 import (
@@ -85,8 +87,8 @@ func calculateTTL(m *dns.Msg) (ttl uint32) {
 	}
 
 	switch {
-	case m.Rcode == dns.RcodeServerFailure && ttl > ServFailMaxCacheTTL:
-		return ServFailMaxCacheTTL
+	case m.Rcode == dns.RcodeServerFailure:
+		return min(ttl, ServFailMaxCacheTTL)
 	case ttl == math.MaxUint32:
 		return 0
 	default:
@@ -95,15 +97,12 @@ func calculateTTL(m *dns.Msg) (ttl uint32) {
 }
 
 // minTTL returns the minimum of h's ttl and the passed ttl.
-func minTTL(h *dns.RR_Header, ttl uint32) uint32 {
-	switch {
-	case h.Rrtype == dns.TypeOPT:
-		return ttl
-	case h.Ttl < ttl:
-		return h.Ttl
-	default:
-		return ttl
+func minTTL(h *dns.RR_Header, ttl uint32) (t uint32) {
+	if h.Rrtype != dns.TypeOPT {
+		ttl = min(h.Ttl, ttl)
 	}
+
+	return ttl
 }
 
 // isCacheableSucceded returns true if m contains useful data to be cached
@@ -117,7 +116,7 @@ func isCacheableSucceded(m *dns.Msg) (ok bool) {
 // hasIPAns check the m for containing at least one A or AAAA RR in answer
 // section.  m must not be nil.
 func hasIPAns(m *dns.Msg) (ok bool) {
-	return slices.ContainsFunc(m.Answer, func(rr dns.RR) bool {
+	return slices.ContainsFunc(m.Answer, func(rr dns.RR) (ok bool) {
 		t := rr.Header().Rrtype
 
 		return t == dns.TypeA || t == dns.TypeAAAA

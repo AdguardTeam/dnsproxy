@@ -58,10 +58,8 @@ func TestCachingResolver_staleness(t *testing.T) {
 		OnExchange: onExchange,
 	}
 
-	r := upstream.NewCachingResolver(&upstream.UpstreamResolver{
-		Clock:    &timeutil.SystemClock{},
-		Upstream: ups,
-	})
+	upsRslv := upstream.ResolverFromUpstream(ups, testLogger, nil)
+	r := upstream.NewCachingResolver(upsRslv)
 
 	require.True(t, t.Run("resolve", func(t *testing.T) {
 		testCases := []struct {
@@ -124,11 +122,7 @@ func newTestUpstreamResolver(
 		},
 	}
 
-	return &upstream.UpstreamResolver{
-		Upstream: ups,
-		Logger:   testLogger,
-		Clock:    clock,
-	}
+	return upstream.ResolverFromUpstream(ups, testLogger, clock)
 }
 
 // newOnExchange returns a new Exchange function for the upstream mock that

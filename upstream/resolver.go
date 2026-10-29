@@ -35,18 +35,17 @@ type ParallelResolver = bootstrap.ParallelResolver
 // response requirement in [ParallelResolver].
 type ConsequentResolver = bootstrap.ConsequentResolver
 
-// UpstreamResolver is a wrapper around Upstream that implements the
-// [bootstrap.Resolver] interface.
+// UpstreamResolver is a wrapper around Upstream that implements the [Resolver]
+// interface.  It must be created using the [NewUpstreamResolver] function.
 type UpstreamResolver struct {
 	// Upstream is used for lookups.  It must not be nil.
 	Upstream
 
-	// Logger logs messages related to the upstream resolver's operations.  It
-	// must not be nil.
-	Logger *slog.Logger
+	// logger logs messages related to the upstream resolver's operations.
+	logger *slog.Logger
 
-	// Clock provides the current time.  It must not be nil.
-	Clock timeutil.Clock
+	// clock is used to get the current time.
+	clock timeutil.Clock
 }
 
 // NewUpstreamResolver creates an upstream that can be used as bootstrap
@@ -57,6 +56,10 @@ type UpstreamResolver struct {
 // The created Upstream used by the UpstreamResolver uses the clone of the
 // provided options.
 func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
+	if opts == nil {
+		opts = &Options{}
+	}
+
 	ups, err := AddressToUpstream(resolverAddress, opts)
 	if err != nil {
 		return nil, fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
@@ -74,8 +77,8 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 
 	return &UpstreamResolver{
 		Upstream: ups,
-		Logger:   resolverOpts.Logger,
-		Clock:    resolverOpts.Clock,
+		logger:   resolverOpts.Logger,
+		clock:    resolverOpts.Clock,
 	}, validateBootstrap(ups)
 }
 
@@ -243,11 +246,14 @@ func (r *UpstreamResolver) request(
 	}
 
 	res = &ipResult{
-		expire: r.Clock.Now(),
+		expire: r.clock.Now(),
 		addrs:  make([]netip.Addr, 0, len(resp.Answer)),
 	}
 
-	minTTL := dnsmsg.CacheTTL(ctx, r.Logger, resp)
+	minTTL := dnsmsg.CacheTTL(ctx, r.logger, resp)
+	if minTTL == 0 {
+		return res, nil
+	}
 
 	for _, rr := range resp.Answer {
 		ip := proxyutil.IPFromRR(rr)

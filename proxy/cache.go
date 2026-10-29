@@ -380,6 +380,9 @@ func (c *cache) setWithSubnet(
 // of 5 minutes given by RFC 2308.
 //
 // See https://datatracker.ietf.org/doc/html/rfc2308#section-7.1.
+//
+// Deprecated: This value appears unused and will be removed in the future
+// releases.
 const ServFailMaxCacheTTL = dnsmsg.ServFailMaxCacheTTL
 
 // clearItems empties the simple cache.

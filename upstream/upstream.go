@@ -114,15 +114,10 @@ type Options struct {
 	PreferIPv6 bool
 }
 
-// Clone copies o to a new struct.  If o is nil, an empty Options struct is
-// returned.
+// Clone copies o to a new struct.  o must not be nil.
 //
 // NOTE:  Clone does not produce a deep copy of o.
 func (o *Options) Clone() (clone *Options) {
-	if o == nil {
-		return &Options{}
-	}
-
 	return &Options{
 		Bootstrap:                 o.Bootstrap,
 		Timeout:                   o.Timeout,
@@ -194,11 +189,12 @@ const (
 // If addr doesn't have port specified, the default port of the appropriate
 // protocol will be used.
 //
-// opts are applied to the u and shouldn't be modified afterwards, nil value is
-// valid.
-//
-// TODO(e.burkov):  Clone opts?
+// opts are cloned and then applied to the u.  opts may be nil.
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
+	if opts == nil {
+		opts = &Options{}
+	}
+
 	optsToUse := opts.Clone()
 
 	if optsToUse.Logger == nil {

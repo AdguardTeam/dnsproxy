@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,13 +36,10 @@ func TestNewUpstreamResolver(t *testing.T) {
 		},
 	}
 
-	r := &upstream.UpstreamResolver{
-		Upstream: ups,
-		Logger:   testLogger,
-		Clock:    &timeutil.SystemClock{},
-	}
+	r := upstream.ResolverFromUpstream(ups, testLogger, nil)
 
-	ipAddrs, err := r.LookupNetIP(context.Background(), "ip", "cloudflare-dns.com")
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	ipAddrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP, "cloudflare-dns.com")
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, ipAddrs)

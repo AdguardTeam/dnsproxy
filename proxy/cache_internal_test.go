@@ -690,7 +690,8 @@ func TestCache_getWithSubnet(t *testing.T) {
 	}).SetReply(req)
 
 	ctx = testutil.ContextWithTimeout(t, testTimeout)
-	c.setWithSubnet(ctx,
+	c.setWithSubnet(
+		ctx,
 		testLogger,
 		req,
 		resp,

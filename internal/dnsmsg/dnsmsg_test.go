@@ -30,6 +30,8 @@ const (
 )
 
 func TestCacheTTL(t *testing.T) {
+	t.Parallel()
+
 	const (
 		hostname = "AN.EXAMPLE."
 		cname    = "TRIPPLE.XX."
@@ -117,6 +119,8 @@ func TestCacheTTL(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			assert.Equal(t, tc.wantTTL, dnsmsg.CacheTTL(ctx, testLogger, tc.req))
 		})
@@ -124,8 +128,10 @@ func TestCacheTTL(t *testing.T) {
 }
 
 func TestCacheTTL_nodata_responses(t *testing.T) {
-	testIP := net.IPv4(127, 0, 0, 2)
-	testAnotherIP := net.IPv4(127, 0, 0, 3)
+	t.Parallel()
+
+	testIP := net.IPv4(192, 0, 2, 0)
+	testAnotherIP := net.IPv4(192, 0, 2, 1)
 
 	testNS := []dns.RR{
 		soaAns(testXX, testNS1, testMBox),
@@ -174,6 +180,8 @@ func TestCacheTTL_nodata_responses(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			assert.Equal(t, tc.wantTTL, dnsmsg.CacheTTL(ctx, testLogger, tc.req))
 		})
@@ -196,7 +204,7 @@ func aQuestions(name string) (q []dns.Question) {
 }
 
 // cnameAns creates a CNAME DNS resource record with the given name and target
-// CNAME.
+// CNAME.  It uses [testTTL] as the TTL value for the record.
 func cnameAns(name, cname string) (rr dns.RR) {
 	return &dns.CNAME{
 		Hdr: dns.RR_Header{
@@ -210,7 +218,7 @@ func cnameAns(name, cname string) (rr dns.RR) {
 }
 
 // soaAns creates an SOA DNS resource record with the given name, primary NS,
-// and mailbox.
+// and mailbox.  It uses [testTTL] as the TTL value for the record.
 func soaAns(name, ns, mbox string) (rr dns.RR) {
 	return &dns.SOA{
 		Hdr: dns.RR_Header{
@@ -225,7 +233,7 @@ func soaAns(name, ns, mbox string) (rr dns.RR) {
 }
 
 // nsAns creates an NS DNS resource record with the given name and authoritative
-// NS.
+// NS.  It uses [testTTL] as the TTL value for the record.
 func nsAns(name, ns string) (rr dns.RR) {
 	return &dns.NS{
 		Hdr: dns.RR_Header{
@@ -238,7 +246,8 @@ func nsAns(name, ns string) (rr dns.RR) {
 	}
 }
 
-// aAns creates an A DNS resource record with the given name and IP address.
+// aAns creates an A DNS resource record with the given name and IP address.  It
+// uses [testTTL] as the TTL value for the record.
 func aAns(name string, a net.IP) (rr dns.RR) {
 	return &dns.A{
 		Hdr: dns.RR_Header{

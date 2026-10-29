@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/netip"
@@ -482,13 +483,9 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 	_, dohPort, err := net.SplitHostPort(dohSrv.addr)
 	require.NoError(t, err)
 
-	badResolver := &UpstreamResolver{
-		Logger: testLogger,
-		Clock:  &timeutil.SystemClock{},
-		// TODO(m.kazantsev):  Do not pass a nil Upstream here, as it violates
-		// the UpstreamResolver contract.
-		Upstream: nil,
-	}
+	// TODO(m.kazantsev):  Do not pass an empty Upstream here, as it violates
+	// the contract of [ResolverFromUpstream].
+	badResolver := ResolverFromUpstream(nil, nil, nil)
 
 	dotStamp := (&dnsstamps.ServerStamp{
 		ServerAddrStr: netip.AddrPortFrom(netutil.IPv4Localhost(), uint16(dotSrv.port)).String(),
@@ -888,4 +885,26 @@ func (r *headerRecorder) headersWithLock() (res []qlog.PacketHeader) {
 // *headerRecorder.
 func (*headerRecorder) Close() (err error) {
 	return nil
+}
+
+// ResolverFromUpstream creates a new [UpstreamResolver] from the given
+// [Upstream].  u must not be nil.  logger and clock may be nil.
+func ResolverFromUpstream(
+	u Upstream,
+	logger *slog.Logger,
+	clock timeutil.Clock,
+) (r *UpstreamResolver) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	if clock == nil {
+		clock = &timeutil.SystemClock{}
+	}
+
+	return &UpstreamResolver{
+		Upstream: u,
+		logger:   logger,
+		clock:    clock,
+	}
 }

@@ -28,6 +28,12 @@ const (
 	// defaultTestTTL used to guarantee caching.
 	defaultTestTTL = 1000
 
+	// testCacheMinTTL is the minimum cache TTL for tests.
+	testCacheMinTTL = 20
+
+	// testCacheMaxTTL is the maximum cache TTL for tests.
+	testCacheMaxTTL = 40
+
 	// testOptimisticTTL is a common optimistic cache ttl value for tests.
 	testOptimisticTTL = 10 * time.Second
 
@@ -37,6 +43,21 @@ const (
 
 // testLogger is a common logger for tests.
 var testLogger = slogutil.NewDiscardLogger()
+
+// Client addresses for ECS cache tests.
+const (
+	testECSSubnetAddr       = "1.2.3.0:1234"
+	testECSSubnetCacheAddr  = "1.2.3.1:1234"
+	testECSOtherSubnetAddr  = "2.2.3.0:1234"
+	testECSGeneralAddr      = listenIP + ":1234"
+	testECSGeneralCacheAddr = "127.0.0.2:1234"
+)
+
+// Public client subnets for ECS cache tests.
+var (
+	testECSSubnetIP      = net.IP{1, 2, 3, 0}
+	testECSOtherSubnetIP = net.IP{2, 2, 3, 0}
+)
 
 // mustNew wraps [New] function failing the test on error.
 //
@@ -95,36 +116,6 @@ func newTestUpstreamWithExchange(
 	}
 }
 
-// newTxts returns new test TXT RR strings.
-func newTxts(tb testing.TB, txtDataLen int) (txts []string) {
-	tb.Helper()
-
-	const txtDataChunkLen = 255
-
-	txtDataChunkNum := txtDataLen / txtDataChunkLen
-	if txtDataLen%txtDataChunkLen > 0 {
-		txtDataChunkNum++
-	}
-
-	txts = make([]string, txtDataChunkNum)
-	randData := make([]byte, txtDataLen)
-	n, err := rand.Read(randData)
-	require.NoError(tb, err)
-	require.Equal(tb, txtDataLen, n)
-
-	for i, c := range randData {
-		randData[i] = c%26 + 'a'
-	}
-
-	// *dns.TXT requires splitting the actual data into 256-byte chunks.
-	for i := range txtDataChunkNum {
-		r := min(txtDataChunkLen*(i+1), txtDataLen)
-		txts[i] = string(randData[txtDataChunkLen*i : r])
-	}
-
-	return txts
-}
-
 // newDNSContext returns new DNS request message context with Proto set to
 // [ProtoUDP].  Constructs request message from the given parameters.
 func newDNSContext(
@@ -158,75 +149,173 @@ func newReq(domain string, qtype, qclass uint16) (req *dns.Msg) {
 	}
 }
 
-func TestProxy_Resolve_dnssecCache(t *testing.T) {
-	const (
-		host = "example.com"
+func TestProxy_Resolve_dnssecCacheA(t *testing.T) {
+	t.Parallel()
 
-		// Larger than UDP buffer size to invoke truncation.
-		txtDataLen = 1024
-	)
+	a := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, 0, dnsproxytest.IPv4.To4())
+	p, rrsig := setupProxyResolveDNSSECCache(t, a)
 
+	require.True(t, t.Run("no_edns", func(t *testing.T) {
+		testProxyResolveDNSSECCache(t, p, a, rrsig, 1, false)
+	}))
+
+	require.True(t, t.Run("edns", func(t *testing.T) {
+		testProxyResolveDNSSECCache(t, p, a, rrsig, 2, true)
+	}))
+}
+
+func TestProxy_Resolve_dnssecCacheTXT(t *testing.T) {
+	t.Parallel()
+
+	const txtDataLen = 1024
 	txt := &dns.TXT{
 		Hdr: dns.RR_Header{
-			Name:   dns.Fqdn(host),
+			Name:   dnsproxytest.FQDN,
 			Rrtype: dns.TypeTXT,
 			Class:  dns.ClassINET,
 		},
 		Txt: newTxts(t, txtDataLen),
 	}
+	p, rrsig := setupProxyResolveDNSSECCache(t, txt)
 
-	a := &dns.A{
-		Hdr: dns.RR_Header{
-			Name:   dns.Fqdn(host),
-			Rrtype: dns.TypeA,
-			Class:  dns.ClassINET,
-		},
-		A: net.IP{1, 2, 3, 4},
+	require.True(t, t.Run("no_edns", func(t *testing.T) {
+		testProxyResolveDNSSECCache(t, p, txt, rrsig, 1, false)
+	}))
+
+	require.True(t, t.Run("edns", func(t *testing.T) {
+		testProxyResolveDNSSECCache(t, p, txt, rrsig, 0, true)
+	}))
+}
+
+// newTxts returns new test TXT RR strings.
+func newTxts(tb testing.TB, txtDataLen int) (txts []string) {
+	tb.Helper()
+
+	const txtDataChunkLen = 255
+
+	txtDataChunkNum := txtDataLen / txtDataChunkLen
+	if txtDataLen%txtDataChunkLen > 0 {
+		txtDataChunkNum++
 	}
+
+	txts = make([]string, txtDataChunkNum)
+	randData := make([]byte, txtDataLen)
+	n, err := rand.Read(randData)
+	require.NoError(tb, err)
+	require.Equal(tb, txtDataLen, n)
+
+	for i, c := range randData {
+		randData[i] = c%26 + 'a'
+	}
+
+	for i := range txtDataChunkNum {
+		r := min(txtDataChunkLen*(i+1), txtDataLen)
+		txts[i] = string(randData[txtDataChunkLen*i : r])
+	}
+
+	return txts
+}
+
+func TestProxy_Resolve_dnssecCacheDS(t *testing.T) {
+	t.Parallel()
+
+	const digest = "736f6d652064656c65676174696f6e207369676e6572"
 
 	ds := &dns.DS{
 		Hdr: dns.RR_Header{
-			Name:   dns.Fqdn(host),
+			Name:   dnsproxytest.FQDN,
 			Rrtype: dns.TypeDS,
 			Class:  dns.ClassINET,
 		},
-		Digest: "736f6d652064656c65676174696f6e207369676e6572",
+		Digest: digest,
 	}
 
-	rrsig := &dns.RRSIG{
+	p, rrsig := setupProxyResolveDNSSECCache(t, ds)
+
+	require.True(t, t.Run("no_edns", func(t *testing.T) {
+		testProxyResolveDNSSECCache(t, p, ds, rrsig, 1, false)
+	}))
+
+	require.True(t, t.Run("edns", func(t *testing.T) {
+		testProxyResolveDNSSECCache(t, p, ds, rrsig, 2, true)
+	}))
+}
+
+// testProxyResolveDNSSECCache checks response filtering and caching.
+func testProxyResolveDNSSECCache(
+	tb testing.TB,
+	p *Proxy,
+	wantAns dns.RR,
+	rrsig *dns.RRSIG,
+	wantLen int,
+	edns bool,
+) {
+	tb.Cleanup(p.cache.items.Clear)
+
+	ansHdr := wantAns.Header()
+	dctx := newDNSContext(ansHdr.Name, ansHdr.Rrtype, ansHdr.Class, edns, dns.MinMsgSize)
+	err := p.Resolve(testutil.ContextWithTimeout(tb, defaultTimeout), dctx)
+	require.NoError(tb, err)
+
+	res := dctx.Res
+	require.NotNil(tb, res)
+
+	require.Len(tb, res.Answer, wantLen, res.Answer)
+	switch wantLen {
+	case 0:
+		assert.True(tb, res.Truncated)
+	case 1:
+		res.Answer[0].Header().Ttl = defaultTestTTL
+		assert.Equal(tb, wantAns, res.Answer[0])
+	case 2:
+		res.Answer[0].Header().Ttl = defaultTestTTL
+		assert.Equal(tb, wantAns, res.Answer[0])
+		assert.Equal(tb, rrsig, res.Answer[1])
+	default:
+		tb.Fatalf("wanted length has unexpected value %d", wantLen)
+	}
+
+	cached, expired, key := p.cache.get(dctx.Req)
+	require.NotNil(tb, cached)
+	require.Len(tb, cached.m.Answer, 2)
+
+	assert.False(tb, expired)
+	assert.Equal(tb, key, msgToKey(dctx.Req))
+
+	cached.m.Answer[0].Header().Ttl = defaultTestTTL
+	assert.Equal(tb, wantAns.String(), cached.m.Answer[0].String())
+	assert.Equal(tb, rrsig.String(), cached.m.Answer[1].String())
+}
+
+// setupProxyResolveDNSSECCache is a helper that creates a caching proxy and
+// signature for wantAns.
+func setupProxyResolveDNSSECCache(tb testing.TB, wantAns dns.RR) (p *Proxy, rrsig *dns.RRSIG) {
+	tb.Helper()
+
+	const signature = "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm"
+
+	ansHdr := wantAns.Header()
+	rrsig = &dns.RRSIG{
 		Hdr: dns.RR_Header{
-			Name:   dns.Fqdn(host),
+			Name:   ansHdr.Name,
 			Rrtype: dns.TypeRRSIG,
 			Class:  dns.ClassINET,
 			Ttl:    defaultTestTTL,
 		},
 		TypeCovered: dns.TypeA,
 		Algorithm:   8,
-		Labels:      2,
-		SignerName:  dns.Fqdn(host),
-		Signature:   "c29tZSBycnNpZyByZWxhdGVkIHN0dWZm",
+		Labels:      uint8(dns.CountLabel(ansHdr.Name)),
+		SignerName:  ansHdr.Name,
+		Signature:   signature,
 	}
 
 	u := &testUpstream{
 		OnExchange: func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = (&dns.Msg{}).SetReply(m)
 
-			q := m.Question[0]
-			switch q.Qtype {
-			case dns.TypeA:
-				resp.Answer = append(resp.Answer, a)
-			case dns.TypeTXT:
-				resp.Answer = append(resp.Answer, txt)
-			case dns.TypeDS:
-				resp.Answer = append(resp.Answer, ds)
-			default:
-				// Go on.  The RRSIG resource record is added afterward.  This
-				// upstream.Upstream implementation doesn't handle explicit
-				// requests for it.
-			}
-
-			if len(resp.Answer) > 0 {
-				resp.Answer[0].Header().Ttl = defaultTestTTL
+			if m.Question[0].Qtype == ansHdr.Rrtype {
+				resp.Answer = append(resp.Answer, wantAns)
+				ansHdr.Ttl = defaultTestTTL
 			}
 
 			if o := m.IsEdns0(); o != nil {
@@ -240,7 +329,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	p := mustNew(t, &Config{
+	p = mustNew(tb, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -251,86 +340,7 @@ func TestProxy_Resolve_dnssecCache(t *testing.T) {
 		CacheSizeBytes: dnsproxytest.CacheSize,
 	})
 
-	testCases := []struct {
-		wantAns dns.RR
-		name    string
-		wantLen int
-		edns    bool
-	}{{
-		wantAns: a,
-		name:    "a_noedns",
-		wantLen: 1,
-		edns:    false,
-	}, {
-		wantAns: a,
-		name:    "a_ends",
-		wantLen: 2,
-		edns:    true,
-	}, {
-		wantAns: txt,
-		name:    "txt_noedns",
-		wantLen: 1,
-		edns:    false,
-	}, {
-		wantAns: txt,
-		name:    "txt_edns",
-		// Truncated.
-		wantLen: 0,
-		edns:    true,
-	}, {
-		wantAns: ds,
-		name:    "ds_noedns",
-		wantLen: 1,
-		edns:    false,
-	}, {
-		wantAns: ds,
-		name:    "ds_edns",
-		wantLen: 2,
-		edns:    true,
-	}}
-
-	for _, tc := range testCases {
-		ansHdr := tc.wantAns.Header()
-		dctx := newDNSContext(ansHdr.Name, ansHdr.Rrtype, ansHdr.Class, tc.edns, txtDataLen/2)
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Cleanup(p.cache.items.Clear)
-
-			err := p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), dctx)
-			require.NoError(t, err)
-
-			res := dctx.Res
-			require.NotNil(t, res)
-
-			require.Len(t, res.Answer, tc.wantLen, res.Answer)
-			switch tc.wantLen {
-			case 0:
-				assert.True(t, res.Truncated)
-			case 1:
-				res.Answer[0].Header().Ttl = defaultTestTTL
-				assert.Equal(t, tc.wantAns, res.Answer[0])
-			case 2:
-				res.Answer[0].Header().Ttl = defaultTestTTL
-				assert.Equal(t, tc.wantAns, res.Answer[0])
-				assert.Equal(t, rrsig, res.Answer[1])
-			default:
-				t.Fatalf("wanted length has unexpected value %d", tc.wantLen)
-			}
-
-			cached, expired, key := p.cache.get(dctx.Req)
-			require.NotNil(t, cached)
-			require.Len(t, cached.m.Answer, 2)
-
-			assert.False(t, expired)
-			assert.Equal(t, key, msgToKey(dctx.Req))
-
-			// Just make it match.
-			cached.m.Answer[0].Header().Ttl = defaultTestTTL
-			assert.Equal(t, tc.wantAns.String(), cached.m.Answer[0].String())
-			assert.Equal(t, rrsig.String(), cached.m.Answer[1].String())
-		})
-
-	}
+	return p, rrsig
 }
 
 func TestProxy_Resolve_exchangeCustomUpstreamConfig(t *testing.T) {
@@ -490,14 +500,6 @@ func TestSetECS(t *testing.T) {
 
 func TestProxy_Resolve_ecs(t *testing.T) {
 	var (
-		ip1230 = net.IP{1, 2, 3, 0}
-		ip2230 = net.IP{2, 2, 3, 0}
-		ip4321 = net.IP{4, 3, 2, 1}
-		ip4322 = net.IP{4, 3, 2, 2}
-		ip4323 = net.IP{4, 3, 2, 3}
-	)
-
-	var (
 		ans      []dns.RR
 		ecsIP    net.IP
 		ecsReqIP net.IP
@@ -505,12 +507,6 @@ func TestProxy_Resolve_ecs(t *testing.T) {
 
 	onExchange := newECSReplyHandler(&ans, &ecsIP, &ecsReqIP)
 	u := newTestUpstreamWithExchange(t, onExchange)
-
-	ans = []dns.RR{&dns.A{
-		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
-		A:   ip4321,
-	}}
-	ecsIP = ip1230
 
 	prx := mustNew(t, &Config{
 		Logger:        testLogger,
@@ -527,117 +523,116 @@ func TestProxy_Resolve_ecs(t *testing.T) {
 
 	servicetest.RequireRun(t, prx, dnsproxytest.Timeout)
 
-	t.Run("cache_subnet", func(t *testing.T) {
-		d := &DNSContext{
-			Req:  dnsproxytest.NewTestRequestWithHost("host"),
-			Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
-		}
+	require.True(t, t.Run("cache_subnet", func(t *testing.T) {
+		ans = []dns.RR{dnsproxytest.NewRR(
+			t,
+			dnsproxytest.FQDN,
+			dns.TypeA,
+			dnsproxytest.TTL,
+			testCacheIP1,
+		)}
+		ecsIP = testECSSubnetIP
 
-		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-		err := prx.Resolve(ctx, d)
-		require.NoError(t, err)
+		testProxyResolveECS(t, prx, testECSSubnetAddr, testCacheIP1, ecsIP, &ecsReqIP)
+	}))
 
-		assert.Equal(t, net.IP{4, 3, 2, 1}, firstIP(d.Res))
-		assert.Equal(t, ip1230, ecsReqIP)
-	})
-
-	t.Run("serve_subnet_cache", func(t *testing.T) {
-		d := &DNSContext{
-			Req:  dnsproxytest.NewTestRequestWithHost("host"),
-			Addr: netip.MustParseAddrPort("1.2.3.1:1234"),
-		}
+	require.True(t, t.Run("serve_subnet_cache", func(t *testing.T) {
 		ans, ecsIP = nil, nil
-		ecsReqIP = nil
 
-		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-		err := prx.Resolve(ctx, d)
-		require.NoError(t, err)
+		testProxyResolveECS(t, prx, testECSSubnetCacheAddr, testCacheIP1, nil, &ecsReqIP)
+	}))
 
-		assert.Equal(t, ip4321, firstIP(d.Res))
-		assert.Nil(t, ecsReqIP)
-	})
+	require.True(t, t.Run("another_subnet", func(t *testing.T) {
+		ans = []dns.RR{dnsproxytest.NewRR(
+			t,
+			dnsproxytest.FQDN,
+			dns.TypeA,
+			dnsproxytest.TTL,
+			testCacheIP2,
+		)}
+		ecsIP = testECSOtherSubnetIP
 
-	t.Run("another_subnet", func(t *testing.T) {
-		d := &DNSContext{
-			Req:  dnsproxytest.NewTestRequestWithHost("host"),
-			Addr: netip.MustParseAddrPort("2.2.3.0:1234"),
-		}
-		ans = []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
-			A:   ip4322,
-		}}
-		ecsIP = ip2230
+		testProxyResolveECS(t, prx, testECSOtherSubnetAddr, testCacheIP2, ecsIP, &ecsReqIP)
+	}))
 
-		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-		err := prx.Resolve(ctx, d)
-		require.NoError(t, err)
-
-		assert.Equal(t, ip4322, firstIP(d.Res))
-		assert.Equal(t, ip2230, ecsReqIP)
-	})
-
-	t.Run("cache_general", func(t *testing.T) {
-		d := &DNSContext{
-			Req:  dnsproxytest.NewTestRequestWithHost("host"),
-			Addr: netip.MustParseAddrPort("127.0.0.1:1234"),
-		}
-		ans = []dns.RR{&dns.A{
-			Hdr: dns.RR_Header{Rrtype: dns.TypeA, Name: "host.", Ttl: 60},
-			A:   ip4323,
-		}}
+	require.True(t, t.Run("cache_general", func(t *testing.T) {
+		ans = []dns.RR{dnsproxytest.NewRR(
+			t,
+			dnsproxytest.FQDN,
+			dns.TypeA,
+			dnsproxytest.TTL,
+			testCacheIP3,
+		)}
 		ecsIP = nil
-		ecsReqIP = nil
 
-		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-		err := prx.Resolve(ctx, d)
-		require.NoError(t, err)
+		testProxyResolveECS(t, prx, testECSGeneralAddr, testCacheIP3, nil, &ecsReqIP)
+	}))
 
-		assert.Equal(t, ip4323, firstIP(d.Res))
-		assert.Nil(t, ecsReqIP)
-	})
-
-	t.Run("serve_general_cache", func(t *testing.T) {
-		d := &DNSContext{
-			Req:  dnsproxytest.NewTestRequestWithHost("host"),
-			Addr: netip.MustParseAddrPort("127.0.0.2:1234"),
-		}
+	require.True(t, t.Run("serve_general_cache", func(t *testing.T) {
 		ans, ecsIP = nil, nil
-		ecsReqIP = nil
 
-		ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-		err := prx.Resolve(ctx, d)
-		require.NoError(t, err)
+		testProxyResolveECS(t, prx, testECSGeneralCacheAddr, testCacheIP3, nil, &ecsReqIP)
+	}))
+}
 
-		assert.Equal(t, ip4323, firstIP(d.Res))
-		assert.Nil(t, ecsReqIP)
-	})
+// testProxyResolveECS resolves one request and checks its answer and upstream
+// ECS.
+func testProxyResolveECS(
+	tb testing.TB,
+	p *Proxy,
+	addr string,
+	wantIP net.IP,
+	wantECSIP net.IP,
+	ecsReqIP *net.IP,
+) {
+	*ecsReqIP = nil
+	d := &DNSContext{
+		Req:  dnsproxytest.NewTestRequest(),
+		Addr: netip.MustParseAddrPort(addr),
+	}
+
+	ctx := testutil.ContextWithTimeout(tb, defaultTimeout)
+	err := p.Resolve(ctx, d)
+	require.NoError(tb, err)
+
+	assert.Equal(tb, wantIP, firstIP(d.Res))
+	assert.Equal(tb, wantECSIP, *ecsReqIP)
 }
 
 func TestProxy_Resolve_ecsProxyCacheMinMaxTTL(t *testing.T) {
-	clientIP := net.IP{1, 2, 3, 0}
+	t.Parallel()
 
-	var (
-		ans   []dns.RR
-		ecsIP net.IP
-	)
+	t.Run("min", func(t *testing.T) {
+		t.Parallel()
 
-	onExchange := newECSReplyHandler(&ans, &ecsIP, nil)
-	u := newTestUpstreamWithExchange(t, onExchange)
+		testProxyResolveECSCacheTTL(t, testCacheMinTTL/2, testCacheMinTTL)
+	})
 
-	ans = []dns.RR{&dns.A{
-		Hdr: dns.RR_Header{
-			Rrtype: dns.TypeA,
-			Name:   "host.",
-			Ttl:    10,
-		},
-		A: net.IP{4, 3, 2, 1},
-	}}
-	ecsIP = clientIP
+	t.Run("max", func(t *testing.T) {
+		t.Parallel()
+
+		testProxyResolveECSCacheTTL(t, dnsproxytest.TTL, testCacheMaxTTL)
+	})
+}
+
+// testProxyResolveECSCacheTTL checks ECS cache TTL limits.
+func testProxyResolveECSCacheTTL(tb testing.TB, ttl, wantTTL uint32) {
+	req := dnsproxytest.NewTestRequest()
+	subnet := setECS(req, dnsproxytest.IPv4, 0)
+	ans := []dns.RR{dnsproxytest.NewRR(
+		tb,
+		dnsproxytest.FQDN,
+		dns.TypeA,
+		ttl,
+		dnsproxytest.IPv4.To4(),
+	)}
+	onExchange := newECSReplyHandler(&ans, &subnet.IP, nil)
+	u := newTestUpstreamWithExchange(tb, onExchange)
 
 	udpAddr := dnsproxytest.LocalhostAnyPortUDP
 	tcpAddr := dnsproxytest.LocalhostAnyPortTCP
 
-	prx := mustNew(t, &Config{
+	p := mustNew(tb, &Config{
 		Logger:                 testLogger,
 		UDPListenAddr:          []*net.UDPAddr{udpAddr},
 		TCPListenAddr:          []*net.TCPAddr{tcpAddr},
@@ -646,69 +641,76 @@ func TestProxy_Resolve_ecsProxyCacheMinMaxTTL(t *testing.T) {
 		DNSSECEnabled:          true,
 		EnableEDNSClientSubnet: true,
 		CacheEnabled:           true,
-		CacheMinTTL:            20,
-		CacheMaxTTL:            40,
+		CacheMinTTL:            testCacheMinTTL,
+		CacheMaxTTL:            testCacheMaxTTL,
 	})
 
-	servicetest.RequireRun(t, prx, dnsproxytest.Timeout)
+	servicetest.RequireRun(tb, p, dnsproxytest.Timeout)
 
-	// first request
 	d := &DNSContext{
-		Req:  dnsproxytest.NewTestRequestWithHost("host"),
-		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
+		Req:  req,
+		Addr: testRaddr,
 	}
-	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-	err := prx.Resolve(ctx, d)
-	require.NoError(t, err)
+	ctx := testutil.ContextWithTimeout(tb, defaultTimeout)
+	err := p.Resolve(ctx, d)
+	require.NoError(tb, err)
 
-	// get from cache - check min TTL
-	ci, expired, key := prx.cache.getWithSubnet(d.Req, &net.IPNet{
-		IP:   clientIP,
-		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-	})
-	assert.False(t, expired)
+	ci, expired, key := p.cache.getWithSubnet(d.Req, subnet)
+	require.NotNil(tb, ci)
+	require.Len(tb, ci.m.Answer, 1)
 
-	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.cacheMinTTL)
-
-	// 2nd request
-	clientIP = net.IP{1, 2, 4, 0}
-	d.Req = dnsproxytest.NewTestRequestWithHost("host")
-	d.Addr = netip.MustParseAddrPort("1.2.4.0:1234")
-	ans = []dns.RR{&dns.A{
-		Hdr: dns.RR_Header{
-			Rrtype: dns.TypeA,
-			Name:   "host.",
-			Ttl:    60,
-		},
-		A: net.IP{4, 3, 2, 1},
-	}}
-	ecsIP = clientIP
-
-	err = prx.Resolve(ctx, d)
-	require.NoError(t, err)
-
-	// get from cache - check max TTL
-	ci, expired, key = prx.cache.getWithSubnet(d.Req, &net.IPNet{
-		IP:   clientIP,
-		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
-	})
-	assert.False(t, expired)
-	assert.Equal(t, key, msgToKeyWithSubnet(d.Req, clientIP, 24))
-	assert.True(t, ci.m.Answer[0].Header().Ttl == prx.cacheMaxTTL)
+	ones, _ := subnet.Mask.Size()
+	assert.False(tb, expired)
+	assert.Equal(tb, key, msgToKeyWithSubnet(d.Req, subnet.IP, ones))
+	assert.Equal(tb, wantTTL, ci.m.Answer[0].Header().Ttl)
 }
 
 func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
-	const (
-		host             = "some.domain.name."
-		nonOptimisticTTL = 3600
-	)
+	t.Parallel()
 
+	p, firstCtx, secondCtx, out, in := setupProxyResolveWithOptimisticResolver()
+	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
+
+	err := p.Resolve(ctx, firstCtx)
+	require.NoError(t, err)
+	require.Len(t, firstCtx.Res.Answer, 1)
+
+	assert.Equal(t, uint32(testOptimisticTTL.Seconds()), firstCtx.Res.Answer[0].Header().Ttl)
+
+	<-out
+
+	err = p.Resolve(ctx, secondCtx)
+	require.NoError(t, err)
+	require.Len(t, secondCtx.Res.Answer, 1)
+
+	assert.Equal(t, uint32(testOptimisticTTL.Seconds()), secondCtx.Res.Answer[0].Header().Ttl)
+
+	in <- unit{}
+	<-out
+
+	data := p.cache.items.Get(msgToKey(firstCtx.Req))
+	unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
+	require.False(t, expired)
+	require.NotNil(t, unpacked)
+	require.Len(t, unpacked.m.Answer, 1)
+
+	assert.EqualValues(t, testTTL, unpacked.m.Answer[0].Header().Ttl)
+}
+
+// setupProxyResolveWithOptimisticResolver sets up the optimistic resolver for
+// test.
+func setupProxyResolveWithOptimisticResolver() (
+	p *Proxy,
+	firstCtx *DNSContext,
+	secondCtx *DNSContext,
+	out chan unit,
+	in chan unit,
+) {
 	buildCtx := func() (dctx *DNSContext) {
 		req := &dns.Msg{
 			Id: dns.Id(),
 			Question: []dns.Question{{
-				Name:   host,
+				Name:   dnsproxytest.FQDN,
 				Qtype:  dns.TypeA,
 				Qclass: dns.ClassINET,
 			}},
@@ -720,18 +722,18 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Answer = []dns.RR{&dns.A{
 			Hdr: dns.RR_Header{
-				Name:   host,
+				Name:   dnsproxytest.FQDN,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
 				Ttl:    ttl,
 			},
-			A: net.IP{1, 2, 3, 4},
+			A: dnsproxytest.IPv4.To4(),
 		}}
 
 		return resp
 	}
 
-	p := &Proxy{
+	p = &Proxy{
 		reqCtx:                   contextutil.EmptyConstructor{},
 		requestHandler:           DefaultHandler{},
 		cacheEnabled:             true,
@@ -746,10 +748,10 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	}
 
 	p.initCache()
-	out, in := make(chan unit), make(chan unit)
+	out, in = make(chan unit), make(chan unit)
 	p.shortFlighter.cr = &testCachingResolver{
 		onReplyFromUpstream: func(_ context.Context, dctx *DNSContext) (ok bool, err error) {
-			dctx.Res = buildResp(dctx.Req, nonOptimisticTTL)
+			dctx.Res = buildResp(dctx.Req, testTTL)
 
 			return true, nil
 		},
@@ -768,7 +770,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 
 	// Two different contexts are made to emulate two different requests
 	// with the same question section.
-	firstCtx, secondCtx := buildCtx(), buildCtx()
+	firstCtx, secondCtx = buildCtx(), buildCtx()
 
 	// Add expired response into cache.
 	req := firstCtx.Req.Copy()
@@ -784,54 +786,123 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	items.Set(key, data)
 	p.cache.items = items
 
-	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-
-	err := p.Resolve(ctx, firstCtx)
-	require.NoError(t, err)
-	require.Len(t, firstCtx.Res.Answer, 1)
-
-	assert.Equal(t, uint32(testOptimisticTTL.Seconds()), firstCtx.Res.Answer[0].Header().Ttl)
-
-	// Wait for optimisticResolver to reach the tested function.
-	<-out
-
-	err = p.Resolve(ctx, secondCtx)
-	require.NoError(t, err)
-	require.Len(t, secondCtx.Res.Answer, 1)
-
-	assert.Equal(t, uint32(testOptimisticTTL.Seconds()), secondCtx.Res.Answer[0].Header().Ttl)
-
-	// Continue and wait for it to finish.
-	in <- unit{}
-	<-out
-
-	// Should be served from cache.
-	data = p.cache.items.Get(msgToKey(firstCtx.Req))
-	unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
-	require.False(t, expired)
-	require.NotNil(t, unpacked)
-	require.Len(t, unpacked.m.Answer, 1)
-
-	assert.EqualValues(t, nonOptimisticTTL, unpacked.m.Answer[0].Header().Ttl)
+	return p, firstCtx, secondCtx, out, in
 }
 
-func TestProxy_ValidateRequest(t *testing.T) {
+func TestProxy_ValidateRequest_general(t *testing.T) {
 	t.Parallel()
 
-	const (
-		fqdn            = "test.example."
-		privateARPAFQDN = "1.100.51.198.in-addr.arpa."
-		publicARPAFQDN  = "8.8.8.8.in-addr.arpa."
-	)
+	p := setupProxyValidateRequest(t)
 
-	testAddr := netip.MustParseAddrPort("192.0.2.1:53")
-	privateAddr := netip.MustParseAddrPort("198.51.100.1:53")
+	testCases := []struct {
+		req       *dns.Msg
+		name      string
+		wantRcode int
+	}{{
+		name:      "valid_request",
+		req:       dnsproxytest.NewTestRequest(),
+		wantRcode: dns.RcodeSuccess,
+	}, {
+		name: "no_questions",
+		req: &dns.Msg{
+			Id:       dns.Id(),
+			Question: []dns.Question{},
+		},
+		wantRcode: dns.RcodeFormatError,
+	}, {
+		name:      "refuse_any",
+		req:       (&dns.Msg{}).SetQuestion(dnsproxytest.FQDN, dns.TypeANY),
+		wantRcode: dns.RcodeNotImplemented,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			testProxyValidateRequest(t, p, &DNSContext{
+				Req:  tc.req,
+				Addr: testRaddr,
+			}, tc.wantRcode)
+		})
+	}
+}
+
+func TestProxy_ValidateRequest_arpa(t *testing.T) {
+	t.Parallel()
+
+	p := setupProxyValidateRequest(t)
+	privateARPAFQDN, err := dns.ReverseAddr(testCacheIPStr3)
+	require.NoError(t, err)
+
+	publicARPAFQDN, err := dns.ReverseAddr(testIPStr1)
+	require.NoError(t, err)
+
+	privateAddr := netip.AddrPortFrom(netip.MustParseAddr(testCacheIPStr3), testRaddr.Port())
+	testCases := []struct {
+		addr            netip.AddrPort
+		name            string
+		fqdn            string
+		wantRcode       int
+		qtype           uint16
+		isPrivateClient bool
+	}{{
+		name:            "private_arpa_from_public_client",
+		fqdn:            privateARPAFQDN,
+		qtype:           dns.TypePTR,
+		addr:            testRaddr,
+		wantRcode:       dns.RcodeNameError,
+		isPrivateClient: false,
+	}, {
+		name:            "private_arpa_from_private_client",
+		fqdn:            privateARPAFQDN,
+		qtype:           dns.TypePTR,
+		addr:            privateAddr,
+		wantRcode:       dns.RcodeSuccess,
+		isPrivateClient: true,
+	}, {
+		name:            "private_arpa_soa_from_public_client",
+		fqdn:            privateARPAFQDN,
+		qtype:           dns.TypeSOA,
+		addr:            testRaddr,
+		wantRcode:       dns.RcodeNameError,
+		isPrivateClient: false,
+	}, {
+		name:            "private_arpa_ns_from_public_client",
+		fqdn:            privateARPAFQDN,
+		qtype:           dns.TypeNS,
+		addr:            testRaddr,
+		wantRcode:       dns.RcodeNameError,
+		isPrivateClient: false,
+	}, {
+		name:            "public_arpa",
+		fqdn:            publicARPAFQDN,
+		qtype:           dns.TypePTR,
+		addr:            testRaddr,
+		wantRcode:       dns.RcodeSuccess,
+		isPrivateClient: false,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			testProxyValidateRequest(t, p, &DNSContext{
+				Req:             (&dns.Msg{}).SetQuestion(tc.fqdn, tc.qtype),
+				Addr:            tc.addr,
+				IsPrivateClient: tc.isPrivateClient,
+			}, tc.wantRcode)
+		})
+	}
+}
+
+// setupProxyValidateRequest creates a proxy with request validation enabled.
+func setupProxyValidateRequest(tb testing.TB) (p *Proxy) {
+	tb.Helper()
 
 	privateNets := netutil.SliceSubnetSet{
 		netip.MustParsePrefix("198.51.100.0/24"),
 		netip.MustParsePrefix("203.0.113.0/8"),
 	}
-
 	ups := &testUpstream{
 		OnExchange: func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
 			resp = &dns.Msg{}
@@ -843,102 +914,26 @@ func TestProxy_ValidateRequest(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	p, err := New(&Config{
+	return mustNew(tb, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		UpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{ups}},
 		RefuseAny:      true,
 		PrivateSubnets: privateNets,
 	})
-	require.NoError(t, err)
+}
 
-	testCases := []struct {
-		req             *dns.Msg
-		addr            netip.AddrPort
-		name            string
-		wantRcode       int
-		isPrivateClient bool
-		wantNil         bool
-	}{{
-		name:            "valid_request",
-		req:             (&dns.Msg{}).SetQuestion(fqdn, dns.TypeA),
-		addr:            testAddr,
-		wantNil:         true,
-		isPrivateClient: false,
-	}, {
-		name: "no_questions",
-		req: &dns.Msg{
-			Id:       dns.Id(),
-			Question: []dns.Question{},
-		},
-		addr:            testAddr,
-		wantRcode:       dns.RcodeFormatError,
-		wantNil:         false,
-		isPrivateClient: false,
-	}, {
-		name:            "refuse_any",
-		req:             (&dns.Msg{}).SetQuestion(fqdn, dns.TypeANY),
-		addr:            testAddr,
-		wantRcode:       dns.RcodeNotImplemented,
-		wantNil:         false,
-		isPrivateClient: false,
-	}, {
-		name:            "private_arpa_from_public_client",
-		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypePTR),
-		addr:            testAddr,
-		wantRcode:       dns.RcodeNameError,
-		wantNil:         false,
-		isPrivateClient: false,
-	}, {
-		name:            "private_arpa_from_private_client",
-		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypePTR),
-		addr:            privateAddr,
-		wantNil:         true,
-		isPrivateClient: true,
-	}, {
-		name:            "private_arpa_soa_from_public_client",
-		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypeSOA),
-		addr:            testAddr,
-		wantRcode:       dns.RcodeNameError,
-		wantNil:         false,
-		isPrivateClient: false,
-	}, {
-		name:            "private_arpa_ns_from_public_client",
-		req:             (&dns.Msg{}).SetQuestion(privateARPAFQDN, dns.TypeNS),
-		addr:            testAddr,
-		wantRcode:       dns.RcodeNameError,
-		wantNil:         false,
-		isPrivateClient: false,
-	}, {
-		name:            "public_arpa",
-		req:             (&dns.Msg{}).SetQuestion(publicARPAFQDN, dns.TypePTR),
-		addr:            testAddr,
-		wantNil:         true,
-		isPrivateClient: false,
-	}}
+// testProxyValidateRequest checks request validation.
+func testProxyValidateRequest(tb testing.TB, p *Proxy, dctx *DNSContext, wantRcode int) {
+	resp := p.validateRequest(dctx)
+	if wantRcode == dns.RcodeSuccess {
+		assert.Nil(tb, resp)
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			dctx := &DNSContext{
-				Req:             tc.req,
-				Addr:            tc.addr,
-				IsPrivateClient: tc.isPrivateClient,
-			}
-
-			resp := p.validateRequest(dctx)
-
-			if tc.wantNil {
-				assert.Nil(t, resp)
-
-				return
-			}
-
-			require.NotNil(t, resp)
-			assert.Equal(t, tc.wantRcode, resp.Rcode)
-		})
+		return
 	}
+
+	require.NotNil(tb, resp)
+	assert.Equal(tb, wantRcode, resp.Rcode)
 }
 
 // testHandler is a mock request handler implementation to simplify

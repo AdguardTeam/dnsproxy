@@ -276,7 +276,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 // all data.  It returns the listener address and atomic counter for open
 // connections.  The listener is stopped at the end of the test.
 func listenAndDiscard(tb testing.TB) (addr net.Addr, open *atomic.Int32) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	l, err := net.Listen("tcp", localhostAnyPort.String())
 	require.NoError(tb, err)
 	testutil.CleanupAndRequireSuccess(tb, l.Close)
 
@@ -334,14 +334,17 @@ func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
 
 	const queriesCount = 10
 
+	pt := testutil.NewPanicT(t)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+
 	wg := &sync.WaitGroup{}
 	for range queriesCount {
 		wg.Go(func() {
-			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			_, exchErr := u.Exchange(ctx, createTestMessage())
-			assert.Error(t, exchErr)
+			assert.Error(pt, exchErr)
 		})
 	}
+
 	wg.Wait()
 
 	assert.EventuallyWithT(t, func(ct *assert.CollectT) {

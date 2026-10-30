@@ -39,6 +39,11 @@ const testTimeout = 2 * time.Second
 // testLogger is common logger for tests.
 var testLogger = slogutil.NewDiscardLogger()
 
+// localhostAnyPort represents the localhost address with any available port.
+//
+// TODO(e.burkov):  Consider moving to golibs.
+var localhostAnyPort = netip.AddrPortFrom(netutil.IPv4Localhost(), 0)
+
 // TODO(ameshkov): Make tests here not depend on external servers.
 
 func TestMain(m *testing.M) {

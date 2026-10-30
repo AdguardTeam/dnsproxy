@@ -53,8 +53,6 @@ type UpstreamResolver struct {
 // [AddressToUpstream].  If the upstream can't be used as a bootstrap, the
 // returned error will have the underlying type of [NotBootstrapError], and r
 // itself will be fully usable.  Closing r.Upstream is caller's responsibility.
-// The created Upstream used by the UpstreamResolver uses the clone of the
-// provided options.
 func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
 	if opts == nil {
 		opts = &Options{}
@@ -65,20 +63,18 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 		return nil, fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
 	}
 
-	resolverOpts := opts.Clone()
-
-	if resolverOpts.Logger == nil {
-		resolverOpts.Logger = slog.Default()
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
 	}
 
-	if resolverOpts.Clock == nil {
-		resolverOpts.Clock = &timeutil.SystemClock{}
+	if opts.Clock == nil {
+		opts.Clock = &timeutil.SystemClock{}
 	}
 
 	return &UpstreamResolver{
 		Upstream: ups,
-		logger:   resolverOpts.Logger,
-		clock:    resolverOpts.Clock,
+		logger:   opts.Logger,
+		clock:    opts.Clock,
 	}, validateBootstrap(ups)
 }
 
@@ -188,9 +184,7 @@ func (r *UpstreamResolver) lookupNetIP(
 
 	var errs []error
 	result = &ipResult{
-		// Set the slice initial capacity to 2, as we expect at most two results
-		// (IPv4 and IPv6).
-		addrs: make([]netip.Addr, 0, 2),
+		addrs: []netip.Addr{},
 	}
 
 	for range 2 {

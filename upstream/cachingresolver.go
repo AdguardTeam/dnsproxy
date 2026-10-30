@@ -34,14 +34,8 @@ type CachingResolver struct {
 // NewCachingResolver creates a new caching resolver that uses r for lookups.
 // r must not be nil.
 func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
-	clock := r.clock
-
-	if clock == nil {
-		clock = &timeutil.SystemClock{}
-	}
-
 	return &CachingResolver{
-		clock:    clock,
+		clock:    r.clock,
 		resolver: r,
 		mu:       &sync.RWMutex{},
 		cache:    map[cacheKey]*ipResult{},

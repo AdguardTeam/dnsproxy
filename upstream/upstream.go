@@ -114,7 +114,7 @@ type Options struct {
 	PreferIPv6 bool
 }
 
-// Clone copies o to a new struct.  o must not be nil.
+// Clone copies o to a new struct.
 //
 // NOTE:  Clone does not produce a deep copy of o.
 func (o *Options) Clone() (clone *Options) {

@@ -63,19 +63,21 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 		return nil, fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
 	}
 
-	if opts.Logger == nil {
-		opts.Logger = slog.Default()
-	}
-
-	if opts.Clock == nil {
-		opts.Clock = &timeutil.SystemClock{}
-	}
-
-	return &UpstreamResolver{
+	r = &UpstreamResolver{
 		Upstream: ups,
-		logger:   opts.Logger,
 		clock:    opts.Clock,
-	}, validateBootstrap(ups)
+		logger:   opts.Logger,
+	}
+
+	if r.logger == nil {
+		r.logger = slog.Default()
+	}
+
+	if r.clock == nil {
+		r.clock = &timeutil.SystemClock{}
+	}
+
+	return r, validateBootstrap(ups)
 }
 
 // NotBootstrapError is returned by [AddressToUpstream] when the parsed upstream
@@ -183,9 +185,7 @@ func (r *UpstreamResolver) lookupNetIP(
 	go r.resolveAsync(ctx, resCh, host, bootstrap.NetworkIP6)
 
 	var errs []error
-	result = &ipResult{
-		addrs: []netip.Addr{},
-	}
+	result = &ipResult{}
 
 	for range 2 {
 		switch res := <-resCh; res := res.(type) {

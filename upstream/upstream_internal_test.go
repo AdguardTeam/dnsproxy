@@ -483,8 +483,6 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 	_, dohPort, err := net.SplitHostPort(dohSrv.addr)
 	require.NoError(t, err)
 
-	// TODO(m.kazantsev):  Do not pass an empty Upstream here, as it violates
-	// the contract of [ResolverFromUpstream].
 	badResolver := ResolverFromUpstream(nil, nil, nil)
 
 	dotStamp := (&dnsstamps.ServerStamp{
@@ -888,12 +886,16 @@ func (*headerRecorder) Close() (err error) {
 }
 
 // ResolverFromUpstream creates a new [UpstreamResolver] from the given
-// [Upstream].  u must not be nil.  logger and clock may be nil.
+// [Upstream].  All arguments may be nil.
 func ResolverFromUpstream(
 	u Upstream,
 	logger *slog.Logger,
 	clock timeutil.Clock,
 ) (r *UpstreamResolver) {
+	if u == nil {
+		u = testUpstream{}
+	}
+
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -907,4 +909,28 @@ func ResolverFromUpstream(
 		logger:   logger,
 		clock:    clock,
 	}
+}
+
+// testUpstream is a test implementation of the [Upstream] interface all methods
+// of which panic.
+//
+// TODO(m.kazantsev):  Use dnsproxytest.Upstream.
+type testUpstream struct{}
+
+// type check
+var _ Upstream = (*testUpstream)(nil)
+
+// Address implements the [Upstream] interface for testUpstream.
+func (testUpstream) Address() (_ string) {
+	panic(testutil.UnexpectedCall())
+}
+
+// Close implements the [Upstream] interface for testUpstream.
+func (testUpstream) Close() (_ error) {
+	panic(testutil.UnexpectedCall())
+}
+
+// Exchange implements the [Upstream] interface for testUpstream.
+func (testUpstream) Exchange(ctx context.Context, req *dns.Msg) (_ *dns.Msg, _ error) {
+	panic(testutil.UnexpectedCall(ctx, req))
 }

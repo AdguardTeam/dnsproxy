@@ -144,7 +144,7 @@ const soaTTL = 40
 
 // onExchangeWithSOA is a common Exchange function for the upstream mock that
 // always responds with NXDOMAIN and includes a SOA record.
-var onExchangeWithSOA = func(req *dns.Msg) (resp *dns.Msg) {
+func onExchangeWithSOA(req *dns.Msg) (resp *dns.Msg) {
 	resp = (&dns.Msg{}).SetReply(req)
 	resp.Rcode = dns.RcodeNameError
 
@@ -170,6 +170,8 @@ var onExchangeWithSOA = func(req *dns.Msg) (resp *dns.Msg) {
 }
 
 func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
+	t.Parallel()
+
 	const servFailTTL = 30
 
 	now := time.Now()
@@ -203,6 +205,8 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			addrs, expire, err := tc.resolver.RequestResult(
 				ctx,
@@ -218,6 +222,8 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 }
 
 func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	clock := &faketime.Clock{
 		OnNow: func() time.Time {
@@ -244,6 +250,8 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			r := upstream.NewCachingResolver(tc.resolver)
 
 			ctx := testutil.ContextWithTimeout(t, testTimeout)

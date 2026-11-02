@@ -667,10 +667,8 @@ func respondToTestMessage(m *dns.Msg) (resp *dns.Msg) {
 // host name.
 func createHostTestMessage(host string) (req *dns.Msg) {
 	return &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
+		Id:               dns.Id(),
+		RecursionDesired: true,
 		Question: []dns.Question{{
 			Name:   dns.Fqdn(host),
 			Qtype:  dns.TypeA,

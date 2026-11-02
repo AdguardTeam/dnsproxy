@@ -162,12 +162,12 @@ func TestUpstreamDoH_raceReconnect(t *testing.T) {
 			t.Parallel()
 
 			const timeout = time.Millisecond * 100
-			var requestsCount int32
+			var requestsCount atomic.Int32
 
 			handlerFunc := createDoHHandlerFunc()
 			mux := http.NewServeMux()
 			mux.HandleFunc("/dns-query", func(w http.ResponseWriter, r *http.Request) {
-				newVal := atomic.AddInt32(&requestsCount, 1)
+				newVal := requestsCount.Add(1)
 				if newVal%10 == 0 {
 					time.Sleep(timeout * 2)
 				}

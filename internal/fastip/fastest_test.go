@@ -164,10 +164,8 @@ func newTestReq(tb testing.TB) (req *dns.Msg) {
 	domain := testReplacer.Replace(tb.Name())
 
 	return &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
+		Id:               dns.Id(),
+		RecursionDesired: true,
 		Question: []dns.Question{{
 			Name:   dns.Fqdn(domain),
 			Qtype:  dns.TypeA,

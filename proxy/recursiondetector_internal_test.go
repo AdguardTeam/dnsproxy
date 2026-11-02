@@ -28,9 +28,7 @@ func TestRecursionDetector_Check(t *testing.T) {
 		Qtype: dns.TypeAAAA,
 	}
 	sampleMsg := &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id: recID,
-		},
+		Id:       recID,
 		Question: []dns.Question{sampleQuestion},
 	}
 
@@ -90,9 +88,7 @@ func TestRecursionDetector_Suspect(t *testing.T) {
 		want int
 	}{{
 		msg: &dns.Msg{
-			MsgHdr: dns.MsgHdr{
-				Id: 1234,
-			},
+			Id: 1234,
 			Question: []dns.Question{{
 				Name:  "some.domain",
 				Qtype: dns.TypeA,
@@ -119,9 +115,7 @@ func BenchmarkMsgToSignature(b *testing.B) {
 	const name = "some.not.very.long.host.name"
 
 	msg := &dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id: 1234,
-		},
+		Id: 1234,
 		Question: []dns.Question{{
 			Name:  name,
 			Qtype: dns.TypeAAAA,

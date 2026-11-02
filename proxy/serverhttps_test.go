@@ -17,6 +17,7 @@ import (
 	proxytest "github.com/AdguardTeam/dnsproxy/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/httphdr"
 	"github.com/AdguardTeam/golibs/netutil/urlutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -68,14 +69,16 @@ func TestProxy_HandleDNSRequest_https(t *testing.T) {
 				HTTP3Enabled:    tc.http3,
 			}
 
-			tlsListenAddr := net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
-			quicListenAddr := net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)
+			tlsListenAddr := dnsproxytest.LocalhostAnyPortTCP
+			quicListenAddr := dnsproxytest.LocalhostAnyPortUDP
 			dnsProxy, err := proxy.New(&proxy.Config{
 				Logger:         testLogger,
 				TLSListenAddr:  []*net.TCPAddr{tlsListenAddr},
 				QUICListenAddr: []*net.UDPAddr{quicListenAddr},
 				TLSConfig:      tlsConf,
-				UpstreamConfig: newTestUpstreamConfig(t),
+				UpstreamConfig: &proxy.UpstreamConfig{
+					Upstreams: []upstream.Upstream{newTestUpstream(t)},
+				},
 				TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 				HTTPConfig:     httpConf,
 			})
@@ -150,13 +153,15 @@ func testProxyRealIPDetection(
 	}
 	trustedProxies := netip.PrefixFrom(trustedProxy, trustedProxy.BitLen())
 	dnsProxy, err := proxy.New(&proxy.Config{
-		Logger:         testLogger,
-		UpstreamConfig: newTestUpstreamConfig(tb),
+		Logger: testLogger,
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(tb)},
+		},
 		TrustedProxies: trustedProxies,
 		RequestHandler: reqHandler,
 		TLSConfig:      tlsConf,
-		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		TLSListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		HTTPConfig:     httpConf,
 	})
 	require.NoError(tb, err)

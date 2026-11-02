@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,8 +19,10 @@ func TestLookupNetIP(t *testing.T) {
 	t.Parallel()
 
 	conf := &Config{
-		Logger:         testLogger,
-		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
+		Logger: testLogger,
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 	}
 
 	p, err := New(conf)

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil/servicetest"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -43,10 +44,12 @@ func TestFilteringHandler(t *testing.T) {
 	dnsProxy := mustNew(t, &Config{
 		Logger:         testLogger,
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
-		UpstreamConfig: newTestUpstreamConfig(t, newTestUpstream(t)),
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(t)},
+		},
 		RequestHandler: reqHandler,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(dnsproxytest.LocalhostAnyPort)},
+		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 	})
 
 	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)

@@ -29,6 +29,8 @@ const (
 	testXX              = "XX."
 )
 
+// TODO(m.kazantsev):  Update this tests and get rid of duplicating tests from
+// the cache_internal_test.go.
 func TestCacheTTL(t *testing.T) {
 	t.Parallel()
 

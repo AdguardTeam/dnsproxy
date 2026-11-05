@@ -332,8 +332,7 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 	return glcache.New(conf)
 }
 
-// set stores response and upstream for req in the cache.  u and l must not be
-// nil.
+// set stores response and upstream for req in the cache. l must not be nil.
 func (c *cache) set(ctx context.Context, l *slog.Logger, req, m *dns.Msg, u upstream.Upstream) {
 	item := respToItem(ctx, l, m, u)
 	if item == nil {
@@ -350,8 +349,8 @@ func (c *cache) set(ctx context.Context, l *slog.Logger, req, m *dns.Msg, u upst
 }
 
 // setWithSubnet stores response and upstream with subnet in the cache.  The
-// given subnet mask and IP address are used to calculate the cache key.  u, n,
-// and l must not be nil.
+// given subnet mask and IP address are used to calculate the cache key.  n and
+// l must not be nil.
 func (c *cache) setWithSubnet(
 	ctx context.Context,
 	l *slog.Logger,

@@ -65,8 +65,10 @@ type Options struct {
 	// [slog.Default] is used.
 	Logger *slog.Logger
 
-	// Clock is used to get the current time.  If nil, the
-	// [timeutil.SystemClock] clock is used.
+	// Clock is used to get the current time.  Clock is not used directly by the
+	// upstream itself.  If nil, the [timeutil.SystemClock] clock is used.
+	//
+	// TODO(m.kazantsev):  Actually use the Clock in the upstream.
 	Clock timeutil.Clock
 
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property

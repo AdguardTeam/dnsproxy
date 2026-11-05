@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -69,13 +70,8 @@ func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamReso
 		logger:   opts.Logger,
 	}
 
-	if r.logger == nil {
-		r.logger = slog.Default()
-	}
-
-	if r.clock == nil {
-		r.clock = &timeutil.SystemClock{}
-	}
+	r.logger = cmp.Or(r.logger, slog.Default())
+	r.clock = cmp.Or[timeutil.Clock](r.clock, &timeutil.SystemClock{})
 
 	return r, validateBootstrap(ups)
 }
@@ -159,8 +155,9 @@ func (r *UpstreamResolver) LookupNetIP(
 // ipResult reflects a single A/AAAA record from the DNS response.  It's used
 // to cache the results of lookups.
 type ipResult struct {
-	expire time.Time
-	addrs  []netip.Addr
+	expire    time.Time
+	addrs     []netip.Addr
+	cacheable bool
 }
 
 // lookupNetIP performs a DNS lookup of host and returns the result.  network
@@ -185,13 +182,20 @@ func (r *UpstreamResolver) lookupNetIP(
 	go r.resolveAsync(ctx, resCh, host, bootstrap.NetworkIP6)
 
 	var errs []error
-	result = &ipResult{}
+	result = &ipResult{
+		cacheable: true,
+	}
 
+	// TODO(m.kazantsev):  Do not fail with an error if one of the IP families
+	// fails.
 	for range 2 {
 		switch res := <-resCh; res := res.(type) {
 		case error:
 			errs = append(errs, res)
+			result.cacheable = false
 		case *ipResult:
+			result.cacheable = result.cacheable && res.cacheable
+
 			if result.expire.Equal(time.Time{}) || res.expire.Before(result.expire) {
 				result.expire = res.expire
 			}
@@ -239,17 +243,15 @@ func (r *UpstreamResolver) request(
 		return res, err
 	}
 
+	minTTL := dnsmsg.CacheTTL(ctx, r.logger, resp)
+
 	res = &ipResult{
 		// TODO(m.kazantsev):  If one of the IP families has no alternative
 		// timeout set, both IPv4 and IPv6 are stale.  Consider refactoring the
 		// expiration logic.
-		expire: r.clock.Now(),
-		addrs:  make([]netip.Addr, 0, len(resp.Answer)),
-	}
-
-	minTTL := dnsmsg.CacheTTL(ctx, r.logger, resp)
-	if minTTL == 0 {
-		return res, nil
+		addrs:     make([]netip.Addr, 0, len(resp.Answer)),
+		expire:    r.clock.Now(),
+		cacheable: minTTL != 0,
 	}
 
 	for _, rr := range resp.Answer {

@@ -294,13 +294,13 @@ func newOnExchangeWithCalls(
 	cnt := atomic.Uint32{}
 
 	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
-		cnt.Add(1)
+		calls := cnt.Add(1)
 
-		if cnt.Load() == expectedCalls {
+		if calls == expectedCalls {
 			close(signalCh)
 		}
 
-		if cnt.Load() > expectedCalls {
+		if calls > expectedCalls {
 			panic(testutil.UnexpectedCall())
 		}
 

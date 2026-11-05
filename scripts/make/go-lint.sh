@@ -3,7 +3,7 @@
 # This comment is used to simplify checking local copies of the script.  Bump
 # this number every time a significant change is made to this script.
 #
-# AdGuard-Project-Version: 19
+# AdGuard-Project-Version: 20
 
 # TODO(a.garipov): Use set -o 'pipefail' when the image supports it
 set -e -f -u
@@ -162,7 +162,7 @@ fi
 
 run_linter "$go" tool gocyclo --over 10 .
 
-run_linter "$go" tool gocognit --over 10 .
+run_linter "$go" tool gocognit --exact-recursion --over 10 .
 
 run_linter "$go" tool ineffassign work
 

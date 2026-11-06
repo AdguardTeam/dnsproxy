@@ -9,25 +9,15 @@ import (
 	proxytest "github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestDNSContext_QueryStatistics(t *testing.T) {
-	t.Parallel()
-
-	testReq := &dns.Msg{
-		Question: []dns.Question{{
-			Name:   "test.",
-			Qtype:  dns.TypeA,
-			Qclass: dns.ClassINET,
-		}},
-	}
-
-	ups := &dnsproxytest.Upstream{
+// Common mock upsterams for tests.
+var (
+	testSuccessUpstream = &dnsproxytest.Upstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
 			return (&dns.Msg{}).SetReply(req), nil
 		},
@@ -35,20 +25,17 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	failUps := &dnsproxytest.Upstream{
-		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
-			return nil, errors.Error("exchange error")
+	testFailUpstream = &dnsproxytest.Upstream{
+		OnExchange: func(_ context.Context, _ *dns.Msg) (resp *dns.Msg, err error) {
+			return nil, assert.AnError
 		},
 		OnAddress: func() (addr string) { return "fail.upstream" },
 		OnClose:   func() (err error) { return nil },
 	}
+)
 
-	conf := &proxy.Config{
-		Logger:         testLogger,
-		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		TrustedProxies: proxytest.DefaultTrustedProxies,
-	}
+func TestDNSContext_QueryStatistics_loadBalance(t *testing.T) {
+	t.Parallel()
 
 	testCases := []struct {
 		wantErr           assert.ErrorAssertionFunc
@@ -57,7 +44,6 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		config            *proxy.UpstreamConfig
 		fallbackConfig    *proxy.UpstreamConfig
 		name              string
-		mode              proxy.UpstreamMode
 		wantMainCount     int
 		wantFallbackCount int
 	}{{
@@ -65,13 +51,12 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.False,
 		wantFallbackErr: assert.False,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
-		name:              "load_balance_success",
-		mode:              proxy.UpstreamModeLoadBalance,
+		name:              "success",
 		wantMainCount:     1,
 		wantFallbackCount: 0,
 	}, {
@@ -79,27 +64,56 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.True,
 		wantFallbackErr: assert.True,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps, failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream, testFailUpstream},
 		},
-		name:              "load_balance_bad",
-		mode:              proxy.UpstreamModeLoadBalance,
+		name:              "bad",
 		wantMainCount:     1,
 		wantFallbackCount: 2,
-	}, {
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertQueryStats(
+				t,
+				proxy.UpstreamModeLoadBalance,
+				tc.config,
+				tc.fallbackConfig,
+				tc.wantErr,
+				tc.wantMainCount,
+				tc.wantMainErr,
+				tc.wantFallbackCount,
+				tc.wantFallbackErr,
+			)
+		})
+	}
+}
+
+func TestDNSContext_QueryStatistics_parallel(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		wantErr           assert.ErrorAssertionFunc
+		wantMainErr       assert.BoolAssertionFunc
+		wantFallbackErr   assert.BoolAssertionFunc
+		config            *proxy.UpstreamConfig
+		fallbackConfig    *proxy.UpstreamConfig
+		name              string
+		wantMainCount     int
+		wantFallbackCount int
+	}{{
 		wantErr:         assert.NoError,
 		wantMainErr:     assert.False,
 		wantFallbackErr: assert.False,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups, failUps},
+			Upstreams: []upstream.Upstream{testSuccessUpstream, testFailUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
-		name:              "parallel_success",
-		mode:              proxy.UpstreamModeParallel,
+		name:              "success",
 		wantMainCount:     1,
 		wantFallbackCount: 0,
 	}, {
@@ -107,13 +121,12 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.True,
 		wantFallbackErr: assert.False,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
-		name:              "parallel_bad_fallback_success",
-		mode:              proxy.UpstreamModeParallel,
+		name:              "bad_fallback_success",
 		wantMainCount:     1,
 		wantFallbackCount: 1,
 	}, {
@@ -121,27 +134,56 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.True,
 		wantFallbackErr: assert.True,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps, failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream, testFailUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps, failUps, failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream, testFailUpstream, testFailUpstream},
 		},
-		name:              "parallel_bad",
-		mode:              proxy.UpstreamModeParallel,
+		name:              "bad",
 		wantMainCount:     2,
 		wantFallbackCount: 3,
-	}, {
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertQueryStats(
+				t,
+				proxy.UpstreamModeParallel,
+				tc.config,
+				tc.fallbackConfig,
+				tc.wantErr,
+				tc.wantMainCount,
+				tc.wantMainErr,
+				tc.wantFallbackCount,
+				tc.wantFallbackErr,
+			)
+		})
+	}
+}
+
+func TestDNSContext_QueryStatistics_fastest(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		wantErr           assert.ErrorAssertionFunc
+		wantMainErr       assert.BoolAssertionFunc
+		wantFallbackErr   assert.BoolAssertionFunc
+		config            *proxy.UpstreamConfig
+		fallbackConfig    *proxy.UpstreamConfig
+		name              string
+		wantMainCount     int
+		wantFallbackCount int
+	}{{
 		wantErr:         assert.NoError,
 		wantMainErr:     assert.False,
 		wantFallbackErr: assert.False,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
-		name:              "fastest_single_success",
-		mode:              proxy.UpstreamModeFastestAddr,
+		name:              "single_success",
 		wantMainCount:     1,
 		wantFallbackCount: 0,
 	}, {
@@ -149,13 +191,12 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.False,
 		wantFallbackErr: assert.False,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups, ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream, testSuccessUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
-		name:              "fastest_multiple_success",
-		mode:              proxy.UpstreamModeFastestAddr,
+		name:              "multiple_success",
 		wantMainCount:     2,
 		wantFallbackCount: 0,
 	}, {
@@ -163,13 +204,12 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.True,
 		wantFallbackErr: assert.False,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups, failUps},
+			Upstreams: []upstream.Upstream{testSuccessUpstream, testFailUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
-		name:              "fastest_mixed_success",
-		mode:              proxy.UpstreamModeFastestAddr,
+		name:              "mixed_success",
 		wantMainCount:     2,
 		wantFallbackCount: 0,
 	}, {
@@ -177,13 +217,12 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.True,
 		wantFallbackErr: assert.True,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps, failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream, testFailUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps, failUps, failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream, testFailUpstream, testFailUpstream},
 		},
-		name:              "fastest_multiple_bad",
-		mode:              proxy.UpstreamModeFastestAddr,
+		name:              "multiple_bad",
 		wantMainCount:     2,
 		wantFallbackCount: 3,
 	}, {
@@ -191,35 +230,24 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 		wantMainErr:     assert.True,
 		wantFallbackErr: assert.False,
 		config: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{failUps, failUps},
+			Upstreams: []upstream.Upstream{testFailUpstream, testFailUpstream},
 		},
 		fallbackConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{ups},
+			Upstreams: []upstream.Upstream{testSuccessUpstream},
 		},
-		name:              "fastest_bad_fallback_success",
-		mode:              proxy.UpstreamModeFastestAddr,
+		name:              "bad_fallback_success",
 		wantMainCount:     2,
 		wantFallbackCount: 1,
 	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			conf.UpstreamConfig = tc.config
-			conf.Fallbacks = tc.fallbackConfig
-			conf.UpstreamMode = tc.mode
-
-			p, err := proxy.New(conf)
-			require.NoError(t, err)
-
-			d := &proxy.DNSContext{Req: testReq}
-
-			err = p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
-			tc.wantErr(t, err)
-
-			stats := d.QueryStatistics()
 			assertQueryStats(
 				t,
-				stats,
+				proxy.UpstreamModeFastestAddr,
+				tc.config,
+				tc.fallbackConfig,
+				tc.wantErr,
 				tc.wantMainCount,
 				tc.wantMainErr,
 				tc.wantFallbackCount,
@@ -230,15 +258,38 @@ func TestDNSContext_QueryStatistics(t *testing.T) {
 }
 
 // assertQueryStats asserts the statistics using the provided parameters.
+//
+// TODO(f.setrakov): Consider moving arguments into a struct.
 func assertQueryStats(
 	tb testing.TB,
-	stats *proxy.QueryStatistics,
+	mode proxy.UpstreamMode,
+	config *proxy.UpstreamConfig,
+	fallbackConfig *proxy.UpstreamConfig,
+	wantErr assert.ErrorAssertionFunc,
 	wantMainCount int,
 	wantMainErr assert.BoolAssertionFunc,
 	wantFallbackCount int,
 	wantFallbackErr assert.BoolAssertionFunc,
 ) {
-	tb.Helper()
+	conf := &proxy.Config{
+		Logger:         testLogger,
+		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TrustedProxies: proxytest.DefaultTrustedProxies,
+		UpstreamConfig: config,
+		Fallbacks:      fallbackConfig,
+		UpstreamMode:   mode,
+	}
+
+	p, err := proxy.New(conf)
+	require.NoError(tb, err)
+
+	d := &proxy.DNSContext{Req: proxytest.NewTestRequest()}
+
+	err = p.Resolve(testutil.ContextWithTimeout(tb, defaultTimeout), d)
+	wantErr(tb, err)
+
+	stats := d.QueryStatistics()
 
 	main := stats.Main()
 	assert.Lenf(tb, main, wantMainCount, "main stats count")

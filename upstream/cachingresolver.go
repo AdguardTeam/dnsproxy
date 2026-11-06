@@ -77,11 +77,9 @@ func (r *CachingResolver) LookupNetIP(
 		return []netip.Addr{}, nil
 	}
 
-	if !res.cacheable {
-		return slices.Clone(res.addrs), nil
+	if res.cacheable {
+		r.setCached(key, res)
 	}
-
-	r.setCached(key, res)
 
 	return slices.Clone(res.addrs), nil
 }

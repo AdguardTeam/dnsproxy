@@ -23,9 +23,11 @@ import (
 // testSynTTL is a common TTL for DNS64 synthesized records.
 const testSynTTL uint32 = 600
 
-func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
-	fakeHost := proxytest.Host
+// testDNS64MappedIPv6 is a common DNS64 test IPv6.  It is a [proxytest.IPv4]
+// mapping under well known DNS64 prefix.
+var testDNS64MappedIPv6 = net.ParseIP("64:ff9b::c000:201")
 
+func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
 	ans := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, proxytest.TTL, proxytest.IPv4)
 	ups := &dnsproxytest.Upstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
@@ -36,14 +38,14 @@ func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
 
 			return resp, nil
 		},
-		OnAddress: func() (addr string) { return fakeHost },
+		OnAddress: func() (addr string) { return proxytest.Host },
 		OnClose:   func() (err error) { return nil },
 	}
 	localUps := &dnsproxytest.Upstream{
 		OnExchange: func(ctx context.Context, m *dns.Msg) (_ *dns.Msg, _ error) {
 			panic(testutil.UnexpectedCall(ctx, m))
 		},
-		OnAddress: func() (addr string) { return fakeHost },
+		OnAddress: func() (addr string) { return proxytest.Host },
 		OnClose:   func() (err error) { return nil },
 	}
 
@@ -197,23 +199,20 @@ func TestProxy_Resolve_dns64Simple(t *testing.T) {
 func TestProxy_Resolve_dns64Synthesis(t *testing.T) {
 	t.Parallel()
 
-	someIPv4 := net.IP{1, 2, 3, 4}
-	mappedIPv6 := net.ParseIP("64:ff9b::102:304")
-
 	const (
 		domainSOA     = "soa." + proxytest.FQDN
 		fqdnCNAMEOnly = "cname." + proxytest.FQDN
 		fqdnTerminal  = "terminal." + proxytest.FQDN
 	)
 
-	ansA := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 3600, someIPv4)
-	soaA := proxytest.NewRR(t, domainSOA, dns.TypeA, 3600, someIPv4)
+	ansA := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 3600, proxytest.IPv4)
+	soaA := proxytest.NewRR(t, domainSOA, dns.TypeA, 3600, proxytest.IPv4)
 	soa := proxytest.NewRR(t, domainSOA, dns.TypeSOA, testSynTTL+50, nil)
 	cnameAnswers := dns64AnswerMap{
 		dns.TypeA: {
 			dns64SectionAnswer: {
 				proxytest.NewRR(t, fqdnCNAMEOnly, dns.TypeCNAME, 3600, fqdnTerminal),
-				proxytest.NewRR(t, fqdnTerminal, dns.TypeA, 3600, someIPv4),
+				proxytest.NewRR(t, fqdnTerminal, dns.TypeA, 3600, proxytest.IPv4),
 			},
 		},
 		dns.TypeAAAA: {
@@ -244,7 +243,7 @@ func TestProxy_Resolve_dns64Synthesis(t *testing.T) {
 				Ttl:      testSynTTL,
 				Rdlength: 16,
 			},
-			AAAA: mappedIPv6,
+			AAAA: testDNS64MappedIPv6,
 		},
 	}
 
@@ -271,7 +270,7 @@ func TestProxy_Resolve_dns64Synthesis(t *testing.T) {
 				Ttl:      testSynTTL,
 				Rdlength: 16,
 			},
-			AAAA: mappedIPv6,
+			AAAA: testDNS64MappedIPv6,
 		}},
 		qtype: dns.TypeAAAA,
 	}, {
@@ -293,7 +292,7 @@ func TestProxy_Resolve_dns64Synthesis(t *testing.T) {
 				Ttl:      testSynTTL + 50,
 				Rdlength: 16,
 			},
-			AAAA: mappedIPv6,
+			AAAA: testDNS64MappedIPv6,
 		}},
 		qtype: dns.TypeAAAA,
 	}, {
@@ -349,14 +348,11 @@ func TestProxy_Resolve_dns64Filtered(t *testing.T) {
 func TestProxy_Resolve_dns64PTR(t *testing.T) {
 	t.Parallel()
 
-	someIPv4 := net.IP{1, 2, 3, 4}
-	mappedIPv6 := net.ParseIP("64:ff9b::102:304")
-
-	ptr64Domain, err := netutil.IPToReversedAddr(mappedIPv6)
+	ptr64Domain, err := netutil.IPToReversedAddr(testDNS64MappedIPv6)
 	require.NoError(t, err)
 	ptr64Domain = dns.Fqdn(ptr64Domain)
 
-	ptrGlobDomain, err := netutil.IPToReversedAddr(someIPv4)
+	ptrGlobDomain, err := netutil.IPToReversedAddr(proxytest.IPv4)
 	require.NoError(t, err)
 	ptrGlobDomain = dns.Fqdn(ptrGlobDomain)
 
@@ -474,7 +470,7 @@ func testProxyResolveDNS64(
 		CacheEnabled:   true,
 		UseDNS64:       true,
 		UsePrivateRDNS: true,
-		PrivateSubnets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		PrivateSubnets: netutil.SubnetSetFunc(netip.Addr.IsLoopback),
 	})
 	require.NoError(tb, err)
 	servicetest.RequireRun(tb, p, proxytest.Timeout)

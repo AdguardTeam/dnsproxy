@@ -118,7 +118,7 @@ func BenchmarkMsgToSignature(b *testing.B) {
 	const name = "some.not.very.long.host.name"
 
 	msg := &dns.Msg{
-		Id: dns.Id(),
+		Id: 1234,
 		Question: []dns.Question{{
 			Name:  name,
 			Qtype: dns.TypeAAAA,

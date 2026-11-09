@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Common mock upsterams for tests.
+// Common mock upstreams for tests.
 var (
 	testSuccessUpstream = &dnsproxytest.Upstream{
 		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
@@ -76,7 +76,7 @@ func TestDNSContext_QueryStatistics_loadBalance(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertQueryStats(
+			testQueryStats(
 				t,
 				proxy.UpstreamModeLoadBalance,
 				tc.config,
@@ -146,7 +146,7 @@ func TestDNSContext_QueryStatistics_parallel(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertQueryStats(
+			testQueryStats(
 				t,
 				proxy.UpstreamModeParallel,
 				tc.config,
@@ -242,7 +242,7 @@ func TestDNSContext_QueryStatistics_fastest(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertQueryStats(
+			testQueryStats(
 				t,
 				proxy.UpstreamModeFastestAddr,
 				tc.config,
@@ -257,10 +257,11 @@ func TestDNSContext_QueryStatistics_fastest(t *testing.T) {
 	}
 }
 
-// assertQueryStats asserts the statistics using the provided parameters.
+// testQueryStats ensures that proxy with given parameters returns correct query
+// statistics.
 //
 // TODO(f.setrakov): Consider moving arguments into a struct.
-func assertQueryStats(
+func testQueryStats(
 	tb testing.TB,
 	mode proxy.UpstreamMode,
 	config *proxy.UpstreamConfig,

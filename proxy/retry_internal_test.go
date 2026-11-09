@@ -11,8 +11,8 @@ import (
 
 // Common errors for tests.
 const (
-	errA errors.Error = "foo"
-	errB errors.Error = "bar"
+	testErrA errors.Error = "foo"
+	testErrB errors.Error = "bar"
 )
 
 // bindGood is a bind func that succeeds on every call.
@@ -22,7 +22,7 @@ func bindGood() (err error) {
 
 // bindBadOne is a bind func that returns [errA] on every call.
 func bindBadOne() (err error) {
-	return errA
+	return testErrA
 }
 
 // newBindBadBoth returns a bind func that fails with two different errors.
@@ -33,10 +33,10 @@ func newBindBadBoth() (f func() (err error)) {
 		if !returnedA {
 			returnedA = true
 
-			return errA
+			return testErrA
 		}
 
-		return errB
+		return testErrB
 	}
 }
 
@@ -69,11 +69,11 @@ func TestProxy_BindWithRetry(t *testing.T) {
 		name:    "no_error",
 	}, {
 		f:       bindBadOne,
-		wantErr: errA,
+		wantErr: testErrA,
 		name:    "one_error",
 	}, {
 		f:       newBindBadBoth(),
-		wantErr: errA,
+		wantErr: testErrA,
 		name:    "two_errors",
 	}, {
 		f:       newBindBadThenOK(),

@@ -39,11 +39,11 @@ type CachingResolver struct {
 // NewCachingResolver creates a new caching resolver that uses r for lookups.
 func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 	return &CachingResolver{
+		clock:    r.clock,
 		resolver: r,
 		mu:       &sync.RWMutex{},
 		queries:  &singleflight.Group{},
 		cache:    map[cacheKey]*ipResult{},
-		clock:    r.clock,
 	}
 }
 
@@ -51,6 +51,10 @@ func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 var _ Resolver = (*CachingResolver)(nil)
 
 // LookupNetIP implements the [Resolver] interface for *CachingResolver.
+//
+// NOTE:  Concurrent lookups for the same host and network share the context of
+// the caller that started them, so a waiter isn't interrupted by its own
+// cancelled ctx, but may fail if the initiating ctx was cancelled.
 func (r *CachingResolver) LookupNetIP(
 	ctx context.Context,
 	network bootstrap.Network,

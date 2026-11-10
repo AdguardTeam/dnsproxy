@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
@@ -14,6 +15,8 @@ import (
 )
 
 func TestRecursionDetector_Check(t *testing.T) {
+	t.Parallel()
+
 	rd := newRecursionDetector(0, 2)
 
 	const (
@@ -24,7 +27,7 @@ func TestRecursionDetector_Check(t *testing.T) {
 	const nonRecID = recID * 2
 
 	sampleQuestion := dns.Question{
-		Name:  "some.domain",
+		Name:  dnsproxytest.Host,
 		Qtype: dns.TypeAAAA,
 	}
 	sampleMsg := &dns.Msg{

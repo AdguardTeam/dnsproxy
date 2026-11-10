@@ -184,6 +184,7 @@ func TestProxy_Resolve_dnssecCacheTXT(t *testing.T) {
 			Class:  dns.ClassINET,
 		},
 	}
+	// TODO(f.setrakov): Consider adding stringutil.Chunk to golibs.
 	for chunk := range slices.Chunk([]byte(txtData), txtDataChunkLen) {
 		txt.Txt = append(txt.Txt, string(chunk))
 	}

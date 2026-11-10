@@ -49,6 +49,9 @@ var (
 
 	// IPv4 is a common IPv4 address for tests.
 	IPv4 = net.IPv4(192, 0, 2, 1)
+
+	// IPv6 is a common IPv6 address for tests.
+	IPv6 = net.ParseIP("2001:db8::1")
 )
 
 // DefaultTrustedProxies is a set of trusted proxies that includes all possible

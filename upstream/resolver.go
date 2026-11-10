@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -35,18 +36,17 @@ type ParallelResolver = bootstrap.ParallelResolver
 // response requirement in [ParallelResolver].
 type ConsequentResolver = bootstrap.ConsequentResolver
 
-// UpstreamResolver is a wrapper around Upstream that implements the
-// [bootstrap.Resolver] interface.
+// UpstreamResolver is a wrapper around Upstream that implements the [Resolver]
+// interface.  It must be created using the [NewUpstreamResolver] function.
 type UpstreamResolver struct {
 	// Upstream is used for lookups.  It must not be nil.
 	Upstream
 
-	// Logger logs messages related to the upstream resolver's operations.  It
-	// must not be nil.
-	Logger *slog.Logger
+	// logger logs messages related to the upstream resolver's operations.
+	logger *slog.Logger
 
-	// Clock provides the current time.  It must not be nil.
-	Clock timeutil.Clock
+	// clock is used to get the current time.
+	clock timeutil.Clock
 }
 
 // NewUpstreamResolver creates an upstream that can be used as bootstrap
@@ -55,28 +55,25 @@ type UpstreamResolver struct {
 // returned error will have the underlying type of [NotBootstrapError], and r
 // itself will be fully usable.  Closing r.Upstream is caller's responsibility.
 func NewUpstreamResolver(resolverAddress string, opts *Options) (r *UpstreamResolver, err error) {
-	upsOpts := &Options{}
-
-	// TODO(ameshkov):  Aren't other options needed here?
-	if opts != nil {
-		upsOpts.Timeout = opts.Timeout
-		upsOpts.VerifyServerCertificate = opts.VerifyServerCertificate
-		upsOpts.PreferIPv6 = opts.PreferIPv6
-		upsOpts.Logger = opts.Logger
+	if opts == nil {
+		opts = &Options{}
 	}
 
-	ups, err := AddressToUpstream(resolverAddress, upsOpts)
+	ups, err := AddressToUpstream(resolverAddress, opts)
 	if err != nil {
-		err = fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
-
-		return nil, err
+		return nil, fmt.Errorf("upstream bootstrap: creating upstream: %w", err)
 	}
 
-	return &UpstreamResolver{
+	r = &UpstreamResolver{
 		Upstream: ups,
-		Logger:   opts.Logger,
-		Clock:    opts.Clock,
-	}, validateBootstrap(ups)
+		clock:    opts.Clock,
+		logger:   opts.Logger,
+	}
+
+	r.logger = cmp.Or(r.logger, slog.Default())
+	r.clock = cmp.Or[timeutil.Clock](r.clock, &timeutil.SystemClock{})
+
+	return r, validateBootstrap(ups)
 }
 
 // NotBootstrapError is returned by [AddressToUpstream] when the parsed upstream
@@ -158,8 +155,9 @@ func (r *UpstreamResolver) LookupNetIP(
 // ipResult reflects a single A/AAAA record from the DNS response.  It's used
 // to cache the results of lookups.
 type ipResult struct {
-	expire time.Time
-	addrs  []netip.Addr
+	expire    time.Time
+	addrs     []netip.Addr
+	cacheable bool
 }
 
 // lookupNetIP performs a DNS lookup of host and returns the result.  network
@@ -185,15 +183,21 @@ func (r *UpstreamResolver) lookupNetIP(
 
 	var errs []error
 	result = &ipResult{
-		expire: r.Clock.Now(),
-		addrs:  make([]netip.Addr, 0, 2),
+		expire:    r.clock.Now(),
+		addrs:     make([]netip.Addr, 0, 2),
+		cacheable: true,
 	}
 
+	// TODO(m.kazantsev):  Do not fail with an error if one of the IP families
+	// fails.
 	for range 2 {
 		switch res := <-resCh; res := res.(type) {
 		case error:
 			errs = append(errs, res)
+			result.cacheable = false
 		case *ipResult:
+			result.cacheable = result.cacheable && res.cacheable
+
 			if result.expire.Equal(time.Time{}) || res.expire.Before(result.expire) {
 				result.expire = res.expire
 			}
@@ -209,9 +213,6 @@ func (r *UpstreamResolver) lookupNetIP(
 // addresses from the answer section of the response.  network must be either
 // [bootstrap.NetworkIP4], or [bootstrap.NetworkIP6].  host must be in a
 // lower-case FQDN form.
-//
-// TODO(e.burkov):  Consider NS and Extra sections when setting TTL.  Check out
-// what RFCs say about it.
 func (r *UpstreamResolver) request(
 	ctx context.Context,
 	host string,
@@ -244,12 +245,16 @@ func (r *UpstreamResolver) request(
 		return res, err
 	}
 
-	res = &ipResult{
-		expire: r.Clock.Now(),
-		addrs:  make([]netip.Addr, 0, len(resp.Answer)),
-	}
+	minTTL := dnsmsg.CacheTTL(ctx, r.logger, resp)
 
-	minTTL := dnsmsg.CacheTTL(resp, r.Logger)
+	res = &ipResult{
+		// TODO(m.kazantsev):  If one of the IP families has no alternative
+		// timeout set, both IPv4 and IPv6 are stale.  Consider refactoring the
+		// expiration logic.
+		addrs:     make([]netip.Addr, 0, len(resp.Answer)),
+		expire:    r.clock.Now(),
+		cacheable: minTTL != 0,
+	}
 
 	for _, rr := range resp.Answer {
 		ip := proxyutil.IPFromRR(rr)

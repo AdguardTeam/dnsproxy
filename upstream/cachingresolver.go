@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/miekg/dns"
 	"golang.org/x/sync/singleflight"
 )
@@ -17,6 +18,9 @@ import (
 // CachingResolver is a [Resolver] that caches the results of lookups.  It's
 // required to be created with [NewCachingResolver].
 type CachingResolver struct {
+	// clock is used to get the current time.
+	clock timeutil.Clock
+
 	// resolver is the underlying resolver to use for lookups.
 	resolver *UpstreamResolver
 
@@ -39,6 +43,7 @@ func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 		mu:       &sync.RWMutex{},
 		queries:  &singleflight.Group{},
 		cache:    map[cacheKey]*ipResult{},
+		clock:    r.clock,
 	}
 }
 
@@ -94,7 +99,7 @@ func (r *CachingResolver) lookupAndCache(
 	ctx context.Context,
 	key cacheKey,
 ) (res *ipResult, err error) {
-	now := time.Now()
+	now := r.clock.Now()
 
 	// Cache must be checked by a single goroutine to avoid write-after-check
 	// TOCTOU.
@@ -110,8 +115,12 @@ func (r *CachingResolver) lookupAndCache(
 	}
 
 	// Do not cache empty results.
-	if res == nil || len(res.addrs) == 0 {
+	if len(res.addrs) == 0 {
 		return nil, nil
+	}
+
+	if res.cacheable {
+		r.setCached(key, res)
 	}
 
 	r.setCached(key, res)

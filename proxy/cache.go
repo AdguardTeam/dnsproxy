@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"log/slog"
 	"net"
@@ -57,9 +58,14 @@ type cacheItem struct {
 }
 
 // respToItem converts the pair of the response and upstream resolved the one
-// into item for storing it in cache.  l must not be nil.
-func (c *cache) respToItem(m *dns.Msg, u upstream.Upstream, l *slog.Logger) (item *cacheItem) {
-	ttl := dnsmsg.CacheTTL(m, l)
+// into item for storing it in cache.  l and m must not be nil.
+func respToItem(
+	ctx context.Context,
+	l *slog.Logger,
+	m *dns.Msg,
+	u upstream.Upstream,
+) (item *cacheItem) {
+	ttl := dnsmsg.CacheTTL(ctx, l, m)
 	if ttl == 0 {
 		return nil
 	}
@@ -326,10 +332,9 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 	return glcache.New(conf)
 }
 
-// set stores response and upstream for req in the cache.  u and l must not be
-// nil.
-func (c *cache) set(req, m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
-	item := c.respToItem(m, u, l)
+// set stores response and upstream for req in the cache. l must not be nil.
+func (c *cache) set(ctx context.Context, l *slog.Logger, req, m *dns.Msg, u upstream.Upstream) {
+	item := respToItem(ctx, l, m, u)
 	if item == nil {
 		return
 	}
@@ -344,10 +349,17 @@ func (c *cache) set(req, m *dns.Msg, u upstream.Upstream, l *slog.Logger) {
 }
 
 // setWithSubnet stores response and upstream with subnet in the cache.  The
-// given subnet mask and IP address are used to calculate the cache key.  u, n,
-// and l must not be nil.
-func (c *cache) setWithSubnet(req, m *dns.Msg, u upstream.Upstream, n *net.IPNet, l *slog.Logger) {
-	item := c.respToItem(m, u, l)
+// given subnet mask and IP address are used to calculate the cache key.  n and
+// l must not be nil.
+func (c *cache) setWithSubnet(
+	ctx context.Context,
+	l *slog.Logger,
+	req *dns.Msg,
+	m *dns.Msg,
+	u upstream.Upstream,
+	n *net.IPNet,
+) {
+	item := respToItem(ctx, l, m, u)
 	if item == nil {
 		return
 	}
@@ -361,6 +373,16 @@ func (c *cache) setWithSubnet(req, m *dns.Msg, u upstream.Upstream, n *net.IPNet
 
 	c.itemsWithSubnet.Set(key, packed)
 }
+
+// ServFailMaxCacheTTL is the maximum time-to-live value for caching
+// SERVFAIL responses in seconds.  It's consistent with the upper constraint
+// of 5 minutes given by RFC 2308.
+//
+// See https://datatracker.ietf.org/doc/html/rfc2308#section-7.1.
+//
+// Deprecated: This value appears unused and will be removed in the future
+// releases.
+const ServFailMaxCacheTTL = dnsmsg.ServFailMaxCacheTTL
 
 // clearItems empties the simple cache.
 func (c *cache) clearItems() {

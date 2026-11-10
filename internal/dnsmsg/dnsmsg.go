@@ -1,8 +1,12 @@
+// Package dnsmsg contains common constants, functions, and types for inspecting
+// and constructing DNS messages.
 package dnsmsg
 
 import (
+	"context"
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/miekg/dns"
 )
@@ -20,22 +24,22 @@ const ServFailMaxCacheTTL = 30
 //
 // See https://datatracker.ietf.org/doc/html/rfc2308#section-2.1,
 // https://datatracker.ietf.org/doc/html/rfc2308#section-2.2.
-func CacheTTL(m *dns.Msg, l *slog.Logger) (ttl uint32) {
+func CacheTTL(ctx context.Context, l *slog.Logger, m *dns.Msg) (ttl uint32) {
 	switch {
 	case m == nil:
 		return 0
 	case m.Truncated:
-		l.Debug("truncated message; not caching")
+		l.DebugContext(ctx, "truncated message; not caching")
 
 		return 0
 	case len(m.Question) != 1:
-		l.Debug("message with wrong number of questions; not caching")
+		l.DebugContext(ctx, "message with wrong number of questions; not caching")
 
 		return 0
 	default:
 		ttl = calculateTTL(m)
 		if ttl == 0 {
-			l.Debug("ttl calculated to be 0; not caching")
+			l.DebugContext(ctx, "ttl calculated to be 0; not caching")
 
 			return 0
 		}
@@ -47,17 +51,19 @@ func CacheTTL(m *dns.Msg, l *slog.Logger) (ttl uint32) {
 			return ttl
 		}
 
-		l.Debug("not a cacheable noerror response; not caching")
+		l.DebugContext(ctx, "not a cacheable noerror response; not caching")
 	case dns.RcodeNameError:
 		if isCacheableNegative(m) {
 			return ttl
 		}
 
-		l.Debug("not a cacheable nxdomain response; not caching")
+		l.DebugContext(ctx, "not a cacheable nxdomain response; not caching")
 	case dns.RcodeServerFailure:
+		l.DebugContext(ctx, "server failure response; caching", "ttl", ttl)
+
 		return ttl
 	default:
-		l.Debug("response code %s; not caching", "rcode", dns.RcodeToString[rcode])
+		l.DebugContext(ctx, "response code; not caching", "rcode", dns.RcodeToString[rcode])
 	}
 
 	return 0
@@ -81,8 +87,8 @@ func calculateTTL(m *dns.Msg) (ttl uint32) {
 	}
 
 	switch {
-	case m.Rcode == dns.RcodeServerFailure && ttl > ServFailMaxCacheTTL:
-		return ServFailMaxCacheTTL
+	case m.Rcode == dns.RcodeServerFailure:
+		return min(ttl, ServFailMaxCacheTTL)
 	case ttl == math.MaxUint32:
 		return 0
 	default:
@@ -91,15 +97,12 @@ func calculateTTL(m *dns.Msg) (ttl uint32) {
 }
 
 // minTTL returns the minimum of h's ttl and the passed ttl.
-func minTTL(h *dns.RR_Header, ttl uint32) uint32 {
-	switch {
-	case h.Rrtype == dns.TypeOPT:
-		return ttl
-	case h.Ttl < ttl:
-		return h.Ttl
-	default:
-		return ttl
+func minTTL(h *dns.RR_Header, ttl uint32) (t uint32) {
+	if h.Rrtype != dns.TypeOPT {
+		ttl = min(h.Ttl, ttl)
 	}
+
+	return ttl
 }
 
 // isCacheableSucceded returns true if m contains useful data to be cached
@@ -111,19 +114,18 @@ func isCacheableSucceded(m *dns.Msg) (ok bool) {
 }
 
 // hasIPAns check the m for containing at least one A or AAAA RR in answer
-// section.
+// section.  m must not be nil.
 func hasIPAns(m *dns.Msg) (ok bool) {
-	for _, rr := range m.Answer {
-		if t := rr.Header().Rrtype; t == dns.TypeA || t == dns.TypeAAAA {
-			return true
-		}
-	}
+	return slices.ContainsFunc(m.Answer, func(rr dns.RR) (ok bool) {
+		t := rr.Header().Rrtype
 
-	return false
+		return t == dns.TypeA || t == dns.TypeAAAA
+	})
 }
 
 // isCacheableNegative returns true if m's header has at least a single SOA RR
-// and no NS records so that it can be declared authoritative.
+// and no NS records so that it can be declared authoritative.  m must not be
+// nil.
 //
 // See https://datatracker.ietf.org/doc/html/rfc2308#section-5 for the
 // information on the responses from the authoritative server that should be

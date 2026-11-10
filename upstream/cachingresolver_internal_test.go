@@ -8,7 +8,8 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 )
 
-// FindCached exports the internal method r.findCached for testing.
+// FindCached exports the internal method r.findCached for testing.  host must
+// be lowercased.
 //
 // TODO(e.burkov):  Find a way of testing without it.
 func (r *CachingResolver) FindCached(

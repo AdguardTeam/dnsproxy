@@ -183,8 +183,6 @@ func (r *UpstreamResolver) lookupNetIP(
 
 	var errs []error
 	result = &ipResult{
-		expire:    r.clock.Now(),
-		addrs:     make([]netip.Addr, 0, 2),
 		cacheable: true,
 	}
 

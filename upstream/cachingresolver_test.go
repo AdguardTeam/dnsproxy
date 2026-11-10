@@ -2,6 +2,7 @@ package upstream_test
 
 import (
 	"context"
+	"net"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -116,7 +117,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 func newTestUpstreamResolver(
 	tb testing.TB,
 	clock timeutil.Clock,
-	onExchange func(req *dns.Msg) (resp *dns.Msg),
+	onExchange func(req *dns.Msg) (resp *dns.Msg, err error),
 ) (r *upstream.UpstreamResolver) {
 	tb.Helper()
 
@@ -124,7 +125,7 @@ func newTestUpstreamResolver(
 		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 		OnExchange: func(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
-			return onExchange(req), nil
+			return onExchange(req)
 		},
 	}
 
@@ -133,16 +134,14 @@ func newTestUpstreamResolver(
 
 // newOnExchange returns a new Exchange function for the upstream mock that
 // always responds with the given rcode.
-//
-// TODO(m.kazantsev):  Add an error argument to the method signature.
-func newOnExchange(tb testing.TB, rcode int) (f func(req *dns.Msg) (resp *dns.Msg)) {
+func newOnExchange(tb testing.TB, rcode int) (f func(req *dns.Msg) (resp *dns.Msg, err error)) {
 	tb.Helper()
 
-	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = rcode
 
-		return resp
+		return resp, nil
 	}
 
 	return onExchange
@@ -154,9 +153,7 @@ const soaTTL = 40
 
 // onExchangeWithSOA is a common Exchange function for the upstream mock that
 // always responds with NXDOMAIN and includes a SOA record.
-//
-// TODO(m.kazantsev):  Add an error argument to the method signature.
-func onExchangeWithSOA(req *dns.Msg) (resp *dns.Msg) {
+func onExchangeWithSOA(req *dns.Msg) (resp *dns.Msg, err error) {
 	resp = (&dns.Msg{}).SetReply(req)
 	resp.Rcode = dns.RcodeNameError
 
@@ -178,7 +175,7 @@ func onExchangeWithSOA(req *dns.Msg) (resp *dns.Msg) {
 
 	resp.Ns = []dns.RR{soa}
 
-	return resp
+	return resp, nil
 }
 
 func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
@@ -188,7 +185,7 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() time.Time {
+		OnNow: func() (t time.Time) {
 			return now
 		},
 	}
@@ -240,7 +237,7 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() time.Time {
+		OnNow: func() (t time.Time) {
 			return now
 		},
 	}
@@ -286,19 +283,17 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 // newOnExchangeWithCalls returns a new Exchange function for the upstream
 // mock that always responds with the given rcode.  If the number of calls
 // exceeds expectedCalls, it panics.
-//
-// TODO(m.kazantsev):  Add an error argument to the method signature.
 func newOnExchangeWithCalls(
 	tb testing.TB,
 	signalCh chan struct{},
 	expectedCalls uint32,
 	rcode int,
-) (f func(req *dns.Msg) (resp *dns.Msg)) {
+) (f func(req *dns.Msg) (resp *dns.Msg, err error)) {
 	tb.Helper()
 
 	cnt := atomic.Uint32{}
 
-	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		calls := cnt.Add(1)
 
 		if calls == expectedCalls {
@@ -312,7 +307,7 @@ func newOnExchangeWithCalls(
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = rcode
 
-		return resp
+		return resp, nil
 	}
 
 	return onExchange
@@ -325,28 +320,20 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() time.Time {
+		OnNow: func() (t time.Time) {
 			return now
 		},
 	}
 
 	addr := netip.MustParseAddr(testIPv4)
-	ip := addr.AsSlice()
+	var ip net.IP = addr.AsSlice()
 
-	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = dns.RcodeSuccess
-		resp.Answer = append(resp.Answer, &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   req.Question[0].Name,
-				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
-				Ttl:    60,
-			},
-			A: ip,
-		})
+		resp.Answer = append(resp.Answer, proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 60, ip))
 
-		return resp
+		return resp, nil
 	}
 
 	r := upstream.NewCachingResolver(newTestUpstreamResolver(t, clock, onExchange))

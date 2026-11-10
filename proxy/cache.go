@@ -374,16 +374,6 @@ func (c *cache) setWithSubnet(
 	c.itemsWithSubnet.Set(key, packed)
 }
 
-// ServFailMaxCacheTTL is the maximum time-to-live value for caching
-// SERVFAIL responses in seconds.  It's consistent with the upper constraint
-// of 5 minutes given by RFC 2308.
-//
-// See https://datatracker.ietf.org/doc/html/rfc2308#section-7.1.
-//
-// Deprecated: This value appears unused and will be removed in the future
-// releases.
-const ServFailMaxCacheTTL = dnsmsg.ServFailMaxCacheTTL
-
 // clearItems empties the simple cache.
 func (c *cache) clearItems() {
 	c.itemsLock.Lock()

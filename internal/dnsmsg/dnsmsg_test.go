@@ -2,10 +2,12 @@ package dnsmsg_test
 
 import (
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
@@ -21,23 +23,41 @@ var testTimeout = 1 * time.Second
 // testTTL is the common TTL value for tests.
 const testTTL = 3600
 
-// Shared consts.
+// Common IP address strings for cache tests.
 const (
-	testAnotherHostname = "ANOTHER.EXAMPLE."
-	testMBox            = "HOSTMASTER.NS1.XX."
-	testNS1, testNS2    = "NS1.XX.", "NS2.XX."
-	testXX              = "XX."
+	testCacheIPStr1 = "192.0.2.65"
+	testCacheIPStr2 = "192.0.2.129"
 )
 
-// TODO(m.kazantsev):  Update this tests and get rid of duplicating tests from
-// the cache_internal_test.go.
+// Common parsed IP addresses for cache tests.
+var (
+	testCacheIP1 net.IP = netip.MustParseAddr(testCacheIPStr1).AsSlice()
+	testCacheIP2 net.IP = netip.MustParseAddr(testCacheIPStr2).AsSlice()
+)
+
 func TestCacheTTL(t *testing.T) {
 	t.Parallel()
 
-	const (
-		hostname = "AN.EXAMPLE."
-		cname    = "TRIPPLE.XX."
+	question := []dns.Question{{
+		Name:   dnsproxytest.FQDN,
+		Qtype:  dns.TypeA,
+		Qclass: dns.ClassINET,
+	}}
+
+	cnameRR := dnsproxytest.NewRR(
+		t,
+		dnsproxytest.FQDN,
+		dns.TypeCNAME,
+		testTTL,
+		"alias."+dnsproxytest.FQDN,
 	)
+	soa := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeSOA, testTTL, nil)
+	nsRR1 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns1."+dnsproxytest.FQDN)
+	nsRR2 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns2."+dnsproxytest.FQDN)
+	extra := []dns.RR{
+		dnsproxytest.NewRR(t, "ns1."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP1),
+		dnsproxytest.NewRR(t, "ns2."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP2),
+	}
 
 	// See https://datatracker.ietf.org/doc/html/rfc2308.
 	testCases := []struct {
@@ -46,74 +66,55 @@ func TestCacheTTL(t *testing.T) {
 		wantTTL uint32
 	}{{
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns: []dns.RR{
-				soaAns(testXX, testNS1, testMBox),
-				nsAns(testXX, testNS1),
-				nsAns(testXX, testNS2),
-			},
-			Extra: []dns.RR{
-				aAns(testNS1, net.IP{127, 0, 0, 2}),
-				aAns(testNS2, net.IP{127, 0, 0, 3}),
-			},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{soa, nsRR1, nsRR2},
+			Extra:    extra,
 		},
 		name:    "rfc2308_nxdomain_response_type_1",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns:       []dns.RR{soaAns("XX.", testNS1, testMBox)},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{soa},
 		},
 		name:    "rfc2308_nxdomain_response_type_2",
 		wantTTL: testTTL,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
 		},
 		name:    "rfc2308_nxdomain_response_type_3",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeNameError),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns: []dns.RR{
-				nsAns(testXX, testNS1),
-				nsAns(testXX, testNS2),
-			},
-			Extra: []dns.RR{
-				aAns(testNS1, net.IP{127, 0, 0, 2}),
-				aAns(testNS2, net.IP{127, 0, 0, 3}),
-			},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeNameError},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{nsRR1, nsRR2},
+			Extra:    extra,
 		},
 		name:    "rfc2308_nxdomain_response_type_4",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(hostname),
-			Answer:   []dns.RR{cnameAns(hostname, cname)},
-			Ns: []dns.RR{
-				nsAns(testXX, testNS1),
-				nsAns(testXX, testNS2),
-			},
-			Extra: []dns.RR{
-				aAns(testNS1, net.IP{127, 0, 0, 2}),
-				aAns(testNS2, net.IP{127, 0, 0, 3}),
-			},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Answer:   []dns.RR{cnameRR},
+			Ns:       []dns.RR{nsRR1, nsRR2},
+			Extra:    extra,
 		},
 		name:    "rfc2308_nxdomain_referral_response",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeServerFailure),
-			Question: aQuestions(testAnotherHostname),
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeServerFailure},
+			Question: question,
 		},
 		name:    "servfail_response",
 		wantTTL: dnsmsg.ServFailMaxCacheTTL,
@@ -129,52 +130,55 @@ func TestCacheTTL(t *testing.T) {
 	}
 }
 
-func TestCacheTTL_nodata_responses(t *testing.T) {
+func TestCacheTTL_nodata(t *testing.T) {
 	t.Parallel()
 
-	testIP := net.IPv4(192, 0, 2, 0)
-	testAnotherIP := net.IPv4(192, 0, 2, 1)
-
-	testNS := []dns.RR{
-		soaAns(testXX, testNS1, testMBox),
-		nsAns(testXX, testNS1),
-		nsAns(testXX, testNS2),
+	question := dnsproxytest.NewTestRequest().Question
+	soa := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeSOA, testTTL, nil)
+	nsRR1 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns1."+dnsproxytest.FQDN)
+	nsRR2 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns2."+dnsproxytest.FQDN)
+	extra := []dns.RR{
+		dnsproxytest.NewRR(t, "ns1."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP1),
+		dnsproxytest.NewRR(t, "ns2."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP2),
 	}
 
+	// See https://datatracker.ietf.org/doc/html/rfc2308.
 	testCases := []struct {
 		req     *dns.Msg
 		name    string
 		wantTTL uint32
 	}{{
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(testAnotherHostname),
-			Ns:       testNS,
-			Extra:    []dns.RR{aAns(testNS1, testIP), aAns(testNS2, testAnotherIP)},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Ns: []dns.RR{
+				soa, nsRR1, nsRR2,
+			},
+			Extra: extra,
 		},
 		name:    "rfc2308_nodata_response_type_1",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(testAnotherHostname),
-			Ns:       []dns.RR{soaAns(testXX, testNS1, testMBox)},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Ns:       []dns.RR{soa},
 		},
 		name:    "rfc2308_nodata_response_type_2",
 		wantTTL: testTTL,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(testAnotherHostname),
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
 		},
 		name:    "rfc2308_nodata_response_type_3",
 		wantTTL: 0,
 	}, {
 		req: &dns.Msg{
-			MsgHdr:   msgHdr(dns.RcodeSuccess),
-			Question: aQuestions(testAnotherHostname),
-			Ns:       []dns.RR{nsAns(testXX, testNS1), nsAns(testXX, testNS2)},
-			Extra:    []dns.RR{aAns(testNS1, testIP), aAns(testNS2, testAnotherIP)},
+			MsgHdr:   dns.MsgHdr{Rcode: dns.RcodeSuccess},
+			Question: question,
+			Ns:       []dns.RR{nsRR1, nsRR2},
+			Extra:    extra,
 		},
 		name:    "rfc2308_nodata_referral_response",
 		wantTTL: 0,
@@ -187,77 +191,5 @@ func TestCacheTTL_nodata_responses(t *testing.T) {
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
 			assert.Equal(t, tc.wantTTL, dnsmsg.CacheTTL(ctx, testLogger, tc.req))
 		})
-	}
-}
-
-// msgHdr creates a new DNS message header with the given response code.
-func msgHdr(rcode int) (hdr dns.MsgHdr) {
-	return dns.MsgHdr{Id: dns.Id(), Rcode: rcode}
-}
-
-// aQuestions creates a slice containing a single DNS question for the given
-// name with type A and class INET.
-func aQuestions(name string) (q []dns.Question) {
-	return []dns.Question{{
-		Name:   name,
-		Qtype:  dns.TypeA,
-		Qclass: dns.ClassINET,
-	}}
-}
-
-// cnameAns creates a CNAME DNS resource record with the given name and target
-// CNAME.  It uses [testTTL] as the TTL value for the record.
-func cnameAns(name, cname string) (rr dns.RR) {
-	return &dns.CNAME{
-		Hdr: dns.RR_Header{
-			Name:   name,
-			Rrtype: dns.TypeCNAME,
-			Class:  dns.ClassINET,
-			Ttl:    testTTL,
-		},
-		Target: cname,
-	}
-}
-
-// soaAns creates an SOA DNS resource record with the given name, primary NS,
-// and mailbox.  It uses [testTTL] as the TTL value for the record.
-func soaAns(name, ns, mbox string) (rr dns.RR) {
-	return &dns.SOA{
-		Hdr: dns.RR_Header{
-			Name:   name,
-			Rrtype: dns.TypeSOA,
-			Class:  dns.ClassINET,
-			Ttl:    testTTL,
-		},
-		Ns:   ns,
-		Mbox: mbox,
-	}
-}
-
-// nsAns creates an NS DNS resource record with the given name and authoritative
-// NS.  It uses [testTTL] as the TTL value for the record.
-func nsAns(name, ns string) (rr dns.RR) {
-	return &dns.NS{
-		Hdr: dns.RR_Header{
-			Name:   name,
-			Rrtype: dns.TypeNS,
-			Class:  dns.ClassINET,
-			Ttl:    testTTL,
-		},
-		Ns: ns,
-	}
-}
-
-// aAns creates an A DNS resource record with the given name and IP address.  It
-// uses [testTTL] as the TTL value for the record.
-func aAns(name string, a net.IP) (rr dns.RR) {
-	return &dns.A{
-		Hdr: dns.RR_Header{
-			Name:   name,
-			Rrtype: dns.TypeA,
-			Class:  dns.ClassINET,
-			Ttl:    testTTL,
-		},
-		A: a,
 	}
 }

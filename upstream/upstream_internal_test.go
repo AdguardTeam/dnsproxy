@@ -69,7 +69,6 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 	testutil.CleanupAndRequireSuccess(t, udpListener.Close)
 
 	rslv, err := NewUpstreamResolver(udpListener.LocalAddr().String(), &Options{
-		Clock:   &timeutil.SystemClock{},
 		Logger:  testLogger,
 		Timeout: timeout,
 	})
@@ -133,13 +132,11 @@ func TestUpstreams(t *testing.T) {
 	googleRslv, err := NewUpstreamResolver("8.8.8.8:53", &Options{
 		Logger:  l,
 		Timeout: upsTimeout,
-		Clock:   &timeutil.SystemClock{},
 	})
 	require.NoError(t, err)
 	cloudflareRslv, err := NewUpstreamResolver("1.0.0.1:53", &Options{
 		Logger:  l,
 		Timeout: upsTimeout,
-		Clock:   &timeutil.SystemClock{},
 	})
 	require.NoError(t, err)
 
@@ -396,7 +393,6 @@ func TestUpstreamDoTBootstrap(t *testing.T) {
 	for _, tc := range upstreams {
 		t.Run(tc.address, func(t *testing.T) {
 			rslv, err := NewUpstreamResolver(tc.bootstrap, &Options{
-				Clock:   &timeutil.SystemClock{},
 				Logger:  testLogger,
 				Timeout: testTimeout,
 			})
@@ -453,7 +449,6 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 				r, err := NewUpstreamResolver(b, &Options{
 					Logger:  l,
 					Timeout: testTimeout,
-					Clock:   &timeutil.SystemClock{},
 				})
 				require.NoError(t, err)
 

@@ -63,7 +63,7 @@ func (r *CachingResolver) LookupNetIP(
 		lowercaseHost: host,
 	}
 
-	sglflightKey := fmt.Sprintf("%s:%s", host, network)
+	sglflightKey := fmt.Sprintf("%q:%q", host, network)
 
 	// TODO(m.kazantsev):  Use some hash as a key instead of the plain host and
 	// network combination.
@@ -122,8 +122,6 @@ func (r *CachingResolver) lookupAndCache(
 	if res.cacheable {
 		r.setCached(key, res)
 	}
-
-	r.setCached(key, res)
 
 	return res, nil
 }

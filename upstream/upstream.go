@@ -61,8 +61,8 @@ type QUICTracer interface {
 // Options for AddressToUpstream func.  With these options we can configure the
 // upstream properties.
 type Options struct {
-	// Logger is used for logging during parsing and upstream exchange.  It must
-	// not be nil.
+	// Logger is used for logging during parsing and upstream exchange.  If nil,
+	// [slog.Default] is used.
 	Logger *slog.Logger
 
 	// Clock is used to get the current time.  Clock is not used directly by the

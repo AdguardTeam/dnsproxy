@@ -76,7 +76,6 @@ func TestUpstream_bootstrapTimeout(t *testing.T) {
 
 	// Create an upstream that uses this faulty bootstrap.
 	u, err := AddressToUpstream("tls://random-domain-name", &Options{
-		Clock:     &timeutil.SystemClock{},
 		Logger:    testLogger,
 		Bootstrap: NewCachingResolver(rslv),
 		Timeout:   timeout,
@@ -459,7 +458,6 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 				Logger:    l,
 				Bootstrap: rslv,
 				Timeout:   upstreamTimeout,
-				Clock:     &timeutil.SystemClock{},
 			})
 			require.NoErrorf(t, err, "failed to generate upstream from address %s", tc.address)
 			testutil.CleanupAndRequireSuccess(t, u.Close)

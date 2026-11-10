@@ -1,5 +1,3 @@
-// Package dnsmsg contains common constants, functions, and types for inspecting
-// and constructing DNS messages.
 package dnsmsg
 
 import (

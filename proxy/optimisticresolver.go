@@ -18,7 +18,7 @@ type cachingResolver interface {
 	replyFromUpstream(ctx context.Context, dctx *DNSContext) (ok bool, err error)
 
 	// cacheResp caches the response from dctx.
-	cacheResp(dctx *DNSContext)
+	cacheResp(ctx context.Context, dctx *DNSContext)
 }
 
 // type check
@@ -68,6 +68,6 @@ func (s *optimisticResolver) resolveOnce(
 	}
 
 	if ok {
-		s.cr.cacheResp(dctx)
+		s.cr.cacheResp(ctx, dctx)
 	}
 }

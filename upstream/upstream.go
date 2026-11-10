@@ -22,6 +22,7 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -63,6 +64,12 @@ type Options struct {
 	// Logger is used for logging during parsing and upstream exchange.  If nil,
 	// [slog.Default] is used.
 	Logger *slog.Logger
+
+	// Clock is used to get the current time.  Clock is not used directly by the
+	// upstream itself.  If nil, the [timeutil.SystemClock] clock is used.
+	//
+	// TODO(m.kazantsev):  Actually use the Clock in the upstream.
+	Clock timeutil.Clock
 
 	// VerifyServerCertificate is used to set the VerifyPeerCertificate property
 	// of the *tls.Config for DNS-over-HTTPS, DNS-over-QUIC, and DNS-over-TLS.
@@ -109,7 +116,9 @@ type Options struct {
 	PreferIPv6 bool
 }
 
-// Clone copies o to a new struct.  Note, that this is not a deep clone.
+// Clone copies o to a new struct.
+//
+// NOTE:  Clone does not produce a deep copy of o.
 func (o *Options) Clone() (clone *Options) {
 	return &Options{
 		Bootstrap:                 o.Bootstrap,
@@ -124,6 +133,7 @@ func (o *Options) Clone() (clone *Options) {
 		RootCAs:                   o.RootCAs,
 		CipherSuites:              o.CipherSuites,
 		Logger:                    o.Logger,
+		Clock:                     o.Clock,
 	}
 }
 
@@ -181,17 +191,20 @@ const (
 // If addr doesn't have port specified, the default port of the appropriate
 // protocol will be used.
 //
-// opts are applied to the u and shouldn't be modified afterwards, nil value is
-// valid.
-//
-// TODO(e.burkov):  Clone opts?
+// opts are cloned and then applied to the u.  opts may be nil.
 func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 	if opts == nil {
 		opts = &Options{}
 	}
 
-	if opts.Logger == nil {
-		opts.Logger = slog.Default()
+	optsToUse := opts.Clone()
+
+	if optsToUse.Logger == nil {
+		optsToUse.Logger = slog.Default()
+	}
+
+	if optsToUse.Clock == nil {
+		optsToUse.Clock = &timeutil.SystemClock{}
 	}
 
 	var uu *url.URL
@@ -213,7 +226,7 @@ func AddressToUpstream(addr string, opts *Options) (u Upstream, err error) {
 		return nil, err
 	}
 
-	return urlToUpstream(uu, opts)
+	return urlToUpstream(uu, optsToUse)
 }
 
 // validateUpstreamURL returns an error if the upstream URL is not valid.

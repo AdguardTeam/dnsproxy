@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -100,7 +101,8 @@ func TestProxy_ServeDNS_cached(t *testing.T) {
 	}).SetReply(request)
 	reply.SetEdns0(defaultUDPBufSize, false)
 
-	dnsProxy.cache.set(request, reply, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	dnsProxy.cache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	addr := dnsProxy.Addr(ProtoTCP)
 	client := &dns.Client{
@@ -203,7 +205,8 @@ func TestCache_do(t *testing.T) {
 	}).SetQuestion(dnsproxytest.FQDN, dns.TypeA)
 	reply.SetEdns0(4096, false)
 
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	require.True(t, t.Run("without_do", func(t *testing.T) {
 		ci, expired, _ := testCache.get(request)
@@ -243,7 +246,9 @@ func TestCache_cname(t *testing.T) {
 		Response: true,
 		Answer:   []dns.RR{answ},
 	}).SetQuestion(dnsproxytest.FQDN, dns.TypeA)
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	require.True(t, t.Run("no_cnames", func(t *testing.T) {
 		r, expired, _ := testCache.get(request)
@@ -255,7 +260,9 @@ func TestCache_cname(t *testing.T) {
 		reply.Answer,
 		dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, testTTL, dnsproxytest.IPv4.To4()),
 	)
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+
+	ctx = testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	require.True(t, t.Run("cnames_exist", func(t *testing.T) {
 		r, expired, key := testCache.get(request)
@@ -274,7 +281,8 @@ func TestCache_uncacheable(t *testing.T) {
 	request := dnsproxytest.NewTestRequest()
 	reply := (&dns.Msg{}).SetRcode(request, dns.RcodeBadAlg)
 
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	r, expired, _ := testCache.get(request)
 	assert.Nil(t, r)
@@ -335,7 +343,8 @@ func TestCache_expiration(t *testing.T) {
 		resp.Answer = append(resp.Answer, rr)
 		responses = append(responses, resp)
 
-		dnsProxy.cache.set(req, resp, upstreamWithAddr, testLogger)
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		dnsProxy.cache.set(ctx, testLogger, req, resp, upstreamWithAddr)
 	}
 
 	for i, r := range requests {
@@ -447,6 +456,8 @@ func TestCache_simple(t *testing.T) {
 // assertResponseCache caches an A response for host with the given ttl and
 // checks whether req produces a cache hit with the expected response.
 func assertResponseCache(tb testing.TB, host string, ttl uint32, req *dns.Msg, wantHit bool) {
+	tb.Helper()
+
 	testCache := newTestCache(tb, nil)
 	request := dnsproxytest.NewTestRequestWithHost(host)
 	reply := (&dns.Msg{
@@ -454,7 +465,9 @@ func assertResponseCache(tb testing.TB, host string, ttl uint32, req *dns.Msg, w
 			dnsproxytest.NewRR(tb, host, dns.TypeA, ttl, dnsproxytest.IPv4.To4()),
 		},
 	}).SetReply(request)
-	testCache.set(request, reply, upstreamWithAddr, testLogger)
+
+	ctx := testutil.ContextWithTimeout(tb, testTimeout)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
 
 	ci, expired, _ := testCache.get(req)
 	assert.False(tb, expired)
@@ -542,10 +555,12 @@ func TestCache_getWithSubnetMiss(t *testing.T) {
 	c := newTestCache(t, &cacheConfig{withECS: true})
 	req := dnsproxytest.NewTestRequest()
 	resp := dnsproxytest.NewTestResponse(req)
-	c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{
+	ipNet := &net.IPNet{
 		IP:   dnsproxytest.IPv4,
 		Mask: net.CIDRMask(26, netutil.IPv4BitLen),
-	}, testLogger)
+	}
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	c.setWithSubnet(ctx, testLogger, req, resp, upstreamWithAddr, ipNet)
 
 	ci, expired, key := c.getWithSubnet(req, &net.IPNet{
 		IP:   testCacheIP1,
@@ -586,10 +601,14 @@ func TestCache_getWithSubnetHit(t *testing.T) {
 				dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, dnsproxytest.TTL, tc.ip),
 			},
 		}).SetReply(req)
-		c.setWithSubnet(req, resp, upstreamWithAddr, &net.IPNet{
+
+		ipNet := &net.IPNet{
 			IP:   tc.ip,
 			Mask: net.CIDRMask(tc.mask, netutil.IPv4BitLen),
-		}, testLogger)
+		}
+
+		ctx := testutil.ContextWithTimeout(t, testTimeout)
+		c.setWithSubnet(ctx, testLogger, req, resp, upstreamWithAddr, ipNet)
 	}
 
 	for _, tc := range testCases {
@@ -635,12 +654,14 @@ func TestCache_getWithSubnetMask(t *testing.T) {
 	}).SetReply(req)
 
 	// Cache IP network that contains the testIP.
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
 	c.setWithSubnet(
+		ctx,
+		testLogger,
 		req,
 		resp,
 		upstreamWithAddr,
 		&net.IPNet{IP: cachedIP, Mask: cidrMask},
-		testLogger,
 	)
 
 	require.True(t, t.Run("mask_matched", func(t *testing.T) {
@@ -759,7 +780,8 @@ func TestCacheTTL_isCacheableNegative(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.wantTTL, cacheTTL(tc.req, testLogger))
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			assert.Equal(t, tc.wantTTL, dnsmsg.CacheTTL(ctx, testLogger, tc.req))
 		})
 	}
 }
@@ -822,7 +844,8 @@ func TestCacheTTL_isCacheableNegativeNoData(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.wantTTL, cacheTTL(tc.req, testLogger))
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			assert.Equal(t, tc.wantTTL, dnsmsg.CacheTTL(ctx, testLogger, tc.req))
 		})
 	}
 }
@@ -845,7 +868,8 @@ func setAndGetCache(tb testing.TB, c *cache, g *sync.WaitGroup, host, ip string)
 		Answer:   []dns.RR{dnsproxytest.NewRR(tb, host, dns.TypeA, 1, ipAddr)},
 	}).SetQuestion(host, dns.TypeA)
 
-	c.set(req, dnsMsg, upstreamWithAddr, testLogger)
+	ctx := testutil.ContextWithTimeout(tb, testTimeout)
+	c.set(ctx, testLogger, req, dnsMsg, upstreamWithAddr)
 
 	for range 2 {
 		ci, expired, key := c.get(dnsMsg)

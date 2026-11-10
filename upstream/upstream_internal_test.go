@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/netip"
@@ -24,6 +25,7 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/ameshkov/dnsstamps"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -237,7 +239,9 @@ func TestUpstreams(t *testing.T) {
 }
 
 func TestAddressToUpstream(t *testing.T) {
-	cloudflareRslv, err := NewUpstreamResolver("1.1.1.1", nil)
+	cloudflareRslv, err := NewUpstreamResolver("1.1.1.1", &Options{
+		Logger: testLogger,
+	})
 	require.NoError(t, err)
 
 	opt := &Options{
@@ -463,7 +467,7 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 	}
 
 	t.Run("bad_bootstrap", func(t *testing.T) {
-		_, err := NewUpstreamResolver("asdfasdf", nil)
+		_, err := NewUpstreamResolver("asdfasdf", &Options{Logger: testLogger})
 		assert.Error(t, err) // bad bootstrap "asdfasdf"
 	})
 }
@@ -479,7 +483,7 @@ func TestAddressToUpstream_StaticResolver(t *testing.T) {
 	_, dohPort, err := net.SplitHostPort(dohSrv.addr)
 	require.NoError(t, err)
 
-	badResolver := &UpstreamResolver{Upstream: nil}
+	badResolver := ResolverFromUpstream(nil, nil, nil)
 
 	dotStamp := (&dnsstamps.ServerStamp{
 		ServerAddrStr: netip.AddrPortFrom(netutil.IPv4Localhost(), uint16(dotSrv.port)).String(),
@@ -879,4 +883,54 @@ func (r *headerRecorder) headersWithLock() (res []qlog.PacketHeader) {
 // *headerRecorder.
 func (*headerRecorder) Close() (err error) {
 	return nil
+}
+
+// ResolverFromUpstream creates a new [UpstreamResolver] from the given
+// [Upstream].  All arguments may be nil.
+func ResolverFromUpstream(
+	u Upstream,
+	logger *slog.Logger,
+	clock timeutil.Clock,
+) (r *UpstreamResolver) {
+	if u == nil {
+		u = testUpstream{}
+	}
+
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	if clock == nil {
+		clock = &timeutil.SystemClock{}
+	}
+
+	return &UpstreamResolver{
+		Upstream: u,
+		logger:   logger,
+		clock:    clock,
+	}
+}
+
+// testUpstream is a test implementation of the [Upstream] interface all methods
+// of which panic.
+//
+// TODO(m.kazantsev):  Use dnsproxytest.Upstream.
+type testUpstream struct{}
+
+// type check
+var _ Upstream = (*testUpstream)(nil)
+
+// Address implements the [Upstream] interface for testUpstream.
+func (testUpstream) Address() (_ string) {
+	panic(testutil.UnexpectedCall())
+}
+
+// Close implements the [Upstream] interface for testUpstream.
+func (testUpstream) Close() (_ error) {
+	panic(testutil.UnexpectedCall())
+}
+
+// Exchange implements the [Upstream] interface for testUpstream.
+func (testUpstream) Exchange(ctx context.Context, req *dns.Msg) (_ *dns.Msg, _ error) {
+	panic(testutil.UnexpectedCall(ctx, req))
 }

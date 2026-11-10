@@ -81,11 +81,11 @@ func cloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 
 // cacheResp stores the response from d in general or subnet cache.  In case the
 // cache is present in d, it's used first.  d must not be nil.
-func (p *Proxy) cacheResp(d *DNSContext) {
+func (p *Proxy) cacheResp(ctx context.Context, d *DNSContext) {
 	dctxCache := p.cacheForContext(d)
 
 	if !p.enableEDNSClientSubnet {
-		dctxCache.set(d.Req, d.Res, d.Upstream, p.logger)
+		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream)
 
 		return
 	}
@@ -125,13 +125,13 @@ func (p *Proxy) cacheResp(d *DNSContext) {
 
 		p.logger.Debug("caching response", "ecs", ecs)
 
-		dctxCache.setWithSubnet(d.Req, d.Res, d.Upstream, ecs, p.logger)
+		dctxCache.setWithSubnet(ctx, p.logger, d.Req, d.Res, d.Upstream, ecs)
 	case d.ReqECS != nil:
 		// Cache the response for all subnets since the server doesn't support
 		// EDNS Client Subnet option.
-		dctxCache.setWithSubnet(d.Req, d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil}, p.logger)
+		dctxCache.setWithSubnet(ctx, p.logger, d.Req, d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil})
 	default:
-		dctxCache.set(d.Req, d.Res, d.Upstream, p.logger)
+		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream)
 	}
 }
 

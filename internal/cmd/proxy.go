@@ -90,6 +90,8 @@ func createProxyConfig(
 		CacheOptimisticAnswerTTL: time.Duration(conf.OptimisticAnswerTTL),
 		CacheOptimisticMaxAge:    time.Duration(conf.OptimisticMaxAge),
 		CacheOptimistic:          conf.CacheOptimistic,
+		UpstreamRTTDecay:         time.Duration(conf.UpstreamRTTDecay),
+		UpstreamTimeout:          time.Duration(conf.Timeout),
 		RefuseAny:                conf.RefuseAny,
 		// TODO(e.burkov):  The following CIDRs are aimed to match any address.
 		// This is not quite proper approach to be used by default so think

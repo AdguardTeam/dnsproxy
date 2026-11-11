@@ -28,6 +28,10 @@ type dnsOverTLS struct {
 	// addr is the DNS-over-TLS server URL.
 	addr *url.URL
 
+	// addrStr is addr.String(), cached since [Upstream.Address] is called on
+	// every load-balanced request.
+	addrStr string
+
 	// getDialer either returns an initialized dial handler or creates a
 	// new one.
 	getDialer DialerInitializer
@@ -60,6 +64,7 @@ func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 
 	tlsUps := &dnsOverTLS{
 		addr:      addr,
+		addrStr:   addr.String(),
 		getDialer: newDialerInitializer(addr, opts),
 		tlsConf: &tls.Config{
 			ServerName:   addr.Hostname(),
@@ -96,7 +101,7 @@ func newDoT(addr *url.URL, opts *Options) (ups Upstream, err error) {
 var _ Upstream = (*dnsOverTLS)(nil)
 
 // Address implements the [Upstream] interface for *dnsOverTLS.
-func (p *dnsOverTLS) Address() string { return p.addr.String() }
+func (p *dnsOverTLS) Address() string { return p.addrStr }
 
 // Exchange implements the [Upstream] interface for *dnsOverTLS.
 func (p *dnsOverTLS) Exchange(ctx context.Context, req *dns.Msg) (reply *dns.Msg, err error) {

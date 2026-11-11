@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+  dnsproxy_quic_client:
+    image: dnsproxy/AdguardHome:latest
+    container_name: dnsproxy_quic_client
+    restart: always
+    environment:
+      UPSTREAM_ADDR: "quic://dns-unfiltered.adguard.com:784" # change it to your prefered quic server
+      RATELIMIT: "30"
+      EDNS: "ON"
+      LOCALPORT: "1111" # Any local port #
+      MODE: "client"
+      PROTO: "quic"
+    ports:
+            - 1112:1111/udp
+  dnsproxy_https_client:
+    image: dnsproxy/AdguardHome:latest
+    container_name: dnsproxy_https_client
+    restart: always
+    environment:
+      UPSTREAM_ADDR: "https://dns.adguard.com/dns-query" # change it to your prefered https server
+      RATELIMIT: "30"
+      EDNS: "ON"
+      LOCALPORT: "1111" # Any local port #
+      MODE: "client"
+    ports:
+            - 1113:1111/udp
+  dnsproxy_tls_client:
+    image: dnsproxy/AdguardHome:latest
+    container_name: dnsproxy_tls_client
+    restart: always
+    environment:
+      UPSTREAM_ADDR: "tls://dns.adguard.com" # change it to your prefered tls server
+      RATELIMIT: "30"
+      EDNS: "ON"
+      LOCALPORT: "1111" # Any local port #
+      MODE: "client"
+    ports:
+            - 1114:1111/udp
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.16.57.0/24

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/netutil/urlutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -276,6 +277,8 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 // all data.  It returns the listener address and atomic counter for open
 // connections.  The listener is stopped at the end of the test.
 func listenAndDiscard(tb testing.TB) (addr net.Addr, open *atomic.Int32) {
+	tb.Helper()
+
 	l, err := net.Listen("tcp", localhostAnyPort.String())
 	require.NoError(tb, err)
 	testutil.CleanupAndRequireSuccess(tb, l.Close)
@@ -318,7 +321,7 @@ func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
 	addr, open := listenAndDiscard(t)
 
 	upsAddr := (&url.URL{
-		Scheme: "https",
+		Scheme: urlutil.SchemeHTTPS,
 		Host:   addr.String(),
 		Path:   "dns-query",
 	}).String()
@@ -327,7 +330,7 @@ func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
 		Logger:             testLogger,
 		InsecureSkipVerify: true,
 		HTTPVersions:       []HTTPVersion{HTTPVersion11, HTTPVersion2},
-		Timeout:            100 * time.Millisecond,
+		Timeout:            testTimeout / 10,
 	})
 	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, u.Close)

@@ -49,7 +49,7 @@ func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	dnsProxy, err := proxy.New(&proxy.Config{
+	dnsProxy := mustNew(t, &proxy.Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
@@ -67,8 +67,6 @@ func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
 		// Valid NAT-64 prefix for 2001:67c:27e4:15::64 server.
 		DNS64Prefs: []netip.Prefix{netip.MustParsePrefix("2001:67c:27e4:1064::/96")},
 	})
-	require.NoError(t, err)
-
 	servicetest.RequireRun(t, dnsProxy, proxytest.Timeout)
 
 	syncCh := make(chan struct{})
@@ -81,8 +79,7 @@ func TestProxy_HandleDNSRequest_dns64Race(t *testing.T) {
 	for range proxytest.MessageCount {
 		// The [dns.Conn] isn't safe for concurrent use despite the requirements
 		// from the [net.Conn] documentation.
-		var conn *dns.Conn
-		conn, err = dns.Dial("tcp", addr)
+		conn, err := dns.Dial("tcp", addr)
 		require.NoError(t, err)
 		testutil.CleanupAndRequireSuccess(t, conn.Close)
 
@@ -191,7 +188,7 @@ func TestProxy_Resolve_dns64Simple(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testProxyResolveDNS64(t, tc.qname, tc.qtype, tc.upsAns, tc.wantAns, nil)
+			subtestProxyResolveDNS64(t, tc.qname, tc.qtype, tc.upsAns, tc.wantAns, nil)
 		})
 	}
 }
@@ -305,7 +302,7 @@ func TestProxy_Resolve_dns64Synthesis(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testProxyResolveDNS64(t, tc.qname, tc.qtype, tc.upsAns, tc.wantAns, nil)
+			subtestProxyResolveDNS64(t, tc.qname, tc.qtype, tc.upsAns, tc.wantAns, nil)
 		})
 	}
 }
@@ -342,7 +339,7 @@ func TestProxy_Resolve_dns64Filtered(t *testing.T) {
 		Target: domainAnother,
 	}}
 
-	testProxyResolveDNS64(t, domainMapped, dns.TypeAAAA, upsAns, wantAns, nil)
+	subtestProxyResolveDNS64(t, domainMapped, dns.TypeAAAA, upsAns, wantAns, nil)
 }
 
 func TestProxy_Resolve_dns64PTR(t *testing.T) {
@@ -419,14 +416,15 @@ func TestProxy_Resolve_dns64PTR(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testProxyResolveDNS64(t, tc.qname, tc.qtype, tc.upsAns, tc.wantAns, localUps)
+			subtestProxyResolveDNS64(t, tc.qname, tc.qtype, tc.upsAns, tc.wantAns, localUps)
 		})
 	}
 }
 
-// testProxyResolveDNS64 starts a DNS64 proxy and checks its response.  localUps
-// handles private reverse DNS requests.  If nil, such requests fail the test.
-func testProxyResolveDNS64(
+// subtestProxyResolveDNS64 starts a DNS64 proxy and checks its response.
+// localUps handles private reverse DNS requests.  If nil, such requests fail
+// the test.
+func subtestProxyResolveDNS64(
 	tb testing.TB,
 	qname string,
 	qtype uint16,
@@ -456,7 +454,7 @@ func testProxyResolveDNS64(
 		},
 	))
 
-	p, err := proxy.New(&proxy.Config{
+	p := mustNew(tb, &proxy.Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
@@ -472,7 +470,6 @@ func testProxyResolveDNS64(
 		UsePrivateRDNS: true,
 		PrivateSubnets: netutil.SubnetSetFunc(netip.Addr.IsLoopback),
 	})
-	require.NoError(tb, err)
 	servicetest.RequireRun(tb, p, proxytest.Timeout)
 
 	conn, err := dns.Dial("tcp", p.Addr(proxy.ProtoTCP).String())

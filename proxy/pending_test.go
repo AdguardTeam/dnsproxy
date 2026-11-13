@@ -80,7 +80,7 @@ func TestPendingRequests(t *testing.T) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	p, err := proxy.New(&proxy.Config{
+	p := mustNew(t, &proxy.Config{
 		Logger:         testLogger,
 		UpstreamConfig: &proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 		TrustedProxies: proxytest.DefaultTrustedProxies,
@@ -95,8 +95,6 @@ func TestPendingRequests(t *testing.T) {
 		DNSSECEnabled:          true,
 		EnableEDNSClientSubnet: true,
 	})
-	require.NoError(t, err)
-
 	servicetest.RequireRun(t, p, proxytest.Timeout)
 
 	addr := p.Addr(proxy.ProtoTCP).String()

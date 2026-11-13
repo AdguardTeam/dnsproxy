@@ -164,3 +164,19 @@ func NewRR(tb testing.TB, name string, qtype uint16, ttl uint32, val any) (rr dn
 
 	return rr
 }
+
+// FirstIP is a helper that returns the first IP address from the DNS response.
+func FirstIP(tb testing.TB, resp *dns.Msg) (ip net.IP) {
+	tb.Helper()
+
+	for _, ans := range resp.Answer {
+		a, ok := ans.(*dns.A)
+		if !ok {
+			continue
+		}
+
+		return a.A
+	}
+
+	return nil
+}

@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -424,6 +425,70 @@ func assertCacheTTLOverride(tb testing.TB, ttl, wantTTL uint32) {
 	assert.False(tb, expired)
 	assert.Equal(tb, msgToKey(d.Req), key)
 	assert.Equal(tb, wantTTL, ci.m.Answer[0].Header().Ttl)
+}
+
+func TestCache_zeroTTLNotOverridden(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	ans := []dns.RR{
+		dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeA, 0, dnsproxytest.IPv4.To4()),
+	}
+	reply := newECSReplyHandler(&ans, nil, nil)
+	u := &testUpstream{
+		OnAddress: func() (addr string) { return testUpsAddr },
+		OnExchange: func(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+			calls.Add(1)
+
+			return reply(ctx, req)
+		},
+		OnClose: func() (err error) { return nil },
+	}
+
+	dnsProxy := mustNew(t, &Config{
+		Logger:        testLogger,
+		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+		UpstreamConfig: &UpstreamConfig{
+			Upstreams: []upstream.Upstream{u},
+		},
+		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
+		CacheEnabled:   true,
+		DNSSECEnabled:  true,
+		CacheMinTTL:    20,
+		CacheMaxTTL:    40,
+	})
+
+	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
+
+	resolve := func() (res *dns.Msg) {
+		d := &DNSContext{
+			Req:   dnsproxytest.NewTestRequest(),
+			Addr:  netip.AddrPort{},
+			Proto: ProtoUDP,
+		}
+		err := dnsProxy.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
+		require.NoError(t, err)
+		require.NotNil(t, d.Res)
+		require.Len(t, d.Res.Answer, 1)
+
+		return d.Res
+	}
+
+	first := resolve()
+	assert.Equal(t, uint32(0), first.Answer[0].Header().Ttl)
+
+	// DNSSEC adds a DO bit before the cache lookup, so look the entry up the
+	// same way.
+	cachedReq := dnsproxytest.NewTestRequest()
+	cachedReq.SetEdns0(defaultUDPBufSize, true)
+	ci, expired, _ := dnsProxy.cache.get(cachedReq)
+	assert.Nil(t, ci)
+	assert.False(t, expired)
+
+	second := resolve()
+	assert.Equal(t, uint32(0), second.Answer[0].Header().Ttl)
+	assert.Equal(t, int32(2), calls.Load())
 }
 
 func TestCache_simple(t *testing.T) {

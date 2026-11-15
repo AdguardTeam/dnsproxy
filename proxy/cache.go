@@ -405,9 +405,18 @@ func (c *cache) clearItemsWithSubnet() {
 	c.itemsWithSubnet.Clear()
 }
 
-// Updates a given TTL to fall within the range specified by the cacheMinTTL and
-// cacheMaxTTL settings.
-func respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL uint32) uint32 {
+// respectTTLOverrides returns ttl clamped to the configured minimum and
+// maximum.  A TTL of zero is left unchanged: RFC 1035 says such records are
+// not cached, and raising them to cacheMinTTL both stores them and rewrites
+// the answer.
+//
+// See https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.1
+// and https://github.com/AdguardTeam/dnsproxy/issues/490.
+func respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL uint32) (overridden uint32) {
+	if ttl == 0 {
+		return 0
+	}
+
 	if ttl < cacheMinTTL {
 		return cacheMinTTL
 	}

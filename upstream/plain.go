@@ -149,24 +149,36 @@ func (p *plainDNS) dialExchange(
 }
 
 // setRequestForNetwork sets connection options in conn and overrides the
-// upstream request, if necessary, depending on network.  If network is
-// [networkUDP] and orig has a zero ID, req is a copy of orig with a new ID to
-// increase entropy.  network must be either [networkUDP] or [networkTCP].  orig
-// and conn must not be nil.
+// upstream request, if necessary, depending on network.  If orig has a zero ID,
+// req is a copy of orig with a new ID.  network must be either [networkUDP] or
+// [networkTCP].  orig and conn must not be nil.
 func setRequestForNetwork(orig *dns.Msg, conn *dns.Conn, network network) (req *dns.Msg) {
 	req = orig
-	if network != networkUDP {
-		return req
+	if network == networkUDP {
+		conn.UDPSize = dns.MinMsgSize
 	}
 
-	conn.UDPSize = dns.MinMsgSize
-
+	// DoH and DoQ queries use message ID 0.  Plain DNS, including a TCP
+	// fallback and a tcp:// upstream, still matches replies by ID, so assign
+	// one when the caller did not.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/539.
 	if orig.Id == 0 {
 		req = orig.Copy()
-		req.Id = dns.Id()
+		req.Id = plainDNSMsgID()
 	}
 
 	return req
+}
+
+// plainDNSMsgID returns a non-zero DNS message ID for a plain upstream query.
+func plainDNSMsgID() (id uint16) {
+	id = dns.Id()
+	if id == 0 {
+		return 1
+	}
+
+	return id
 }
 
 // isExpectedConnErr returns true if the error is expected.  In this case,

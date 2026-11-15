@@ -15,10 +15,16 @@ import (
 //   - [emptyPendingRequests].
 type pendingRequests interface {
 	// queue is called for each request.  It returns false if there are no
-	// identical requests in progress.  Otherwise it blocks until the first
-	// request is completed and returns the error that occurred during its
-	// resolution.  dctx must not be nil.
-	queue(ctx context.Context, dctx *DNSContext) (loaded bool, err error)
+	// identical requests in progress.  Otherwise, when beforeWait is not nil,
+	// it calls beforeWait and, if that returns an error, returns that error
+	// without waiting.  If beforeWait succeeds or is nil, it blocks until the
+	// first request is completed and returns the error that occurred during
+	// its resolution.  dctx must not be nil.
+	queue(
+		ctx context.Context,
+		dctx *DNSContext,
+		beforeWait func() error,
+	) (loaded bool, err error)
 
 	// done must be called after the request is completed, if queue returned
 	// false for it.  dctx must not be nil.
@@ -63,6 +69,7 @@ var _ pendingRequests = (*defaultPendingRequests)(nil)
 func (pr *defaultPendingRequests) queue(
 	ctx context.Context,
 	dctx *DNSContext,
+	beforeWait func() error,
 ) (loaded bool, err error) {
 	var key []byte
 	if dctx.ReqECS != nil {
@@ -79,6 +86,13 @@ func (pr *defaultPendingRequests) queue(
 	pending, loaded := pr.storage.LoadOrStore(string(key), req)
 	if !loaded {
 		return false, nil
+	}
+
+	if beforeWait != nil {
+		err = beforeWait()
+		if err != nil {
+			return true, err
+		}
 	}
 
 	<-pending.finish
@@ -138,7 +152,11 @@ var _ pendingRequests = emptyPendingRequests{}
 
 // queue implements the [pendingRequests] interface for [emptyPendingRequests].
 // It always returns false and does not block.
-func (emptyPendingRequests) queue(_ context.Context, _ *DNSContext) (loaded bool, err error) {
+func (emptyPendingRequests) queue(
+	_ context.Context,
+	_ *DNSContext,
+	_ func() error,
+) (loaded bool, err error) {
 	return false, nil
 }
 

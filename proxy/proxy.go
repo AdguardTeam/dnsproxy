@@ -123,6 +123,15 @@ type Proxy struct {
 	// See also: https://github.com/AdguardTeam/AdGuardHome/issues/2242.
 	requestsSema syncutil.Semaphore
 
+	// upstreamSlots bounds requests blocked on an upstream exchange or on an
+	// identical in-flight lookup.  When [Proxy.maxGoroutines] is greater than
+	// one, its capacity is one smaller, so a query that can be answered
+	// without waiting on upstream can still be admitted.  Nil means that there
+	// is no separate limit.
+	//
+	// See https://github.com/AdguardTeam/AdGuardHome/issues/4825.
+	upstreamSlots chan struct{}
+
 	// reqCtx is a constructor for the request contexts.  It is never nil.
 	reqCtx contextutil.Constructor
 
@@ -471,6 +480,11 @@ func New(c *Config) (p *Proxy, err error) {
 		p.logger.Info("max goroutines is set", "count", p.maxGoroutines)
 
 		p.requestsSema = syncutil.NewChanSemaphore(p.maxGoroutines)
+		if p.maxGoroutines > 1 {
+			// Leave one admission slot free of upstream waits.  See
+			// [Proxy.upstreamSlots].
+			p.upstreamSlots = make(chan struct{}, p.maxGoroutines-1)
+		}
 	} else {
 		p.requestsSema = syncutil.EmptySemaphore{}
 	}
@@ -913,39 +927,37 @@ func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 	dctx.calcFlagsAndSize()
 
 	cacheWorks := p.cacheWorks(dctx)
+	var finish func(resolveErr error)
 	if cacheWorks {
-		// Request for DNSSEC from the upstream to cache the
-		// DNSSEC resource records as well.  In case of disabled DNSSEC,
-		// requesting and therefore caching of DNSSEC resource records depends
-		// on the DO bit of the initiating query.
-		//
-		// See https://datatracker.ietf.org/doc/html/rfc4035#section-4.5 and
-		// https://datatracker.ietf.org/doc/html/rfc3225#section-3.
-		p.addDO(dctx.Req)
+		var handled bool
+		finish, handled, err = p.prepareCachedResolve(ctx, dctx)
+		if handled || err != nil {
+			if finish != nil {
+				finish(err)
+			}
 
-		// Only add pending requests if the cache is enabled, since this is a
-		// mitigation against cache poisoning.
-		//
-		// TODO(e.burkov):  Consider tracking all requests.
-		var loaded bool
-		loaded, err = p.pendingRequests.queue(ctx, dctx)
-		if loaded {
 			return err
 		}
-		defer func() { p.pendingRequests.done(ctx, dctx, err) }()
-
-		if p.replyFromCache(ctx, dctx) {
-			// Complete the response from cache.
-			filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
-			dctx.scrub()
-
-			return nil
-		}
+	}
+	if finish != nil {
+		defer func() { finish(err) }()
 	}
 
 	var ok bool
-	ok, err = p.replyFromUpstream(ctx, dctx)
+	ok, err = p.exchangeUpstream(ctx, dctx)
+	p.completeResolve(ctx, dctx, cacheWorks, ok)
 
+	return err
+}
+
+// completeResolve stores a cacheable upstream response and prepares dctx.Res to
+// be written.  dctx must not be nil.
+func (p *Proxy) completeResolve(
+	ctx context.Context,
+	dctx *DNSContext,
+	cacheWorks bool,
+	ok bool,
+) {
 	// Don't cache the responses having CD flag, just like Dnsmasq does.  It
 	// prevents the cache from being poisoned with unvalidated answers which may
 	// differ from validated ones.
@@ -964,8 +976,123 @@ func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
 
 	// Complete the response.
 	dctx.scrub()
+}
 
-	return err
+// errUpstreamBusy is returned when every non-reserved upstream slot is already
+// held by a request waiting on an upstream or on an identical in-flight query.
+const errUpstreamBusy errors.Error = "too many upstream exchanges"
+
+// prepareCachedResolve applies DNSSEC and pending-request handling, and returns
+// a cache hit when one is available.  handled is true when dctx is complete.
+// finish, when non-nil, must be called with the resolution error once the
+// leader's request is done.  dctx must not be nil.
+func (p *Proxy) prepareCachedResolve(
+	ctx context.Context,
+	dctx *DNSContext,
+) (finish func(resolveErr error), handled bool, err error) {
+	// Request for DNSSEC from the upstream to cache the DNSSEC resource records
+	// as well.  In case of disabled DNSSEC, requesting and therefore caching of
+	// DNSSEC resource records depends on the DO bit of the initiating query.
+	//
+	// See https://datatracker.ietf.org/doc/html/rfc4035#section-4.5 and
+	// https://datatracker.ietf.org/doc/html/rfc3225#section-3.
+	p.addDO(dctx.Req)
+
+	// Only add pending requests if the cache is enabled, since this is a
+	// mitigation against cache poisoning.
+	//
+	// TODO(e.burkov):  Consider tracking all requests.
+	var release func()
+	var loaded bool
+	loaded, err = p.pendingRequests.queue(ctx, dctx, func() (waitErr error) {
+		release, waitErr = p.acquireUpstream()
+
+		return waitErr
+	})
+	if loaded {
+		return p.finishPendingWaiter(ctx, dctx, release, err)
+	}
+
+	finish = func(resolveErr error) { p.pendingRequests.done(ctx, dctx, resolveErr) }
+	if !p.replyFromCache(ctx, dctx) {
+		return finish, false, nil
+	}
+
+	// Complete the response from cache.
+	filterMsg(dctx.Res, dctx.Res, dctx.adBit, dctx.doBit, 0)
+	dctx.scrub()
+
+	return finish, true, nil
+}
+
+// finishPendingWaiter completes a request that joined an in-flight lookup.
+// release frees an upstream slot when one was taken.  dctx must not be nil.
+func (p *Proxy) finishPendingWaiter(
+	ctx context.Context,
+	dctx *DNSContext,
+	release func(),
+	waitErr error,
+) (finish func(resolveErr error), handled bool, err error) {
+	if release != nil {
+		finish = func(error) { release() }
+	}
+	if errors.Is(waitErr, errUpstreamBusy) {
+		p.failUpstreamBusy(ctx, dctx)
+
+		return finish, true, nil
+	}
+
+	return finish, true, waitErr
+}
+
+// exchangeUpstream resolves dctx through upstream servers.  When the upstream
+// concurrency limit is reached, it sets a SERVFAIL response and returns
+// ok=false without waiting.  dctx must not be nil.
+func (p *Proxy) exchangeUpstream(
+	ctx context.Context,
+	dctx *DNSContext,
+) (ok bool, err error) {
+	release, err := p.acquireUpstream()
+	if err != nil {
+		p.failUpstreamBusy(ctx, dctx)
+
+		return false, nil
+	}
+	defer release()
+
+	return p.replyFromUpstream(ctx, dctx)
+}
+
+// acquireUpstream takes a slot for a request that will block on an upstream.
+// release is always non-nil when err is nil.
+func (p *Proxy) acquireUpstream() (release func(), err error) {
+	if p.upstreamSlots == nil {
+		return func() {}, nil
+	}
+
+	select {
+	case p.upstreamSlots <- struct{}{}:
+		released := false
+
+		return func() {
+			if released {
+				return
+			}
+			released = true
+
+			<-p.upstreamSlots
+		}, nil
+	default:
+		return nil, errUpstreamBusy
+	}
+}
+
+// failUpstreamBusy sets a prompt SERVFAIL when an upstream slot is unavailable.
+// dctx must not be nil.
+func (p *Proxy) failUpstreamBusy(ctx context.Context, dctx *DNSContext) {
+	p.logger.DebugContext(ctx, "upstream concurrency limit reached")
+
+	dctx.Res = p.messages.NewMsgSERVFAIL(dctx.Req)
 }
 
 // validateRequest returns a response for invalid request or nil if the request

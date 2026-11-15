@@ -191,8 +191,11 @@ func TestProxy_Resolve_dnssecCacheTXT(t *testing.T) {
 
 	p, rrsig := setupProxyResolveDNSSECCache(t, txt)
 
+	// The TXT payload is larger than the 512-byte non-EDNS UDP limit, so the
+	// response is truncated.  DNSSEC may add an OPT record to the upstream
+	// query, but that must not raise the limit for the original client.
 	require.True(t, t.Run("no_edns", func(t *testing.T) {
-		testProxyResolveDNSSECCache(t, p, txt, rrsig, 1, false)
+		testProxyResolveDNSSECCache(t, p, txt, rrsig, 0, false)
 	}))
 
 	require.True(t, t.Run("edns", func(t *testing.T) {

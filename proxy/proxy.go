@@ -906,11 +906,15 @@ const defaultUDPBufSize = 2048
 // upstream servers.  If err is nil, dctx.Res is guaranteed to be non-nil.  dctx
 // must not be nil and must be filled with the client's request.
 func (p *Proxy) Resolve(ctx context.Context, dctx *DNSContext) (err error) {
+	// Capture the client's EDNS state before ECS or DNSSEC attach an OPT record
+	// that the client did not send.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/277.
+	dctx.calcFlagsAndSize()
+
 	if p.enableEDNSClientSubnet {
 		dctx.processECS(p.ednsAddr, p.logger)
 	}
-
-	dctx.calcFlagsAndSize()
 
 	cacheWorks := p.cacheWorks(dctx)
 	if cacheWorks {
@@ -1055,7 +1059,7 @@ func (dctx *DNSContext) processECS(cliIP net.IP, l *slog.Logger) {
 	if !netutil.IsSpecialPurpose(cliAddr) {
 		// A Stub Resolver MUST set SCOPE PREFIX-LENGTH to 0.  See RFC 7871
 		// Section 6.
-		dctx.ReqECS = setECS(dctx.Req, cliIP, 0)
+		dctx.ReqECS = setECS(dctx.Req, cliIP, 0, dctx.udpSize)
 
 		l.Debug("setting ecs", "subnet", dctx.ReqECS)
 	}

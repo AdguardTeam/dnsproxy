@@ -452,7 +452,9 @@ func TestSetECS(t *testing.T) {
 		ip := net.IP{1, 2, 3, 4}
 
 		m := &dns.Msg{}
-		subnet := setECS(m, ip, 16)
+		subnet := setECS(m, ip, 16, 0)
+		require.NotNil(t, m.IsEdns0())
+		assert.Equal(t, uint16(defaultUDPBufSize), m.IsEdns0().UDPSize())
 
 		ones, _ := subnet.Mask.Size()
 		assert.Equal(t, 24, ones)
@@ -470,7 +472,7 @@ func TestSetECS(t *testing.T) {
 		ip := net.IP{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 
 		m := &dns.Msg{}
-		subnet := setECS(m, ip, 48)
+		subnet := setECS(m, ip, 48, 0)
 
 		ones, _ := subnet.Mask.Size()
 		assert.Equal(t, 56, ones)
@@ -483,6 +485,90 @@ func TestSetECS(t *testing.T) {
 		assert.Equal(t, 56, ones)
 		assert.Equal(t, 48, scope)
 	})
+}
+
+func TestProxy_Resolve_ecsClientEDNS(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name       string
+		clientSize uint16
+		wantOPT    bool
+	}{{
+		name:    "no_client_opt",
+		wantOPT: false,
+	}, {
+		name:       "client_opt",
+		clientSize: 1232,
+		wantOPT:    true,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotUpstreamSize uint16
+			var sawUpstreamOPT bool
+			u := &testUpstream{
+				OnAddress: func() (addr string) { return "" },
+				OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+					if opt := req.IsEdns0(); opt != nil {
+						sawUpstreamOPT = true
+						gotUpstreamSize = opt.UDPSize()
+					}
+
+					resp = (&dns.Msg{}).SetReply(req)
+					resp.Answer = []dns.RR{dnsproxytest.NewRR(
+						t,
+						dnsproxytest.FQDN,
+						dns.TypeA,
+						dnsproxytest.TTL,
+						dnsproxytest.IPv4.To4(),
+					)}
+					// An upstream commonly advertises its own buffer here.
+					resp.SetEdns0(4096, false)
+
+					return resp, nil
+				},
+				OnClose: func() (err error) { return nil },
+			}
+
+			p := mustNew(t, &Config{
+				Logger:                 testLogger,
+				UDPListenAddr:          []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
+				TCPListenAddr:          []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
+				UpstreamConfig:         &UpstreamConfig{Upstreams: []upstream.Upstream{u}},
+				TrustedProxies:         dnsproxytest.DefaultTrustedProxies,
+				EnableEDNSClientSubnet: true,
+			})
+			servicetest.RequireRun(t, p, dnsproxytest.Timeout)
+
+			req := dnsproxytest.NewTestRequest()
+			if tc.clientSize != 0 {
+				req.SetEdns0(tc.clientSize, false)
+			}
+
+			d := &DNSContext{
+				Req:   req,
+				Addr:  netip.MustParseAddrPort("1.2.3.4:53"),
+				Proto: ProtoUDP,
+			}
+			err := p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
+			require.NoError(t, err)
+			require.NotNil(t, d.Res)
+
+			require.True(t, sawUpstreamOPT)
+			if tc.wantOPT {
+				assert.Equal(t, tc.clientSize, gotUpstreamSize)
+				opt := d.Res.IsEdns0()
+				require.NotNil(t, opt)
+				assert.Equal(t, tc.clientSize, opt.UDPSize())
+			} else {
+				assert.Equal(t, uint16(defaultUDPBufSize), gotUpstreamSize)
+				assert.Nil(t, d.Res.IsEdns0())
+			}
+		})
+	}
 }
 
 func TestProxy_Resolve_ecs(t *testing.T) {
@@ -609,7 +695,7 @@ func TestProxy_Resolve_ecsProxyCacheMinMaxTTL(t *testing.T) {
 // with wantTTL after applying ECS cache TTL limits.
 func testProxyResolveECSCacheTTL(tb testing.TB, ttl, wantTTL uint32) {
 	req := dnsproxytest.NewTestRequest()
-	subnet := setECS(req, dnsproxytest.IPv4, 0)
+	subnet := setECS(req, dnsproxytest.IPv4, 0, 0)
 	ans := []dns.RR{dnsproxytest.NewRR(
 		tb,
 		dnsproxytest.FQDN,
@@ -977,7 +1063,7 @@ func newECSReplyHandler(
 		}
 
 		if ecsIP != nil && *ecsIP != nil {
-			setECS(resp, *ecsIP, 24)
+			setECS(resp, *ecsIP, 24, 0)
 		}
 
 		if ecsReqIP == nil {

@@ -193,9 +193,13 @@ func TestUpstreams(t *testing.T) {
 		bootstrap: googleBoot,
 		address:   "sdns://AQMAAAAAAAAAETk0LjE0MC4xNC4xNTo1NDQzILgxXdexS27jIKRw3C7Wsao5jMnlhvhdRUXWuMm1AFq6ITIuZG5zY3J5cHQuZmFtaWx5Lm5zMS5hZGd1YXJkLmNvbQ",
 	}, {
-		// Cloudflare DNS (DNS-over-HTTPS)
+		// Cloudflare DNS (DNS-over-HTTPS).  The stamp has no certificate hashes.
+		// The hashes previously published for this server no longer match its
+		// certificate, so a pinned stamp is rejected.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/506.
 		bootstrap: googleBoot,
-		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
+		address:   "sdns://AgAAAAAAAAAABzEuMC4wLjEAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5",
 	}, {
 		// Google (Plain)
 		bootstrap: nil,
@@ -427,8 +431,9 @@ func TestUpstreamsInvalidBootstrap(t *testing.T) {
 		address:   "https://1dot1dot1dot1.cloudflare-dns.com/dns-query",
 		bootstrap: []string{"8.8.8.1", "1.0.0.1"},
 	}, {
-		// Cloudflare DNS (DoH)
-		address:   "sdns://AgcAAAAAAAAABzEuMC4wLjGgENk8mGSlIfMGXMOlIlCcKvq7AVgcrZxtjon911-ep0cg63Ul-I8NlFj4GplQGb_TTLiczclX57DvMV8Q-JdjgRgSZG5zLmNsb3VkZmxhcmUuY29tCi9kbnMtcXVlcnk",
+		// Cloudflare DNS (DoH), without certificate hashes.  See the note in
+		// [TestUpstreams].
+		address:   "sdns://AgAAAAAAAAAABzEuMC4wLjEAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5",
 		bootstrap: []string{"8.8.8.8:53", "8.8.8.1:53"},
 	}, {
 		// AdGuard DNS (DNS-over-TLS)

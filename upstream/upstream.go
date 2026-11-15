@@ -3,7 +3,9 @@
 package upstream
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -312,6 +314,8 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 		opts.Bootstrap = StaticResolver{ip}
 	}
 
+	applyStampCertPin(stamp, opts)
+
 	switch stamp.Proto {
 	case dnsstamps.StampProtoTypePlain:
 		return newPlain(&url.URL{Scheme: "udp", Host: stamp.ServerAddrStr}, opts)
@@ -326,6 +330,111 @@ func parseStamp(upsURL *url.URL, opts *Options) (u Upstream, err error) {
 	default:
 		return nil, fmt.Errorf("unsupported stamp protocol %s", &stamp.Proto)
 	}
+}
+
+// applyStampCertPin installs a TLS verifier when stamp carries certificate
+// hashes.  Those hashes are SHA-256 digests of a certificate's TBS portion.
+// Plain and DNSCrypt stamps do not pin a TLS certificate this way.
+//
+// See https://dnscrypt.info/stamps-specifications
+// and https://github.com/AdguardTeam/dnsproxy/issues/506.
+func applyStampCertPin(stamp dnsstamps.ServerStamp, opts *Options) {
+	if len(stamp.Hashes) == 0 || !pinnedStampProto(stamp.Proto) {
+		return
+	}
+
+	opts.VerifyServerCertificate = newStampCertVerifier(
+		stamp.Hashes,
+		opts.VerifyServerCertificate,
+	)
+}
+
+// pinnedStampProto reports whether proto carries TLS certificate hashes.
+func pinnedStampProto(proto dnsstamps.StampProtoType) (ok bool) {
+	switch proto {
+	case
+		dnsstamps.StampProtoTypeDoH,
+		dnsstamps.StampProtoTypeTLS,
+		dnsstamps.StampProtoTypeDoQ:
+		return true
+	default:
+		return false
+	}
+}
+
+// newStampCertVerifier returns a TLS callback that accepts the handshake only
+// when one certificate's TBS hash is in hashes.  next, if not nil, runs after
+// that check.
+func newStampCertVerifier(
+	hashes [][]byte,
+	next func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error,
+) (verify func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error) {
+	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) (err error) {
+		if !stampCertHashMatches(rawCerts, verifiedChains, hashes) {
+			return errors.Error("stamp certificate hash mismatch")
+		}
+
+		if next == nil {
+			return nil
+		}
+
+		return next(rawCerts, verifiedChains)
+	}
+}
+
+// stampCertHashMatches reports whether any presented or verified certificate
+// has a TBS SHA-256 digest in hashes.
+func stampCertHashMatches(
+	rawCerts [][]byte,
+	verifiedChains [][]*x509.Certificate,
+	hashes [][]byte,
+) (ok bool) {
+	if rawStampCertsMatch(rawCerts, hashes) {
+		return true
+	}
+
+	return chainStampCertsMatch(verifiedChains, hashes)
+}
+
+// rawStampCertsMatch reports whether any raw certificate matches hashes.
+func rawStampCertsMatch(rawCerts, hashes [][]byte) (ok bool) {
+	for _, der := range rawCerts {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			continue
+		}
+
+		if tbsMatchesStampHash(cert.RawTBSCertificate, hashes) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// chainStampCertsMatch reports whether any verified certificate matches hashes.
+func chainStampCertsMatch(verifiedChains [][]*x509.Certificate, hashes [][]byte) (ok bool) {
+	for _, chain := range verifiedChains {
+		for _, cert := range chain {
+			if tbsMatchesStampHash(cert.RawTBSCertificate, hashes) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// tbsMatchesStampHash reports whether the SHA-256 of tbs is one of hashes.
+func tbsMatchesStampHash(tbs []byte, hashes [][]byte) (ok bool) {
+	sum := sha256.Sum256(tbs)
+	for _, hash := range hashes {
+		if bytes.Equal(sum[:], hash) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // addPort appends port to u if it's absent.

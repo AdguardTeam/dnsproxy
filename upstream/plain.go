@@ -159,12 +159,36 @@ func setRequestForNetwork(orig *dns.Msg, conn *dns.Conn, network network) (req *
 		return req
 	}
 
-	conn.UDPSize = dns.MinMsgSize
+	// miekg/dns reads at most [dns.MinMsgSize] bytes unless Conn.UDPSize or the
+	// request OPT size is larger.  A bigger datagram is truncated and fails to
+	// unpack.  Read the full message, and raise a smaller OPT so the library
+	// does not shrink the buffer back down.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/524.
+	conn.UDPSize = dns.MaxMsgSize
+	req = withUpstreamUDPSize(orig, dns.MaxMsgSize)
 
 	if orig.Id == 0 {
-		req = orig.Copy()
+		if req == orig {
+			req = orig.Copy()
+		}
+
 		req.Id = dns.Id()
 	}
+
+	return req
+}
+
+// withUpstreamUDPSize returns orig, or a copy whose OPT UDP size is at least
+// size.  orig must not be nil.
+func withUpstreamUDPSize(orig *dns.Msg, size uint16) (req *dns.Msg) {
+	opt := orig.IsEdns0()
+	if opt == nil || opt.UDPSize() >= size {
+		return orig
+	}
+
+	req = orig.Copy()
+	req.IsEdns0().SetUDPSize(size)
 
 	return req
 }

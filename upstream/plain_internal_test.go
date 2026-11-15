@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -141,6 +142,118 @@ func TestUpstream_plainDNS_fallbackToTCP(t *testing.T) {
 			assert.Equal(t, tc.wantUDP, int(udpReqNum.Load()))
 			assert.Equal(t, tc.wantTCP, int(tcpReqNum.Load()))
 		})
+	}
+}
+
+func TestUpstream_plainDNS_largeUDPResponse(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		edns bool
+	}{{
+		name: "no_edns",
+	}, {
+		name: "edns_512",
+		edns: true,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			addr := serveLargeUDP(t)
+			u, err := AddressToUpstream(addr, &Options{
+				Logger:  testLogger,
+				Timeout: time.Second,
+			})
+			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
+
+			req := createTestMessage()
+			req.Question[0].Qtype = dns.TypeTXT
+			if tc.edns {
+				req.SetEdns0(dns.MinMsgSize, false)
+			}
+
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			resp, err := u.Exchange(ctx, req)
+			require.NoError(t, err)
+			require.Len(t, resp.Answer, 1)
+
+			txt := testutil.RequireTypeAssert[*dns.TXT](t, resp.Answer[0])
+			assert.Greater(t, len(strings.Join(txt.Txt, "")), dns.MinMsgSize)
+		})
+	}
+}
+
+// serveLargeUDP listens on UDP and answers every query with a TXT record larger
+// than 512 bytes.  It returns the address to query.
+func serveLargeUDP(tb testing.TB) (addr string) {
+	tb.Helper()
+
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, conn.Close)
+
+	go func() {
+		buf := make([]byte, dns.MaxMsgSize)
+		for {
+			n, peer, readErr := conn.ReadFrom(buf)
+			if readErr != nil {
+				return
+			}
+
+			out, ok := largeUDPResponse(buf[:n])
+			if !ok {
+				continue
+			}
+
+			_, _ = conn.WriteTo(out, peer)
+		}
+	}()
+
+	return conn.LocalAddr().String()
+}
+
+// largeUDPResponse packs a TXT reply larger than 512 bytes for packet.
+func largeUDPResponse(packet []byte) (out []byte, ok bool) {
+	req := &dns.Msg{}
+	if req.Unpack(packet) != nil || len(req.Question) != 1 {
+		return nil, false
+	}
+
+	resp := (&dns.Msg{}).SetReply(req)
+	resp.Answer = []dns.RR{largeTXT(req.Question[0].Name)}
+
+	out, err := resp.Pack()
+	if err != nil {
+		return nil, false
+	}
+
+	return out, true
+}
+
+// largeTXT returns a TXT record whose character data is larger than 512 bytes.
+func largeTXT(name string) (rr *dns.TXT) {
+	const payloadLen = 700
+
+	payload := strings.Repeat("x", payloadLen)
+	chunks := make([]string, 0, payloadLen/255+1)
+	for len(payload) > 0 {
+		n := min(255, len(payload))
+		chunks = append(chunks, payload[:n])
+		payload = payload[n:]
+	}
+
+	return &dns.TXT{
+		Hdr: dns.RR_Header{
+			Name:   name,
+			Rrtype: dns.TypeTXT,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		Txt: chunks,
 	}
 }
 

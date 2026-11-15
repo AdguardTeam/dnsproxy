@@ -131,8 +131,11 @@ func (p *Proxy) handleTCPConnection(
 	proto Proto,
 	reqSema syncutil.Semaphore,
 ) {
+	hold := newAdmission(reqSema)
+	defer hold.free()
+	ctx = withAdmission(ctx, hold)
+
 	defer slogutil.RecoverAndLog(ctx, p.logger)
-	defer reqSema.Release()
 	defer func() {
 		err := conn.Close()
 		if err != nil {

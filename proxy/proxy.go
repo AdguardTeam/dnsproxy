@@ -125,9 +125,10 @@ type Proxy struct {
 
 	// upstreamSlots bounds requests blocked on an upstream exchange or on an
 	// identical in-flight lookup.  When [Proxy.maxGoroutines] is greater than
-	// one, its capacity is one smaller, so a query that can be answered
-	// without waiting on upstream can still be admitted.  Nil means that there
-	// is no separate limit.
+	// one, its capacity is one smaller.  A request that finds every slot busy
+	// releases its admission hold and waits, so the listener can still admit a
+	// query that does not need upstream.  Nil means that there is no separate
+	// limit.
 	//
 	// See https://github.com/AdguardTeam/AdGuardHome/issues/4825.
 	upstreamSlots chan struct{}
@@ -978,9 +979,52 @@ func (p *Proxy) completeResolve(
 	dctx.scrub()
 }
 
-// errUpstreamBusy is returned when every non-reserved upstream slot is already
-// held by a request waiting on an upstream or on an identical in-flight query.
+// errUpstreamBusy is returned when a request waited for an upstream slot until
+// its deadline and none became free.
 const errUpstreamBusy errors.Error = "too many upstream exchanges"
+
+// admission is one hold of the proxy's request semaphore.  free releases it at
+// most once, including when a request drops the hold while it waits for an
+// upstream slot.
+type admission struct {
+	once   sync.Once
+	freeFn func()
+}
+
+// newAdmission returns a hold that releases sema at most once.
+func newAdmission(sema syncutil.Semaphore) (a *admission) {
+	return &admission{
+		freeFn: sema.Release,
+	}
+}
+
+// free releases the hold if it is still held.
+func (a *admission) free() {
+	if a == nil {
+		return
+	}
+
+	a.once.Do(func() {
+		if a.freeFn != nil {
+			a.freeFn()
+		}
+	})
+}
+
+// admissionCtxKey is the context key for an [*admission].
+type admissionCtxKey struct{}
+
+// withAdmission returns a context that carries a.
+func withAdmission(ctx context.Context, a *admission) (with context.Context) {
+	return context.WithValue(ctx, admissionCtxKey{}, a)
+}
+
+// admissionFrom returns the admission carried by ctx, or nil.
+func admissionFrom(ctx context.Context) (a *admission) {
+	a, _ = ctx.Value(admissionCtxKey{}).(*admission)
+
+	return a
+}
 
 // prepareCachedResolve applies DNSSEC and pending-request handling, and returns
 // a cache hit when one is available.  handled is true when dctx is complete.
@@ -1005,7 +1049,7 @@ func (p *Proxy) prepareCachedResolve(
 	var release func()
 	var loaded bool
 	loaded, err = p.pendingRequests.queue(ctx, dctx, func() (waitErr error) {
-		release, waitErr = p.acquireUpstream()
+		release, waitErr = p.acquireUpstream(ctx)
 
 		return waitErr
 	})
@@ -1045,49 +1089,89 @@ func (p *Proxy) finishPendingWaiter(
 	return finish, true, waitErr
 }
 
-// exchangeUpstream resolves dctx through upstream servers.  When the upstream
-// concurrency limit is reached, it sets a SERVFAIL response and returns
-// ok=false without waiting.  dctx must not be nil.
+// exchangeUpstream resolves dctx through upstream servers.  It waits for an
+// upstream slot until the request context's deadline or [upstreamWait],
+// whichever is sooner.  If that wait expires, it sets a SERVFAIL response and
+// returns ok=false.  dctx must not be nil.
 func (p *Proxy) exchangeUpstream(
 	ctx context.Context,
 	dctx *DNSContext,
 ) (ok bool, err error) {
-	release, err := p.acquireUpstream()
+	release, err := p.acquireUpstream(ctx)
 	if err != nil {
-		p.failUpstreamBusy(ctx, dctx)
+		if errors.Is(err, errUpstreamBusy) {
+			p.failUpstreamBusy(ctx, dctx)
 
-		return false, nil
+			return false, nil
+		}
+
+		return false, err
 	}
 	defer release()
 
 	return p.replyFromUpstream(ctx, dctx)
 }
 
+// upstreamWait is how long a request waits for an upstream slot when every slot
+// is busy and the request context has no sooner deadline.
+const upstreamWait = defaultTimeout
+
 // acquireUpstream takes a slot for a request that will block on an upstream.
-// release is always non-nil when err is nil.
-func (p *Proxy) acquireUpstream() (release func(), err error) {
+// If none is free, it releases the request's admission hold before waiting, so
+// the listener can admit another query.  release is always non-nil when err is
+// nil.
+func (p *Proxy) acquireUpstream(ctx context.Context) (release func(), err error) {
 	if p.upstreamSlots == nil {
 		return func() {}, nil
 	}
+	if release, ok := p.tryUpstreamSlot(); ok {
+		return release, nil
+	}
+
+	admissionFrom(ctx).free()
+
+	return p.waitUpstreamSlot(ctx)
+}
+
+// tryUpstreamSlot takes an upstream slot without waiting.
+func (p *Proxy) tryUpstreamSlot() (release func(), ok bool) {
+	select {
+	case p.upstreamSlots <- struct{}{}:
+		return newUpstreamRelease(p.upstreamSlots), true
+	default:
+		return nil, false
+	}
+}
+
+// waitUpstreamSlot waits for an upstream slot.  The request context's deadline
+// wins over [upstreamWait].
+func (p *Proxy) waitUpstreamSlot(ctx context.Context) (release func(), err error) {
+	waitCtx, cancel := context.WithTimeout(ctx, upstreamWait)
+	defer cancel()
 
 	select {
 	case p.upstreamSlots <- struct{}{}:
-		released := false
+		return newUpstreamRelease(p.upstreamSlots), nil
+	case <-waitCtx.Done():
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 
-		return func() {
-			if released {
-				return
-			}
-			released = true
-
-			<-p.upstreamSlots
-		}, nil
-	default:
 		return nil, errUpstreamBusy
 	}
 }
 
-// failUpstreamBusy sets a prompt SERVFAIL when an upstream slot is unavailable.
+// newUpstreamRelease returns a function that returns one upstream slot at most
+// once.
+func newUpstreamRelease(slots chan struct{}) (release func()) {
+	var once sync.Once
+
+	return func() {
+		once.Do(func() { <-slots })
+	}
+}
+
+// failUpstreamBusy sets SERVFAIL when the wait for an upstream slot expired.
 // dctx must not be nil.
 func (p *Proxy) failUpstreamBusy(ctx context.Context, dctx *DNSContext) {
 	p.logger.DebugContext(ctx, "upstream concurrency limit reached")

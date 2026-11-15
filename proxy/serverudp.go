@@ -111,9 +111,10 @@ func (p *Proxy) udpPacketLoop(ctx context.Context, conn *net.UDPConn, reqSema sy
 				break
 			}
 			go func() {
-				defer reqSema.Release()
+				hold := newAdmission(reqSema)
+				defer hold.free()
 
-				p.udpHandlePacket(ctx, packet, localIP, remoteAddr, conn)
+				p.udpHandlePacket(withAdmission(ctx, hold), packet, localIP, remoteAddr, conn)
 			}()
 		}
 

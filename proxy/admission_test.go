@@ -2,7 +2,9 @@ package proxy_test
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -148,9 +150,10 @@ func startBlockingProxy(
 	return p.Addr(proxy.ProtoUDP).String()
 }
 
-// saturateUpstream holds one upstream exchange, then sends a second.  When a
-// slot is reserved for local answers, the second exchange returns SERVFAIL.
-// Otherwise it remains in the upstream and both admission slots stay occupied.
+// saturateUpstream holds one upstream exchange, then sends a second.  The
+// second either stays queued without an admission slot, and its client times
+// out, or it also enters the upstream.  Either way the reserved admission slot
+// is not held by both for the local query that follows.
 func saturateUpstream(tb testing.TB, addr string, inUpstream *atomic.Int32) {
 	tb.Helper()
 
@@ -208,6 +211,93 @@ func waitForSaturation(
 			tb.Fatal("timed out waiting for upstream saturation")
 		case <-time.After(5 * time.Millisecond):
 		}
+	}
+}
+
+func TestProxy_ServeDNS_upstreamBurstWaits(t *testing.T) {
+	t.Parallel()
+
+	const (
+		burst       = 6
+		delay       = 50 * time.Millisecond
+		maxRoutines = 2
+	)
+
+	u := &dnsproxytest.Upstream{
+		OnAddress: func() (addr string) { return "slow.invalid." },
+		OnClose:   func() (err error) { return nil },
+		OnExchange: func(_ context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
+			time.Sleep(delay)
+			resp = (&dns.Msg{}).SetReply(req)
+			resp.Answer = []dns.RR{&dns.A{
+				Hdr: dns.RR_Header{
+					Name:   req.Question[0].Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    testTTL,
+				},
+				A: proxytest.IPv4.To4(),
+			}}
+
+			return resp, nil
+		},
+	}
+	p, err := proxy.New(&proxy.Config{
+		Logger:        testLogger,
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{u},
+		},
+		TrustedProxies: proxytest.DefaultTrustedProxies,
+		MaxGoroutines:  maxRoutines,
+	})
+	require.NoError(t, err)
+	servicetest.RequireRun(t, p, proxytest.Timeout)
+
+	addr := p.Addr(proxy.ProtoUDP).String()
+	var servfails atomic.Int32
+	var noerrors atomic.Int32
+	var failures atomic.Int32
+	var wg sync.WaitGroup
+	for i := range burst {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			resp, exchErr := exchangeA(addr, fmt.Sprintf("burst-%d.test.", i), 3*time.Second)
+			countBurstResult(resp, exchErr, &noerrors, &servfails, &failures)
+		}()
+	}
+	wg.Wait()
+
+	t.Logf("burst %d: noerror=%d servfail=%d other_err=%d", burst, noerrors.Load(), servfails.Load(), failures.Load())
+	assert.Equal(t, int32(0), failures.Load())
+	assert.Equal(t, int32(0), servfails.Load())
+	assert.Equal(t, int32(burst), noerrors.Load())
+}
+
+// countBurstResult records one burst response.
+func countBurstResult(
+	resp *dns.Msg,
+	err error,
+	noerrors *atomic.Int32,
+	servfails *atomic.Int32,
+	failures *atomic.Int32,
+) {
+	if err != nil || resp == nil {
+		failures.Add(1)
+
+		return
+	}
+
+	switch resp.Rcode {
+	case dns.RcodeServerFailure:
+		servfails.Add(1)
+	case dns.RcodeSuccess:
+		noerrors.Add(1)
+	default:
+		failures.Add(1)
 	}
 }
 

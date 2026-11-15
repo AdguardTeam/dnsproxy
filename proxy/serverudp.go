@@ -117,17 +117,59 @@ func (p *Proxy) udpPacketLoop(ctx context.Context, conn *net.UDPConn, reqSema sy
 			}()
 		}
 
-		if err != nil {
-			logUDPConnError(err, conn, p.logger)
-
+		if err != nil && p.handleUDPReadError(ctx, conn, err) {
 			break
 		}
 	}
 }
 
+// handleUDPReadError logs err and reports whether the UDP read loop should
+// stop.  A timeout leaves the socket usable, so the loop continues.  Any other
+// error stops the loop.  Unless the socket is already closed, it is closed so
+// a dead listener does not stay bound and drop datagrams with no reader.
+//
+// See https://github.com/AdguardTeam/dnsproxy/issues/525.
+func (p *Proxy) handleUDPReadError(
+	ctx context.Context,
+	conn *net.UDPConn,
+	err error,
+) (stop bool) {
+	logUDPConnError(err, conn, p.logger)
+	if !udpReadErrIsFatal(err) {
+		return false
+	}
+
+	if !errors.Is(err, net.ErrClosed) {
+		closeErr := conn.Close()
+		if closeErr != nil {
+			p.logger.ErrorContext(ctx, "closing udp listener", slogutil.KeyError, closeErr)
+		}
+	}
+
+	return true
+}
+
+// udpReadErrIsFatal returns true if err should stop the UDP read loop.
+// Timeouts are not fatal.  err must not be nil.
+func udpReadErrIsFatal(err error) (fatal bool) {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return false
+	}
+
+	return true
+}
+
 // logUDPConnError writes suitable log message for given err.  conn must not be
 // nil.
 func logUDPConnError(err error, conn *net.UDPConn, l *slog.Logger) {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		l.Debug("reading from udp timed out", "addr", conn.LocalAddr(), slogutil.KeyError, err)
+
+		return
+	}
+
 	if errors.Is(err, net.ErrClosed) {
 		l.Debug("udp connection closed", "addr", conn.LocalAddr())
 	} else {

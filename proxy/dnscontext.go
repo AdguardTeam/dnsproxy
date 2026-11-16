@@ -175,25 +175,31 @@ func (dctx *DNSContext) scrub() {
 		dctx.Res.SetEdns0(dctx.udpSize, dctx.doBit)
 	}
 
-	dctx.Res.Truncate(int(dnsSize(dctx.Proto == ProtoUDP, dctx.Req)))
+	// Truncate from the EDNS state captured before the request was mutated.
+	// [Proxy.addDO] may attach an OPT record to a non-EDNS query so that
+	// DNSSEC records can be cached; re-reading that OPT would advertise the
+	// injected buffer (2048) and send a non-EDNS UDP client more than 512
+	// bytes.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/540.
+	dctx.Res.Truncate(dctx.maxResponseSize())
 	// Some devices require DNS message compression.
 	dctx.Res.Compress = true
 }
 
-// dnsSize returns the buffer size advertised in the requests OPT record.  When
-// the request is over TCP, it returns the maximum allowed size of 64KiB.  If
-// isUDP is true, r must not be nil.
-func dnsSize(isUDP bool, r *dns.Msg) (size uint16) {
-	if !isUDP {
+// maxResponseSize returns the maximum size of dctx.Res.  For UDP it follows the
+// EDNS buffer captured by [DNSContext.calcFlagsAndSize].  calcFlagsAndSize must
+// have been called.
+func (dctx *DNSContext) maxResponseSize() (size int) {
+	if dctx.Proto != ProtoUDP {
 		return dns.MaxMsgSize
 	}
 
-	var size16 uint16
-	if o := r.IsEdns0(); o != nil {
-		size16 = o.UDPSize()
+	if !dctx.hasEDNS0 {
+		return dns.MinMsgSize
 	}
 
-	return max(dns.MinMsgSize, size16)
+	return max(dns.MinMsgSize, int(dctx.udpSize))
 }
 
 // DoQVersion is an enumeration with supported DoQ versions.

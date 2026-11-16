@@ -185,7 +185,7 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() (t time.Time) {
+		OnNow: func() (n time.Time) {
 			return now
 		},
 	}
@@ -237,7 +237,7 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() (t time.Time) {
+		OnNow: func() (n time.Time) {
 			return now
 		},
 	}
@@ -320,7 +320,7 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() (t time.Time) {
+		OnNow: func() (n time.Time) {
 			return now
 		},
 	}

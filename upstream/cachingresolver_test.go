@@ -328,7 +328,7 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 	addr := netip.MustParseAddr(testIPv4)
 	var ip net.IP = addr.AsSlice()
 
-	answ := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 60, ip)
+	answ := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 0, ip)
 
 	// firstExchangeStarted is closed when the first lookup reaches the
 	// upstream, and firstExchangeRelease keeps it in flight until all the

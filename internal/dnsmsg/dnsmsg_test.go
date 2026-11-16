@@ -24,6 +24,9 @@ var testTimeout = 1 * time.Second
 const testTTL = 3600
 
 // Common IP address strings for cache tests.
+//
+// TODO(m.kazantsev):  Consider DRYing up with the variables from the
+// cache_internal_test.go file.
 const (
 	testCacheIPStr1 = "192.0.2.65"
 	testCacheIPStr2 = "192.0.2.129"
@@ -51,13 +54,8 @@ func TestCacheTTL(t *testing.T) {
 		testTTL,
 		"alias."+dnsproxytest.FQDN,
 	)
-	soa := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeSOA, testTTL, nil)
-	nsRR1 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns1."+dnsproxytest.FQDN)
-	nsRR2 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns2."+dnsproxytest.FQDN)
-	extra := []dns.RR{
-		dnsproxytest.NewRR(t, "ns1."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP1),
-		dnsproxytest.NewRR(t, "ns2."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP2),
-	}
+
+	soa, nsRR1, nsRR2, extra := newTestRRs(t)
 
 	// See https://datatracker.ietf.org/doc/html/rfc2308.
 	testCases := []struct {
@@ -134,13 +132,7 @@ func TestCacheTTL_nodata(t *testing.T) {
 	t.Parallel()
 
 	question := dnsproxytest.NewTestRequest().Question
-	soa := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeSOA, testTTL, nil)
-	nsRR1 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns1."+dnsproxytest.FQDN)
-	nsRR2 := dnsproxytest.NewRR(t, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns2."+dnsproxytest.FQDN)
-	extra := []dns.RR{
-		dnsproxytest.NewRR(t, "ns1."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP1),
-		dnsproxytest.NewRR(t, "ns2."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP2),
-	}
+	soa, nsRR1, nsRR2, extra := newTestRRs(t)
 
 	// See https://datatracker.ietf.org/doc/html/rfc2308.
 	testCases := []struct {
@@ -192,4 +184,20 @@ func TestCacheTTL_nodata(t *testing.T) {
 			assert.Equal(t, tc.wantTTL, dnsmsg.CacheTTL(ctx, testLogger, tc.req))
 		})
 	}
+}
+
+// newTestRRs creates a set of test DNS resource records including SOA, NS, and
+// additional records for testing purposes.
+func newTestRRs(tb testing.TB) (soa, nsRR1, nsRR2 dns.RR, extra []dns.RR) {
+	tb.Helper()
+
+	soa = dnsproxytest.NewRR(tb, dnsproxytest.FQDN, dns.TypeSOA, testTTL, nil)
+	nsRR1 = dnsproxytest.NewRR(tb, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns1."+dnsproxytest.FQDN)
+	nsRR2 = dnsproxytest.NewRR(tb, dnsproxytest.FQDN, dns.TypeNS, testTTL, "ns2."+dnsproxytest.FQDN)
+	extra = []dns.RR{
+		dnsproxytest.NewRR(tb, "ns1."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP1),
+		dnsproxytest.NewRR(tb, "ns2."+dnsproxytest.FQDN, dns.TypeA, testTTL, testCacheIP2),
+	}
+
+	return soa, nsRR1, nsRR2, extra
 }

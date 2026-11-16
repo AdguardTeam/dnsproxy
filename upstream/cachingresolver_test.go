@@ -328,15 +328,34 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 	addr := netip.MustParseAddr(testIPv4)
 	var ip net.IP = addr.AsSlice()
 
+	answ := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 60, ip)
+
+	// firstExchangeStarted is closed when the first lookup reaches the
+	// upstream, and firstExchangeRelease keeps it in flight until all the
+	// other lookups have had a chance to join it.
+	firstExchangeStarted := make(chan struct{})
+	firstExchangeRelease := make(chan struct{})
+
+	exchanges := atomic.Uint32{}
 	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
+		if exchanges.Add(1) == 1 {
+			close(firstExchangeStarted)
+			<-firstExchangeRelease
+		}
+
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = dns.RcodeSuccess
-		resp.Answer = append(resp.Answer, proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 60, ip))
+		resp.Answer = append(resp.Answer, answ)
 
 		return resp, nil
 	}
 
 	r := upstream.NewCachingResolver(newTestUpstreamResolver(t, clock, onExchange))
+
+	// Start all the lookups at once so that they race for the cache check.
+	ready := &sync.WaitGroup{}
+	ready.Add(attemptNum)
+	start := make(chan struct{})
 
 	wg := &sync.WaitGroup{}
 	pt := testutil.NewPanicT(t)
@@ -344,6 +363,10 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 	for range attemptNum {
 		wg.Go(func() {
 			ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+			ready.Done()
+			<-start
+
 			addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP4, proxytest.FQDN)
 
 			require.NoError(pt, err)
@@ -352,5 +375,24 @@ func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 		})
 	}
 
+	ready.Wait()
+	close(start)
+
+	// The first lookup is now blocked in the upstream exchange, so the cache
+	// is still empty.  Any other lookup that isn't deduplicated with the
+	// first one performs its own exchange.
+	testutil.RequireReceive(t, firstExchangeStarted, testTimeout)
+
+	// Give the other lookups time to hit the empty cache and join the
+	// in-flight one.  Otherwise they could be served from the cache after
+	// the first lookup is done, hiding the missing deduplication.
+	assert.Never(t, func() bool {
+		return exchanges.Load() > 1
+	}, 100*time.Millisecond, 10*time.Millisecond)
+
+	close(firstExchangeRelease)
+
 	wg.Wait()
+
+	assert.Equal(t, uint32(1), exchanges.Load())
 }

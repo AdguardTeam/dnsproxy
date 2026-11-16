@@ -36,7 +36,8 @@ type CachingResolver struct {
 	cache map[cacheKey]*ipResult
 }
 
-// NewCachingResolver creates a new caching resolver that uses r for lookups.
+// NewCachingResolver creates a new caching resolver that uses r for lookups.  r
+// must not be nil.
 func NewCachingResolver(r *UpstreamResolver) (cr *CachingResolver) {
 	return &CachingResolver{
 		clock:    r.clock,
@@ -79,13 +80,9 @@ func (r *CachingResolver) LookupNetIP(
 		return []netip.Addr{}, err
 	}
 
-	if v == nil {
-		return []netip.Addr{}, nil
-	}
-
 	res, ok := v.(*ipResult)
 	if !ok {
-		panic(fmt.Sprintf("bad type for cache value: %T(%[1]v)", v, v))
+		panic(fmt.Sprintf("bad type for cache value: %T(%[1]v)", v))
 	}
 
 	if res == nil {

@@ -9,68 +9,74 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestWithRetry(t *testing.T) {
+// Common errors for tests.
+const (
+	testErrA errors.Error = "foo"
+	testErrB errors.Error = "bar"
+)
+
+// bindGood is a bind func that succeeds on every call.
+func bindGood() (err error) {
+	return nil
+}
+
+// bindBadOne is a bind func that returns [errA] on every call.
+func bindBadOne() (err error) {
+	return testErrA
+}
+
+// newBindBadBoth returns a bind func that fails with two different errors.
+func newBindBadBoth() (f func() (err error)) {
+	returnedA := false
+
+	return func() (err error) {
+		if !returnedA {
+			returnedA = true
+
+			return testErrA
+		}
+
+		return testErrB
+	}
+}
+
+// newBindBadThenOK returns a bind func that fails on the first call and
+// succeeds on the second.
+func newBindBadThenOK() (f func() (err error)) {
+	returnedErr := false
+
+	return func() (err error) {
+		if !returnedErr {
+			returnedErr = true
+
+			return assert.AnError
+		}
+
+		return nil
+	}
+}
+
+func TestProxy_BindWithRetry(t *testing.T) {
 	t.Parallel()
-
-	const (
-		errA errors.Error = "error about a"
-		errB errors.Error = "error about b"
-	)
-
-	var (
-		good = func() (err error) {
-			return nil
-		}
-
-		badOne = func() (err error) {
-			return errA
-		}
-
-		// Don't protect against concurrent access since the closure is expected
-		// to be used in a single case.
-		returnedA = false
-		badBoth   = func() (err error) {
-			if !returnedA {
-				returnedA = true
-
-				return errA
-			}
-
-			return errB
-		}
-
-		// Don't protect against concurrent access since the closure is expected
-		// to be used in a single case.
-		returnedErr = false
-		badThenOk   = func() (err error) {
-			if !returnedErr {
-				returnedErr = true
-
-				return assert.AnError
-			}
-
-			return nil
-		}
-	)
 
 	testCases := []struct {
 		f       func() (err error)
 		wantErr error
 		name    string
 	}{{
-		f:       good,
+		f:       bindGood,
 		wantErr: nil,
 		name:    "no_error",
 	}, {
-		f:       badOne,
-		wantErr: errA,
+		f:       bindBadOne,
+		wantErr: testErrA,
 		name:    "one_error",
 	}, {
-		f:       badBoth,
-		wantErr: errA,
+		f:       newBindBadBoth(),
+		wantErr: testErrA,
 		name:    "two_errors",
 	}, {
-		f:       badThenOk,
+		f:       newBindBadThenOK(),
 		wantErr: nil,
 		name:    "error_then_ok",
 	}}

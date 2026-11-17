@@ -56,6 +56,8 @@ var _ Resolver = (*CachingResolver)(nil)
 // NOTE:  Concurrent lookups for the same host and network share the context of
 // the caller that started them, so a waiter isn't interrupted by its own
 // cancelled ctx, but may fail if the initiating ctx was cancelled.
+//
+// TODO(m.kazantsev):  Make concurrent lookups honor the caller's context.
 func (r *CachingResolver) LookupNetIP(
 	ctx context.Context,
 	network bootstrap.Network,

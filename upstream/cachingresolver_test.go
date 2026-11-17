@@ -25,6 +25,8 @@ import (
 const testIPv4 = "192.0.2.1"
 
 func TestCachingResolver_staleness(t *testing.T) {
+	t.Parallel()
+
 	ip4 := netip.MustParseAddr(testIPv4)
 	ip6 := netip.MustParseAddr("2001:db8::1")
 
@@ -88,6 +90,8 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
 				ctx := testutil.ContextWithTimeout(t, testTimeout)
 				res, err := r.LookupNetIP(ctx, tc.network, proxytest.FQDN)
 				require.NoError(t, err)
@@ -99,13 +103,12 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 	t.Run("staleness", func(t *testing.T) {
 		now := time.Now()
-		// TODO(m.kazantsev):  Use [bootstrap.NetworkIP] there.
-		cached := r.FindCached(proxytest.FQDN, bootstrap.NetworkIP4, now)
-		require.ElementsMatch(t, []netip.Addr{ip4}, cached)
+		cached := r.FindCached(proxytest.FQDN, bootstrap.NetworkIP, now)
+		require.ElementsMatch(t, []netip.Addr{ip4, ip6}, cached)
 
 		cached = r.FindCached(
 			proxytest.FQDN,
-			bootstrap.NetworkIP4,
+			bootstrap.NetworkIP,
 			now.Add(smallTTL+time.Second),
 		)
 		require.Empty(t, cached)
@@ -313,6 +316,7 @@ func newOnExchangeWithCalls(
 	return onExchange
 }
 
+// TODO(m.kazantsev):  Consider adding more testcases.
 func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
 	t.Parallel()
 

@@ -13,8 +13,9 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/cache/bytecache"
 	"github.com/AdguardTeam/golibs/mathutil"
+	"github.com/c2h5oh/datasize"
 	"github.com/miekg/dns"
 )
 
@@ -32,10 +33,10 @@ type cache struct {
 	itemsWithSubnetLock *sync.RWMutex
 
 	// items is the requests cache.
-	items glcache.Cache
+	items bytecache.Interface
 
 	// itemsWithSubnet is the requests cache.
-	itemsWithSubnet glcache.Cache
+	itemsWithSubnet bytecache.Interface
 
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
@@ -240,8 +241,8 @@ func (c *cache) get(req *dns.Msg) (ci *cacheItem, expired bool, key []byte) {
 	}
 
 	key = msgToKey(req)
-	data := c.items.Get(key)
-	if data == nil {
+	data, ok := c.items.Get(key)
+	if !ok {
 		return nil, false, key
 	}
 
@@ -271,19 +272,19 @@ func (c *cache) getWithSubnet(req *dns.Msg, n *net.IPNet) (ci *cacheItem, expire
 	m, _ := n.Mask.Size()
 
 	k = msgToKeyWithSubnet(req, ecsIP, m)
-	data := c.itemsWithSubnet.Get(k)
+	data, ok := c.itemsWithSubnet.Get(k)
 
 	// In order to reduce allocations we apply mask on bits level.  As the key
 	// k has ecsIP in bytes slice representation, each iteration we can just
 	// clear one bit in the end of it by applying the bitmask.
-	for bitmask := ^byte(0); m >= 0 && data == nil; m-- {
+	for bitmask := ^byte(0); m >= 0 && !ok; m-- {
 		// Set mask identification byte in the key.
 		k[keyMaskIndex] = byte(m)
 
 		// In case mask is zero, the key doesn't have IP in it.
 		if m == 0 {
 			k = slices.Delete(k, keyIPIndex, keyIPIndex+ipLen)
-			data = c.itemsWithSubnet.Get(k)
+			data, ok = c.itemsWithSubnet.Get(k)
 
 			continue
 		}
@@ -298,10 +299,10 @@ func (c *cache) getWithSubnet(req *dns.Msg, n *net.IPNet) (ci *cacheItem, expire
 		// Clear the last non-zero bit in the byte of the IP address.
 		k[keyIPIndex+m/8] &= bitmask
 
-		data = c.itemsWithSubnet.Get(k)
+		data, ok = c.itemsWithSubnet.Get(k)
 	}
 
-	if data == nil {
+	if !ok {
 		return nil, false, k
 	}
 
@@ -314,22 +315,21 @@ func (c *cache) getWithSubnet(req *dns.Msg, n *net.IPNet) (ci *cacheItem, expire
 
 // canLookUpInCache returns true if these parameters could be used to make a
 // cache lookup.
-func canLookUpInCache(cache glcache.Cache, req *dns.Msg) (ok bool) {
+func canLookUpInCache(cache bytecache.Interface, req *dns.Msg) (ok bool) {
 	return cache != nil && req != nil && len(req.Question) == 1
 }
 
-// createCache returns new Cache with the given cacheSize.
-func createCache(cacheSize int) (glc glcache.Cache) {
-	conf := glcache.Config{
-		MaxSize:   defaultCacheSize,
-		EnableLRU: true,
+// createCache returns a new byte cache with the given cacheSize.
+func createCache(cacheSize int) (c bytecache.Interface) {
+	conf := &bytecache.DefaultConfig{
+		MaxSize: defaultCacheSize,
 	}
 
 	if cacheSize > 0 {
-		conf.MaxSize = uint(cacheSize)
+		conf.MaxSize = datasize.ByteSize(cacheSize)
 	}
 
-	return glcache.New(conf)
+	return bytecache.NewDefault(conf)
 }
 
 // set stores response and upstream for req in the cache. l must not be nil.

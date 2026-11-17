@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	"github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/cache/bytecache"
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
@@ -41,7 +41,7 @@ type FastestAddr struct {
 	ipCacheLock *sync.Mutex
 
 	// ipCache caches fastest IP addresses.
-	ipCache cache.Cache
+	ipCache bytecache.Interface
 
 	// pingPorts are the ports to ping on.
 	pingPorts []uint
@@ -68,9 +68,8 @@ type Config struct {
 func New(c *Config) (f *FastestAddr) {
 	f = &FastestAddr{
 		ipCacheLock: &sync.Mutex{},
-		ipCache: cache.New(cache.Config{
-			MaxSize:   64 * 1024,
-			EnableLRU: true,
+		ipCache: bytecache.NewDefault(&bytecache.DefaultConfig{
+			MaxSize: 64 * 1024,
 		}),
 		pingPorts: []uint{80, 443},
 		pinger:    &net.Dialer{Timeout: pingTCPTimeout},

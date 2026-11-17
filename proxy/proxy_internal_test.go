@@ -12,7 +12,7 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/cache/bytecache"
 	"github.com/AdguardTeam/golibs/contextutil"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/mathutil/randutil"
@@ -681,7 +681,9 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	in <- unit{}
 	<-out
 
-	data := p.cache.items.Get(msgToKey(firstCtx.Req))
+	data, ok := p.cache.items.Get(msgToKey(firstCtx.Req))
+	require.True(t, ok)
+
 	unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
 	require.False(t, expired)
 	require.NotNil(t, unpacked)
@@ -776,9 +778,7 @@ func setupProxyResolveWithOptimisticResolver(tb testing.TB) (
 		m: buildResp(req, 0),
 		u: testUpsAddr,
 	}).pack()
-	items := glcache.New(glcache.Config{
-		EnableLRU: true,
-	})
+	items := bytecache.NewDefault(nil)
 	items.Set(key, data)
 	p.cache.items = items
 

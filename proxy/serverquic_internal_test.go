@@ -40,7 +40,7 @@ func TestProxy_HandleDNSRequest_quicTruncatedRequest(t *testing.T) {
 		},
 	}
 
-	dnsProxy := mustNew(t, conf)
+	dnsProxy := newTestProxy(t, conf)
 
 	req := (&dns.Msg{
 		Id:               0,

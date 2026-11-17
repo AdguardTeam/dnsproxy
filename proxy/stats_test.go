@@ -12,7 +12,6 @@ import (
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Common mock upstreams for tests.
@@ -86,7 +85,7 @@ func TestDNSContext_QueryStatistics_loadBalance(t *testing.T) {
 				UpstreamMode:   proxy.UpstreamModeLoadBalance,
 			}
 
-			testQueryStats(
+			subtestQueryStats(
 				t,
 				conf,
 				tc.wantErr,
@@ -164,7 +163,7 @@ func TestDNSContext_QueryStatistics_parallel(t *testing.T) {
 				UpstreamMode:   proxy.UpstreamModeParallel,
 			}
 
-			testQueryStats(
+			subtestQueryStats(
 				t,
 				conf,
 				tc.wantErr,
@@ -268,7 +267,7 @@ func TestDNSContext_QueryStatistics_fastest(t *testing.T) {
 				UpstreamMode:   proxy.UpstreamModeFastestAddr,
 			}
 
-			testQueryStats(
+			subtestQueryStats(
 				t,
 				conf,
 				tc.wantErr,
@@ -281,11 +280,12 @@ func TestDNSContext_QueryStatistics_fastest(t *testing.T) {
 	}
 }
 
-// testQueryStats ensures that proxy with given configuration returns correct
-// query statistics.
+// subtestQueryStats ensures that proxy with given configuration returns correct
+// query statistics.  conf, wantErr, wantMainErr, and wantFallbackErr must not
+// be nil.
 //
 // TODO(f.setrakov): Consider moving arguments into a struct.
-func testQueryStats(
+func subtestQueryStats(
 	tb testing.TB,
 	conf *proxy.Config,
 	wantErr assert.ErrorAssertionFunc,
@@ -294,12 +294,11 @@ func testQueryStats(
 	wantFallbackCount int,
 	wantFallbackErr assert.BoolAssertionFunc,
 ) {
-	p, err := proxy.New(conf)
-	require.NoError(tb, err)
+	p := newTestProxy(tb, conf)
 
 	d := &proxy.DNSContext{Req: proxytest.NewTestRequest()}
 
-	err = p.Resolve(testutil.ContextWithTimeout(tb, defaultTimeout), d)
+	err := p.Resolve(testutil.ContextWithTimeout(tb, defaultTimeout), d)
 	wantErr(tb, err)
 
 	stats := d.QueryStatistics()

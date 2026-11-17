@@ -77,7 +77,7 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 }
 
 func TestProxy_ServeDNS_cached(t *testing.T) {
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := newTestProxy(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -160,13 +160,14 @@ func TestCache_expired(t *testing.T) {
 				optimisticMaxAge: tc.optimisticMaxAge,
 				optimistic:       tc.optimistic,
 			})
-			assertExpiredCache(t, testCache, tc.ttl, tc.wantTTL)
+			subtestExpiredCache(t, testCache, tc.ttl, tc.wantTTL)
 		})
 	}
 }
 
-// assertExpiredCache checks cache expiration and the returned TTL.
-func assertExpiredCache(tb testing.TB, c *cache, ttl, wantTTL uint32) {
+// subtestExpiredCache checks cache expiration and the returned TTL.  c must not
+// be nil.
+func subtestExpiredCache(tb testing.TB, c *cache, ttl, wantTTL uint32) {
 	req := dnsproxytest.NewTestRequest()
 	reply := dnsproxytest.NewTestResponse(req)
 	reply.Answer[0].Header().Ttl = ttl
@@ -305,7 +306,7 @@ func TestCache_concurrent(t *testing.T) {
 	g.Add(len(hosts))
 
 	for k, v := range hosts {
-		go setAndGetCache(t, testCache, g, k, v)
+		go subtestSetAndGetCache(t, testCache, g, k, v)
 	}
 
 	g.Wait()
@@ -314,7 +315,7 @@ func TestCache_concurrent(t *testing.T) {
 func TestCache_expiration(t *testing.T) {
 	t.Parallel()
 
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := newTestProxy(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -374,19 +375,19 @@ func TestCache_ttlOverride(t *testing.T) {
 	t.Run("min", func(t *testing.T) {
 		t.Parallel()
 
-		assertCacheTTLOverride(t, 10, 20)
+		subtestCacheTTLOverride(t, 10, 20)
 	})
 
 	t.Run("max", func(t *testing.T) {
 		t.Parallel()
 
-		assertCacheTTLOverride(t, 60, 40)
+		subtestCacheTTLOverride(t, 60, 40)
 	})
 }
 
-// assertCacheTTLOverride runs a separate proxy instance and checks the TTL of a
-// cached response after an override.
-func assertCacheTTLOverride(tb testing.TB, ttl, wantTTL uint32) {
+// subtestCacheTTLOverride runs a separate proxy instance and checks the TTL of
+// a cached response after an override.
+func subtestCacheTTLOverride(tb testing.TB, ttl, wantTTL uint32) {
 	ans := []dns.RR{
 		dnsproxytest.NewRR(tb, dnsproxytest.FQDN, dns.TypeA, ttl, dnsproxytest.IPv4.To4()),
 	}
@@ -394,7 +395,7 @@ func assertCacheTTLOverride(tb testing.TB, ttl, wantTTL uint32) {
 	onExchange := newECSReplyHandler(&ans, nil, nil)
 	u := newTestUpstreamWithExchange(tb, onExchange)
 
-	dnsProxy := mustNew(tb, &Config{
+	dnsProxy := newTestProxy(tb, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -448,16 +449,15 @@ func TestCache_simple(t *testing.T) {
 			t.Parallel()
 
 			req := (&dns.Msg{}).SetQuestion(dnsproxytest.FQDN, tc.qtype)
-			assertResponseCache(t, dnsproxytest.FQDN, dnsproxytest.TTL, req, tc.wantHit)
+			subtestResponseCache(t, dnsproxytest.FQDN, dnsproxytest.TTL, req, tc.wantHit)
 		})
 	}
 }
 
-// assertResponseCache caches an A response for host with the given ttl and
-// checks whether req produces a cache hit with the expected response.
-func assertResponseCache(tb testing.TB, host string, ttl uint32, req *dns.Msg, wantHit bool) {
-	tb.Helper()
-
+// subtestResponseCache caches an A response for host with the given ttl and
+// checks whether req produces a cache hit with the expected response.  req must
+// not be nil.
+func subtestResponseCache(tb testing.TB, host string, ttl uint32, req *dns.Msg, wantHit bool) {
 	testCache := newTestCache(tb, nil)
 	request := dnsproxytest.NewTestRequestWithHost(host)
 	reply := (&dns.Msg{
@@ -506,7 +506,7 @@ func TestCache_mixedCase(t *testing.T) {
 			t.Parallel()
 
 			req := dnsproxytest.NewTestRequestWithHost(tc.host)
-			assertResponseCache(t, mixedCaseHost, dnsproxytest.TTL, req, true)
+			subtestResponseCache(t, mixedCaseHost, dnsproxytest.TTL, req, true)
 		})
 	}
 }
@@ -530,7 +530,7 @@ func TestCache_zeroTTL(t *testing.T) {
 			t.Parallel()
 
 			req := (&dns.Msg{}).SetQuestion(dnsproxytest.FQDN, tc.qtype)
-			assertResponseCache(t, dnsproxytest.FQDN, 0, req, false)
+			subtestResponseCache(t, dnsproxytest.FQDN, 0, req, false)
 		})
 	}
 }
@@ -850,11 +850,10 @@ func TestCacheTTL_isCacheableNegativeNoData(t *testing.T) {
 	}
 }
 
-// setAndGetCache is a helper that checks cache storage, retrieval, and
-// expiration for host.  It is intended to be used as a goroutine.
-func setAndGetCache(tb testing.TB, c *cache, g *sync.WaitGroup, host, ip string) {
-	tb.Helper()
-
+// subtestSetAndGetCache is a helper that checks cache storage, retrieval, and
+// expiration for host.  It is intended to be used as a goroutine.  c and g must
+// not be nil.
+func subtestSetAndGetCache(tb testing.TB, c *cache, g *sync.WaitGroup, host, ip string) {
 	defer g.Done()
 
 	pt := testutil.NewPanicT(tb)

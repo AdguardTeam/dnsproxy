@@ -41,6 +41,9 @@ const (
 
 	// testOptimisticMaxAge is a common optimistic max age value for tests.
 	testOptimisticMaxAge = 12 * time.Hour
+
+	// testTimeout is a common timeout for tests.
+	testTimeout = 1 * time.Second
 )
 
 // testLogger is a common logger for tests.
@@ -62,32 +65,18 @@ var (
 	testECSIPSubnet2 = net.ParseIP(testECSIPSubnet2Str).To4()
 )
 
-// mustNew wraps [New] function failing the test on error.
+// newTestProxy wraps [New] function failing the test on error.
 //
 // TODO(e.burkov):  Move into the proxytest package.
 //
 // TODO(e.burkov):  Put default values into configuration.
-func mustNew(tb testing.TB, conf *Config) (p *Proxy) {
+func newTestProxy(tb testing.TB, conf *Config) (p *Proxy) {
 	tb.Helper()
 
 	p, err := New(conf)
 	require.NoError(tb, err)
 
 	return p
-}
-
-// firstIP returns the first IP address from the DNS response.
-func firstIP(resp *dns.Msg) (ip net.IP) {
-	for _, ans := range resp.Answer {
-		a, ok := ans.(*dns.A)
-		if !ok {
-			continue
-		}
-
-		return a.A
-	}
-
-	return nil
 }
 
 // newTestUpstream returns default upstream mock, which responds with single A
@@ -159,11 +148,11 @@ func TestProxy_Resolve_dnssecCacheA(t *testing.T) {
 	p, rrsig := setupProxyResolveDNSSECCache(t, a)
 
 	require.True(t, t.Run("no_edns", func(t *testing.T) {
-		testProxyResolveDNSSECCache(t, p, a, rrsig, 1, false)
+		subtestProxyResolveDNSSECCache(t, p, a, rrsig, 1, false)
 	}))
 
 	require.True(t, t.Run("edns", func(t *testing.T) {
-		testProxyResolveDNSSECCache(t, p, a, rrsig, 2, true)
+		subtestProxyResolveDNSSECCache(t, p, a, rrsig, 2, true)
 	}))
 }
 
@@ -192,11 +181,11 @@ func TestProxy_Resolve_dnssecCacheTXT(t *testing.T) {
 	p, rrsig := setupProxyResolveDNSSECCache(t, txt)
 
 	require.True(t, t.Run("no_edns", func(t *testing.T) {
-		testProxyResolveDNSSECCache(t, p, txt, rrsig, 1, false)
+		subtestProxyResolveDNSSECCache(t, p, txt, rrsig, 1, false)
 	}))
 
 	require.True(t, t.Run("edns", func(t *testing.T) {
-		testProxyResolveDNSSECCache(t, p, txt, rrsig, 0, true)
+		subtestProxyResolveDNSSECCache(t, p, txt, rrsig, 0, true)
 	}))
 }
 
@@ -217,17 +206,18 @@ func TestProxy_Resolve_dnssecCacheDS(t *testing.T) {
 	p, rrsig := setupProxyResolveDNSSECCache(t, ds)
 
 	require.True(t, t.Run("no_edns", func(t *testing.T) {
-		testProxyResolveDNSSECCache(t, p, ds, rrsig, 1, false)
+		subtestProxyResolveDNSSECCache(t, p, ds, rrsig, 1, false)
 	}))
 
 	require.True(t, t.Run("edns", func(t *testing.T) {
-		testProxyResolveDNSSECCache(t, p, ds, rrsig, 2, true)
+		subtestProxyResolveDNSSECCache(t, p, ds, rrsig, 2, true)
 	}))
 }
 
-// testProxyResolveDNSSECCache checks response and cache for wantAns and rrsig.
-// wantLen must be 0 (truncated), 1 (answer only), or 2 (answer and signature).
-func testProxyResolveDNSSECCache(
+// subtestProxyResolveDNSSECCache checks response and cache for wantAns and
+// rrsig. wantLen must be 0 (truncated), 1 (answer only), or 2 (answer and
+// signature).  p and rrsig must not be nil.
+func subtestProxyResolveDNSSECCache(
 	tb testing.TB,
 	p *Proxy,
 	wantAns dns.RR,
@@ -316,7 +306,7 @@ func setupProxyResolveDNSSECCache(tb testing.TB, wantAns dns.RR) (p *Proxy, rrsi
 		OnClose:   func() (err error) { return nil },
 	}
 
-	p = mustNew(tb, &Config{
+	p = newTestProxy(tb, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -330,8 +320,9 @@ func setupProxyResolveDNSSECCache(tb testing.TB, wantAns dns.RR) (p *Proxy, rrsi
 	return p, rrsig
 }
 
+// TODO(f.setrakov): Externalize when ECS helpers will be moved to golibs.
 func TestProxy_Resolve_exchangeCustomUpstreamConfig(t *testing.T) {
-	p := mustNew(t, &Config{
+	p := newTestProxy(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -369,82 +360,7 @@ func TestProxy_Resolve_exchangeCustomUpstreamConfig(t *testing.T) {
 	err := p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 	require.NoError(t, err)
 
-	assert.Equal(t, dnsproxytest.IPv4, firstIP(d.Res))
-}
-
-func TestProxy_Resolve_customUpstreamConfigCache(t *testing.T) {
-	prx := mustNew(t, &Config{
-		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
-		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
-		UpstreamConfig: &UpstreamConfig{
-			Upstreams: []upstream.Upstream{newTestUpstream(t)},
-		},
-		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
-		CacheEnabled:   true,
-		DNSSECEnabled:  true,
-	})
-
-	servicetest.RequireRun(t, prx, dnsproxytest.Timeout)
-
-	var count int
-
-	exchangeFunc := func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
-		resp = &dns.Msg{}
-		resp.SetReply(m)
-		resp.Answer = append(resp.Answer, &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   m.Question[0].Name,
-				Class:  dns.ClassINET,
-				Rrtype: dns.TypeA,
-				Ttl:    defaultTestTTL,
-			},
-			A: dnsproxytest.IPv4,
-		})
-
-		count++
-
-		return resp, nil
-	}
-	u := &testUpstream{
-		OnExchange: exchangeFunc,
-		OnAddress:  func() (addr string) { return "stub" },
-		OnClose:    func() (_ error) { panic(testutil.UnexpectedCall()) },
-	}
-
-	customUpstreamConfig := NewCustomUpstreamConfig(
-		&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
-		true,
-		dnsproxytest.CacheSize,
-		prx.enableEDNSClientSubnet,
-	)
-
-	d := &DNSContext{
-		CustomUpstreamConfig: customUpstreamConfig,
-		Req:                  dnsproxytest.NewTestRequestWithHost("host"),
-		Addr:                 netip.MustParseAddrPort("192.0.2.0:1234"),
-	}
-
-	ctx := testutil.ContextWithTimeout(t, defaultTimeout)
-	err := prx.Resolve(ctx, d)
-	require.NoError(t, err)
-
-	require.Equal(t, 1, count)
-	assert.Equal(t, dnsproxytest.IPv4, firstIP(d.Res).To16())
-
-	err = prx.Resolve(ctx, d)
-	require.NoError(t, err)
-
-	assert.Equal(t, 1, count)
-	assert.Equal(t, dnsproxytest.IPv4, firstIP(d.Res).To16())
-
-	customUpstreamConfig.ClearCache()
-
-	err = prx.Resolve(ctx, d)
-	require.NoError(t, err)
-
-	assert.Equal(t, 2, count)
-	assert.Equal(t, dnsproxytest.IPv4, firstIP(d.Res).To16())
+	assert.Equal(t, dnsproxytest.IPv4, dnsproxytest.FirstIP(t, d.Res))
 }
 
 func TestSetECS(t *testing.T) {
@@ -486,6 +402,8 @@ func TestSetECS(t *testing.T) {
 }
 
 func TestProxy_Resolve_ecs(t *testing.T) {
+	t.Parallel()
+
 	var (
 		ans      []dns.RR
 		ecsIP    net.IP
@@ -495,7 +413,7 @@ func TestProxy_Resolve_ecs(t *testing.T) {
 	onExchange := newECSReplyHandler(&ans, &ecsIP, &ecsReqIP)
 	u := newTestUpstreamWithExchange(t, onExchange)
 
-	prx := mustNew(t, &Config{
+	prx := newTestProxy(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr: []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
@@ -521,14 +439,14 @@ func TestProxy_Resolve_ecs(t *testing.T) {
 		ecsIP = testECSIPSubnet1
 
 		addr := testECSIPSubnet1Str + testECSPort
-		testProxyResolveECS(t, prx, addr, testCacheIP1, ecsIP, &ecsReqIP)
+		subtestProxyResolveECS(t, prx, addr, testCacheIP1, ecsIP, &ecsReqIP)
 	}))
 
 	require.True(t, t.Run("serve_subnet_cache", func(t *testing.T) {
 		ans, ecsIP = nil, nil
 
 		addr := "1.2.3.1" + testECSPort
-		testProxyResolveECS(t, prx, addr, testCacheIP1, nil, &ecsReqIP)
+		subtestProxyResolveECS(t, prx, addr, testCacheIP1, nil, &ecsReqIP)
 	}))
 
 	require.True(t, t.Run("another_subnet", func(t *testing.T) {
@@ -542,7 +460,7 @@ func TestProxy_Resolve_ecs(t *testing.T) {
 		ecsIP = testECSIPSubnet2
 
 		addr := testECSIPSubnet2Str + testECSPort
-		testProxyResolveECS(t, prx, addr, testCacheIP2, ecsIP, &ecsReqIP)
+		subtestProxyResolveECS(t, prx, addr, testCacheIP2, ecsIP, &ecsReqIP)
 	}))
 
 	require.True(t, t.Run("cache_general", func(t *testing.T) {
@@ -555,19 +473,19 @@ func TestProxy_Resolve_ecs(t *testing.T) {
 		)}
 		ecsIP = nil
 
-		testProxyResolveECS(t, prx, listenIP+testECSPort, testCacheIP3, nil, &ecsReqIP)
+		subtestProxyResolveECS(t, prx, listenIP+testECSPort, testCacheIP3, nil, &ecsReqIP)
 	}))
 
 	require.True(t, t.Run("serve_general_cache", func(t *testing.T) {
 		ans, ecsIP = nil, nil
 
-		testProxyResolveECS(t, prx, "127.0.0.2"+testECSPort, testCacheIP3, nil, &ecsReqIP)
+		subtestProxyResolveECS(t, prx, "127.0.0.2"+testECSPort, testCacheIP3, nil, &ecsReqIP)
 	}))
 }
 
-// testProxyResolveECS resolves addr using p, checking wantIP in the answer and
-// wantECSIP in ecsReqIP.
-func testProxyResolveECS(
+// subtestProxyResolveECS resolves addr using p, checking wantIP in the answer
+// and wantECSIP in ecsReqIP.  p and ecsReqIP must not be nil.
+func subtestProxyResolveECS(
 	tb testing.TB,
 	p *Proxy,
 	addr string,
@@ -585,7 +503,7 @@ func testProxyResolveECS(
 	err := p.Resolve(ctx, d)
 	require.NoError(tb, err)
 
-	assert.Equal(tb, wantIP, firstIP(d.Res))
+	assert.Equal(tb, wantIP, dnsproxytest.FirstIP(tb, d.Res))
 	assert.Equal(tb, wantECSIP, *ecsReqIP)
 }
 
@@ -595,19 +513,19 @@ func TestProxy_Resolve_ecsProxyCacheMinMaxTTL(t *testing.T) {
 	t.Run("min", func(t *testing.T) {
 		t.Parallel()
 
-		testProxyResolveECSCacheTTL(t, testCacheMinTTL/2, testCacheMinTTL)
+		subtestProxyResolveECSCacheTTL(t, testCacheMinTTL/2, testCacheMinTTL)
 	})
 
 	t.Run("max", func(t *testing.T) {
 		t.Parallel()
 
-		testProxyResolveECSCacheTTL(t, dnsproxytest.TTL, testCacheMaxTTL)
+		subtestProxyResolveECSCacheTTL(t, dnsproxytest.TTL, testCacheMaxTTL)
 	})
 }
 
-// testProxyResolveECSCacheTTL checks that an upstream answer with ttl is cached
-// with wantTTL after applying ECS cache TTL limits.
-func testProxyResolveECSCacheTTL(tb testing.TB, ttl, wantTTL uint32) {
+// subtestProxyResolveECSCacheTTL checks that an upstream answer with ttl is
+// cached with wantTTL after applying ECS cache TTL limits.
+func subtestProxyResolveECSCacheTTL(tb testing.TB, ttl, wantTTL uint32) {
 	req := dnsproxytest.NewTestRequest()
 	subnet := setECS(req, dnsproxytest.IPv4, 0)
 	ans := []dns.RR{dnsproxytest.NewRR(
@@ -623,7 +541,7 @@ func testProxyResolveECSCacheTTL(tb testing.TB, ttl, wantTTL uint32) {
 	udpAddr := dnsproxytest.LocalhostAnyPortUDP
 	tcpAddr := dnsproxytest.LocalhostAnyPortTCP
 
-	p := mustNew(tb, &Config{
+	p := newTestProxy(tb, &Config{
 		Logger:                 testLogger,
 		UDPListenAddr:          []*net.UDPAddr{udpAddr},
 		TCPListenAddr:          []*net.TCPAddr{tcpAddr},
@@ -815,7 +733,7 @@ func TestProxy_ValidateRequest_general(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			testProxyValidateRequest(t, p, &DNSContext{
+			subtestProxyValidateRequest(t, p, &DNSContext{
 				Req:  tc.req,
 				Addr: testRaddr,
 			}, tc.wantRcode)
@@ -882,7 +800,7 @@ func TestProxy_ValidateRequest_arpa(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			testProxyValidateRequest(t, p, &DNSContext{
+			subtestProxyValidateRequest(t, p, &DNSContext{
 				Req:             (&dns.Msg{}).SetQuestion(tc.fqdn, tc.qtype),
 				Addr:            tc.addr,
 				IsPrivateClient: tc.isPrivateClient,
@@ -910,7 +828,7 @@ func setupProxyValidateRequest(tb testing.TB) (p *Proxy) {
 		OnClose:   func() (err error) { return nil },
 	}
 
-	return mustNew(tb, &Config{
+	return newTestProxy(tb, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		UpstreamConfig: &UpstreamConfig{Upstreams: []upstream.Upstream{ups}},
@@ -919,9 +837,10 @@ func setupProxyValidateRequest(tb testing.TB) (p *Proxy) {
 	})
 }
 
-// testProxyValidateRequest checks that the dctx validation results in the
-// wantRcode.  For [dns.RcodeSuccess], a nil resp is expected.
-func testProxyValidateRequest(tb testing.TB, p *Proxy, dctx *DNSContext, wantRcode int) {
+// subtestProxyValidateRequest checks that the dctx validation results in the
+// wantRcode.  For [dns.RcodeSuccess], a nil resp is expected.  p and dctx must
+// not be nil.
+func subtestProxyValidateRequest(tb testing.TB, p *Proxy, dctx *DNSContext, wantRcode int) {
 	resp := p.validateRequest(dctx)
 	if wantRcode == dns.RcodeSuccess {
 		assert.Nil(tb, resp)

@@ -62,7 +62,7 @@ func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 
 	var addr *net.UDPAddr
 	t.Run("run", func(t *testing.T) {
-		addr = testHandleDNSRequestQUIC(t, conf, tlsConfig)
+		addr = subtestHandleDNSRequestQUIC(t, conf, tlsConfig)
 	})
 	require.False(t, t.Failed())
 
@@ -72,21 +72,19 @@ func TestProxy_HandleDNSRequest_quic(t *testing.T) {
 	}
 
 	require.True(t, t.Run("rerun", func(t *testing.T) {
-		testHandleDNSRequestQUIC(t, conf, tlsConfig)
+		subtestHandleDNSRequestQUIC(t, conf, tlsConfig)
 	}))
 }
 
-// testHandleDNSRequestQUIC starts a proxy using conf, checks both the current
-// and draft DNS-over-QUIC protocols, and returns the proxy's listening address.
-func testHandleDNSRequestQUIC(
+// subtestHandleDNSRequestQUIC starts a proxy using conf, checks both the
+// current and draft DNS-over-QUIC protocols, and returns the proxy's listening
+// address.  conf must not be nil.
+func subtestHandleDNSRequestQUIC(
 	tb testing.TB,
 	conf *proxy.Config,
 	tlsConfig *tls.Config,
 ) (addr *net.UDPAddr) {
-	tb.Helper()
-
-	dnsProxy, err := proxy.New(conf)
-	require.NoError(tb, err)
+	dnsProxy := newTestProxy(tb, conf)
 
 	servicetest.RequireRun(tb, dnsProxy, dnsproxytest.Timeout)
 
@@ -100,8 +98,8 @@ func testHandleDNSRequestQUIC(
 	})
 
 	for range testRepetitions {
-		sendTestQUICMessage(tb, conn, proxy.DoQv1)
-		sendTestQUICMessage(tb, conn, proxy.DoQv1Draft)
+		subtestSendTestQUICMessage(tb, conn, proxy.DoQv1)
+		subtestSendTestQUICMessage(tb, conn, proxy.DoQv1Draft)
 	}
 
 	return addr
@@ -119,7 +117,7 @@ func TestProxy_HandleDNSRequest_quicLargePackets(t *testing.T) {
 	}
 
 	serverConfig, caPem := dnsproxytest.NewTLSConfig(t)
-	dnsProxy, err := proxy.New(&proxy.Config{
+	dnsProxy := newTestProxy(t, &proxy.Config{
 		Logger: testLogger,
 		UpstreamConfig: &proxy.UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
@@ -130,8 +128,6 @@ func TestProxy_HandleDNSRequest_quicLargePackets(t *testing.T) {
 		TLSListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},
 		QUICListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 	})
-	require.NoError(t, err)
-
 	servicetest.RequireRun(t, dnsProxy, dnsproxytest.Timeout)
 
 	roots := x509.NewCertPool()
@@ -215,10 +211,9 @@ func writeQUICStream(tb testing.TB, buf []byte, stream *quic.Stream) {
 	}
 }
 
-// sendTestQUICMessage sends a test message to the specified QUIC connection.
-func sendTestQUICMessage(tb testing.TB, conn *quic.Conn, doqVersion proxy.DoQVersion) {
-	tb.Helper()
-
+// subtestSendTestQUICMessage sends a test message to the specified QUIC
+// connection and checks the response.
+func subtestSendTestQUICMessage(tb testing.TB, conn *quic.Conn, doqVersion proxy.DoQVersion) {
 	msg := dnsproxytest.NewTestRequest()
 	resp := sendQUICMessage(tb, msg, conn, doqVersion)
 	dnsproxytest.RequireResponse(tb, msg, resp)

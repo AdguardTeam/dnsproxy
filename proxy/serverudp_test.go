@@ -16,5 +16,5 @@ func TestProxy_HandleDNSRequest_udp(t *testing.T) {
 	conn, err := dns.Dial("udp", addr.String())
 	require.NoError(t, err)
 
-	sendTestMessages(t, conn)
+	subtestSendTestMessages(t, conn)
 }

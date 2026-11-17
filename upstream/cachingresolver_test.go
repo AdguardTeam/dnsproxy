@@ -25,8 +25,6 @@ import (
 const testIPv4 = "192.0.2.1"
 
 func TestCachingResolver_staleness(t *testing.T) {
-	t.Parallel()
-
 	ip4 := netip.MustParseAddr(testIPv4)
 	ip6 := netip.MustParseAddr("2001:db8::1")
 
@@ -90,8 +88,6 @@ func TestCachingResolver_staleness(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-
 				ctx := testutil.ContextWithTimeout(t, testTimeout)
 				res, err := r.LookupNetIP(ctx, tc.network, proxytest.FQDN)
 				require.NoError(t, err)

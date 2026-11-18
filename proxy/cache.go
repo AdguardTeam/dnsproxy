@@ -324,7 +324,7 @@ func canLookUpInCache(cache bytecache.Interface, req *dns.Msg) (ok bool) {
 // is zero, [defaultCacheSize] is used.
 func newByteCache(cacheSize datasize.ByteSize) (c bytecache.Interface) {
 	return bytecache.NewDefault(&bytecache.DefaultConfig{
-		MaxSize: cmp.Or(max(0, cacheSize), defaultCacheSize),
+		MaxSize: cmp.Or(cacheSize, defaultCacheSize),
 	})
 }
 

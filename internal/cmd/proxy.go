@@ -23,6 +23,7 @@ import (
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/osutil"
+	"github.com/c2h5oh/datasize"
 	"gopkg.in/yaml.v3"
 )
 
@@ -84,7 +85,7 @@ func createProxyConfig(
 	proxyConf = &proxy.Config{
 		Logger:                   l.With(slogutil.KeyPrefix, proxy.LogPrefix),
 		CacheEnabled:             conf.Cache,
-		CacheSizeBytes:           conf.CacheSizeBytes,
+		CacheSizeBytes:           datasize.ByteSize(conf.CacheSizeBytes),
 		CacheMinTTL:              conf.CacheMinTTL,
 		CacheMaxTTL:              conf.CacheMaxTTL,
 		CacheOptimisticAnswerTTL: time.Duration(conf.OptimisticAnswerTTL),

@@ -417,7 +417,7 @@ func New(c *Config) (p *Proxy, err error) {
 		cacheOptimisticAnswerTTL:  c.CacheOptimisticAnswerTTL,
 		cacheMaxTTL:               c.CacheMaxTTL,
 		cacheMinTTL:               c.CacheMinTTL,
-		cacheSizeBytes:            datasize.ByteSize(c.CacheSizeBytes),
+		cacheSizeBytes:            c.CacheSizeBytes,
 		ednsAddr:                  c.EDNSAddr,
 		bogusNXDomain:             c.BogusNXDomain,
 		dnsCryptTCPListenAddr:     c.DNSCryptTCPListenAddr,

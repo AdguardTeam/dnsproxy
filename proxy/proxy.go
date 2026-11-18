@@ -647,7 +647,7 @@ func (p *Proxy) closeListeners(errs []error) (res []error) {
 	res = closeAll(res, p.tcpListen...)
 	p.tcpListen = nil
 
-	res = closeAll(res, p.udpListen...)
+	res = closeUDPListeners(res, p.udpListen)
 	p.udpListen = nil
 
 	res = closeAll(res, p.tlsListen...)

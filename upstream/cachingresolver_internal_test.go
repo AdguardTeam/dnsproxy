@@ -22,7 +22,12 @@ func (r *CachingResolver) FindCached(
 		lowercaseHost: host,
 	}
 
-	return r.findCached(key, now)
+	res := r.findCached(key, now)
+	if res != nil {
+		return res.addrs
+	}
+
+	return nil
 }
 
 // RequestResult exports the internal method r.request for testing.

@@ -17,6 +17,7 @@ import (
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"github.com/c2h5oh/datasize"
 	"github.com/miekg/dns"
 )
 
@@ -69,7 +70,7 @@ func New(c *Config) (f *FastestAddr) {
 	f = &FastestAddr{
 		ipCacheLock: &sync.Mutex{},
 		ipCache: bytecache.NewDefault(&bytecache.DefaultConfig{
-			MaxSize: 64 * 1024,
+			MaxSize: 64 * datasize.KB,
 		}),
 		pingPorts: []uint{80, 443},
 		pinger:    &net.Dialer{Timeout: pingTCPTimeout},

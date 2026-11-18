@@ -7,6 +7,7 @@ import (
 
 	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/c2h5oh/datasize"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 )
@@ -233,7 +234,7 @@ func NewCustomUpstreamConfig(
 	if cacheEnabled {
 		// TODO(d.kolyshev): Support optimistic with newOptimisticResolver.
 		customCache = newCache(&cacheConfig{
-			size:       cacheSize,
+			size:       datasize.ByteSize(max(0, cacheSize)),
 			withECS:    enableEDNSClientSubnet,
 			optimistic: false,
 		})

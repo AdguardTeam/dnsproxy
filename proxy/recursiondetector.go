@@ -74,10 +74,10 @@ func (rd *recursionDetector) clear() {
 }
 
 // newRecursionDetector returns the initialized *recursionDetector.
-func newRecursionDetector(ttl time.Duration, suspectsNum uint) (rd *recursionDetector) {
+func newRecursionDetector(ttl time.Duration, suspectsNum uint64) (rd *recursionDetector) {
 	return &recursionDetector{
 		recentRequests: bytecache.NewDefault(&bytecache.DefaultConfig{
-			MaxCount: uint64(suspectsNum),
+			MaxCount: suspectsNum,
 		}),
 		ttl: ttl,
 	}

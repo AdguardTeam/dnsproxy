@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"log/slog"
@@ -193,7 +194,7 @@ func (p *Proxy) initCache() {
 // cacheConfig is the configuration structure for [cache].
 type cacheConfig struct {
 	// size is the cache size in bytes.
-	size int
+	size datasize.ByteSize
 
 	// optimisticTTL is the default TTL for expired cached responses when
 	// optimistic is enabled.
@@ -211,19 +212,19 @@ type cacheConfig struct {
 	optimistic bool
 }
 
-// newCache returns a properly initialized cache.  logger must not be nil.
+// newCache returns a properly initialized cache.  conf must not be nil.
 func newCache(conf *cacheConfig) (c *cache) {
 	c = &cache{
 		itemsLock:           &sync.RWMutex{},
 		itemsWithSubnetLock: &sync.RWMutex{},
-		items:               createCache(conf.size),
+		items:               newByteCache(conf.size),
 		optimistic:          conf.optimistic,
 		optimisticTTL:       conf.optimisticTTL,
 		optimisticMaxAge:    conf.optimisticMaxAge,
 	}
 
 	if conf.withECS {
-		c.itemsWithSubnet = createCache(conf.size)
+		c.itemsWithSubnet = newByteCache(conf.size)
 	}
 
 	return c
@@ -319,17 +320,12 @@ func canLookUpInCache(cache bytecache.Interface, req *dns.Msg) (ok bool) {
 	return cache != nil && req != nil && len(req.Question) == 1
 }
 
-// createCache returns a new byte cache with the given cacheSize.
-func createCache(cacheSize int) (c bytecache.Interface) {
-	conf := &bytecache.DefaultConfig{
-		MaxSize: defaultCacheSize,
-	}
-
-	if cacheSize > 0 {
-		conf.MaxSize = datasize.ByteSize(cacheSize)
-	}
-
-	return bytecache.NewDefault(conf)
+// newByteCache returns a new byte cache with the given cacheSize.  If cacheSize
+// is zero, [defaultCacheSize] is used.
+func newByteCache(cacheSize datasize.ByteSize) (c bytecache.Interface) {
+	return bytecache.NewDefault(&bytecache.DefaultConfig{
+		MaxSize: cmp.Or(max(0, cacheSize), defaultCacheSize),
+	})
 }
 
 // set stores response and upstream for req in the cache. l must not be nil.

@@ -30,6 +30,7 @@ import (
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/AdguardTeam/golibs/validate"
+	"github.com/c2h5oh/datasize"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -307,7 +308,7 @@ type Proxy struct {
 	fastestPingTimeout time.Duration
 
 	// cacheSizeBytes is the maximum cache size in bytes.
-	cacheSizeBytes int
+	cacheSizeBytes datasize.ByteSize
 
 	// The size of the read buffer on the underlying socket.  Larger read
 	// buffers can handle larger bursts of requests before packets get dropped.
@@ -416,7 +417,7 @@ func New(c *Config) (p *Proxy, err error) {
 		cacheOptimisticAnswerTTL:  c.CacheOptimisticAnswerTTL,
 		cacheMaxTTL:               c.CacheMaxTTL,
 		cacheMinTTL:               c.CacheMinTTL,
-		cacheSizeBytes:            c.CacheSizeBytes,
+		cacheSizeBytes:            datasize.ByteSize(c.CacheSizeBytes),
 		ednsAddr:                  c.EDNSAddr,
 		bogusNXDomain:             c.BogusNXDomain,
 		dnsCryptTCPListenAddr:     c.DNSCryptTCPListenAddr,

@@ -14,6 +14,7 @@ require (
 	github.com/quic-go/quic-go v0.65.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/net v0.62.0
+	golang.org/x/sync v0.25.0
 	golang.org/x/sys v0.50.0
 	gonum.org/v1/gonum v0.17.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -77,7 +78,6 @@ require (
 	golang.org/x/exp v0.0.0-20261109185158-a52e3aef5920 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20261112173441-d10d3b464990 // indirect
 	golang.org/x/mod v0.43.0 // indirect
-	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/telemetry v0.0.0-20261111153349-cdaf7e97dd7b // indirect
 	golang.org/x/term v0.48.0 // indirect
 	golang.org/x/text v0.44.0 // indirect

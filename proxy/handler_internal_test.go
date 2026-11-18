@@ -41,7 +41,7 @@ func TestFilteringHandler(t *testing.T) {
 	}
 
 	// Prepare the proxy server.
-	dnsProxy := mustNew(t, &Config{
+	dnsProxy := newTestProxy(t, &Config{
 		Logger:         testLogger,
 		TrustedProxies: dnsproxytest.DefaultTrustedProxies,
 		UpstreamConfig: &UpstreamConfig{

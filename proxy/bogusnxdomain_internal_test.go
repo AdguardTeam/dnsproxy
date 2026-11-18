@@ -23,7 +23,7 @@ func TestProxy_IsBogusNXDomain(t *testing.T) {
 		Upstreams: []upstream.Upstream{newTestUpstreamWithExchange(t, onExchange)},
 	}
 
-	prx := mustNew(t, &Config{
+	prx := newTestProxy(t, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},

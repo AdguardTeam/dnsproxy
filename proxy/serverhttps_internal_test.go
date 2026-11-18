@@ -74,14 +74,14 @@ func TestRemoteAddr_direct(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			testRemoteAddr(t, tc.remoteAddr, tc.hdr, tc.wantErr, tc.wantIP, netip.AddrPort{})
+			subtestRemoteAddr(t, tc.remoteAddr, tc.hdr, tc.wantErr, tc.wantIP, netip.AddrPort{})
 		})
 	}
 }
 
-// testRemoteAddr makes sure that remoteAddr returns expected IP and proxy for
-// given raddr and header.
-func testRemoteAddr(
+// subtestRemoteAddr makes sure that remoteAddr returns expected IP and proxy
+// for given raddr and header.  header must not be nil.
+func subtestRemoteAddr(
 	tb testing.TB,
 	raddr string,
 	header http.Header,
@@ -151,7 +151,7 @@ func TestRemoteAddr_proxied(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			testRemoteAddr(t, tc.remoteAddr, tc.hdr, tc.wantErr, tc.wantIP, tc.wantProxy)
+			subtestRemoteAddr(t, tc.remoteAddr, tc.hdr, tc.wantErr, tc.wantIP, tc.wantProxy)
 		})
 	}
 }

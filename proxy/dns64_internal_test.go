@@ -23,7 +23,7 @@ func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
 		newNamedUpstream(t, "upstream2"),
 	}
 
-	p := mustNew(t, &Config{
+	p := newTestProxy(t, &Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
 		TCPListenAddr:  []*net.TCPAddr{dnsproxytest.LocalhostAnyPortTCP},

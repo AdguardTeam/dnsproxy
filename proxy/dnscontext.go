@@ -227,14 +227,12 @@ func NewCustomUpstreamConfig(
 	u *UpstreamConfig,
 	cacheEnabled bool,
 	cacheSize int,
-	enableEDNSClientSubnet bool,
 ) (c *CustomUpstreamConfig) {
 	var customCache *cache
 	if cacheEnabled {
 		// TODO(d.kolyshev): Support optimistic with newOptimisticResolver.
 		customCache = newCache(&cacheConfig{
 			size:       cacheSize,
-			withECS:    enableEDNSClientSubnet,
 			optimistic: false,
 		})
 	}
@@ -261,5 +259,4 @@ func (c *CustomUpstreamConfig) ClearCache() {
 	}
 
 	c.cache.clearItems()
-	c.cache.clearItemsWithSubnet()
 }

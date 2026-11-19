@@ -64,13 +64,7 @@ func (pr *defaultPendingRequests) queue(
 	ctx context.Context,
 	dctx *DNSContext,
 ) (loaded bool, err error) {
-	var key []byte
-	if dctx.ReqECS != nil {
-		ones, _ := dctx.ReqECS.Mask.Size()
-		key = msgToKeyWithSubnet(dctx.Req, dctx.ReqECS.IP, ones)
-	} else {
-		key = msgToKey(dctx.Req)
-	}
+	key := msgToKey(dctx.Req, dctx.ReqECS)
 
 	req := &pendingRequest{
 		finish: make(chan struct{}),
@@ -99,13 +93,7 @@ func (pr *defaultPendingRequests) queue(
 
 // done implements the [pendingRequests] interface for [defaultPendingRequests].
 func (pr *defaultPendingRequests) done(ctx context.Context, dctx *DNSContext, err error) {
-	var key []byte
-	if dctx.ReqECS != nil {
-		ones, _ := dctx.ReqECS.Mask.Size()
-		key = msgToKeyWithSubnet(dctx.Req, dctx.ReqECS.IP, ones)
-	} else {
-		key = msgToKey(dctx.Req)
-	}
+	key := msgToKey(dctx.Req, dctx.ReqECS)
 
 	pending, ok := pr.storage.Load(string(key))
 	if !ok {

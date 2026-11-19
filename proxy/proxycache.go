@@ -15,25 +15,12 @@ func (p *Proxy) cacheForContext(d *DNSContext) (c *cache) {
 	return p.cache
 }
 
-// replyFromCache tries to get the response from general or subnet cache.  In
-// case the cache is present in d, it's used first.  Returns true on success.  d
-// must not be nil.
+// replyFromCache tries to get the response from cache.  In case the cache is
+// present in d, it's used first.  Returns true on success.  d must not be nil.
 func (p *Proxy) replyFromCache(ctx context.Context, d *DNSContext) (hit bool) {
 	dctxCache := p.cacheForContext(d)
 
-	var ci *cacheItem
-	var cacheSource string
-	var expired bool
-	var key []byte
-
-	// TODO(d.kolyshev): Use EnableEDNSClientSubnet from dctxCache.
-	if p.enableEDNSClientSubnet && d.ReqECS != nil {
-		ci, expired, key = dctxCache.getWithSubnet(d.Req, d.ReqECS)
-		cacheSource = "subnet cache"
-	} else {
-		ci, expired, key = dctxCache.get(d.Req)
-		cacheSource = "general cache"
-	}
+	ci, expired, key := dctxCache.get(d.Req, d.ReqECS)
 
 	if hit = ci != nil; !hit {
 		return hit
@@ -41,13 +28,6 @@ func (p *Proxy) replyFromCache(ctx context.Context, d *DNSContext) (hit bool) {
 
 	d.Res = ci.m
 	d.queryStatistics = cachedQueryStatistics(ci.u)
-
-	p.logger.DebugContext(
-		ctx,
-		"replying from cache",
-		"source", cacheSource,
-		"ecs_enabled", p.enableEDNSClientSubnet,
-	)
 
 	if dctxCache.optimistic && expired {
 		// Build a reduced clone of the current context to avoid data race.
@@ -79,16 +59,10 @@ func cloneIPNet(n *net.IPNet) (clone *net.IPNet) {
 	}
 }
 
-// cacheResp stores the response from d in general or subnet cache.  In case the
-// cache is present in d, it's used first.  d must not be nil.
+// cacheResp stores the response from d in cache.  In case the cache is present
+// in d, it's used first.  d must not be nil.
 func (p *Proxy) cacheResp(ctx context.Context, d *DNSContext) {
 	dctxCache := p.cacheForContext(d)
-
-	if !p.enableEDNSClientSubnet {
-		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream)
-
-		return
-	}
 
 	switch ecs, scope := ecsFromMsg(d.Res); {
 	case ecs != nil && d.ReqECS != nil:
@@ -125,13 +99,9 @@ func (p *Proxy) cacheResp(ctx context.Context, d *DNSContext) {
 
 		p.logger.Debug("caching response", "ecs", ecs)
 
-		dctxCache.setWithSubnet(ctx, p.logger, d.Req, d.Res, d.Upstream, ecs)
-	case d.ReqECS != nil:
-		// Cache the response for all subnets since the server doesn't support
-		// EDNS Client Subnet option.
-		dctxCache.setWithSubnet(ctx, p.logger, d.Req, d.Res, d.Upstream, &net.IPNet{IP: nil, Mask: nil})
+		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream, ecs)
 	default:
-		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream)
+		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream, nil)
 	}
 }
 
@@ -142,6 +112,5 @@ func (p *Proxy) ClearCache() {
 	}
 
 	p.cache.clearItems()
-	p.cache.clearItemsWithSubnet()
 	p.logger.Debug("cache cleared")
 }

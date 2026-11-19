@@ -149,7 +149,6 @@ func TestProxy_Resolve_badResponse(t *testing.T) {
 			&proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 			false,
 			0,
-			false,
 		),
 		Req:  proxytest.NewTestRequestWithHost("host"),
 		Addr: netip.MustParseAddrPort("1.2.3.0:1234"),
@@ -171,7 +170,6 @@ func newCustomUpstreamConfig(ups upstream.Upstream, enabled bool) (c *proxy.Cust
 		&proxy.UpstreamConfig{Upstreams: []upstream.Upstream{ups}},
 		enabled,
 		0,
-		false,
 	)
 }
 
@@ -805,7 +803,6 @@ func TestProxy_Resolve_customUpstreamConfigCache(t *testing.T) {
 		&proxy.UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 		true,
 		proxytest.CacheSize,
-		false,
 	)
 
 	d := &proxy.DNSContext{

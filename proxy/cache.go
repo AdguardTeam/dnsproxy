@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"net"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,14 +27,8 @@ type cache struct {
 	// itemsLock protects requests cache.
 	itemsLock *sync.RWMutex
 
-	// itemsWithSubnetLock protects requests cache.
-	itemsWithSubnetLock *sync.RWMutex
-
 	// items is the requests cache.
 	items glcache.Cache
-
-	// itemsWithSubnet is the requests cache.
-	itemsWithSubnet glcache.Cache
 
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
@@ -183,7 +176,6 @@ func (p *Proxy) initCache() {
 		size:             size,
 		optimisticTTL:    p.cacheOptimisticAnswerTTL,
 		optimisticMaxAge: p.cacheOptimisticMaxAge,
-		withECS:          p.enableEDNSClientSubnet,
 		optimistic:       p.cacheOptimistic,
 	})
 	p.shortFlighter = newOptimisticResolver(p)
@@ -202,36 +194,27 @@ type cacheConfig struct {
 	// cache is optimistic.
 	optimisticMaxAge time.Duration
 
-	// withECS enables EDNS Client Subnet support for cache.
-	withECS bool
-
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
 	optimistic bool
 }
 
-// newCache returns a properly initialized cache.  logger must not be nil.
+// newCache returns a new properly initialized cache.  conf must be non-nil and
+// valid.
 func newCache(conf *cacheConfig) (c *cache) {
-	c = &cache{
-		itemsLock:           &sync.RWMutex{},
-		itemsWithSubnetLock: &sync.RWMutex{},
-		items:               createCache(conf.size),
-		optimistic:          conf.optimistic,
-		optimisticTTL:       conf.optimisticTTL,
-		optimisticMaxAge:    conf.optimisticMaxAge,
+	return &cache{
+		itemsLock:        &sync.RWMutex{},
+		items:            createCache(conf.size),
+		optimistic:       conf.optimistic,
+		optimisticTTL:    conf.optimisticTTL,
+		optimisticMaxAge: conf.optimisticMaxAge,
 	}
-
-	if conf.withECS {
-		c.itemsWithSubnet = createCache(conf.size)
-	}
-
-	return c
 }
 
 // get returns cached item for the req if it's found.  expired is true if the
 // item's TTL is expired.  key is the resulting key for req.  It's returned to
 // avoid recalculating it afterwards.
-func (c *cache) get(req *dns.Msg) (ci *cacheItem, expired bool, key []byte) {
+func (c *cache) get(req *dns.Msg, subnet *net.IPNet) (ci *cacheItem, expired bool, key []byte) {
 	c.itemsLock.RLock()
 	defer c.itemsLock.RUnlock()
 
@@ -239,8 +222,35 @@ func (c *cache) get(req *dns.Msg) (ci *cacheItem, expired bool, key []byte) {
 		return nil, false, nil
 	}
 
-	key = msgToKey(req)
+	key = msgToKey(req, subnet)
+
+	var ones int
+	if subnet != nil && subnet.Mask != nil {
+		ones, _ = subnet.Mask.Size()
+	}
+
 	data := c.items.Get(key)
+
+	// In order to reduce allocations we apply mask on bits level.  As the key
+	// k has ecsIP in bytes slice representation, each iteration we can just
+	// clear one bit in the end of it by applying the bitmask.
+	for ones > 0 && data == nil {
+		ones--
+
+		// Set mask identification byte in the key.
+		key[keyPrefixIndex] = byte(ones)
+
+		key[keyAddrIndex+ones/8] &= ^byte(0) << (8 - ones%8)
+
+		data = c.items.Get(key)
+	}
+
+	if data == nil {
+		key[keyFamilyIndex] = keyFamilyNone
+		clear(key[keyAddrIndex : keyAddrIndex+keyAddrLen])
+		data = c.items.Get(key)
+	}
+
 	if data == nil {
 		return nil, false, key
 	}
@@ -250,66 +260,6 @@ func (c *cache) get(req *dns.Msg) (ci *cacheItem, expired bool, key []byte) {
 	}
 
 	return ci, expired, key
-}
-
-// getWithSubnet returns cached item for the req if it's found by n.  expired
-// is true if the item's TTL is expired.  k is the resulting key for req.  It's
-// returned to avoid recalculating it afterwards.
-//
-// Note that a slow longest-prefix-match algorithm is used, so cache searches
-// are performed up to mask+1 times.
-func (c *cache) getWithSubnet(req *dns.Msg, n *net.IPNet) (ci *cacheItem, expired bool, k []byte) {
-	c.itemsWithSubnetLock.RLock()
-	defer c.itemsWithSubnetLock.RUnlock()
-
-	if !canLookUpInCache(c.itemsWithSubnet, req) {
-		return nil, false, nil
-	}
-
-	ecsIP := n.IP.Mask(n.Mask)
-	ipLen := len(ecsIP)
-	m, _ := n.Mask.Size()
-
-	k = msgToKeyWithSubnet(req, ecsIP, m)
-	data := c.itemsWithSubnet.Get(k)
-
-	// In order to reduce allocations we apply mask on bits level.  As the key
-	// k has ecsIP in bytes slice representation, each iteration we can just
-	// clear one bit in the end of it by applying the bitmask.
-	for bitmask := ^byte(0); m >= 0 && data == nil; m-- {
-		// Set mask identification byte in the key.
-		k[keyMaskIndex] = byte(m)
-
-		// In case mask is zero, the key doesn't have IP in it.
-		if m == 0 {
-			k = slices.Delete(k, keyIPIndex, keyIPIndex+ipLen)
-			data = c.itemsWithSubnet.Get(k)
-
-			continue
-		}
-
-		// Shift or renew bitmask.
-		if m%8 == 0 {
-			bitmask = ^byte(0)
-		} else {
-			bitmask <<= 1
-		}
-
-		// Clear the last non-zero bit in the byte of the IP address.
-		k[keyIPIndex+m/8] &= bitmask
-
-		data = c.itemsWithSubnet.Get(k)
-	}
-
-	if data == nil {
-		return nil, false, k
-	}
-
-	if ci, expired = c.unpackItem(data, req); ci == nil {
-		c.itemsWithSubnet.Del(k)
-	}
-
-	return ci, expired, k
 }
 
 // canLookUpInCache returns true if these parameters could be used to make a
@@ -332,46 +282,28 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 	return glcache.New(conf)
 }
 
-// set stores response and upstream for req in the cache. l must not be nil.
-func (c *cache) set(ctx context.Context, l *slog.Logger, req, m *dns.Msg, u upstream.Upstream) {
-	item := respToItem(ctx, l, m, u)
-	if item == nil {
-		return
-	}
-
-	key := msgToKey(req)
-	packed := item.pack()
-
-	c.itemsLock.Lock()
-	defer c.itemsLock.Unlock()
-
-	c.items.Set(key, packed)
-}
-
-// setWithSubnet stores response and upstream with subnet in the cache.  The
-// given subnet mask and IP address are used to calculate the cache key.  n and
-// l must not be nil.
-func (c *cache) setWithSubnet(
+// set stores response and upstream for req in the cache.  l, req, and m must
+// not be nil.  u and subnet may be nil.
+func (c *cache) set(
 	ctx context.Context,
 	l *slog.Logger,
 	req *dns.Msg,
 	m *dns.Msg,
 	u upstream.Upstream,
-	n *net.IPNet,
+	subnet *net.IPNet,
 ) {
 	item := respToItem(ctx, l, m, u)
 	if item == nil {
 		return
 	}
 
-	pref, _ := n.Mask.Size()
-	key := msgToKeyWithSubnet(req, n.IP.Mask(n.Mask), pref)
+	key := msgToKey(req, subnet)
 	packed := item.pack()
 
-	c.itemsWithSubnetLock.Lock()
-	defer c.itemsWithSubnetLock.Unlock()
+	c.itemsLock.Lock()
+	defer c.itemsLock.Unlock()
 
-	c.itemsWithSubnet.Set(key, packed)
+	c.items.Set(key, packed)
 }
 
 // ServFailMaxCacheTTL is the maximum time-to-live value for caching
@@ -392,19 +324,6 @@ func (c *cache) clearItems() {
 	c.items.Clear()
 }
 
-// clearItemsWithSubnet empties the subnet cache, if any.
-func (c *cache) clearItemsWithSubnet() {
-	if c.itemsWithSubnet == nil {
-		// ECS disabled, return immediately.
-		return
-	}
-
-	c.itemsWithSubnetLock.Lock()
-	defer c.itemsWithSubnetLock.Unlock()
-
-	c.itemsWithSubnet.Clear()
-}
-
 // Updates a given TTL to fall within the range specified by the cacheMinTTL and
 // cacheMaxTTL settings.
 func respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL uint32) uint32 {
@@ -419,67 +338,58 @@ func respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL uint32) uint32 {
 	return ttl
 }
 
-// msgToKey constructs the cache key from type, class and question's name of m.
-func msgToKey(m *dns.Msg) (b []byte) {
+// msgToKey constructs the cache key from type, class and question's name of m
+// and optionally from the subnet if provided.  m must not be nil.  subnet may
+// be nil.
+func msgToKey(m *dns.Msg, subnet *net.IPNet) (key []byte) {
 	q := m.Question[0]
 	name := q.Name
-	b = make([]byte, 1+packedMsgLenSz+packedMsgLenSz+len(name))
+	key = make([]byte, keyHeaderLen+len(name))
+
+	opt := m.IsEdns0()
 
 	// Put the DO flag.
-	opt := m.IsEdns0()
-	b[0] = mathutil.BoolToNumber[byte](opt != nil && opt.Do())
-
-	// Put QTYPE, QCLASS, and QNAME.
-	binary.BigEndian.PutUint16(b[1:], q.Qtype)
-	binary.BigEndian.PutUint16(b[1+packedMsgLenSz:], q.Qclass)
-	copy(b[1+2*packedMsgLenSz:], strings.ToLower(name))
-
-	return b
-}
-
-const (
-	// keyMaskIndex is the index of the byte with mask ones value.
-	keyMaskIndex = 1 + 2*packedMsgLenSz
-
-	// keyIPIndex is the start index of the IP address in the key.
-	keyIPIndex = keyMaskIndex + 1
-)
-
-// msgToKeyWithSubnet constructs the cache key from DO bit, type, class, subnet
-// mask, client's IP address and question's name of m.  ecsIP is expected to be
-// masked already.
-func msgToKeyWithSubnet(m *dns.Msg, ecsIP net.IP, mask int) (key []byte) {
-	q := m.Question[0]
-	keyLen := keyIPIndex + len(q.Name)
-	masked := mask != 0
-	if masked {
-		keyLen += len(ecsIP)
-	}
-
-	// Initialize the slice.
-	key = make([]byte, keyLen)
-
-	// Put DO.
-	opt := m.IsEdns0()
 	key[0] = mathutil.BoolToNumber[byte](opt != nil && opt.Do())
 
-	// Put Qtype.
+	// Put QTYPE.
 	binary.BigEndian.PutUint16(key[1:], q.Qtype)
 
-	// Put Qclass.
+	// Put QCLASS.
 	binary.BigEndian.PutUint16(key[1+packedMsgLenSz:], q.Qclass)
 
-	// Add mask.
-	key[keyMaskIndex] = uint8(mask)
-	k := keyIPIndex
-	if masked {
-		k += copy(key[keyIPIndex:], ecsIP)
+	// Add subnet information if available.
+	if subnet != nil && subnet.Mask != nil {
+		if ones, _ := subnet.Mask.Size(); ones > 0 {
+			masked := subnet.IP.Mask(subnet.Mask)
+
+			if len(masked) == net.IPv4len {
+				key[keyFamilyIndex] = keyFamilyIPv4
+				key[keyPrefixIndex] = uint8(ones)
+				copy(key[keyAddrIndex:], masked)
+			} else if len(masked) == net.IPv6len {
+				key[keyFamilyIndex] = keyFamilyIPv6
+				key[keyPrefixIndex] = uint8(ones)
+				copy(key[keyAddrIndex:], masked)
+			}
+		}
 	}
 
-	copy(key[k:], strings.ToLower(q.Name))
+	// Put QNAME.
+	copy(key[keyHeaderLen:], strings.ToLower(q.Name))
 
 	return key
 }
+
+const (
+	keyFamilyNone  = 0
+	keyFamilyIPv4  = 1
+	keyFamilyIPv6  = 2
+	keyFamilyIndex = 1 + 2*packedMsgLenSz
+	keyPrefixIndex = keyFamilyIndex + 1
+	keyAddrIndex   = keyPrefixIndex + 1
+	keyAddrLen     = net.IPv6len
+	keyHeaderLen   = keyAddrIndex + keyAddrLen
+)
 
 // isDNSSEC returns true if r is a DNSSEC RR.  NSEC, NSEC3, DS, DNSKEY and
 // RRSIG/SIG are DNSSEC records.

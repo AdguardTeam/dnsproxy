@@ -252,12 +252,12 @@ func subtestProxyResolveDNSSECCache(
 		tb.Fatalf("wanted length has unexpected value %d", wantLen)
 	}
 
-	cached, expired, key := p.cache.get(dctx.Req)
+	cached, expired, key := p.cache.get(dctx.Req, nil)
 	require.NotNil(tb, cached)
 	require.Len(tb, cached.m.Answer, 2)
 
 	assert.False(tb, expired)
-	assert.Equal(tb, key, msgToKey(dctx.Req))
+	assert.Equal(tb, key, msgToKey(dctx.Req, nil))
 
 	cached.m.Answer[0].Header().Ttl = defaultTestTTL
 	assert.Equal(tb, wantAns.String(), cached.m.Answer[0].String())
@@ -351,7 +351,6 @@ func TestProxy_Resolve_exchangeCustomUpstreamConfig(t *testing.T) {
 			&UpstreamConfig{Upstreams: []upstream.Upstream{u}},
 			false,
 			0,
-			false,
 		),
 		Req:  dnsproxytest.NewTestRequest(),
 		Addr: netip.MustParseAddrPort("192.0.2.0:1234"),
@@ -564,13 +563,12 @@ func subtestProxyResolveECSCacheTTL(tb testing.TB, ttl, wantTTL uint32) {
 	err := p.Resolve(ctx, d)
 	require.NoError(tb, err)
 
-	ci, expired, key := p.cache.getWithSubnet(d.Req, subnet)
+	ci, expired, key := p.cache.get(d.Req, subnet)
 	require.NotNil(tb, ci)
 	require.Len(tb, ci.m.Answer, 1)
 
-	ones, _ := subnet.Mask.Size()
 	assert.False(tb, expired)
-	assert.Equal(tb, key, msgToKeyWithSubnet(d.Req, subnet.IP, ones))
+	assert.Equal(tb, key, msgToKey(d.Req, subnet))
 
 	// TODO(f.setrakov): Make this assertion wall-clock independent.
 	assert.Equal(tb, wantTTL, ci.m.Answer[0].Header().Ttl)
@@ -599,7 +597,7 @@ func TestProxy_Resolve_withOptimisticResolver(t *testing.T) {
 	in <- unit{}
 	<-out
 
-	data := p.cache.items.Get(msgToKey(firstCtx.Req))
+	data := p.cache.items.Get(msgToKey(firstCtx.Req, nil))
 	unpacked, expired := p.cache.unpackItem(data, firstCtx.Req)
 	require.False(t, expired)
 	require.NotNil(t, unpacked)
@@ -689,7 +687,7 @@ func setupProxyResolveWithOptimisticResolver(tb testing.TB) (
 	// Add expired response into cache.
 	req := firstCtx.Req.Copy()
 	p.addDO(req)
-	key := msgToKey(req)
+	key := msgToKey(req, nil)
 	data := (&cacheItem{
 		m: buildResp(req, 0),
 		u: testUpsAddr,

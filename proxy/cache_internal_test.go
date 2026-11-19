@@ -70,7 +70,6 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 		size:             conf.size,
 		optimisticTTL:    conf.optimisticTTL,
 		optimisticMaxAge: conf.optimisticMaxAge,
-		withECS:          conf.withECS,
 		optimistic:       conf.optimistic,
 	})
 }
@@ -101,7 +100,7 @@ func TestProxy_ServeDNS_cached(t *testing.T) {
 	reply.SetEdns0(defaultUDPBufSize, false)
 
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	dnsProxy.cache.set(ctx, testLogger, request, reply, upstreamWithAddr)
+	dnsProxy.cache.set(ctx, testLogger, request, reply, upstreamWithAddr, nil)
 
 	addr := dnsProxy.Addr(ProtoTCP)
 	client := &dns.Client{
@@ -175,10 +174,10 @@ func subtestExpiredCache(tb testing.TB, c *cache, ttl, wantTTL uint32) {
 		u:   testUpsAddr,
 		ttl: ttl,
 	}).pack()
-	c.items.Set(msgToKey(req), data)
+	c.items.Set(msgToKey(req, nil), data)
 
-	r, expired, key := c.get(req)
-	assert.Equal(tb, msgToKey(req), key)
+	r, expired, key := c.get(req, nil)
+	assert.Equal(tb, msgToKey(req, nil), key)
 	assert.Equal(tb, ttl == 0, expired)
 	if wantTTL == 0 {
 		assert.Nil(tb, r)
@@ -206,10 +205,10 @@ func TestCache_do(t *testing.T) {
 	reply.SetEdns0(4096, false)
 
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr, nil)
 
 	require.True(t, t.Run("without_do", func(t *testing.T) {
-		ci, expired, _ := testCache.get(request)
+		ci, expired, _ := testCache.get(request, nil)
 		assert.False(t, expired)
 		assert.NotNil(t, ci)
 	}))
@@ -222,7 +221,7 @@ func TestCache_do(t *testing.T) {
 
 		request.SetEdns0(4096, true)
 
-		ci, expired, _ := testCache.get(request)
+		ci, expired, _ := testCache.get(request, nil)
 		require.Nil(t, ci)
 		assert.False(t, expired)
 	}))
@@ -248,10 +247,10 @@ func TestCache_cname(t *testing.T) {
 	}).SetQuestion(dnsproxytest.FQDN, dns.TypeA)
 
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr, nil)
 
 	require.True(t, t.Run("no_cnames", func(t *testing.T) {
-		r, expired, _ := testCache.get(request)
+		r, expired, _ := testCache.get(request, nil)
 		assert.Nil(t, r)
 		assert.False(t, expired)
 	}))
@@ -262,12 +261,12 @@ func TestCache_cname(t *testing.T) {
 	)
 
 	ctx = testutil.ContextWithTimeout(t, testTimeout)
-	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr, nil)
 
 	require.True(t, t.Run("cnames_exist", func(t *testing.T) {
-		r, expired, key := testCache.get(request)
+		r, expired, key := testCache.get(request, nil)
 		assert.False(t, expired)
-		assert.Equal(t, key, msgToKey(request))
+		assert.Equal(t, key, msgToKey(request, nil))
 
 		require.NotNil(t, r)
 
@@ -282,9 +281,9 @@ func TestCache_uncacheable(t *testing.T) {
 	reply := (&dns.Msg{}).SetRcode(request, dns.RcodeBadAlg)
 
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr, nil)
 
-	r, expired, _ := testCache.get(request)
+	r, expired, _ := testCache.get(request, nil)
 	assert.Nil(t, r)
 	assert.False(t, expired)
 }
@@ -344,22 +343,22 @@ func TestCache_expiration(t *testing.T) {
 		responses = append(responses, resp)
 
 		ctx := testutil.ContextWithTimeout(t, testTimeout)
-		dnsProxy.cache.set(ctx, testLogger, req, resp, upstreamWithAddr)
+		dnsProxy.cache.set(ctx, testLogger, req, resp, upstreamWithAddr, nil)
 	}
 
 	for i, r := range requests {
-		ci, expired, key := dnsProxy.cache.get(r)
+		ci, expired, key := dnsProxy.cache.get(r, nil)
 		require.NotNil(t, ci)
 
 		assert.False(t, expired)
-		assert.Equal(t, msgToKey(ci.m), key)
+		assert.Equal(t, msgToKey(ci.m, nil), key)
 
 		requireEqualMsgs(t, ci.m, responses[i])
 	}
 
 	assert.Eventually(t, func() bool {
 		for _, r := range requests {
-			if ci, _, _ := dnsProxy.cache.get(r); ci != nil {
+			if ci, _, _ := dnsProxy.cache.get(r, nil); ci != nil {
 				return false
 			}
 		}
@@ -417,12 +416,12 @@ func subtestCacheTTLOverride(tb testing.TB, ttl, wantTTL uint32) {
 	err := dnsProxy.Resolve(testutil.ContextWithTimeout(tb, defaultTimeout), d)
 	require.NoError(tb, err)
 
-	ci, expired, key := dnsProxy.cache.get(d.Req)
+	ci, expired, key := dnsProxy.cache.get(d.Req, nil)
 	require.NotNil(tb, ci)
 	require.Len(tb, ci.m.Answer, 1)
 
 	assert.False(tb, expired)
-	assert.Equal(tb, msgToKey(d.Req), key)
+	assert.Equal(tb, msgToKey(d.Req, nil), key)
 	assert.Equal(tb, wantTTL, ci.m.Answer[0].Header().Ttl)
 }
 
@@ -466,9 +465,9 @@ func subtestResponseCache(tb testing.TB, host string, ttl uint32, req *dns.Msg, 
 	}).SetReply(request)
 
 	ctx := testutil.ContextWithTimeout(tb, testTimeout)
-	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr)
+	testCache.set(ctx, testLogger, request, reply, upstreamWithAddr, nil)
 
-	ci, expired, _ := testCache.get(req)
+	ci, expired, _ := testCache.get(req, nil)
 	assert.False(tb, expired)
 	if !wantHit {
 		assert.Nil(tb, ci)
@@ -534,24 +533,26 @@ func TestCache_zeroTTL(t *testing.T) {
 	}
 }
 
-func TestCache_getWithSubnetEmpty(t *testing.T) {
+func TestCache_Get_empty(t *testing.T) {
 	t.Parallel()
 
-	c := newTestCache(t, &cacheConfig{withECS: true})
+	c := newTestCache(t, nil)
 	req := dnsproxytest.NewTestRequest()
 
-	ci, expired, _ := c.getWithSubnet(req, &net.IPNet{
+	subnet := &net.IPNet{
 		IP:   dnsproxytest.IPv4,
 		Mask: net.CIDRMask(28, netutil.IPv4BitLen),
-	})
+	}
+
+	ci, expired, _ := c.get(req, subnet)
 	assert.Nil(t, ci)
 	assert.False(t, expired)
 }
 
-func TestCache_getWithSubnetMiss(t *testing.T) {
+func TestCache_Get_miss(t *testing.T) {
 	t.Parallel()
 
-	c := newTestCache(t, &cacheConfig{withECS: true})
+	c := newTestCache(t, &cacheConfig{})
 	req := dnsproxytest.NewTestRequest()
 	resp := dnsproxytest.NewTestResponse(req)
 	ipNet := &net.IPNet{
@@ -559,22 +560,21 @@ func TestCache_getWithSubnetMiss(t *testing.T) {
 		Mask: net.CIDRMask(26, netutil.IPv4BitLen),
 	}
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	c.setWithSubnet(ctx, testLogger, req, resp, upstreamWithAddr, ipNet)
+	c.set(ctx, testLogger, req, resp, upstreamWithAddr, ipNet)
 
-	ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+	ci, expired, key := c.get(req, &net.IPNet{
 		IP:   testCacheIP1,
 		Mask: net.CIDRMask(28, netutil.IPv4BitLen),
 	})
 	assert.False(t, expired)
-	assert.Equal(t, msgToKeyWithSubnet(req, testCacheIP1, 0), key)
+	assert.Equal(t, msgToKey(req, nil), key)
 	assert.Nil(t, ci)
 }
 
-func TestCache_getWithSubnetHit(t *testing.T) {
+func TestCache_Get_hit(t *testing.T) {
 	t.Parallel()
 
-	c := newTestCache(t, &cacheConfig{withECS: true})
-	mask26 := net.CIDRMask(26, netutil.IPv4BitLen)
+	c := newTestCache(t, &cacheConfig{})
 	req := dnsproxytest.NewTestRequest()
 	testCases := []struct {
 		name string
@@ -601,25 +601,17 @@ func TestCache_getWithSubnetHit(t *testing.T) {
 			},
 		}).SetReply(req)
 
-		ipNet := &net.IPNet{
-			IP:   tc.ip,
-			Mask: net.CIDRMask(tc.mask, netutil.IPv4BitLen),
-		}
-
 		ctx := testutil.ContextWithTimeout(t, testTimeout)
-		c.setWithSubnet(ctx, testLogger, req, resp, upstreamWithAddr, ipNet)
+		c.set(ctx, testLogger, req, resp, upstreamWithAddr, testSubnet(tc.ip, tc.mask))
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ci, expired, key := c.getWithSubnet(req, &net.IPNet{
-				IP:   tc.ip,
-				Mask: net.CIDRMask(28, netutil.IPv4BitLen),
-			})
+			ci, expired, key := c.get(req, testSubnet(tc.ip, 28))
 			assert.False(t, expired)
-			assert.Equal(t, msgToKeyWithSubnet(req, tc.ip.Mask(mask26), tc.mask), key)
+			assert.Equal(t, msgToKey(req, testSubnet(tc.ip, tc.mask)), key)
 
 			require.NotNil(t, ci)
 			require.NotNil(t, ci.m)
@@ -631,9 +623,21 @@ func TestCache_getWithSubnetHit(t *testing.T) {
 	}
 }
 
-func TestCache_getWithSubnetMask(t *testing.T) {
+// testSubnet returns a subnet for ip with the given prefix length.  A zero
+// prefix means the general bucket, so nil is returned for it.
+func testSubnet(ip net.IP, ones int) (subnet *net.IPNet) {
+	if ones == 0 {
+		return nil
+	}
+
+	return &net.IPNet{
+		IP:   ip,
+		Mask: net.CIDRMask(ones, netutil.IPv4BitLen),
+	}
+}
+
+func TestCache_Get_mask(t *testing.T) {
 	noMatchIP := testCacheIP1
-	testIP := testCacheIP3
 
 	// cachedIP/cidrMask network contains the testIP.
 	const cidrMaskOnes = 20
@@ -643,7 +647,6 @@ func TestCache_getWithSubnetMask(t *testing.T) {
 	ansIP := testCacheIP2
 
 	c := newTestCache(t, &cacheConfig{
-		withECS:    true,
 		optimistic: true,
 	})
 
@@ -654,7 +657,7 @@ func TestCache_getWithSubnetMask(t *testing.T) {
 
 	// Cache IP network that contains the testIP.
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	c.setWithSubnet(
+	c.set(
 		ctx,
 		testLogger,
 		req,
@@ -664,12 +667,12 @@ func TestCache_getWithSubnetMask(t *testing.T) {
 	)
 
 	require.True(t, t.Run("mask_matched", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+		ci, expired, key := c.get(req, &net.IPNet{
 			IP:   testCacheIP3,
 			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
 		})
 		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, testIP.Mask(cidrMask), cidrMaskOnes), key)
+		assert.Equal(t, msgToKey(req, &net.IPNet{IP: cachedIP, Mask: cidrMask}), key)
 
 		require.NotNil(t, ci)
 		require.NotNil(t, ci.m)
@@ -680,12 +683,12 @@ func TestCache_getWithSubnetMask(t *testing.T) {
 	}))
 
 	require.True(t, t.Run("no_mask_matched", func(t *testing.T) {
-		ci, expired, key := c.getWithSubnet(req, &net.IPNet{
+		ci, expired, key := c.get(req, &net.IPNet{
 			IP:   noMatchIP,
 			Mask: net.CIDRMask(24, netutil.IPv4BitLen),
 		})
 		assert.False(t, expired)
-		assert.Equal(t, msgToKeyWithSubnet(req, noMatchIP, 0), key)
+		assert.Equal(t, msgToKey(req, nil), key)
 		assert.Nil(t, ci)
 	}))
 }
@@ -708,20 +711,20 @@ func subtestSetAndGetCache(tb testing.TB, c *cache, g *sync.WaitGroup, host, ip 
 	}).SetQuestion(host, dns.TypeA)
 
 	ctx := testutil.ContextWithTimeout(tb, testTimeout)
-	c.set(ctx, testLogger, req, dnsMsg, upstreamWithAddr)
+	c.set(ctx, testLogger, req, dnsMsg, upstreamWithAddr, nil)
 
 	for range 2 {
-		ci, expired, key := c.get(dnsMsg)
+		ci, expired, key := c.get(dnsMsg, nil)
 		require.NotNilf(pt, ci, "no cache found for %s", host)
 
 		assert.False(pt, expired)
-		assert.Equal(pt, msgToKey(req), key)
+		assert.Equal(pt, msgToKey(req, nil), key)
 
 		requireEqualMsgs(pt, ci.m, dnsMsg)
 	}
 
 	assert.Eventuallyf(pt, func() bool {
-		ci, _, _ := c.get(req)
+		ci, _, _ := c.get(req, nil)
 
 		return ci == nil
 	}, testCacheTimeout, testCacheTick, "cache for %s should already be removed", host)
@@ -748,4 +751,133 @@ func requireEqualMsgs(t testutil.RequireT, expected, got *dns.Msg) {
 
 		assert.Equal(t, wantA.A, gotA.A.To4())
 	}
+}
+
+func TestMsgToKey_length(t *testing.T) {
+	t.Parallel()
+
+	req := dnsproxytest.NewTestRequest()
+
+	keyNone := msgToKey(req, nil)
+	keyV4 := msgToKey(req, &net.IPNet{
+		IP:   dnsproxytest.IPv4,
+		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+	})
+	keyV6 := msgToKey(req, &net.IPNet{
+		IP:   net.ParseIP("2001:db8::1"),
+		Mask: net.CIDRMask(56, netutil.IPv6BitLen),
+	})
+
+	require.Len(t, keyNone, keyHeaderLen+len(req.Question[0].Name))
+	require.Len(t, keyV4, len(keyNone))
+	require.Len(t, keyV6, len(keyNone))
+}
+
+func TestMsgToKey_family(t *testing.T) {
+	t.Parallel()
+
+	req := dnsproxytest.NewTestRequest()
+
+	v4 := &net.IPNet{
+		IP:   net.IPv4(10, 0, 0, 0),
+		Mask: net.CIDRMask(8, netutil.IPv4BitLen),
+	}
+	v6 := &net.IPNet{
+		IP:   net.ParseIP("a00::"),
+		Mask: net.CIDRMask(8, netutil.IPv6BitLen),
+	}
+
+	keyV4, keyV6 := msgToKey(req, v4), msgToKey(req, v6)
+	require.NotEqual(t, keyV4, keyV6)
+
+	c := newTestCache(t, nil)
+	resp := dnsproxytest.NewTestResponse(req)
+
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	c.set(ctx, testLogger, req, resp, upstreamWithAddr, v4)
+
+	ci, _, _ := c.get(req, v6)
+	assert.Nil(t, ci)
+}
+
+func TestCache_zeroPrefix(t *testing.T) {
+	t.Parallel()
+
+	c := newTestCache(t, nil)
+	req := dnsproxytest.NewTestRequest()
+	resp := dnsproxytest.NewTestResponse(req)
+
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	c.set(ctx, testLogger, req, resp, upstreamWithAddr, nil)
+
+	// A zero prefix is the general bucket, and the address section is never
+	// encoded, so a nil address with a non-zero mask must not panic either.
+	subnets := []*net.IPNet{{
+		IP:   dnsproxytest.IPv4,
+		Mask: net.CIDRMask(0, netutil.IPv4BitLen),
+	}, {
+		IP:   nil,
+		Mask: net.CIDRMask(56, netutil.IPv6BitLen),
+	}}
+
+	for _, subnet := range subnets {
+		ci, expired, key := c.get(req, subnet)
+		require.NotNil(t, ci)
+
+		assert.False(t, expired)
+		assert.Equal(t, msgToKey(req, nil), key)
+	}
+
+	// A zero-prefix lookup must not return an entry cached for a subnet.
+	other := newTestCache(t, nil)
+	subnet24 := &net.IPNet{
+		IP:   dnsproxytest.IPv4,
+		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+	}
+	other.set(ctx, testLogger, req, resp, upstreamWithAddr, subnet24)
+
+	ci, _, key := other.get(req, subnets[0])
+	assert.Nil(t, ci)
+	assert.Equal(t, msgToKey(req, nil), key)
+}
+
+func TestPendingRequests_maskedECS(t *testing.T) {
+	t.Parallel()
+
+	newCtx := func(ipStr string) (dctx *DNSContext) {
+		return &DNSContext{
+			Req: dnsproxytest.NewTestRequest(),
+			ReqECS: &net.IPNet{
+				IP:   net.ParseIP(ipStr),
+				Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+			},
+		}
+	}
+
+	first := newCtx(testCacheIPStr1)
+	second := newCtx(testCacheIPStr2)
+	other := newCtx(testCacheIPStr3)
+
+	// Different unmasked addresses within the same network must share a key,
+	// so that the pending map deduplicates them, and a pre-masked subnet must
+	// produce that very same key.
+	masked := &net.IPNet{
+		IP:   net.IPv4(192, 0, 2, 0),
+		Mask: net.CIDRMask(24, netutil.IPv4BitLen),
+	}
+	keyFirst := msgToKey(first.Req, first.ReqECS)
+	require.Equal(t, keyFirst, msgToKey(second.Req, second.ReqECS))
+	require.Equal(t, keyFirst, msgToKey(first.Req, masked))
+	require.NotEqual(t, keyFirst, msgToKey(other.Req, other.ReqECS))
+
+	pr := newDefaultPendingRequests()
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+	loaded, err := pr.queue(ctx, first)
+	require.NoError(t, err)
+	require.False(t, loaded)
+
+	require.NotPanics(t, func() {
+		pr.done(ctx, first, nil)
+	})
 }

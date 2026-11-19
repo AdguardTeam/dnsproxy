@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -530,6 +531,73 @@ func createDoHHandlerFunc() (f http.HandlerFunc) {
 		if err != nil {
 			panic(fmt.Errorf("unexpected error on writing response: %w", err))
 		}
+	}
+}
+
+func TestUpstreamDoH_handshakeTimeout(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, ln.Close)
+
+	var open atomic.Int32
+	go acceptSilent(ln, &open)
+
+	upsAddr := fmt.Sprintf("https://%s/dns-query", ln.Addr())
+	u, err := AddressToUpstream(upsAddr, &Options{
+		Logger:             testLogger,
+		HTTPVersions:       []HTTPVersion{HTTPVersion11},
+		Timeout:            200 * time.Millisecond,
+		InsecureSkipVerify: true,
+	})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	const queries = 8
+
+	var wg sync.WaitGroup
+	for range queries {
+		wg.Go(func() {
+			pt := testutil.PanicT{}
+			_, exchErr := u.Exchange(ctx, createTestMessage())
+			require.Error(pt, exchErr)
+		})
+	}
+	wg.Wait()
+
+	require.Eventually(t, func() bool {
+		return open.Load() == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
+// acceptSilent accepts connections and counts those that are still open.  It
+// never writes, so a client that does not time out the handshake leaks an
+// entry in open.
+func acceptSilent(ln net.Listener, open *atomic.Int32) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+
+		open.Add(1)
+		go func() {
+			defer open.Add(-1)
+
+			buf := make([]byte, 4096)
+			for {
+				_, readErr := conn.Read(buf)
+				if readErr != nil {
+					_ = conn.Close()
+
+					return
+				}
+			}
+		}()
 	}
 }
 

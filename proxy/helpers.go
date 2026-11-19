@@ -41,8 +41,9 @@ func ecsFromMsg(m *dns.Msg) (subnet *net.IPNet, scope int) {
 }
 
 // setECS sets the EDNS client subnet option based on ip and scope into m.  It
-// returns masked IP and mask length.  m must not be nil.
-func setECS(m *dns.Msg, ip net.IP, scope uint8) (subnet *net.IPNet) {
+// returns masked IP and mask length.  udpSize is the client's advertised UDP
+// buffer, used when m has no OPT record yet.  m must not be nil.
+func setECS(m *dns.Msg, ip net.IP, scope uint8, udpSize uint16) (subnet *net.IPNet) {
 	const (
 		// defaultECSv4 is the default length of network mask for IPv4 address
 		// in ECS option.
@@ -91,7 +92,15 @@ func setECS(m *dns.Msg, ip net.IP, scope uint8) (subnet *net.IPNet) {
 		},
 		Option: []dns.EDNS0{e},
 	}
-	o.SetUDPSize(4096)
+	// Keep the client's advertised size when it sent one.  Otherwise use the
+	// proxy default instead of a hard-coded 4096, which would be copied into
+	// the response if the injected OPT were not removed.
+	//
+	// See https://github.com/AdguardTeam/dnsproxy/issues/277.
+	if udpSize < dns.MinMsgSize {
+		udpSize = defaultUDPBufSize
+	}
+	o.SetUDPSize(udpSize)
 	m.Extra = append(m.Extra, o)
 
 	return subnet

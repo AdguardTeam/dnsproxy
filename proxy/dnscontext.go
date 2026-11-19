@@ -167,12 +167,19 @@ func (dctx *DNSContext) scrub() {
 	// need to this call.
 	dctx.calcFlagsAndSize()
 
-	// RFC-6891 (https://tools.ietf.org/html/rfc6891) states that response
-	// mustn't contain an EDNS0 RR if the request doesn't include it.
+	// RFC 6891: a response must not contain an EDNS0 RR if the request doesn't
+	// include it.  ECS and DNSSEC may have added one on the way upstream; drop
+	// it for a client that did not advertise EDNS.  When the client did, use
+	// the size it advertised rather than the upstream's.
 	//
-	// See https://github.com/AdguardTeam/dnsproxy/issues/132.
-	if dctx.hasEDNS0 && dctx.Res.IsEdns0() == nil {
+	// See https://github.com/AdguardTeam/dnsproxy/issues/132
+	// and https://github.com/AdguardTeam/dnsproxy/issues/277.
+	if !dctx.hasEDNS0 {
+		removeEDNS0(dctx.Res)
+	} else if opt := dctx.Res.IsEdns0(); opt == nil {
 		dctx.Res.SetEdns0(dctx.udpSize, dctx.doBit)
+	} else {
+		opt.SetUDPSize(dctx.udpSize)
 	}
 
 	dctx.Res.Truncate(int(dnsSize(dctx.Proto == ProtoUDP, dctx.Req)))
@@ -194,6 +201,24 @@ func dnsSize(isUDP bool, r *dns.Msg) (size uint16) {
 	}
 
 	return max(dns.MinMsgSize, size16)
+}
+
+// removeEDNS0 deletes OPT records from m.  m must not be nil.
+func removeEDNS0(m *dns.Msg) {
+	if m.IsEdns0() == nil {
+		return
+	}
+
+	extra := make([]dns.RR, 0, len(m.Extra))
+	for _, rr := range m.Extra {
+		if rr.Header().Rrtype == dns.TypeOPT {
+			continue
+		}
+
+		extra = append(extra, rr)
+	}
+
+	m.Extra = extra
 }
 
 // DoQVersion is an enumeration with supported DoQ versions.

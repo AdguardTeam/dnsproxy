@@ -365,19 +365,19 @@ You can specify upstreams that will be used for a specific domain(s). We use the
 
 Where `upstreamString` is one or many upstreams separated by space (e.g. `1.1.1.1` or `1.1.1.1 2.2.2.2`).
 
-If one or more domains are specified, that upstream (`upstreamString`) is used only for those domains. Usually, it is used for private nameservers. For instance, if you have a nameserver on your network which deals with `xxx.internal.local` at `192.168.0.1` then you can specify `[/internal.local/]192.168.0.1`, and dnsproxy will send all queries to that nameserver. Everything else will be sent to the default upstreams (which are mandatory!).
+If one or more domains are specified, that upstream (`upstreamString`) is used only for those domains. Usually, it is used for private nameservers. For instance, if you have a nameserver on your network which deals with `xxx.home.arpa` at `192.168.0.1` then you can specify `[/home.arpa/]192.168.0.1`, and dnsproxy will send all queries to that nameserver. Everything else will be sent to the default upstreams (which are mandatory!).
 
 1. An empty domain specification, `//` has the special meaning of "unqualified names only", which will be used to resolve names with a single label in them, or with exactly two labels in case of `DS` requests.
 1. More specific domains take precedence over less specific domains, so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]2.3.4.5` will send queries for `*.host.com` to `1.2.3.4`, except `*.www.host.com`, which will go to `2.3.4.5`.
 1. The special server address `#` means, "use the common servers", so: `--upstream=[/host.com/]1.2.3.4 --upstream=[/www.host.com/]#` will send queries for `*.host.com` to `1.2.3.4`, except `*.www.host.com` which will be forwarded as usual.
 1. The wildcard `*` has special meaning of "any sub-domain", so: `--upstream=[/*.host.com/]1.2.3.4` will send queries for `*.host.com` to `1.2.3.4`, but `host.com` will be forwarded to default upstreams.
 
-Sends requests for `*.local` domains to `192.168.0.1:53`. Other requests are sent to `8.8.8.8:53`:
+Sends requests for `*.home.arpa` domains to `192.168.0.1:53`. Other requests are sent to `8.8.8.8:53`:
 
 ```shell
 ./dnsproxy \
     -u "8.8.8.8:53" \
-    -u "[/local/]192.168.0.1:53" \
+    -u "[/home.arpa/]192.168.0.1:53" \
     ;
 ```
 

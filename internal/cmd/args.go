@@ -321,10 +321,11 @@ var commandLineOptions = []*commandLineOption{
 		valueType:   "",
 	},
 	hostsFileEnabledIdx: {
-		description: "Use hosts files for resolving. Default: true.",
-		long:        "hosts-file-enabled",
-		short:       "",
-		valueType:   "",
+		description: "Use hosts files for resolving.  Enabled by default; " +
+			"set to false to disable.",
+		long:      "hosts-file-enabled",
+		short:     "",
+		valueType: "",
 	},
 	pprofIdx: {
 		description: "If present, exposes pprof information on localhost:6060.",

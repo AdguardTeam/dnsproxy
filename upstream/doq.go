@@ -481,17 +481,8 @@ func newQUICTokenStore() (s quic.TokenStore) {
 // quic-go issues, see the comments inside this function.
 // TODO(ameshkov): re-test when updating quic-go.
 func isQUICRetryError(err error) (ok bool) {
-	var qAppErr *quic.ApplicationError
-	if errors.As(err, &qAppErr) {
-		// Error code 0 is often returned when the server has been restarted,
-		// and we try to use the same connection on the client-side.
-		// http3.ErrCodeNoError may be used by an HTTP/3 server when closing
-		// an idle connection.  These connections are not immediately closed
-		// by the HTTP client so this case should be handled.
-		if qAppErr.ErrorCode == 0 ||
-			qAppErr.ErrorCode == quic.ApplicationErrorCode(http3.ErrCodeNoError) {
-			return true
-		}
+	if quicPeerClosed(err) {
+		return true
 	}
 
 	var qIdleErr *quic.IdleTimeoutError
@@ -533,6 +524,38 @@ func isQUICRetryError(err error) (ok bool) {
 
 	if errors.Is(err, os.ErrDeadlineExceeded) {
 		// A timeout that could happen when the server has been restarted.
+		return true
+	}
+
+	return false
+}
+
+// quicPeerClosed reports whether err is a graceful QUIC or HTTP/3 close.
+// Servers reset a stream or the connection with H3_NO_ERROR when they are
+// done with it; that is not a failure of the query.
+//
+// See https://github.com/AdguardTeam/dnsproxy/issues/472.
+func quicPeerClosed(err error) (ok bool) {
+	var qAppErr *quic.ApplicationError
+	if errors.As(err, &qAppErr) && (qAppErr.ErrorCode == 0 ||
+		qAppErr.ErrorCode == quic.ApplicationErrorCode(http3.ErrCodeNoError)) {
+		// Error code 0 is often returned when the server has been restarted,
+		// and we try to use the same connection on the client-side.
+		// http3.ErrCodeNoError may be used by an HTTP/3 server when closing
+		// an idle connection.
+		return true
+	}
+
+	// A stream reset is wrapped as [http3.Error] and does not unwrap to
+	// [quic.ApplicationError], so the check above misses it.
+	var h3Err *http3.Error
+	if errors.As(err, &h3Err) && h3Err.ErrorCode == http3.ErrCodeNoError {
+		return true
+	}
+
+	var streamErr *quic.StreamError
+	if errors.As(err, &streamErr) &&
+		streamErr.ErrorCode == quic.StreamErrorCode(http3.ErrCodeNoError) {
 		return true
 	}
 

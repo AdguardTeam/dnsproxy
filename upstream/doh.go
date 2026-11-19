@@ -498,8 +498,14 @@ func (p *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper
 		DisableCompression: true,
 		DialContext:        dialContext,
 		IdleConnTimeout:    transportDefaultIdleConnTimeout,
-		MaxConnsPerHost:    dohMaxConnsPerHost,
-		MaxIdleConns:       dohMaxIdleConns,
+		// Bound the TLS handshake, since [http.Transport] doesn't cancel a dial
+		// when the request that started it is canceled.  Without this, a
+		// server that accepts the connection but never answers the
+		// ClientHello keeps it open indefinitely, and every reset of the
+		// client leaves more of these behind.
+		TLSHandshakeTimeout: p.timeout,
+		MaxConnsPerHost:     dohMaxConnsPerHost,
+		MaxIdleConns:        dohMaxIdleConns,
 		// Since we have a custom DialContext, we need to use this field to make
 		// [http.Client] attempt to use HTTP/2.  Otherwise, it would only be
 		// used when negotiated on the TLS level.

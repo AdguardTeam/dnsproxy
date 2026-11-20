@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"log/slog"
@@ -12,8 +13,9 @@ import (
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	"github.com/AdguardTeam/dnsproxy/upstream"
-	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/cache/bytecache"
 	"github.com/AdguardTeam/golibs/mathutil"
+	"github.com/c2h5oh/datasize"
 	"github.com/miekg/dns"
 )
 
@@ -28,7 +30,7 @@ type cache struct {
 	itemsLock *sync.RWMutex
 
 	// items is the requests cache.
-	items glcache.Cache
+	items bytecache.Interface
 
 	// optimistic defines if the cache should return expired items and resolve
 	// those again.
@@ -184,7 +186,7 @@ func (p *Proxy) initCache() {
 // cacheConfig is the configuration structure for [cache].
 type cacheConfig struct {
 	// size is the cache size in bytes.
-	size int
+	size datasize.ByteSize
 
 	// optimisticTTL is the default TTL for expired cached responses when
 	// optimistic is enabled.  It must not be negative.
@@ -204,7 +206,7 @@ type cacheConfig struct {
 func newCache(conf *cacheConfig) (c *cache) {
 	return &cache{
 		itemsLock:        &sync.RWMutex{},
-		items:            createCache(conf.size),
+		items:            newByteCache(conf.size),
 		optimistic:       conf.optimistic,
 		optimisticTTL:    conf.optimisticTTL,
 		optimisticMaxAge: conf.optimisticMaxAge,
@@ -229,12 +231,12 @@ func (c *cache) get(req *dns.Msg, subnet *net.IPNet) (ci *cacheItem, expired boo
 		ones, _ = subnet.Mask.Size()
 	}
 
-	data := c.items.Get(key)
+	data, ok := c.items.Get(key)
 
 	// In order to reduce allocations we apply mask on bits level.  As the key
 	// k has ecsIP in bytes slice representation, each iteration we can just
 	// clear one bit in the end of it by applying the bitmask.
-	for ones > 0 && data == nil {
+	for ones > 0 && !ok {
 		ones--
 
 		// Set mask identification byte in the key.
@@ -242,16 +244,16 @@ func (c *cache) get(req *dns.Msg, subnet *net.IPNet) (ci *cacheItem, expired boo
 
 		key[keyAddrIndex+ones/8] &= ^byte(0) << (8 - ones%8)
 
-		data = c.items.Get(key)
+		data, ok = c.items.Get(key)
 	}
 
-	if data == nil {
+	if !ok {
 		key[keyFamilyIndex] = keyFamilyNone
 		clear(key[keyAddrIndex : keyAddrIndex+keyAddrLen])
-		data = c.items.Get(key)
+		data, ok = c.items.Get(key)
 	}
 
-	if data == nil {
+	if !ok {
 		return nil, false, key
 	}
 
@@ -264,22 +266,16 @@ func (c *cache) get(req *dns.Msg, subnet *net.IPNet) (ci *cacheItem, expired boo
 
 // canLookUpInCache returns true if these parameters could be used to make a
 // cache lookup.
-func canLookUpInCache(cache glcache.Cache, req *dns.Msg) (ok bool) {
+func canLookUpInCache(cache bytecache.Interface, req *dns.Msg) (ok bool) {
 	return cache != nil && req != nil && len(req.Question) == 1
 }
 
-// createCache returns new Cache with the given cacheSize.
-func createCache(cacheSize int) (glc glcache.Cache) {
-	conf := glcache.Config{
-		MaxSize:   defaultCacheSize,
-		EnableLRU: true,
-	}
-
-	if cacheSize > 0 {
-		conf.MaxSize = uint(cacheSize)
-	}
-
-	return glcache.New(conf)
+// newByteCache returns a new byte cache with the given cacheSize.  If cacheSize
+// is zero, [defaultCacheSize] is used.
+func newByteCache(cacheSize datasize.ByteSize) (c bytecache.Interface) {
+	return bytecache.NewDefault(&bytecache.DefaultConfig{
+		MaxSize: cmp.Or(cacheSize, defaultCacheSize),
+	})
 }
 
 // set stores response and upstream for req in the cache.  l, req, and m must

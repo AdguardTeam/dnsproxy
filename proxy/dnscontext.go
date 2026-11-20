@@ -7,6 +7,7 @@ import (
 
 	"github.com/AdguardTeam/dnscrypt"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/c2h5oh/datasize"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 )
@@ -226,7 +227,7 @@ type CustomUpstreamConfig struct {
 func NewCustomUpstreamConfig(
 	u *UpstreamConfig,
 	cacheEnabled bool,
-	cacheSize int,
+	cacheSize datasize.ByteSize,
 ) (c *CustomUpstreamConfig) {
 	var customCache *cache
 	if cacheEnabled {

@@ -4,10 +4,11 @@ go 1.27.4
 
 require (
 	github.com/AdguardTeam/dnscrypt v0.0.3
-	github.com/AdguardTeam/golibs v0.35.19
+	github.com/AdguardTeam/golibs v0.35.20
 	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/beefsack/go-rate v0.0.0-20220214233405-116f4ca011a0
 	github.com/bluele/gcache v0.0.2
+	github.com/c2h5oh/datasize v0.0.0-20231215233829-aa82cc1e6500
 	github.com/miekg/dns v1.1.73
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/quic-go/quic-go v0.65.0

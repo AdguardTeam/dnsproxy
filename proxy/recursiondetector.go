@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"time"
 
-	glcache "github.com/AdguardTeam/golibs/cache"
+	"github.com/AdguardTeam/golibs/cache/bytecache"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/miekg/dns"
 )
@@ -29,7 +29,7 @@ const (
 
 // recursionDetector detects recursion in DNS forwarding.
 type recursionDetector struct {
-	recentRequests glcache.Cache
+	recentRequests bytecache.Interface
 	ttl            time.Duration
 }
 
@@ -41,8 +41,8 @@ func (rd *recursionDetector) check(msg *dns.Msg) (ok bool) {
 	}
 
 	key := msgToSignature(msg)
-	expireData := rd.recentRequests.Get(key)
-	if expireData == nil {
+	expireData, ok := rd.recentRequests.Get(key)
+	if !ok {
 		return false
 	}
 
@@ -74,11 +74,10 @@ func (rd *recursionDetector) clear() {
 }
 
 // newRecursionDetector returns the initialized *recursionDetector.
-func newRecursionDetector(ttl time.Duration, suspectsNum uint) (rd *recursionDetector) {
+func newRecursionDetector(ttl time.Duration, suspectsNum uint64) (rd *recursionDetector) {
 	return &recursionDetector{
-		recentRequests: glcache.New(glcache.Config{
-			EnableLRU: true,
-			MaxCount:  suspectsNum,
+		recentRequests: bytecache.NewDefault(&bytecache.DefaultConfig{
+			MaxCount: suspectsNum,
 		}),
 		ttl: ttl,
 	}

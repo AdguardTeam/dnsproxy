@@ -67,8 +67,8 @@ func unpackCacheEntry(data []byte) (ent *cacheEntry) {
 // cacheFind finds entry in the cache for the given IP address.  Returns nil if
 // nothing is found or if the record is expired.
 func (f *FastestAddr) cacheFind(ip netip.Addr) (ent *cacheEntry) {
-	val := f.ipCache.Get(ip.AsSlice())
-	if val == nil {
+	val, ok := f.ipCache.Get(ip.AsSlice())
+	if !ok {
 		return nil
 	}
 

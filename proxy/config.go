@@ -15,6 +15,7 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/validate"
+	"github.com/c2h5oh/datasize"
 )
 
 // LogPrefix is a prefix for logging.
@@ -144,7 +145,7 @@ type Config struct {
 	EDNSAddr net.IP
 
 	// CacheSizeBytes is the maximum cache size in bytes.
-	CacheSizeBytes int
+	CacheSizeBytes datasize.ByteSize
 
 	// CacheMinTTL is the minimum TTL for cached DNS responses in seconds.
 	CacheMinTTL uint32

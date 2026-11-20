@@ -1,4 +1,4 @@
-package proxy
+package proxy_test
 
 import (
 	"net/netip"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
+	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
@@ -15,18 +16,17 @@ import (
 // testTimeout is a common timeout for tests.
 const testTimeout = 1 * time.Second
 
-func TestLookupNetIP(t *testing.T) {
+func TestProxy_LookupNetIP(t *testing.T) {
 	t.Parallel()
 
-	conf := &Config{
+	conf := &proxy.Config{
 		Logger: testLogger,
-		UpstreamConfig: &UpstreamConfig{
+		UpstreamConfig: &proxy.UpstreamConfig{
 			Upstreams: []upstream.Upstream{newTestUpstream(t)},
 		},
 	}
 
-	p, err := New(conf)
-	require.NoError(t, err)
+	p := newTestProxy(t, conf)
 
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
 	addrs, err := p.LookupNetIP(ctx, "", dnsproxytest.Host)

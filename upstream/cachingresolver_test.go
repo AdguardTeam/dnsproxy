@@ -2,7 +2,9 @@ package upstream_test
 
 import (
 	"context"
+	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,8 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testIPv4 is a common IPv4 for tests.
+const testIPv4 = "192.0.2.1"
+
 func TestCachingResolver_staleness(t *testing.T) {
-	ip4 := netip.MustParseAddr("192.0.2.1")
+	ip4 := netip.MustParseAddr(testIPv4)
 	ip6 := netip.MustParseAddr("2001:db8::1")
 
 	const (
@@ -111,7 +116,7 @@ func TestCachingResolver_staleness(t *testing.T) {
 func newTestUpstreamResolver(
 	tb testing.TB,
 	clock timeutil.Clock,
-	onExchange func(req *dns.Msg) (resp *dns.Msg),
+	onExchange func(req *dns.Msg) (resp *dns.Msg, err error),
 ) (r *upstream.UpstreamResolver) {
 	tb.Helper()
 
@@ -119,7 +124,7 @@ func newTestUpstreamResolver(
 		OnAddress: func() (_ string) { panic(testutil.UnexpectedCall()) },
 		OnClose:   func() (_ error) { panic(testutil.UnexpectedCall()) },
 		OnExchange: func(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
-			return onExchange(req), nil
+			return onExchange(req)
 		},
 	}
 
@@ -128,16 +133,14 @@ func newTestUpstreamResolver(
 
 // newOnExchange returns a new Exchange function for the upstream mock that
 // always responds with the given rcode.
-//
-// TODO(m.kazantsev):  Add an error argument to the method signature.
-func newOnExchange(tb testing.TB, rcode int) (f func(req *dns.Msg) (resp *dns.Msg)) {
+func newOnExchange(tb testing.TB, rcode int) (f func(req *dns.Msg) (resp *dns.Msg, err error)) {
 	tb.Helper()
 
-	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = rcode
 
-		return resp
+		return resp, nil
 	}
 
 	return onExchange
@@ -149,9 +152,7 @@ const soaTTL = 40
 
 // onExchangeWithSOA is a common Exchange function for the upstream mock that
 // always responds with NXDOMAIN and includes a SOA record.
-//
-// TODO(m.kazantsev):  Add an error argument to the method signature.
-func onExchangeWithSOA(req *dns.Msg) (resp *dns.Msg) {
+func onExchangeWithSOA(req *dns.Msg) (resp *dns.Msg, err error) {
 	resp = (&dns.Msg{}).SetReply(req)
 	resp.Rcode = dns.RcodeNameError
 
@@ -173,7 +174,7 @@ func onExchangeWithSOA(req *dns.Msg) (resp *dns.Msg) {
 
 	resp.Ns = []dns.RR{soa}
 
-	return resp
+	return resp, nil
 }
 
 func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
@@ -183,7 +184,7 @@ func TestUpstreamResolver_RequestResult_expire(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() time.Time {
+		OnNow: func() (n time.Time) {
 			return now
 		},
 	}
@@ -235,7 +236,7 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 
 	now := time.Now()
 	clock := &faketime.Clock{
-		OnNow: func() time.Time {
+		OnNow: func() (n time.Time) {
 			return now
 		},
 	}
@@ -281,19 +282,17 @@ func TestCachingResolver_LookupNetIP_empty(t *testing.T) {
 // newOnExchangeWithCalls returns a new Exchange function for the upstream
 // mock that always responds with the given rcode.  If the number of calls
 // exceeds expectedCalls, it panics.
-//
-// TODO(m.kazantsev):  Add an error argument to the method signature.
 func newOnExchangeWithCalls(
 	tb testing.TB,
 	signalCh chan struct{},
 	expectedCalls uint32,
 	rcode int,
-) (f func(req *dns.Msg) (resp *dns.Msg)) {
+) (f func(req *dns.Msg) (resp *dns.Msg, err error)) {
 	tb.Helper()
 
 	cnt := atomic.Uint32{}
 
-	onExchange := func(req *dns.Msg) (resp *dns.Msg) {
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
 		calls := cnt.Add(1)
 
 		if calls == expectedCalls {
@@ -307,8 +306,93 @@ func newOnExchangeWithCalls(
 		resp = (&dns.Msg{}).SetReply(req)
 		resp.Rcode = rcode
 
-		return resp
+		return resp, nil
 	}
 
 	return onExchange
+}
+
+// TODO(m.kazantsev):  Consider adding more testcases.
+func TestCachingResolver_LookupNetIP_concurrent(t *testing.T) {
+	t.Parallel()
+
+	const attemptNum = 3
+
+	now := time.Now()
+	clock := &faketime.Clock{
+		OnNow: func() (n time.Time) {
+			return now
+		},
+	}
+
+	addr := netip.MustParseAddr(testIPv4)
+	var ip net.IP = addr.AsSlice()
+
+	answ := proxytest.NewRR(t, proxytest.FQDN, dns.TypeA, 0, ip)
+
+	// firstExchangeStarted is closed when the first lookup reaches the
+	// upstream, and firstExchangeRelease keeps it in flight until all the
+	// other lookups have had a chance to join it.
+	firstExchangeStarted := make(chan struct{})
+	firstExchangeRelease := make(chan struct{})
+
+	exchanges := atomic.Uint32{}
+	onExchange := func(req *dns.Msg) (resp *dns.Msg, err error) {
+		if exchanges.Add(1) == 1 {
+			close(firstExchangeStarted)
+			<-firstExchangeRelease
+		}
+
+		resp = (&dns.Msg{}).SetReply(req)
+		resp.Rcode = dns.RcodeSuccess
+		resp.Answer = append(resp.Answer, answ)
+
+		return resp, nil
+	}
+
+	r := upstream.NewCachingResolver(newTestUpstreamResolver(t, clock, onExchange))
+
+	// Start all the lookups at once so that they race for the cache check.
+	ready := &sync.WaitGroup{}
+	ready.Add(attemptNum)
+	start := make(chan struct{})
+
+	wg := &sync.WaitGroup{}
+	pt := testutil.NewPanicT(t)
+
+	for range attemptNum {
+		wg.Go(func() {
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+			ready.Done()
+			<-start
+
+			addrs, err := r.LookupNetIP(ctx, bootstrap.NetworkIP4, proxytest.FQDN)
+
+			require.NoError(pt, err)
+			require.Len(pt, addrs, 1)
+			assert.Equal(pt, addr, addrs[0])
+		})
+	}
+
+	ready.Wait()
+	close(start)
+
+	// The first lookup is now blocked in the upstream exchange, so the cache
+	// is still empty.  Any other lookup that isn't deduplicated with the
+	// first one performs its own exchange.
+	testutil.RequireReceive(t, firstExchangeStarted, testTimeout)
+
+	// Give the other lookups time to hit the empty cache and join the
+	// in-flight one.  Otherwise they could be served from the cache after
+	// the first lookup is done, hiding the missing deduplication.
+	assert.Never(t, func() bool {
+		return exchanges.Load() > 1
+	}, 100*time.Millisecond, 10*time.Millisecond)
+
+	close(firstExchangeRelease)
+
+	wg.Wait()
+
+	assert.Equal(t, uint32(1), exchanges.Load())
 }

@@ -29,12 +29,12 @@ func TestProxy_HandleDNSRequest_tcp(t *testing.T) {
 	conn, err := dns.Dial("tcp", addr.String())
 	require.NoError(t, err)
 
-	sendTestMessages(t, conn)
+	subtestSendTestMessages(t, conn)
 }
 
 func TestProxy_HandleDNSRequest_tls(t *testing.T) {
 	serverConfig, caPem := proxytest.NewTLSConfig(t)
-	dnsProxy, err := proxy.New(&proxy.Config{
+	dnsProxy := newTestProxy(t, &proxy.Config{
 		Logger:         testLogger,
 		TLSListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		QUICListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
@@ -44,8 +44,6 @@ func TestProxy_HandleDNSRequest_tls(t *testing.T) {
 		},
 		TrustedProxies: proxytest.DefaultTrustedProxies,
 	})
-	require.NoError(t, err)
-
 	servicetest.RequireRun(t, dnsProxy, proxytest.Timeout)
 
 	roots := x509.NewCertPool()
@@ -57,7 +55,7 @@ func TestProxy_HandleDNSRequest_tls(t *testing.T) {
 	conn, err := dns.DialWithTLS("tcp-tls", addr.String(), tlsConfig)
 	require.NoError(t, err)
 
-	sendTestMessages(t, conn)
+	subtestSendTestMessages(t, conn)
 }
 
 func TestProxy_handleDNSRequest_splitTCPPrefix(t *testing.T) {
@@ -113,21 +111,20 @@ func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
 		Upstreams: []upstream.Upstream{u},
 	}
 
-	p, err := proxy.New(&proxy.Config{
+	p := newTestProxy(t, &proxy.Config{
 		Logger:         testLogger,
 		UDPListenAddr:  []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		TCPListenAddr:  []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
 		UpstreamConfig: upsConf,
 		TrustedProxies: proxytest.DefaultTrustedProxies,
 	})
-	require.NoError(t, err)
 	servicetest.RequireRun(t, p, proxytest.Timeout)
 
 	conn := requireDial(t, p.Addr(proxy.ProtoTCP), proxytest.Timeout)
 
 	pkt := binary.BigEndian.AppendUint16(nil, 0)
 
-	_, err = conn.Write(pkt)
+	_, err := conn.Write(pkt)
 	require.NoError(t, err)
 
 	dnsConn := &dns.Conn{Conn: conn}
@@ -154,12 +151,12 @@ func TestProxy_handleDNSRequest_partialTCPPrefix(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 
-		// TODO(e.burkov):  Improve the [sendTestMessages] helper to fit into
-		// [proxytest.Timeout].
+		// TODO(e.burkov):  Improve the [subtestSendTestMessages] helper to fit
+		// into [proxytest.Timeout].
 		conn := requireDial(t, addr, 2*proxytest.Timeout)
 
 		dnsConn := &dns.Conn{Conn: conn}
 
-		sendTestMessages(t, dnsConn)
+		subtestSendTestMessages(t, dnsConn)
 	})
 }

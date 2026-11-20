@@ -31,8 +31,8 @@ func TestProxy_HandleDNSRequest_dnscrypt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test DNSCrypt proxy on both UDP and TCP.
-	checkDNSCryptProxy(t, dnscrypt.ProtoUDP, stamp)
-	checkDNSCryptProxy(t, dnscrypt.ProtoTCP, stamp)
+	subtestDNSCryptProxy(t, dnscrypt.ProtoUDP, stamp)
+	subtestDNSCryptProxy(t, dnscrypt.ProtoTCP, stamp)
 }
 
 // newTestDNSCryptProxy is a helper function that creates a DNSCrypt proxy and
@@ -47,7 +47,7 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 	require.NoError(tb, err)
 
 	port := nettest.NewFreePort(tb)
-	p = mustNew(tb, &Config{
+	p = newTestProxy(tb, &Config{
 		Logger: testLogger,
 		DNSCryptUDPListenAddr: []*net.UDPAddr{{
 			Port: int(port), IP: net.ParseIP(listenIP),
@@ -70,11 +70,9 @@ func newTestDNSCryptProxy(tb testing.TB) (p *Proxy, rc dnscrypt.ResolverConfig) 
 	return p, rc
 }
 
-// checkDNSCryptProxy is a helper function that checks the DNSCrypt proxy by
+// subtestDNSCryptProxy is a helper function that checks the DNSCrypt proxy by
 // sending a test message and verifying the response.
-func checkDNSCryptProxy(tb testing.TB, proto dnscrypt.Proto, stamp dnsstamps.ServerStamp) {
-	tb.Helper()
-
+func subtestDNSCryptProxy(tb testing.TB, proto dnscrypt.Proto, stamp dnsstamps.ServerStamp) {
 	c := dnscrypt.NewClient(&dnscrypt.ClientConfig{
 		Logger: slogutil.NewDiscardLogger(),
 		Proto:  proto,

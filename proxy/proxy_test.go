@@ -34,14 +34,12 @@ const (
 	testFQDNGeneral     = "general." + proxytest.FQDN
 	testFQDNSubAnother  = "another." + proxytest.FQDN
 
-	testUpstreamURLGeneral      = "tcp://general.upstream:53"
-	testUpstreamURLUnqualified  = "tcp://unqualified.upstream:53"
-	testUpstreamURLTLD          = "tcp://tld.upstream:53"
-	testUpstreamURLDomain       = "tcp://domain.upstream:53"
-	testUpstreamURLWildcard     = "tcp://wildcard.upstream:53"
-	testUpstreamURLWildcardSub  = "tcp://sub-wildcard.upstream:53"
-	testUpstreamURLWildcardOnly = "tcp://wildcard-only.upstream:53"
-	testUpstreamURLSubdomain    = "tcp://subdomain.upstream:53"
+	testUpstreamURLGeneral     = "tcp://general.upstream:53"
+	testUpstreamURLUnqualified = "tcp://unqualified.upstream:53"
+	testUpstreamURLTLD         = "tcp://tld.upstream:53"
+	testUpstreamURLDomain      = "tcp://domain.upstream:53"
+	testUpstreamURLWildcard    = "tcp://wildcard.upstream:53"
+	testUpstreamURLSubdomain   = "tcp://subdomain.upstream:53"
 )
 
 const (

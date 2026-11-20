@@ -632,6 +632,8 @@ func TestCache_GetWithSubnet_hit(t *testing.T) {
 }
 
 func TestCache_GetWithSubnet_mask(t *testing.T) {
+	t.Parallel()
+
 	noMatchIP := testCacheIP1
 	testIP := testCacheIP3
 

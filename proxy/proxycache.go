@@ -29,6 +29,12 @@ func (p *Proxy) replyFromCache(ctx context.Context, d *DNSContext) (hit bool) {
 	d.Res = ci.m
 	d.queryStatistics = cachedQueryStatistics(ci.u)
 
+	p.logger.DebugContext(
+		ctx,
+		"replying from cache",
+		"ecs_enabled", p.enableEDNSClientSubnet,
+	)
+
 	if dctxCache.optimistic && expired {
 		// Build a reduced clone of the current context to avoid data race.
 		minCtxClone := &DNSContext{

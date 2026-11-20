@@ -187,7 +187,7 @@ type cacheConfig struct {
 	size int
 
 	// optimisticTTL is the default TTL for expired cached responses when
-	// optimistic is enabled.
+	// optimistic is enabled.  It must not be negative.
 	optimisticTTL time.Duration
 
 	// optimisticMaxAge is the maximum time entries remain in the cache when
@@ -283,7 +283,7 @@ func createCache(cacheSize int) (glc glcache.Cache) {
 }
 
 // set stores response and upstream for req in the cache.  l, req, and m must
-// not be nil.  u and subnet may be nil.
+// not be nil.
 func (c *cache) set(
 	ctx context.Context,
 	l *slog.Logger,

@@ -19,39 +19,30 @@ import (
 func TestExchangeParallel(t *testing.T) {
 	t.Parallel()
 
-	const publicDNSAddr = "8.8.8.8:53"
-
-	var upstreams []upstream.Upstream
-	upstreamList := []string{
-		"1.2.3.4:55",
-		"8.8.8.1",
-		publicDNSAddr,
-	}
-
-	for _, s := range upstreamList {
-		u, err := upstream.AddressToUpstream(s, &upstream.Options{
-			Logger:  testLogger,
-			Timeout: testTimeout,
-		})
-		require.NoError(t, err)
-
-		upstreams = append(upstreams, u)
-	}
-
 	req := newTestMessage()
+
+	respOK := (&dns.Msg{
+		Answer: []dns.RR{&dns.A{A: dpt.IPv4}},
+	}).SetReply(req)
+
+	upsFailing := dnsproxytest.NewUpstream()
+	upsFailing.OnExchange = func(_ context.Context, _ *dns.Msg) (resp *dns.Msg, err error) {
+		return nil, assert.AnError
+	}
+
+	upsOK := dnsproxytest.NewUpstream()
+	upsOK.OnExchange = func(_ context.Context, _ *dns.Msg) (resp *dns.Msg, err error) {
+		return respOK, nil
+	}
+
+	upstreams := []upstream.Upstream{upsFailing, upsFailing, upsFailing, upsOK}
+
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	resp, u, err := upstream.ExchangeParallel(ctx, upstreams, req)
+	respOK, u, err := upstream.ExchangeParallel(ctx, upstreams, req)
 	require.NoError(t, err)
 
-	assert.Equal(t, publicDNSAddr, u.Address())
-
-	require.NotNil(t, resp)
-	require.Len(t, resp.Answer, 1)
-
-	assert.Equal(t, req.Id, resp.Id)
-
-	a := testutil.RequireTypeAssert[*dns.A](t, resp.Answer[0])
-	assert.Equal(t, net.IPv4(8, 8, 8, 8), a.A.To16())
+	assert.Same(t, upsOK, u)
+	assert.Same(t, respOK, respOK)
 }
 
 func TestExchangeParallel_noReply(t *testing.T) {

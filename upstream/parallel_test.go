@@ -38,11 +38,11 @@ func TestExchangeParallel(t *testing.T) {
 	upstreams := []upstream.Upstream{upsFailing, upsFailing, upsFailing, upsOK}
 
 	ctx := testutil.ContextWithTimeout(t, testTimeout)
-	respOK, u, err := upstream.ExchangeParallel(ctx, upstreams, req)
+	resp, u, err := upstream.ExchangeParallel(ctx, upstreams, req)
 	require.NoError(t, err)
 
 	assert.Same(t, upsOK, u)
-	assert.Same(t, respOK, respOK)
+	assert.Same(t, respOK, resp)
 }
 
 func TestExchangeParallel_noReply(t *testing.T) {

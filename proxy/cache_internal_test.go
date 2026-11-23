@@ -75,7 +75,7 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 	})
 }
 
-func TestProxy_ServeDNS_cached(t *testing.T) {
+func TestProxy_HandleDNSRequest_cached(t *testing.T) {
 	dnsProxy := newTestProxy(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
@@ -534,7 +534,7 @@ func TestCache_zeroTTL(t *testing.T) {
 	}
 }
 
-func TestCache_getWithSubnetEmpty(t *testing.T) {
+func TestCache_GetWithSubnet_empty(t *testing.T) {
 	t.Parallel()
 
 	c := newTestCache(t, &cacheConfig{withECS: true})
@@ -548,7 +548,7 @@ func TestCache_getWithSubnetEmpty(t *testing.T) {
 	assert.False(t, expired)
 }
 
-func TestCache_getWithSubnetMiss(t *testing.T) {
+func TestCache_GetWithSubnet_miss(t *testing.T) {
 	t.Parallel()
 
 	c := newTestCache(t, &cacheConfig{withECS: true})
@@ -570,7 +570,7 @@ func TestCache_getWithSubnetMiss(t *testing.T) {
 	assert.Nil(t, ci)
 }
 
-func TestCache_getWithSubnetHit(t *testing.T) {
+func TestCache_GetWithSubnet_hit(t *testing.T) {
 	t.Parallel()
 
 	c := newTestCache(t, &cacheConfig{withECS: true})
@@ -631,7 +631,9 @@ func TestCache_getWithSubnetHit(t *testing.T) {
 	}
 }
 
-func TestCache_getWithSubnetMask(t *testing.T) {
+func TestCache_GetWithSubnet_mask(t *testing.T) {
+	t.Parallel()
+
 	noMatchIP := testCacheIP1
 	testIP := testCacheIP3
 

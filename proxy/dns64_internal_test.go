@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProxy_performDNS64_noWrapperReuse(t *testing.T) {
+func TestProxy_PerformDNS64_noWrapperReuse(t *testing.T) {
+	t.Parallel()
+
 	nat64Pref := netip.MustParsePrefix("64:ff9b::/96")
 	wantAAAA := net.ParseIP("64:ff9b::c000:201")
 

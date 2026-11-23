@@ -22,12 +22,13 @@ import (
 )
 
 func TestProxy_HandleDNSRequest_tcp(t *testing.T) {
-	dnsProxy := mustStartDefaultProxy(t)
+	p := newTestProxy(t, nil)
+	servicetest.RequireRun(t, p, testTimeout)
 
-	// Create a DNS-over-TCP client connection
-	addr := dnsProxy.Addr(proxy.ProtoTCP)
+	addr := p.Addr(proxy.ProtoTCP)
 	conn, err := dns.Dial("tcp", addr.String())
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, conn.Close)
 
 	subtestSendTestMessages(t, conn)
 }
@@ -54,15 +55,18 @@ func TestProxy_HandleDNSRequest_tls(t *testing.T) {
 	addr := dnsProxy.Addr(proxy.ProtoTLS)
 	conn, err := dns.DialWithTLS("tcp-tls", addr.String(), tlsConfig)
 	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, conn.Close)
 
 	subtestSendTestMessages(t, conn)
 }
 
-func TestProxy_handleDNSRequest_splitTCPPrefix(t *testing.T) {
+func TestProxy_HandleDNSRequest_splitTCPPrefix(t *testing.T) {
 	t.Parallel()
 
-	addr := mustStartDefaultProxy(t).Addr(proxy.ProtoTCP)
-	conn := requireDial(t, addr, proxytest.Timeout)
+	p := newTestProxy(t, nil)
+	servicetest.RequireRun(t, p, testTimeout)
+
+	conn := requireDial(t, p.Addr(proxy.ProtoTCP), proxytest.Timeout)
 
 	req := proxytest.NewTestRequest()
 
@@ -97,7 +101,7 @@ func TestProxy_handleDNSRequest_splitTCPPrefix(t *testing.T) {
 	}))
 }
 
-func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
+func TestProxy_HandleDNSRequest_emptyTCPMessage(t *testing.T) {
 	t.Parallel()
 
 	u := &dnsproxytest.Upstream{
@@ -132,15 +136,16 @@ func TestProxy_handleDNSRequest_emptyTCPMessage(t *testing.T) {
 	assert.ErrorIs(t, err, io.EOF)
 }
 
-func TestProxy_handleDNSRequest_partialTCPPrefix(t *testing.T) {
+func TestProxy_HandleDNSRequest_partialTCPPrefix(t *testing.T) {
 	t.Parallel()
 
-	addr := mustStartDefaultProxy(t).Addr(proxy.ProtoTCP)
+	p := newTestProxy(t, nil)
+	servicetest.RequireRun(t, p, testTimeout)
 
 	t.Run("bad_conn", func(t *testing.T) {
 		t.Parallel()
 
-		conn := requireDial(t, addr, proxytest.Timeout)
+		conn := requireDial(t, p.Addr(proxy.ProtoTCP), proxytest.Timeout)
 
 		n, err := conn.Write([]byte{0x00})
 		require.NoError(t, err)
@@ -153,7 +158,7 @@ func TestProxy_handleDNSRequest_partialTCPPrefix(t *testing.T) {
 
 		// TODO(e.burkov):  Improve the [subtestSendTestMessages] helper to fit
 		// into [proxytest.Timeout].
-		conn := requireDial(t, addr, 2*proxytest.Timeout)
+		conn := requireDial(t, p.Addr(proxy.ProtoTCP), 2*proxytest.Timeout)
 
 		dnsConn := &dns.Conn{Conn: conn}
 

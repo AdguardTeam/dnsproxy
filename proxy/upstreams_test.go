@@ -6,13 +6,14 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpstreamConfig_ValidatePrivateConfig(t *testing.T) {
+func TestValidatePrivateConfig(t *testing.T) {
 	t.Parallel()
 
 	ss := netutil.SubnetSetFunc(netutil.IsLocallyServed)
@@ -79,7 +80,7 @@ func TestUpstreamConfig_ValidatePrivateConfig(t *testing.T) {
 	}
 }
 
-func TestUpstreamConfig_GetUpstreamsForDomain_noDuplicates(t *testing.T) {
+func TestParseUpstreamsConfig_noDuplicates(t *testing.T) {
 	t.Parallel()
 
 	upstreams := []string{"[/example.com/]1.1.1.1", "[/example.org/]1.1.1.1"}
@@ -100,4 +101,55 @@ func TestUpstreamConfig_GetUpstreamsForDomain_noDuplicates(t *testing.T) {
 
 	// Check that the very same Upstream instance is used for both domains.
 	assert.Same(t, u1, u2)
+}
+
+func TestUpstreamConfig_Validate(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		wantErr error
+		in      []string
+	}{{
+		name:    "empty",
+		wantErr: upstream.ErrNoUpstreams,
+		in:      []string{},
+	}, {
+		name:    "nil",
+		wantErr: upstream.ErrNoUpstreams,
+		in:      nil,
+	}, {
+		name:    "valid",
+		wantErr: nil,
+		in: []string{
+			"udp://upstream.example:53",
+		},
+	}, {
+		name:    "no_default",
+		wantErr: errors.ErrNoValue,
+		in: []string{
+			"[/domain.example/]udp://upstream.example:53",
+			"[/another.domain.example/]#",
+		},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			c, err := proxy.ParseUpstreamsConfig(tc.in, nil)
+			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, c.Close)
+
+			assert.ErrorIs(t, c.Validate(), tc.wantErr)
+		})
+	}
+
+	t.Run("actual_nil", func(t *testing.T) {
+		t.Parallel()
+
+		var c *proxy.UpstreamConfig
+
+		assert.Equal(t, c.Validate(), errors.ErrNoValue)
+	})
 }

@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"cmp"
 	"context"
 	"net"
 	"net/netip"
@@ -24,6 +25,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Common FQDNs and upstream URLs for upstream selection tests.
+const (
+	testFQDNUnqualified = "unqualified."
+	testFQDNUnspecified = "unspecified.domain."
+	testFQDNTopLevel    = "example."
+	testFQDNSub         = "sub." + proxytest.FQDN
+	testFQDNGeneral     = "general." + proxytest.FQDN
+	testFQDNSubAnother  = "another." + proxytest.FQDN
+
+	testUpstreamURLGeneral     = "tcp://general.upstream:53"
+	testUpstreamURLUnqualified = "tcp://unqualified.upstream:53"
+	testUpstreamURLTLD         = "tcp://tld.upstream:53"
+	testUpstreamURLDomain      = "tcp://domain.upstream:53"
+	testUpstreamURLWildcard    = "tcp://wildcard.upstream:53"
+	testUpstreamURLSubdomain   = "tcp://subdomain.upstream:53"
+)
+
 const (
 	// defaultTimeout is a default timeout for tests.
 	defaultTimeout = 10 * time.Second
@@ -43,12 +61,23 @@ var (
 // TODO(f.setrakov): DRY upstream helpers with their internal versions.
 
 // newTestProxy is a helper that returns properly initialized proxy for tests.
+// If conf is nil, default config is used.
 //
 // TODO(e.burkov):  Move into the proxytest package.
 //
 // TODO(e.burkov):  Put default values into configuration.
 func newTestProxy(tb testing.TB, conf *proxy.Config) (p *proxy.Proxy) {
 	tb.Helper()
+
+	conf = cmp.Or(conf, &proxy.Config{
+		Logger:        testLogger,
+		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
+		UpstreamConfig: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{newTestUpstream(tb)},
+		},
+		TrustedProxies: proxytest.DefaultTrustedProxies,
+	})
 
 	p, err := proxy.New(conf)
 	require.NoError(tb, err)
@@ -85,25 +114,6 @@ func newTestUpstreamWithExchange(
 	}
 }
 
-// mustStartDefaultProxy starts a new proxy with default settings and returns
-// it.  It fails the test on error.
-func mustStartDefaultProxy(tb testing.TB) (p *proxy.Proxy) {
-	tb.Helper()
-
-	p = newTestProxy(tb, &proxy.Config{
-		Logger:        testLogger,
-		UDPListenAddr: []*net.UDPAddr{net.UDPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		TCPListenAddr: []*net.TCPAddr{net.TCPAddrFromAddrPort(proxytest.LocalhostAnyPort)},
-		UpstreamConfig: &proxy.UpstreamConfig{
-			Upstreams: []upstream.Upstream{newTestUpstream(tb)},
-		},
-		TrustedProxies: proxytest.DefaultTrustedProxies,
-	})
-	servicetest.RequireRun(tb, p, proxytest.Timeout)
-
-	return p
-}
-
 // subtestSendTestMessages sends [proxytest.MessageCount] DNS requests to the
 // specified connection and checks the responses.  conn must not be nil.
 func subtestSendTestMessages(tb testing.TB, conn *dns.Conn) {
@@ -120,19 +130,11 @@ func subtestSendTestMessages(tb testing.TB, conn *dns.Conn) {
 }
 
 func TestProxy_Resolve_badResponse(t *testing.T) {
-	dnsProxy := mustStartDefaultProxy(t)
+	p := newTestProxy(t, nil)
+	servicetest.RequireRun(t, p, testTimeout)
 
 	onExchange := func(_ context.Context, m *dns.Msg) (resp *dns.Msg, err error) {
-		resp = (&dns.Msg{}).SetReply(m)
-		resp.Answer = append(resp.Answer, &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   m.Question[0].Name,
-				Class:  dns.ClassINET,
-				Rrtype: dns.TypeA,
-			},
-			A: net.IP{1, 2, 3, 4},
-		})
-		// Make the response invalid.
+		resp = proxytest.NewTestResponse(m)
 		resp.Question = []dns.Question{}
 
 		return resp, nil
@@ -157,7 +159,7 @@ func TestProxy_Resolve_badResponse(t *testing.T) {
 
 	var err error
 	require.NotPanics(t, func() {
-		err = dnsProxy.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
+		err = p.Resolve(testutil.ContextWithTimeout(t, defaultTimeout), d)
 	})
 	require.NoError(t, err)
 
@@ -250,9 +252,10 @@ func TestProxy_HandleDNSRequest_race(t *testing.T) {
 }
 
 func TestProxy_HandleDNSRequest_responseInRequest(t *testing.T) {
-	dnsProxy := mustStartDefaultProxy(t)
+	p := newTestProxy(t, nil)
+	servicetest.RequireRun(t, p, testTimeout)
 
-	addr := dnsProxy.Addr(proxy.ProtoTCP)
+	addr := p.Addr(proxy.ProtoTCP)
 	client := &dns.Client{
 		Net:     string(proxy.ProtoTCP),
 		Timeout: proxytest.Timeout,
@@ -834,4 +837,182 @@ func TestProxy_Resolve_customUpstreamConfigCache(t *testing.T) {
 
 	assert.Equal(t, 2, count)
 	assert.Equal(t, proxytest.IPv4, proxytest.FirstIP(t, d.Res).To16())
+}
+
+func TestProxy_Resolve_selectUpstreamsForDomain(t *testing.T) {
+	t.Parallel()
+
+	prx, selected := setupUpstreamSelection(t)
+
+	testCases := []struct {
+		name string
+		host string
+		want string
+	}{{
+		name: "unspecified",
+		host: testFQDNUnspecified,
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "unqualified",
+		host: testFQDNUnqualified,
+		want: testUpstreamURLUnqualified,
+	}, {
+		name: "root",
+		host: ".",
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "tld",
+		host: testFQDNTopLevel,
+		want: testUpstreamURLTLD,
+	}, {
+		name: "unspecified_subdomain",
+		host: testFQDNUnspecified + testFQDNTopLevel,
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "domain",
+		host: proxytest.FQDN,
+		want: testUpstreamURLDomain,
+	}, {
+		name: "wildcard",
+		host: testFQDNSubAnother,
+		want: testUpstreamURLWildcard,
+	}, {
+		name: "general",
+		host: testFQDNGeneral,
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "subdomain",
+		host: testFQDNSub,
+		want: testUpstreamURLSubdomain,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			subtestUpstreamSelection(t, prx, selected, dns.TypeA, tc.host, tc.want)
+		})
+	}
+}
+
+// setupUpstreamSelection returns a proxy configured with common mock upstreams.
+// Upstreams send their URLs to the selectedCh.
+func setupUpstreamSelection(tb testing.TB) (prx *proxy.Proxy, selectedCh <-chan string) {
+	tb.Helper()
+
+	selected := make(chan string, 1)
+	upsConf := &proxy.UpstreamConfig{
+		Upstreams: []upstream.Upstream{
+			newSendUpstream(tb, selected, testUpstreamURLGeneral),
+		},
+		DomainReservedUpstreams: map[string][]upstream.Upstream{
+			proxy.UnqualifiedNames: {newSendUpstream(tb, selected, testUpstreamURLUnqualified)},
+			proxytest.FQDN:         {newSendUpstream(tb, selected, testUpstreamURLWildcard)},
+			testFQDNTopLevel:       nil,
+			testFQDNGeneral:        nil,
+			testFQDNSub:            {newSendUpstream(tb, selected, testUpstreamURLSubdomain)},
+		},
+		SpecifiedDomainUpstreams: map[string][]upstream.Upstream{
+			testFQDNTopLevel: {newSendUpstream(tb, selected, testUpstreamURLTLD)},
+			proxytest.FQDN:   {newSendUpstream(tb, selected, testUpstreamURLDomain)},
+		},
+		SubdomainExclusions: container.NewMapSet(testFQDNTopLevel, proxytest.FQDN),
+	}
+
+	prx = newTestProxy(tb, &proxy.Config{
+		Logger:         testLogger,
+		UpstreamConfig: upsConf,
+	})
+
+	return prx, selected
+}
+
+// newSendUpstream is a helper that returns upstream mock which sends given
+// value to the selected.
+func newSendUpstream(tb testing.TB, selected chan<- string, value string) (u upstream.Upstream) {
+	tb.Helper()
+
+	return newTestUpstreamWithExchange(
+		tb,
+		func(_ context.Context, req *dns.Msg) (msg *dns.Msg, err error) {
+			pt := testutil.NewPanicT(tb)
+			testutil.RequireSend(pt, selected, value, proxytest.Timeout)
+
+			return (&dns.Msg{}).SetReply(req), nil
+		},
+	)
+}
+
+// subtestUpstreamSelection is a subtest that resolves DNS query using given
+// proxy and ensures that the expected upstream was selected.
+func subtestUpstreamSelection(
+	tb testing.TB,
+	prx *proxy.Proxy,
+	selected <-chan string,
+	qtype uint16,
+	host string,
+	want string,
+) {
+	req := proxytest.NewTestRequestWithHost(host)
+	req.Question[0].Qtype = qtype
+
+	ctx := testutil.ContextWithTimeout(tb, defaultTimeout)
+	err := prx.Resolve(ctx, &proxy.DNSContext{Req: req})
+	require.NoError(tb, err)
+
+	got, ok := testutil.RequireReceive(tb, selected, proxytest.Timeout)
+	require.True(tb, ok)
+	assert.Equal(tb, want, got)
+}
+
+func TestProxy_Resolve_selectUpstreamsForDS(t *testing.T) {
+	t.Parallel()
+
+	prx, selected := setupUpstreamSelection(t)
+
+	testCases := []struct {
+		name string
+		host string
+		want string
+	}{{
+		name: "unspecified",
+		host: testFQDNUnspecified,
+		want: testUpstreamURLUnqualified,
+	}, {
+		name: "unqualified",
+		host: testFQDNUnqualified,
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "root",
+		host: ".",
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "tld",
+		host: testFQDNTopLevel,
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "unspecified_subdomain",
+		host: testFQDNUnspecified + testFQDNTopLevel,
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "domain",
+		host: proxytest.FQDN,
+		want: testUpstreamURLTLD,
+	}, {
+		name: "wildcard",
+		host: testFQDNSubAnother,
+		want: testUpstreamURLDomain,
+	}, {
+		name: "general",
+		host: "label." + testFQDNGeneral,
+		want: testUpstreamURLGeneral,
+	}, {
+		name: "subdomain",
+		host: "label." + testFQDNSub,
+		want: testUpstreamURLSubdomain,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			subtestUpstreamSelection(t, prx, selected, dns.TypeDS, tc.host, tc.want)
+		})
+	}
 }

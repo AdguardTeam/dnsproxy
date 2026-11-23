@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"slices"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
 	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
@@ -81,15 +83,23 @@ func (p *Proxy) listenUDP(ctx context.Context, addr *net.UDPAddr) (conn *net.UDP
 	return conn, nil
 }
 
+// udpReopenMinIvl and udpReopenMaxIvl are the bounds of the exponential
+// backoff used to reopen a UDP listener that stopped unexpectedly.
+const (
+	udpReopenMinIvl = 100 * time.Millisecond
+	udpReopenMaxIvl = 10 * time.Second
+)
+
 // udpPacketLoop listens for incoming UDP packets and handles them.  conn and
-// reqSema must not be nil.
+// reqSema must not be nil.  If conn stops working while the proxy is running,
+// it is replaced with a new listener on the same address.
 //
 // See also the comment on [Proxy.requestsSema].
 func (p *Proxy) udpPacketLoop(ctx context.Context, conn *net.UDPConn, reqSema syncutil.Semaphore) {
 	p.logger.InfoContext(ctx, "entering udp listener loop", "addr", conn.LocalAddr())
 
 	b := make([]byte, dns.MaxMsgSize)
-	for p.isStarted() {
+	for conn != nil && p.isStarted() {
 		n, localIP, remoteAddr, err := proxynetutil.UDPRead(conn, b, p.udpOOBSize)
 		// The documentation says to handle the packet even if err occurs.
 		if n > 0 {
@@ -110,29 +120,145 @@ func (p *Proxy) udpPacketLoop(ctx context.Context, conn *net.UDPConn, reqSema sy
 
 				break
 			}
-			go func() {
+			// conn is replaced if it stops working, so pass the current one.
+			go func(c *net.UDPConn) {
 				defer reqSema.Release()
 
-				p.udpHandlePacket(ctx, packet, localIP, remoteAddr, conn)
-			}()
+				p.udpHandlePacket(ctx, packet, localIP, remoteAddr, c)
+			}(conn)
 		}
 
 		if err != nil {
-			logUDPConnError(err, conn, p.logger)
-
-			break
+			conn = p.handleUDPReadError(ctx, conn, err)
 		}
 	}
 }
 
-// logUDPConnError writes suitable log message for given err.  conn must not be
-// nil.
-func logUDPConnError(err error, conn *net.UDPConn, l *slog.Logger) {
-	if errors.Is(err, net.ErrClosed) {
-		l.Debug("udp connection closed", "addr", conn.LocalAddr())
-	} else {
-		l.Error("reading from udp", slogutil.KeyError, err)
+// handleUDPReadError handles err returned by a read from conn and returns the
+// connection to continue reading from, or nil if the read loop should stop.  A
+// timeout leaves the socket usable, so conn is returned.  On any other error,
+// conn is closed, unless it is already closed.  If conn was closed by
+// Shutdown, nil is returned.  Otherwise, the error is logged and a new listener
+// on the same address replaces conn.  conn and err must not be nil.
+//
+// See https://github.com/AdguardTeam/dnsproxy/issues/525.
+func (p *Proxy) handleUDPReadError(
+	ctx context.Context,
+	conn *net.UDPConn,
+	err error,
+) (next *net.UDPConn) {
+	addr := conn.LocalAddr()
+	if !udpReadErrIsFatal(err) {
+		p.logger.DebugContext(ctx, "reading from udp timed out", "addr", addr, slogutil.KeyError, err)
+
+		return conn
 	}
+
+	if !errors.Is(err, net.ErrClosed) {
+		p.logClose(ctx, slog.LevelError, conn, "closing udp listener", "addr", addr)
+	}
+
+	// Shutdown closes the listeners and removes them from the list while
+	// holding the lock, so this check waits for it to finish.
+	if !p.hasUDPListener(conn) {
+		p.logger.DebugContext(ctx, "udp listener closed", "addr", addr, slogutil.KeyError, err)
+
+		return nil
+	}
+
+	p.logger.ErrorContext(
+		ctx,
+		"udp listener stopped unexpectedly; reopening",
+		"addr", addr,
+		slogutil.KeyError, err,
+	)
+
+	return p.reopenUDPListener(ctx, conn)
+}
+
+// udpReadErrIsFatal returns true if err should stop the UDP read loop.
+// Timeouts are not fatal.  err must not be nil.
+func udpReadErrIsFatal(err error) (fatal bool) {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return false
+	}
+
+	return true
+}
+
+// reopenUDPListener opens a new UDP listener on the address of the closed
+// listener old and puts it in place of old.  It retries with exponential
+// backoff until it succeeds or old is closed by Shutdown, in which case it
+// returns nil.  old must not be nil.
+func (p *Proxy) reopenUDPListener(ctx context.Context, old *net.UDPConn) (conn *net.UDPConn) {
+	addr, _ := old.LocalAddr().(*net.UDPAddr)
+
+	ivl := udpReopenMinIvl
+	for attempt := 1; ; attempt++ {
+		time.Sleep(ivl)
+		if !p.hasUDPListener(old) {
+			return nil
+		}
+
+		var err error
+		conn, err = p.listenUDP(ctx, addr)
+		if err == nil {
+			return p.replaceUDPListener(ctx, old, conn)
+		}
+
+		p.logger.WarnContext(
+			ctx,
+			"reopening udp listener",
+			"addr", addr,
+			"attempt", attempt,
+			slogutil.KeyError, err,
+		)
+
+		ivl = min(2*ivl, udpReopenMaxIvl)
+	}
+}
+
+// hasUDPListener returns true if the proxy is started and conn is one of its
+// UDP listeners.  It returns false after conn has been closed by Shutdown.
+func (p *Proxy) hasUDPListener(conn *net.UDPConn) (ok bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.started && slices.Contains(p.udpListen, conn)
+}
+
+// replaceUDPListener replaces old with conn in the list of UDP listeners so
+// that Shutdown closes conn.  If old is not in the list, Shutdown has closed
+// it, so conn is closed and nil is returned.  old and conn must not be nil.
+func (p *Proxy) replaceUDPListener(ctx context.Context, old, conn *net.UDPConn) (next *net.UDPConn) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	i := slices.Index(p.udpListen, old)
+	if i < 0 {
+		p.logClose(ctx, slog.LevelDebug, conn, "closing reopened udp listener")
+
+		return nil
+	}
+
+	p.udpListen[i] = conn
+
+	return conn
+}
+
+// closeUDPListeners closes conns and appends the occurred errors to errs.  A
+// listener that has already been closed after a read error is not an error.
+// conns must not contain nil elements.
+func closeUDPListeners(errs []error, conns []*net.UDPConn) (res []error) {
+	for _, c := range conns {
+		err := c.Close()
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, err)
+		}
+	}
+
+	return errs
 }
 
 // udpHandlePacket processes the incoming UDP packet and sends a DNS response.

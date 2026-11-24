@@ -6,19 +6,23 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/golibs/netutil/urlutil"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -267,6 +271,88 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 			})
 		})
 	}
+}
+
+// listenAndDiscard starts a TCP listener that accepts connections and discards
+// all data.  It returns the listener address and atomic counter for open
+// connections.  The listener is stopped at the end of the test.
+func listenAndDiscard(tb testing.TB) (addr net.Addr, open *atomic.Int32) {
+	tb.Helper()
+
+	l, err := net.Listen("tcp", localhostAnyPort.String())
+	require.NoError(tb, err)
+	testutil.CleanupAndRequireSuccess(tb, l.Close)
+
+	pt := testutil.NewPanicT(tb)
+
+	open = &atomic.Int32{}
+
+	discard := func(conn net.Conn) {
+		defer func() {
+			require.NoError(pt, conn.Close())
+			open.Add(-1)
+		}()
+
+		_, copyErr := io.Copy(io.Discard, conn)
+		require.NoError(pt, copyErr)
+	}
+
+	go func() {
+		for {
+			conn, accErr := l.Accept()
+			if accErr != nil {
+				require.ErrorIs(pt, accErr, net.ErrClosed)
+
+				return
+			}
+
+			open.Add(1)
+
+			go discard(conn)
+		}
+	}()
+
+	return l.Addr(), open
+}
+
+func TestUpstreamDoH_hungTLSHandshake(t *testing.T) {
+	t.Parallel()
+
+	addr, open := listenAndDiscard(t)
+
+	upsAddr := (&url.URL{
+		Scheme: urlutil.SchemeHTTPS,
+		Host:   addr.String(),
+		Path:   "dns-query",
+	}).String()
+
+	u, err := AddressToUpstream(upsAddr, &Options{
+		Logger:             testLogger,
+		InsecureSkipVerify: true,
+		HTTPVersions:       []HTTPVersion{HTTPVersion11, HTTPVersion2},
+		Timeout:            testTimeout / 10,
+	})
+	require.NoError(t, err)
+	testutil.CleanupAndRequireSuccess(t, u.Close)
+
+	const queriesCount = 10
+
+	pt := testutil.NewPanicT(t)
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+	wg := &sync.WaitGroup{}
+	for range queriesCount {
+		wg.Go(func() {
+			_, exchErr := u.Exchange(ctx, createTestMessage())
+			assert.Error(pt, exchErr)
+		})
+	}
+
+	wg.Wait()
+
+	assert.EventuallyWithT(t, func(ct *assert.CollectT) {
+		assert.Equal(ct, int32(0), open.Load())
+	}, testTimeout, testTimeout/10)
 }
 
 func TestUpstreamDoH_0RTT(t *testing.T) {

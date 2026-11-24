@@ -144,6 +144,66 @@ func TestUpstream_plainDNS_fallbackToTCP(t *testing.T) {
 	}
 }
 
+func TestUpstream_plainDNS_zeroID(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		network network
+	}{{
+		name:    "tcp",
+		network: networkTCP,
+	}, {
+		name:    "udp_fallback",
+		network: networkUDP,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var udpID, tcpID atomic.Uint32
+			srv := startDNSServer(t, func(w dns.ResponseWriter, req *dns.Msg) {
+				pt := testutil.PanicT{}
+				resp := respondToTestMessage(req)
+				if w.RemoteAddr().Network() == networkUDP {
+					udpID.Store(uint32(req.Id))
+					resp.Truncated = true
+				} else {
+					tcpID.Store(uint32(req.Id))
+				}
+
+				require.NoError(pt, w.WriteMsg(resp))
+			})
+			testutil.CleanupAndRequireSuccess(t, srv.Close)
+
+			addr := fmt.Sprintf("%s://127.0.0.1:%d", tc.network, srv.port)
+			u, err := AddressToUpstream(addr, &Options{
+				Logger:  testLogger,
+				Timeout: 100 * time.Millisecond,
+			})
+			require.NoError(t, err)
+			testutil.CleanupAndRequireSuccess(t, u.Close)
+
+			req := createTestMessage()
+			req.Id = 0
+
+			ctx := testutil.ContextWithTimeout(t, testTimeout)
+			resp, err := u.Exchange(ctx, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+
+			assert.Zero(t, resp.Id)
+			assert.NotZero(t, tcpID.Load())
+			if tc.network == networkUDP {
+				assert.NotZero(t, udpID.Load())
+			} else {
+				assert.Zero(t, udpID.Load())
+			}
+		})
+	}
+}
+
 // testDNSServer is a simple DNS server that can be used in unit-tests.
 type testDNSServer struct {
 	udpListener net.PacketConn

@@ -75,7 +75,7 @@ func newTestCache(tb testing.TB, conf *cacheConfig) (c *cache) {
 	})
 }
 
-func TestProxy_ServeDNS_cached(t *testing.T) {
+func TestProxy_HandleDNSRequest_cached(t *testing.T) {
 	dnsProxy := newTestProxy(t, &Config{
 		Logger:        testLogger,
 		UDPListenAddr: []*net.UDPAddr{dnsproxytest.LocalhostAnyPortUDP},
@@ -638,6 +638,8 @@ func testSubnet(ip net.IP, ones int) (subnet *net.IPNet) {
 }
 
 func TestCache_Get_mask(t *testing.T) {
+	t.Parallel()
+
 	noMatchIP := testCacheIP1
 
 	// cachedIP/cidrMask network contains the testIP.

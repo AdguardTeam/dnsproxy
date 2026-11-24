@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFilteringHandler(t *testing.T) {
+func TestProxy_HandleDNSRequest_filtering(t *testing.T) {
 	// Initializing the test middleware
 	m := &sync.RWMutex{}
 	blockResponse := false

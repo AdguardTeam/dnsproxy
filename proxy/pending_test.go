@@ -42,7 +42,7 @@ func assertEqualResponses(tb testing.TB, expected, actual *dns.Msg) {
 	assert.Equal(tb, expected.Extra, actual.Extra)
 }
 
-func TestPendingRequests(t *testing.T) {
+func TestProxy_Resolve_pendingRequests(t *testing.T) {
 	t.Parallel()
 
 	const reqsNum = 100

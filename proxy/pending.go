@@ -64,7 +64,7 @@ func (pr *defaultPendingRequests) queue(
 	ctx context.Context,
 	dctx *DNSContext,
 ) (loaded bool, err error) {
-	key := msgToKey(dctx.Req, dctx.ReqECS)
+	key := msgToKey(dctx.Req, dctx.ReqECS, dctx.IsPrivateClient)
 
 	req := &pendingRequest{
 		finish: make(chan struct{}),
@@ -93,7 +93,7 @@ func (pr *defaultPendingRequests) queue(
 
 // done implements the [pendingRequests] interface for [defaultPendingRequests].
 func (pr *defaultPendingRequests) done(ctx context.Context, dctx *DNSContext, err error) {
-	key := msgToKey(dctx.Req, dctx.ReqECS)
+	key := msgToKey(dctx.Req, dctx.ReqECS, dctx.IsPrivateClient)
 
 	pending, ok := pr.storage.Load(string(key))
 	if !ok {

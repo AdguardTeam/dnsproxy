@@ -86,7 +86,9 @@ type DNSContext struct {
 	udpSize uint16
 
 	// IsPrivateClient is true if the client's address is considered private
-	// according to the configured private subnet set.
+	// according to the configured private subnet set.  It is also used to select
+	// the cache bucket, so that private and public clients never share cache
+	// entries.
 	IsPrivateClient bool
 
 	// adBit is the authenticated data flag from the request.

@@ -20,7 +20,7 @@ func (p *Proxy) cacheForContext(d *DNSContext) (c *cache) {
 func (p *Proxy) replyFromCache(ctx context.Context, d *DNSContext) (hit bool) {
 	dctxCache := p.cacheForContext(d)
 
-	ci, expired, key := dctxCache.get(d.Req, d.ReqECS)
+	ci, expired, key := dctxCache.get(d.Req, d.ReqECS, d.IsPrivateClient)
 
 	if hit = ci != nil; !hit {
 		return hit
@@ -105,9 +105,9 @@ func (p *Proxy) cacheResp(ctx context.Context, d *DNSContext) {
 
 		p.logger.Debug("caching response", "ecs", ecs)
 
-		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream, ecs)
+		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream, ecs, d.IsPrivateClient)
 	default:
-		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream, nil)
+		dctxCache.set(ctx, p.logger, d.Req, d.Res, d.Upstream, nil, d.IsPrivateClient)
 	}
 }
 

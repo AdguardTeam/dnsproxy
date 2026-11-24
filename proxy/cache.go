@@ -14,7 +14,6 @@ import (
 	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/cache/bytecache"
-	"github.com/AdguardTeam/golibs/mathutil"
 	"github.com/c2h5oh/datasize"
 	"github.com/miekg/dns"
 )
@@ -216,7 +215,11 @@ func newCache(conf *cacheConfig) (c *cache) {
 // get returns cached item for the req if it's found.  expired is true if the
 // item's TTL is expired.  key is the resulting key for req.  It's returned to
 // avoid recalculating it afterwards.
-func (c *cache) get(req *dns.Msg, subnet *net.IPNet) (ci *cacheItem, expired bool, key []byte) {
+func (c *cache) get(
+	req *dns.Msg,
+	subnet *net.IPNet,
+	isPrivateClient bool,
+) (ci *cacheItem, expired bool, key []byte) {
 	c.itemsLock.RLock()
 	defer c.itemsLock.RUnlock()
 
@@ -224,7 +227,7 @@ func (c *cache) get(req *dns.Msg, subnet *net.IPNet) (ci *cacheItem, expired boo
 		return nil, false, nil
 	}
 
-	key = msgToKey(req, subnet)
+	key = msgToKey(req, subnet, isPrivateClient)
 
 	var ones int
 	if subnet != nil && subnet.Mask != nil {
@@ -287,13 +290,14 @@ func (c *cache) set(
 	m *dns.Msg,
 	u upstream.Upstream,
 	subnet *net.IPNet,
+	isPrivateClient bool,
 ) {
 	item := respToItem(ctx, l, m, u)
 	if item == nil {
 		return
 	}
 
-	key := msgToKey(req, subnet)
+	key := msgToKey(req, subnet, isPrivateClient)
 	packed := item.pack()
 
 	c.itemsLock.Lock()
@@ -336,16 +340,23 @@ func respectTTLOverrides(ttl, cacheMinTTL, cacheMaxTTL uint32) uint32 {
 
 // msgToKey constructs the cache key from type, class and question's name of m
 // and optionally from the subnet if provided.  m must not be nil.  subnet may
-// be nil.
-func msgToKey(m *dns.Msg, subnet *net.IPNet) (key []byte) {
+// be nil.  isPrivateClient must be true if the client is considered private.
+func msgToKey(m *dns.Msg, subnet *net.IPNet, isPrivateClient bool) (key []byte) {
 	q := m.Question[0]
 	name := q.Name
 	key = make([]byte, keyHeaderLen+len(name))
 
 	opt := m.IsEdns0()
 
-	// Put the DO flag.
-	key[0] = mathutil.BoolToNumber[byte](opt != nil && opt.Do())
+	key[0] = 0
+
+	if opt != nil && opt.Do() {
+		key[0] |= keyFlagDO
+	}
+
+	if isPrivateClient {
+		key[0] |= keyFlagPrivateClient
+	}
 
 	// Put QTYPE.
 	binary.BigEndian.PutUint16(key[1:], q.Qtype)
@@ -354,21 +365,7 @@ func msgToKey(m *dns.Msg, subnet *net.IPNet) (key []byte) {
 	binary.BigEndian.PutUint16(key[1+packedMsgLenSz:], q.Qclass)
 
 	// Add subnet information if available.
-	if subnet != nil && subnet.Mask != nil {
-		if ones, _ := subnet.Mask.Size(); ones > 0 {
-			masked := subnet.IP.Mask(subnet.Mask)
-
-			if len(masked) == net.IPv4len {
-				key[keyFamilyIndex] = keyFamilyIPv4
-				key[keyPrefixIndex] = uint8(ones)
-				copy(key[keyAddrIndex:], masked)
-			} else if len(masked) == net.IPv6len {
-				key[keyFamilyIndex] = keyFamilyIPv6
-				key[keyPrefixIndex] = uint8(ones)
-				copy(key[keyAddrIndex:], masked)
-			}
-		}
-	}
+	setSubnet(subnet, key)
 
 	// Put QNAME.
 	copy(key[keyHeaderLen:], strings.ToLower(q.Name))
@@ -376,15 +373,43 @@ func msgToKey(m *dns.Msg, subnet *net.IPNet) (key []byte) {
 	return key
 }
 
+// setSubnet encodes the subnet into the family, prefix, and address bytes of
+// key.  key must be at least keyHeaderLen bytes long.
+func setSubnet(subnet *net.IPNet, key []byte) {
+	if subnet == nil || subnet.Mask == nil {
+		return
+	}
+
+	ones, _ := subnet.Mask.Size()
+	if ones <= 0 {
+		return
+	}
+
+	masked := subnet.IP.Mask(subnet.Mask)
+
+	if len(masked) == net.IPv4len {
+		key[keyFamilyIndex] = keyFamilyIPv4
+		key[keyPrefixIndex] = uint8(ones)
+		copy(key[keyAddrIndex:], masked)
+	} else if len(masked) == net.IPv6len {
+		key[keyFamilyIndex] = keyFamilyIPv6
+		key[keyPrefixIndex] = uint8(ones)
+		copy(key[keyAddrIndex:], masked)
+	}
+}
+
+// Cache key layout constants.
 const (
-	keyFamilyNone  = 0
-	keyFamilyIPv4  = 1
-	keyFamilyIPv6  = 2
-	keyFamilyIndex = 1 + 2*packedMsgLenSz
-	keyPrefixIndex = keyFamilyIndex + 1
-	keyAddrIndex   = keyPrefixIndex + 1
-	keyAddrLen     = net.IPv6len
-	keyHeaderLen   = keyAddrIndex + keyAddrLen
+	keyFamilyNone        = 0
+	keyFamilyIPv4        = 1
+	keyFamilyIPv6        = 2
+	keyFamilyIndex       = 1 + 2*packedMsgLenSz
+	keyPrefixIndex       = keyFamilyIndex + 1
+	keyAddrIndex         = keyPrefixIndex + 1
+	keyAddrLen           = net.IPv6len
+	keyHeaderLen         = keyAddrIndex + keyAddrLen
+	keyFlagDO            = 0x01
+	keyFlagPrivateClient = 0x02
 )
 
 // isDNSSEC returns true if r is a DNSSEC RR.  NSEC, NSEC3, DS, DNSKEY and

@@ -3,7 +3,6 @@ package upstream
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -15,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AdguardTeam/dnsproxy/internal/dnsproxytest"
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
@@ -217,8 +217,11 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 			var upsAddr string
 			var u Upstream
 
-			t.Run("first_try", func(t *testing.T) {
+			tlsConfig, _ := dnsproxytest.NewTLSConfig(t)
+
+			require.True(t, t.Run("first_try", func(t *testing.T) {
 				srv := startDoHServer(t, testDoHServerOptions{
+					tlsConfig:    tlsConfig,
 					http3Enabled: true,
 				})
 
@@ -239,12 +242,12 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 				require.NoError(t, err)
 
 				checkUpstream(t, u, upsAddr, testTimeout)
-			})
-			require.False(t, t.Failed())
+			}))
 			testutil.CleanupAndRequireSuccess(t, u.Close)
 
 			t.Run("second_try", func(t *testing.T) {
 				_ = startDoHServer(t, testDoHServerOptions{
+					tlsConfig:    tlsConfig,
 					http3Enabled: true,
 					port:         int(addr.Port()),
 				})
@@ -259,6 +262,7 @@ func TestUpstreamDoH_serverRestart(t *testing.T) {
 				require.Error(t, err)
 
 				_ = startDoHServer(t, testDoHServerOptions{
+					tlsConfig:    tlsConfig,
 					http3Enabled: true,
 					port:         int(addr.Port()),
 				})
@@ -330,6 +334,9 @@ type testDoHServerOptions struct {
 	// handler is an HTTP handler that should be used by the server.  The
 	// default one is used on nil.
 	handler http.Handler
+	// tlsConfig is the TLS configuration that should be used by the server.
+	// If nil, a default TLS configuration is generated.
+	tlsConfig *tls.Config
 	// delayHandshakeH2 is a delay that should be added to the handshake of the
 	// HTTP/2 server.
 	delayHandshakeH2 time.Duration
@@ -348,9 +355,6 @@ type testDoHServerOptions struct {
 type testDoHServer struct {
 	// tlsConfig is the TLS configuration that is used for this server.
 	tlsConfig *tls.Config
-
-	// rootCAs is the pool with root certificates used by the test server.
-	rootCAs *x509.CertPool
 
 	// server is an HTTP/1.1 and HTTP/2 server.
 	server *http.Server
@@ -384,7 +388,13 @@ func startDoHServer(
 	t *testing.T,
 	opts testDoHServerOptions,
 ) (s *testDoHServer) {
-	tlsConfig, rootCAs := createServerTLSConfig(t, "127.0.0.1")
+	var tlsConfig *tls.Config
+	if opts.tlsConfig != nil {
+		tlsConfig = opts.tlsConfig
+	} else {
+		tlsConfig, _ = createServerTLSConfig(t, "127.0.0.1")
+	}
+
 	handler := opts.handler
 	if handler == nil {
 		handler = createDoHHandler()
@@ -474,7 +484,6 @@ func startDoHServer(
 
 	s = &testDoHServer{
 		tlsConfig:  tlsConfig,
-		rootCAs:    rootCAs,
 		server:     server,
 		serverH3:   serverH3,
 		listenerH3: listenerH3,

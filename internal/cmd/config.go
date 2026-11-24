@@ -121,6 +121,8 @@ type configuration struct {
 	OptimisticMaxAge timeutil.Duration `yaml:"optimistic-max-age"`
 
 	// CacheSizeBytes is the cache size in bytes.  Default is 64k.
+	//
+	// TODO(f.setrakov): Consider using [datasize.ByteSize].
 	CacheSizeBytes int `yaml:"cache-size"`
 
 	// Ratelimit is the maximum number of requests per second.

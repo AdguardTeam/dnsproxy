@@ -14,24 +14,26 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// testMsgID is a common DNS message ID for tests.
+const testMsgID = 1234
+
 func TestRecursionDetector_Check(t *testing.T) {
 	t.Parallel()
 
 	rd := newRecursionDetector(0, 2)
 
 	const (
-		recID  = 1234
 		recTTL = time.Hour * 1
 	)
 
-	const nonRecID = recID * 2
+	const nonRecID = testMsgID * 2
 
 	sampleQuestion := dns.Question{
 		Name:  dnsproxytest.Host,
 		Qtype: dns.TypeAAAA,
 	}
 	sampleMsg := &dns.Msg{
-		Id:       recID,
+		Id:       testMsgID,
 		Question: []dns.Question{sampleQuestion},
 	}
 
@@ -53,12 +55,12 @@ func TestRecursionDetector_Check(t *testing.T) {
 	}{{
 		name:      "recurrent",
 		questions: []dns.Question{sampleQuestion},
-		id:        recID,
+		id:        testMsgID,
 		want:      true,
 	}, {
 		name:      "not_suspected",
 		questions: []dns.Question{sampleQuestion},
-		id:        recID + 1,
+		id:        testMsgID + 1,
 		want:      false,
 	}, {
 		name:      "expired",
@@ -82,16 +84,18 @@ func TestRecursionDetector_Check(t *testing.T) {
 	}
 }
 
-func TestRecursionDetector_Suspect(t *testing.T) {
+func TestRecursionDetector_Add(t *testing.T) {
+	t.Parallel()
+
 	rd := newRecursionDetector(0, 1)
 
 	testCases := []struct {
 		msg  *dns.Msg
 		name string
-		want int
+		want uint64
 	}{{
 		msg: &dns.Msg{
-			Id: 1234,
+			Id: testMsgID,
 			Question: []dns.Question{{
 				Name:  "some.domain",
 				Qtype: dns.TypeA,

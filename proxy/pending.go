@@ -91,7 +91,13 @@ func (pr *defaultPendingRequests) queue(
 	dctx.Upstream = origDNSCtx.Upstream
 	if origDNSCtx.Res != nil {
 		// TODO(e.burkov):  Add cloner for DNS messages.
-		dctx.Res = origDNSCtx.Res.Copy().SetReply(dctx.Req)
+		//
+		// SetReply resets Rcode to NOERROR.  Keep the leader's rcode so a
+		// merged waiter does not turn NXDOMAIN or SERVFAIL into an empty
+		// NOERROR answer.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/535.
+		dctx.Res = origDNSCtx.Res.Copy().SetRcode(dctx.Req, origDNSCtx.Res.Rcode)
 	}
 
 	return loaded, pending.resolveErr

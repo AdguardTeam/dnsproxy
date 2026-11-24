@@ -500,6 +500,12 @@ func (p *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper
 		IdleConnTimeout:    transportDefaultIdleConnTimeout,
 		MaxConnsPerHost:    dohMaxConnsPerHost,
 		MaxIdleConns:       dohMaxIdleConns,
+		// A peer that accepts TCP and then stays silent must not hold the
+		// socket until the kernel gives up.  Zero keeps the previous behavior
+		// of no handshake timeout when Options.Timeout is unset.
+		//
+		// See https://github.com/AdguardTeam/dnsproxy/issues/533.
+		TLSHandshakeTimeout: p.timeout,
 		// Since we have a custom DialContext, we need to use this field to make
 		// [http.Client] attempt to use HTTP/2.  Otherwise, it would only be
 		// used when negotiated on the TLS level.

@@ -223,7 +223,7 @@ func (p *Proxy) logDNSMessage(ctx context.Context, m *dns.Msg) {
 		msg = "in"
 	}
 
-	slogutil.PrintLines(ctx, p.logger, slog.LevelDebug, msg, m.String())
+	slogutil.PrintStringerLines(ctx, p.logger, slog.LevelDebug, msg, m)
 }
 
 // logWithNonCrit logs the error on the appropriate level, depending on whether

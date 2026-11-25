@@ -20,6 +20,7 @@ import (
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -531,4 +532,32 @@ func startDoQServer(t *testing.T, tlsConf *tls.Config, port int) (s *testDoQServ
 	testutil.CleanupAndRequireSuccess(t, s.Shutdown)
 
 	return s
+}
+
+func TestIsQUICRetryError_h3NoError(t *testing.T) {
+	t.Parallel()
+
+	h3Stream := &http3.Error{
+		Remote:    true,
+		ErrorCode: http3.ErrCodeNoError,
+	}
+	stream := &quic.StreamError{
+		StreamID:  4,
+		ErrorCode: quic.StreamErrorCode(http3.ErrCodeNoError),
+		Remote:    true,
+	}
+	app := &quic.ApplicationError{
+		Remote:    true,
+		ErrorCode: quic.ApplicationErrorCode(http3.ErrCodeNoError),
+	}
+	rejected := &quic.StreamError{
+		StreamID:  4,
+		ErrorCode: quic.StreamErrorCode(http3.ErrCodeRequestRejected),
+		Remote:    true,
+	}
+
+	assert.True(t, isQUICRetryError(fmt.Errorf("exchanging: %w", h3Stream)))
+	assert.True(t, isQUICRetryError(fmt.Errorf("reading response: %w", stream)))
+	assert.True(t, isQUICRetryError(app))
+	assert.False(t, isQUICRetryError(fmt.Errorf("reading response: %w", rejected)))
 }

@@ -125,14 +125,16 @@ func (h *dnsCryptHandler) ServeDNS(
 	d := h.proxy.newDNSContext(ProtoDNSCrypt, req, addr)
 	d.DNSCryptResponseWriter = rw
 
-	ctx, cancel := h.proxy.reqCtx.New(ctx)
-	defer cancel()
-
 	err = h.reqSema.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("dnsproxy: dnscrypt: acquiring semaphore: %w", err)
 	}
-	defer h.reqSema.Release()
+
+	hold := newAdmission(h.reqSema)
+	defer hold.free()
+
+	ctx, cancel := h.proxy.reqCtx.New(withAdmission(ctx, hold))
+	defer cancel()
 
 	return h.proxy.handleDNSRequest(ctx, d)
 }

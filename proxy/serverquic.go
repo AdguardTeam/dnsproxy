@@ -245,9 +245,10 @@ func (p *Proxy) handleQUICConnection(
 			return
 		}
 		go func() {
-			defer reqSema.Release()
+			hold := newAdmission(reqSema)
+			defer hold.free()
 
-			p.handleQUICStream(ctx, stream, conn)
+			p.handleQUICStream(withAdmission(ctx, hold), stream, conn)
 
 			// The server MUST send the response(s) on the same stream and MUST
 			// indicate, after the last response, through the STREAM FIN
